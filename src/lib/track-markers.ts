@@ -38,26 +38,6 @@ export interface TrackMarkers {
 export type TrackViewMode = "normal" | "sectors";
 
 /**
- * Layouts that only had synthetic 33/33/33 sector splits. They are excluded
- * from the viewer until real telemetry/manual split distances are available.
- */
-export const FALLBACK_SECTOR_CIRCUIT_IDS = new Set([
-  "ar-1952",
-  "br-1977",
-  "es-2026",
-  "fr-1960",
-  "my-1999",
-  "pt-1972",
-  "us-1909",
-  "us-1956",
-  "za-1961",
-]);
-
-export function hasOnlyFallbackSectors(circuitId: string): boolean {
-  return FALLBACK_SECTOR_CIRCUIT_IDS.has(circuitId);
-}
-
-/**
  * Sector colors used when painting the track in sector mode.
  */
 export const SECTOR_COLORS = {
