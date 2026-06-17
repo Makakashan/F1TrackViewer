@@ -51,6 +51,8 @@
 :root,
 .light {
   --radius: 0.625rem;
+  --font-geist-sans: Arial, Helvetica, sans-serif;
+  --font-geist-mono: "Courier New", Courier, monospace;
   /* Light theme — pale grey-blue background, dark text, F1 red accent */
   --background: oklch(0.985 0.002 240);   /* near-white with cool tint */
   --foreground: oklch(0.18 0.01 240);     /* near-black */
