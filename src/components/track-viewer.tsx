@@ -256,6 +256,76 @@ function buildExtrudedTrack(
   return geo;
 }
 
+/**
+ * Build a line-segments geometry tracing both top edges of the ribbon —
+ * the left edge (P + side * halfWidth) and the right edge (P - side * halfWidth)
+ * at every sample. Used as a thin black outline on top of the red track
+ * surface for visual definition.
+ *
+ * The geometry is laid out as a single lineSegments strip: pairs of
+ * adjacent left-edge vertices form one segment, pairs of adjacent
+ * right-edge vertices form another. Total: 2 * N segments = 4 * N vertices
+ * (each segment needs two vertices).
+ */
+function buildTrackOutline(
+  curve: THREE.CatmullRomCurve3,
+  halfWidth: number,
+  topRaise: number,
+  samples: number,
+): THREE.BufferGeometry {
+  const N = samples;
+  const pts = curve.getSpacedPoints(N);
+  const tangents: THREE.Vector3[] = [];
+  for (let i = 0; i <= N; i++) {
+    tangents.push(curve.getTangentAt(i / N));
+  }
+
+  const up = new THREE.Vector3(0, 1, 0);
+  const side = new THREE.Vector3();
+
+  // Collect top-edge points (left + right) for each sample
+  const leftPts: number[] = [];
+  const rightPts: number[] = [];
+  for (let i = 0; i <= N; i++) {
+    const p = pts[i];
+    const t = tangents[i];
+    side.crossVectors(t, up);
+    if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
+    side.normalize();
+    const topY = p.y + topRaise;
+    leftPts.push(p.x + side.x * halfWidth, topY, p.z + side.z * halfWidth);
+    rightPts.push(p.x - side.x * halfWidth, topY, p.z - side.z * halfWidth);
+  }
+
+  // Build segment pairs: (left[i], left[i+1]) and (right[i], right[i+1])
+  // for i in 0..N-1. Closed curve — last segment connects back to first.
+  const positions: number[] = [];
+  for (let i = 0; i < N; i++) {
+    // Left segment
+    positions.push(leftPts[i * 3], leftPts[i * 3 + 1], leftPts[i * 3 + 2]);
+    positions.push(
+      leftPts[(i + 1) * 3],
+      leftPts[(i + 1) * 3 + 1],
+      leftPts[(i + 1) * 3 + 2],
+    );
+    // Right segment
+    positions.push(
+      rightPts[i * 3],
+      rightPts[i * 3 + 1],
+      rightPts[i * 3 + 2],
+    );
+    positions.push(
+      rightPts[(i + 1) * 3],
+      rightPts[(i + 1) * 3 + 1],
+      rightPts[(i + 1) * 3 + 2],
+    );
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  return geo;
+}
+
 function TrackMesh({
   geojson,
   trackWidth,
@@ -322,9 +392,17 @@ function TrackMesh({
     [curve, trackWidth, groundY, samples],
   );
 
+  const outlineGeometry = useMemo(
+    () => buildTrackOutline(curve, trackWidth, 0.5, samples),
+    [curve, trackWidth, samples],
+  );
+
   useEffect(() => {
-    return () => trackGeometry.dispose();
-  }, [trackGeometry]);
+    return () => {
+      trackGeometry.dispose();
+      outlineGeometry.dispose();
+    };
+  }, [trackGeometry, outlineGeometry]);
 
   const startPoint = useMemo(() => curve.getPointAt(0), [curve]);
   const startTangent = useMemo(() => curve.getTangentAt(0), [curve]);
@@ -354,12 +432,14 @@ function TrackMesh({
     }
   }, [camera, controls, radius, peakY]);
 
-  // Track is F1 RED on both themes — pops on both light and dark.
+  // Track is F1 red on both themes — less neon than before (lower
+  // emissiveIntensity + slightly darker base) so it doesn't burn the eyes.
   // Ground and rings are theme-dependent.
   const isDark = resolvedTheme === "dark";
-  const trackColor = "#e10600";
-  const trackEmissive = "#e10600";
-  const trackEmissiveIntensity = 0.35;
+  const trackColor = "#c10500";
+  const trackEmissive = "#c10500";
+  const trackEmissiveIntensity = 0.12;
+  const outlineColor = "#0a0a0d";
   const groundColor = isDark ? "#0a0a0d" : "#d8d8dc";
   const ringColor1 = isDark ? "#1f1f24" : "#c4c4ca";
   const ringColor2 = isDark ? "#16161a" : "#cdcdd2";
@@ -379,19 +459,13 @@ function TrackMesh({
         />
       </mesh>
 
-      {/* Start/finish line — white bar across the ribbon */}
-      <mesh
-        position={[startPoint.x, startPoint.y + 0.6, startPoint.z]}
-        quaternion={startQuaternion}
-      >
-        <boxGeometry args={[trackWidth * 2.4, 0.4, trackWidth * 0.4]} />
-        <meshStandardMaterial
-          color="#ffffff"
-          emissive="#ffffff"
-          emissiveIntensity={0.3}
-          roughness={0.4}
-        />
-      </mesh>
+      {/* Track outline — thin black lines running along both top edges of
+          the ribbon. Built as a line strip from the same centerline + side
+          vectors used by buildExtrudedTrack. Provides visual definition
+          between the track and the ground/scene background. */}
+      <lineSegments geometry={outlineGeometry}>
+        <lineBasicMaterial color={outlineColor} />
+      </lineSegments>
 
       {/* Ground plane */}
       <mesh
