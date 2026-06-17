@@ -34,6 +34,8 @@ import {
 } from "@/lib/f1-circuits";
 import { fetchElevations } from "@/lib/geo-utils";
 
+const ELEVATION_RETRY_DELAYS_MS = [30_000, 120_000, 300_000];
+
 // Three.js scene must be client-only — no SSR for WebGL.
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
   ssr: false,
@@ -82,39 +84,63 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (!selectedId) return;
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingTrack(true);
     setLoadingElevations(true);
     setError(null);
+
+    async function loadElevationsWithRetry(
+      coords: [number, number][],
+      attempt: number,
+    ) {
+      setLoadingElevations(true);
+      const result = await fetchElevations(coords, selectedId);
+      if (cancelled) return;
+
+      if (result !== null) {
+        setElevations(result);
+        setLoadingElevations(false);
+        return;
+      }
+
+      setElevations([]);
+      setLoadingElevations(false);
+
+      const delay = ELEVATION_RETRY_DELAYS_MS[attempt];
+      if (delay == null) return;
+
+      retryTimer = setTimeout(() => {
+        void loadElevationsWithRetry(coords, attempt + 1);
+      }, delay);
+    }
 
     fetchCircuitGeoJson(selectedId)
       .then((g) => {
         if (cancelled) return;
         setGeojson(g);
         const coords = g.features[0]?.geometry.coordinates ?? [];
-        return fetchElevations(coords);
-      })
-      .then((e) => {
-        if (cancelled) return;
-        setElevations(e);
+        void loadElevationsWithRetry(coords, 0);
       })
       .catch((e) => {
-        if (!cancelled) setError(`${t.errLoadTrack} ${selectedId}: ${String(e)}`);
+        if (!cancelled) {
+          setError(`${t.errLoadTrack} ${selectedId}: ${String(e)}`);
+          setLoadingElevations(false);
+        }
       })
       .finally(() => {
         if (cancelled) return;
         setLoadingTrack(false);
-        setLoadingElevations(false);
       });
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
   const handleSelect = useCallback((id: string) => {

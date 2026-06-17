@@ -24,98 +24,6 @@ export interface TrackViewerProps {
 }
 
 /**
- * Smooth an elevation array with a simple 3-tap moving-average filter,
- * applied N times. The array is treated as a closed loop.
- *
- * Why: Open-Meteo returns SRTM-3 arcsec samples which have noticeable
- * per-sample jitter on tight street circuits. Smoothing kills the
- * residual "teeth" left after despiking.
- */
-function smoothElevations(input: number[], passes: number = 3): number[] {
-  if (input.length < 3) return input.slice();
-  let cur = input.slice();
-  const n = cur.length;
-  for (let p = 0; p < passes; p++) {
-    const next = new Array<number>(n);
-    for (let i = 0; i < n; i++) {
-      const a = cur[(i - 1 + n) % n];
-      const b = cur[i];
-      const c = cur[(i + 1) % n];
-      next[i] = (a + b + c) / 3;
-    }
-    cur = next;
-  }
-  return cur;
-}
-
-/**
- * Despike elevation samples that are obvious API noise. Three cases we hit:
- *   1. Zero or near-zero elevation on a track that's clearly inland (the
- *      API sometimes returns 0 for coastal points instead of the real
- *      SRTM value — very visible on Monaco where some samples are 0 and
- *      others are 47+).
- *   2. Single-sample spikes where one point is 30+ meters off from both
- *      its neighbors.
- *   3. Negative elevations on tracks that are above sea level.
- *
- * Strategy:
- *   a) Compute the per-track median elevation M and the median absolute
- *      deviation (MAD). These are robust to outliers.
- *   b) Replace any sample <5 m on tracks whose median is >10 m (likely
- *      coastal API glitch) with M.
- *   c) Replace any sample that deviates from its 5-tap local median by
- *      more than max(threshold, 4 * MAD) meters with that local median.
- *
- * Two passes catch most artifacts. The array is treated as a closed loop.
- */
-function despikeElevations(
-  input: number[],
-  threshold: number = 15,
-  passes: number = 2,
-): number[] {
-  if (input.length < 5) return input.slice();
-  let cur = input.slice();
-  const n = cur.length;
-
-  // Robust track-level stats — median and MAD
-  const sortedAll = cur.slice().sort((a, b) => a - b);
-  const globalMedian = sortedAll[Math.floor(n / 2)];
-  const absDevs = cur
-    .map((v) => Math.abs(v - globalMedian))
-    .sort((a, b) => a - b);
-  const mad = absDevs[Math.floor(n / 2)];
-  const dynamicThreshold = Math.max(threshold, 4 * mad);
-
-  // First: replace near-zero values on tracks that are clearly above sea
-  // level (median > 10 m). These are coastal API glitches.
-  if (globalMedian > 10) {
-    cur = cur.map((v) => (v < 5 ? globalMedian : v));
-  }
-
-  // Then: median-filter spikes
-  for (let p = 0; p < passes; p++) {
-    const next = cur.slice();
-    for (let i = 0; i < n; i++) {
-      const window = [
-        cur[(i - 2 + n) % n],
-        cur[(i - 1 + n) % n],
-        cur[i],
-        cur[(i + 1) % n],
-        cur[(i + 2) % n],
-      ]
-        .slice()
-        .sort((a, b) => a - b);
-      const localMedian = window[2];
-      if (Math.abs(cur[i] - localMedian) > dynamicThreshold) {
-        next[i] = localMedian;
-      }
-    }
-    cur = next;
-  }
-  return cur;
-}
-
-/**
  * Build an extruded track mesh — top surface + side walls going all the way
  * down to a fixed ground Y. This produces a solid 3D-printed look instead
  * of a "floating ribbon".
@@ -334,40 +242,31 @@ function TrackMesh({
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
 
-  // Despike + smooth the elevation samples before building the curve.
-  // Despiking kills single-sample outliers (e.g. Open-Meteo returning 0
-  // for coastal Monaco points where the real SRTM value is 30+); smoothing
-  // kills the residual jitter between adjacent samples.
-  const smoothedElevations = useMemo(() => {
-    if (!elevations || elevations.length < 5) return elevations;
-    return smoothElevations(despikeElevations(elevations, 15, 2), 3);
-  }, [elevations]);
-
   const { curve, radius, peakY } = useMemo(() => {
     const b = computeBounds(coords);
     const c = buildTrackCurve(
       coords,
       b,
-      smoothedElevations ?? undefined,
+      elevations ?? undefined,
       elevationScale,
     );
     const r = sceneRadiusFromBounds(b);
     let peak = 0;
-    if (smoothedElevations && smoothedElevations.length) {
+    if (elevations && elevations.length) {
       let min = Infinity,
         max = -Infinity,
         sum = 0;
-      for (const e of smoothedElevations) {
+      for (const e of elevations) {
         if (e < min) min = e;
         if (e > max) max = e;
         sum += e;
       }
-      const mean = sum / smoothedElevations.length;
+      const mean = sum / elevations.length;
       peak =
         Math.max(Math.abs(min - mean), Math.abs(max - mean)) * elevationScale;
     }
     return { curve: c, radius: r, peakY: peak };
-  }, [coords, smoothedElevations, elevationScale]);
+  }, [coords, elevations, elevationScale]);
 
   const groundY = useMemo(
     () => -peakY - trackWidth * 2 - 1,

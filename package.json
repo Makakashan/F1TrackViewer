@@ -6,6 +6,7 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "build:pages": "GITHUB_PAGES=true next build",
+    "elevations:generate": "bun scripts/generate-elevations.ts",
     "start": "next start -p 3000",
     "lint": "eslint ."
   },

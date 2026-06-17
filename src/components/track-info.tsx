@@ -193,7 +193,9 @@ export default function TrackInfo({
               ? elevationEnabled
                 ? t.elevationOn
                 : t.elevationOff
-              : t.elevationLoading}
+              : elevations === null
+                ? t.elevationLoading
+                : t.elevationUnavailable}
           </div>
         </div>
 
@@ -244,7 +246,7 @@ export default function TrackInfo({
           </>
         ) : (
           <div className="mt-2 text-[11px] text-muted-foreground">
-            {elevations === null ? t.elevationLoading : t.trackEmpty}
+            {elevations === null ? t.elevationLoading : t.elevationUnavailable}
           </div>
         )}
       </div>
