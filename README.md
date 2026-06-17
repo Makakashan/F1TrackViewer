@@ -8,9 +8,9 @@
 
 ## Скриншот
 
-![F1 Track Viewer — Monaco](https://raw.githubusercontent.com/<OWNER>/F1TrackViewer/main/docs/preview.png)
+![F1 Track Viewer — Monaco](docs/preview.png)
 
-> Замените `<OWNER>` на свой GitHub-username после fork'а. Скриншот лежит в `docs/preview.png`.
+> Скриншот: Monaco в 3D-вьюере (загружается по умолчанию при старте).
 
 ---
 
@@ -48,7 +48,7 @@ GeoJSON подгружается **напрямую с `raw.githubusercontent.co
 ### Вариант A — через `bun` (рекомендуется, быстрее)
 
 ```bash
-git clone https://github.com/<OWNER>/F1TrackViewer.git
+git clone https://github.com/Makakashan/F1TrackViewer.git
 cd F1TrackViewer
 bun install
 bun run dev
@@ -57,7 +57,7 @@ bun run dev
 ### Вариант B — через `npm`
 
 ```bash
-git clone https://github.com/<OWNER>/F1TrackViewer.git
+git clone https://github.com/Makakashan/F1TrackViewer.git
 cd F1TrackViewer
 npm install
 npm run dev
@@ -66,7 +66,7 @@ npm run dev
 ### Вариант C — через `pnpm`
 
 ```bash
-git clone https://github.com/<OWNER>/F1TrackViewer.git
+git clone https://github.com/Makakashan/F1TrackViewer.git
 cd F1TrackViewer
 pnpm install
 pnpm dev
