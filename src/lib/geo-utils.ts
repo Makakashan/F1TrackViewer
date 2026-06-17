@@ -519,6 +519,54 @@ export async function fetchElevations(
   }
 }
 
+export async function fetchElevationsFromOpenTopoData(
+  coords: [number, number][],
+): Promise<number[] | null> {
+  if (!coords.length) return [];
+  const sampled = sampleElevationCoords(coords);
+
+  try {
+    const locations = sampled.coords.map((c) => `${c[1]},${c[0]}`).join("|");
+    const url = `https://api.opentopodata.org/v1/mapzen?locations=${encodeURIComponent(locations)}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`OpenTopoData API ${res.status}`);
+
+    const data = (await res.json()) as {
+      status?: string;
+      error?: string;
+      results?: Array<{ elevation?: number | null }>;
+    };
+    if (
+      data.status !== "OK" ||
+      !Array.isArray(data.results) ||
+      data.results.length !== sampled.coords.length
+    ) {
+      throw new Error(data.error ?? "invalid OpenTopoData API response");
+    }
+
+    const sampleElevations = data.results.map((result) => result.elevation);
+    if (sampleElevations.some((value) => !Number.isFinite(value))) {
+      throw new Error("OpenTopoData returned missing elevations");
+    }
+
+    const normalizedSamples = normalizeElevationProfile(
+      sampleElevations as number[],
+      sampled.coords,
+    );
+    const elevations = interpolateElevations(
+      sampled.distances,
+      normalizedSamples,
+      sampled.fullDistances,
+      sampled.hasClosingDuplicate,
+    );
+    writeElevationCache(coords, elevations);
+    return elevations;
+  } catch (e) {
+    console.warn("Failed to fetch OpenTopoData elevations:", e);
+    return null;
+  }
+}
+
 /**
  * Compute simple stats over an elevation array — min, max, total climb
  * (sum of all uphill deltas between consecutive samples). Used by the info
