@@ -144,26 +144,27 @@ function TrackMesh({
 
   return (
     <group>
-      {/* Track surface — dark asphalt tube */}
-      <mesh geometry={tubeGeometry} receiveShadow castShadow>
+      {/* Track surface — F1 red tube */}
+      <mesh geometry={tubeGeometry}>
         <meshStandardMaterial
-          color="#1c1c20"
-          roughness={0.85}
-          metalness={0.1}
+          color="#e10600"
+          emissive="#e10600"
+          emissiveIntensity={0.35}
+          roughness={0.55}
+          metalness={0.05}
         />
       </mesh>
 
-      {/* Subtle centerline highlight — feels like racing line */}
+      {/* Centerline — white stripe on top of the red tube */}
       <line geometry={centerlineGeometry}>
         <lineBasicMaterial
-          color="#ff4d4d"
+          color="#ffffff"
           transparent
-          opacity={0.7}
-          linewidth={2}
+          opacity={0.85}
         />
       </line>
 
-      {/* Start/finish line — white bar with red emissive */}
+      {/* Start/finish line — white bar (pops on red track) */}
       <mesh
         position={[startPoint.x, startPoint.y + trackWidth * 0.6, startPoint.z]}
         quaternion={startQuaternion}
@@ -171,8 +172,8 @@ function TrackMesh({
         <boxGeometry args={[trackWidth * 2.4, 0.4, trackWidth * 0.4]} />
         <meshStandardMaterial
           color="#ffffff"
-          emissive="#ff1e1e"
-          emissiveIntensity={0.7}
+          emissive="#ffffff"
+          emissiveIntensity={0.5}
           roughness={0.4}
         />
       </mesh>
@@ -192,26 +193,6 @@ function TrackMesh({
         <ringGeometry args={[radius * 2.4, radius * 2.42, 96]} />
         <meshBasicMaterial color="#16161a" />
       </mesh>
-
-      {/* Vertical reference pillars at each corner of the bbox — give a sense
-          of elevation scale on hilly tracks. Skipped on flat ones. */}
-      {peakY > trackWidth * 2 &&
-        [
-          [radius, radius],
-          [-radius, radius],
-          [radius, -radius],
-          [-radius, -radius],
-        ].map(([x, z], i) => (
-          <mesh key={i} position={[x, 0, z]}>
-            <boxGeometry args={[trackWidth * 0.3, peakY * 2, trackWidth * 0.3]} />
-            <meshStandardMaterial
-              color="#2a2a30"
-              emissive="#ff1e1e"
-              emissiveIntensity={0.15}
-              roughness={0.7}
-            />
-          </mesh>
-        ))}
     </group>
   );
 }
