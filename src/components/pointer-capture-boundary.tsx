@@ -9,27 +9,7 @@ interface State {
   hasError: boolean;
 }
 
-/**
- * Installs a DOM-level monkey-patch on Element.prototype.releasePointerCapture
- * so it silently no-ops when called with an invalid pointer id.
- *
- * Why this exists: @react-three/drei's OrbitControls calls
- * `domElement.releasePointerCapture(pointerId)` on pointerup. Under React 19
- * + touch input on mobile, the pointer is sometimes already released by the
- * browser before OrbitControls gets the pointerup event — so the call throws
- * a DOMException ("Element.releasePointerCapture: Invalid pointer id").
- *
- * On desktop the exception usually surfaces through React's event system and
- * the error-boundary below catches it. On mobile the exception is thrown
- * from a native event handler outside React, so the boundary doesn't see it
- * and the error propagates to Next.js's error overlay.
- *
- * Patching the prototype is the most reliable fix: it makes the call a
- * no-op for invalid pointer ids regardless of where it's called from.
- *
- * The patch is idempotent — it checks whether it has already been applied
- * before installing, so it's safe to call from multiple component mounts.
- */
+/** Monkey-patches Element.prototype.releasePointerCapture to silently no-op on invalid pointer ids (fixes React 19 + mobile touch + drei OrbitControls). */
 let pointerCapturePatchInstalled = false;
 
 function installPointerCapturePatch() {

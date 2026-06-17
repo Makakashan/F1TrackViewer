@@ -3,7 +3,7 @@ import { join } from "node:path";
 import {
   fetchElevations,
   fetchElevationsFromOpenTopoData,
-} from "../src/lib/geo-utils";
+} from "../src/lib/elevation-api";
 import type { CircuitGeoJSON, CircuitLocation } from "../src/lib/f1-circuits";
 
 const RAW_BASE =
