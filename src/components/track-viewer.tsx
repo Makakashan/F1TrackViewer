@@ -13,55 +13,165 @@ import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 
 export interface TrackViewerProps {
   geojson: CircuitGeoJSON;
-  /** Per-point elevations in meters. Same indexing as `coords` (incl. closing
-   * duplicate). If null/undefined, the track is rendered flat. */
   elevations?: number[] | null;
-  /** Vertical exaggeration applied to elevation deltas. 1 = real scale. */
   elevationScale?: number;
-  /** Radius of the track "tube" in meters. Defaults to 8. */
+  /** Half-width of the track ribbon in meters. Real F1 tracks are ~7–8m
+   * wide each side, so default 7 = ~14m total. */
   trackWidth?: number;
-  /** Auto-rotate the camera around the track. */
   autoRotate?: boolean;
-  /** Show a small marker at the start/finish line. */
-  showStartLine?: boolean;
+  /** Resolved theme — affects ribbon colors / ground tint. */
+  resolvedTheme?: "light" | "dark";
 }
 
 /**
- * The actual track mesh — built once per `geojson` / `elevations` change.
+ * Build a flat ribbon mesh from a CatmullRomCurve3.
  *
- * Uses CatmullRomCurve3 + TubeGeometry. This is the simplest "looks like a
- * 3D track" approach. We can upgrade to a proper ribbon mesh (centerline +
- * width-based normals) in MVP3 when we pull width data from TUMFTM.
+ * For each sampled point on the curve we compute:
+ *   - the tangent T (direction of travel)
+ *   - the world-up vector U = (0, 1, 0)
+ *   - the side vector S = normalize(cross(T, U)) — perpendicular to travel,
+ *     lying roughly horizontal
+ *   - the actual up vector B = cross(S, T) — perpendicular to travel AND
+ *     to S, used as the surface normal
  *
- * Elevation handling: if `elevations` is supplied, each curve point gets a
- * Y coordinate derived from (elevation - mean) * scale. The mean is subtracted
- * so tracks at high absolute altitude (Mexico, ~2000m) don't float far above
- * the ground plane — only the *relative* profile matters visually.
+ * Two vertices per sample (left side = +S, right side = -S), connected as
+ * a triangle strip. The ribbon is raised `raise` meters above the curve to
+ * avoid z-fighting with the ground plane on flat tracks.
+ *
+ * We also compute per-vertex normals so lighting works, and bake a thin
+ * darker "kerb" strip along each edge for visual definition.
+ *
+ * Returns the ribbon BufferGeometry + a separate kerb line geometry.
  */
+function buildRibbon(
+  curve: THREE.CatmullRomCurve3,
+  halfWidth: number,
+  raise: number,
+): {
+  surface: THREE.BufferGeometry;
+  kerbs: THREE.BufferGeometry;
+  centerline: THREE.BufferGeometry;
+} {
+  const N = 800;
+  const samples = curve.getSpacedPoints(N);
+  // getSpacedPoints doesn't compute tangents — use getTangentAt with the
+  // same normalized parameter range.
+  const tangents: THREE.Vector3[] = [];
+  for (let i = 0; i <= N; i++) {
+    tangents.push(curve.getTangentAt(i / N));
+  }
+  // Close the loop: append first sample so the ribbon ends meet.
+  samples.push(samples[0]);
+  tangents.push(tangents[0]);
+
+  const up = new THREE.Vector3(0, 1, 0);
+  const side = new THREE.Vector3();
+  const binorm = new THREE.Vector3();
+
+  const positions: number[] = [];
+  const normals: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  const kerbPositions: number[] = [];
+  const centerlinePositions: number[] = [];
+
+  for (let i = 0; i < samples.length; i++) {
+    const p = samples[i];
+    const t = tangents[i];
+
+    // Compute side vector. If tangent is nearly vertical (rare, but possible
+    // on elevation cliffs), fall back to world X as the side direction.
+    side.crossVectors(t, up);
+    if (side.lengthSq() < 1e-6) {
+      side.set(1, 0, 0);
+    }
+    side.normalize();
+    binorm.crossVectors(side, t).normalize();
+
+    // Centerline sample (slightly raised so it sits on top of the surface)
+    centerlinePositions.push(
+      p.x,
+      p.y + raise + 0.05,
+      p.z,
+    );
+
+    // Left edge (the sample point shifted by +side * halfWidth, plus a tiny
+    // raise to lift off the ground)
+    const lx = p.x + side.x * halfWidth;
+    const ly = p.y + raise;
+    const lz = p.z + side.z * halfWidth;
+    // Right edge (-side)
+    const rx = p.x - side.x * halfWidth;
+    const ry = p.y + raise;
+    const rz = p.z - side.z * halfWidth;
+
+    positions.push(lx, ly, lz, rx, ry, rz);
+
+    // Both vertices share the same normal (binormal) for flat shading
+    normals.push(binorm.x, binorm.y, binorm.z, binorm.x, binorm.y, binorm.z);
+
+    // UV: u goes 0..1 across the width (left=0, right=1), v goes 0..1 along
+    // the length. v wraps because we want the texture to loop seamlessly on
+    // a closed track.
+    const v = i / N;
+    uvs.push(0, v, 1, v);
+
+    // Two triangles between this quad and the next one. Last quad (i==N)
+    // connects back to i==0 — we handle that by NOT emitting the quad
+    // indices for the closing sample, since samples[N+1] === samples[0].
+    if (i < N) {
+      const a = i * 2;
+      const b = i * 2 + 1;
+      const c = (i + 1) * 2;
+      const d = (i + 1) * 2 + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+
+    // Kerb lines — a thin strip just outside each edge, used for visual
+    // definition. We offset by an extra ~5% of halfWidth so they peek out.
+    const k = halfWidth * 1.06;
+    kerbPositions.push(
+      p.x + side.x * k, p.y + raise + 0.02, p.z + side.z * k,
+      p.x - side.x * k, p.y + raise + 0.02, p.z - side.z * k,
+    );
+  }
+
+  const surface = new THREE.BufferGeometry();
+  surface.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  surface.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  surface.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  surface.setIndex(indices);
+
+  const kerbs = new THREE.BufferGeometry();
+  kerbs.setAttribute("position", new THREE.Float32BufferAttribute(kerbPositions, 3));
+
+  const centerline = new THREE.BufferGeometry();
+  centerline.setAttribute("position", new THREE.Float32BufferAttribute(centerlinePositions, 3));
+
+  return { surface, kerbs, centerline };
+}
+
 function TrackMesh({
   geojson,
   trackWidth,
   elevations,
   elevationScale,
+  resolvedTheme,
 }: {
   geojson: CircuitGeoJSON;
   trackWidth: number;
   elevations?: number[] | null;
   elevationScale: number;
+  resolvedTheme: "light" | "dark";
 }) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
 
-  const { curve, bounds, radius, peakY } = useMemo(() => {
+  const { curve, radius, peakY } = useMemo(() => {
     const b = computeBounds(coords);
-    // Pass elevations as-is (same length as `coords`, including the closing
-    // duplicate). buildTrackCurve strips the duplicate point internally — and
-    // because both arrays share the same indexing, the per-point elevation
-    // still lines up after the slice.
     const c = buildTrackCurve(coords, b, elevations ?? undefined, elevationScale);
     const r = sceneRadiusFromBounds(b);
-    // Compute the max |Y| across the curve so we can size the ground plane
-    // gap and the camera frustum.
     let peak = 0;
     if (elevations && elevations.length) {
       let min = Infinity,
@@ -75,44 +185,27 @@ function TrackMesh({
       const mean = sum / elevations.length;
       peak = Math.max(Math.abs(min - mean), Math.abs(max - mean)) * elevationScale;
     }
-    return { curve: c, bounds: b, radius: r, peakY: peak };
+    return { curve: c, radius: r, peakY: peak };
   }, [coords, elevations, elevationScale]);
 
-  const tubeGeometry = useMemo(() => {
-    // Scale the tubular segments to track length so long tracks (Spa, Jeddah)
-    // stay smooth without spending too many vertices on Monaco.
-    const length = feature.properties.length;
-    const tubularSegments = Math.max(200, Math.min(1500, Math.round(length)));
-    return new THREE.TubeGeometry(
-      curve,
-      tubularSegments,
-      trackWidth,
-      8, // radial segments — octagon cross-section is plenty
-      true,
-    );
-  }, [curve, trackWidth, feature.properties.length]);
+  const { surface, kerbs, centerline } = useMemo(
+    () => buildRibbon(curve, trackWidth, 0.5),
+    [curve, trackWidth],
+  );
 
-  // Centerline glow line — thin, brighter, slightly above the track surface.
-  // Built by sampling the curve + offsetting each sample a touch up the local
-  // "up" direction (curve normal projected to world Y) so the line reads as
-  // painted on top of the asphalt rather than z-fighting through it.
-  const centerlineGeometry = useMemo(() => {
-    const N = 800;
-    const points = curve.getPoints(N);
-    // Slight upward offset so the line sits on top of the tube surface
-    for (const p of points) p.y += trackWidth * 0.95;
-    const g = new THREE.BufferGeometry().setFromPoints(points);
-    return g;
-  }, [curve, trackWidth]);
+  // Cleanup geometries on unmount / re-build to avoid GPU memory leaks.
+  useEffect(() => {
+    return () => {
+      surface.dispose();
+      kerbs.dispose();
+      centerline.dispose();
+    };
+  }, [surface, kerbs, centerline]);
 
-  // Start/finish line marker — small bar at the first point of the curve,
-  // oriented perpendicular to the track direction.
+  // Start/finish line marker at the first point of the curve
   const startPoint = useMemo(() => curve.getPointAt(0), [curve]);
   const startTangent = useMemo(() => curve.getTangentAt(0), [curve]);
   const startQuaternion = useMemo(() => {
-    // Use the full 3D tangent (including Y) so the bar stays aligned with the
-    // track surface on hills. We rotate around the world Y axis only — good
-    // enough for a small flat marker.
     const dir = new THREE.Vector3(startTangent.x, 0, startTangent.z).normalize();
     const angle = Math.atan2(dir.x, dir.z);
     return new THREE.Quaternion().setFromAxisAngle(
@@ -121,12 +214,9 @@ function TrackMesh({
     );
   }, [startTangent]);
 
-  // Camera fit effect — when the curve or elevation changes, frame the whole
-  // track including vertical extent.
+  // Camera fit — frame the whole track including vertical extent.
   const { camera, controls } = useThree();
   useEffect(() => {
-    // Use a wider distance when there's significant elevation, so the camera
-    // doesn't end up inside a hill on hilly tracks like Spa.
     const verticalFudge = 1 + Math.min(1, peakY / Math.max(radius, 1));
     const distance = radius * 2.4 * verticalFudge;
     const yOffset = Math.max(radius * 0.3, peakY * 1.2);
@@ -138,60 +228,74 @@ function TrackMesh({
     }
   }, [camera, controls, radius, peakY]);
 
-  // Ground plane Y — sit a bit below the lowest curve point so the track
-  // appears to "rise above" the ground rather than clipping through it.
   const groundY = -peakY - trackWidth * 2 - 1;
+
+  // Theme-aware colors
+  const isDark = resolvedTheme === "dark";
+  const trackColor = isDark ? "#1a1a1f" : "#2a2a30";
+  const trackEmissive = isDark ? "#000000" : "#000000";
+  const groundColor = isDark ? "#0a0a0d" : "#d8d8dc";
+  const ringColor1 = isDark ? "#1f1f24" : "#c4c4ca";
+  const ringColor2 = isDark ? "#16161a" : "#cdcdd2";
 
   return (
     <group>
-      {/* Track surface — F1 red tube */}
-      <mesh geometry={tubeGeometry}>
+      {/* Track surface — flat ribbon, dark asphalt */}
+      <mesh geometry={surface}>
         <meshStandardMaterial
-          color="#e10600"
-          emissive="#e10600"
-          emissiveIntensity={0.35}
-          roughness={0.55}
+          color={trackColor}
+          emissive={trackEmissive}
+          emissiveIntensity={0}
+          roughness={0.92}
           metalness={0.05}
+          side={THREE.DoubleSide}
         />
       </mesh>
 
-      {/* Centerline — white stripe on top of the red tube */}
-      <line geometry={centerlineGeometry}>
+      {/* Kerbs — thin red/white striped line along each edge. For now a
+          single solid red line; can upgrade to actual stripe pattern later
+          (e.g. via custom shader or texture). */}
+      <lineSegments geometry={kerbs}>
+        <lineBasicMaterial color="#e10600" />
+      </lineSegments>
+
+      {/* Centerline — thin white stripe on top of the surface */}
+      <line geometry={centerline}>
         <lineBasicMaterial
           color="#ffffff"
           transparent
-          opacity={0.85}
+          opacity={0.45}
         />
       </line>
 
-      {/* Start/finish line — white bar (pops on red track) */}
+      {/* Start/finish line — checkered-ish white bar across the ribbon */}
       <mesh
-        position={[startPoint.x, startPoint.y + trackWidth * 0.6, startPoint.z]}
+        position={[startPoint.x, startPoint.y + 0.6, startPoint.z]}
         quaternion={startQuaternion}
       >
         <boxGeometry args={[trackWidth * 2.4, 0.4, trackWidth * 0.4]} />
         <meshStandardMaterial
           color="#ffffff"
           emissive="#ffffff"
-          emissiveIntensity={0.5}
+          emissiveIntensity={0.3}
           roughness={0.4}
         />
       </mesh>
 
-      {/* Ground plane — subtle dark disc, follows track height */}
+      {/* Ground plane */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, groundY, 0]}>
         <circleGeometry args={[radius * 4, 64]} />
-        <meshStandardMaterial color="#0a0a0d" roughness={1} metalness={0} />
+        <meshStandardMaterial color={groundColor} roughness={1} metalness={0} />
       </mesh>
 
-      {/* Concentric guide rings — purely cosmetic, gives a sense of scale */}
+      {/* Concentric guide rings */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, groundY + 0.01, 0]}>
         <ringGeometry args={[radius * 1.6, radius * 1.62, 96]} />
-        <meshBasicMaterial color="#1f1f24" />
+        <meshBasicMaterial color={ringColor1} />
       </mesh>
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, groundY + 0.02, 0]}>
         <ringGeometry args={[radius * 2.4, radius * 2.42, 96]} />
-        <meshBasicMaterial color="#16161a" />
+        <meshBasicMaterial color={ringColor2} />
       </mesh>
     </group>
   );
@@ -201,7 +305,7 @@ function SceneSpinner() {
   return (
     <mesh>
       <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial color="#ff1e1e" />
+      <meshStandardMaterial color="#e10600" />
     </mesh>
   );
 }
@@ -210,34 +314,39 @@ export default function TrackViewer({
   geojson,
   elevations,
   elevationScale = 3,
-  trackWidth = 8,
+  trackWidth = 7,
   autoRotate = true,
-  showStartLine = true,
+  resolvedTheme = "dark",
 }: TrackViewerProps) {
+  const bgGradient =
+    resolvedTheme === "dark"
+      ? "linear-gradient(180deg, #0e0e12 0%, #050507 100%)"
+      : "linear-gradient(180deg, #e8e8ec 0%, #c8c8cc 100%)";
+
   return (
     <Canvas
-      shadows={false} // shadows off — they were the main cause of flicker
-      dpr={[1, 1.5]} // clamp pixel ratio; high-DPI jitter contributes to shimmer
+      shadows={false}
+      dpr={[1, 1.5]}
       camera={{ fov: 50, near: 0.1, far: 200000, position: [400, 300, 400] }}
       gl={{
         antialias: true,
         alpha: false,
         powerPreference: "high-performance",
-        // Lock tone mapping & color space explicitly — defaults sometimes
-        // shift when the canvas is resized, which reads as flicker.
       }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
         gl.toneMappingExposure = 1.05;
         gl.outputColorSpace = THREE.SRGBColorSpace;
       }}
-      style={{ background: "linear-gradient(180deg, #0e0e12 0%, #050507 100%)" }}
+      style={{ background: bgGradient }}
     >
-      {/* Lighting — three static lights, no environment map (env maps from
-          drei's <Environment> can re-bake on resize and cause shimmer). */}
-      <ambientLight intensity={0.45} />
-      <hemisphereLight args={["#9bb4ff", "#1a1a1f", 0.5]} />
-      <directionalLight position={[500, 800, 400]} intensity={1.6} />
+      <ambientLight intensity={resolvedTheme === "dark" ? 0.5 : 0.7} />
+      <hemisphereLight
+        args={resolvedTheme === "dark"
+          ? ["#9bb4ff", "#1a1a1f", 0.5]
+          : ["#b4c4ff", "#3a3a3f", 0.6]}
+      />
+      <directionalLight position={[500, 800, 400]} intensity={resolvedTheme === "dark" ? 1.6 : 1.2} />
       <directionalLight position={[-400, 300, -500]} intensity={0.4} color="#6b8cff" />
 
       <Suspense fallback={<SceneSpinner />}>
@@ -246,6 +355,7 @@ export default function TrackViewer({
           trackWidth={trackWidth}
           elevations={elevations}
           elevationScale={elevationScale}
+          resolvedTheme={resolvedTheme}
         />
       </Suspense>
 

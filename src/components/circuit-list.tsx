@@ -2,13 +2,13 @@
 
 import { useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import {
   countryFlag,
   countryFromId,
   type CircuitLocation,
 } from "@/lib/f1-circuits";
+import { useAppPref } from "@/components/app-pref-provider";
 
 export interface CircuitListProps {
   circuits: CircuitLocation[];
@@ -22,6 +22,7 @@ export default function CircuitList({
   onSelect,
 }: CircuitListProps) {
   const [query, setQuery] = useState("");
+  const { t } = useAppPref();
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -37,22 +38,24 @@ export default function CircuitList({
 
   return (
     <div className="flex h-full flex-col gap-3 p-3">
-      <div className="space-y-1">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-          Circuits
+      <div className="shrink-0 space-y-1">
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          {t.circuits}
         </h2>
-        <p className="text-[11px] text-zinc-500">
-          {circuits.length} трасс в датасете · bacinger/f1-circuits
+        <p className="text-[11px] text-muted-foreground/70">
+          {t.circuitsCount(circuits.length)}
         </p>
       </div>
       <Input
-        placeholder="Поиск: Monaco, Monza, mc-1929…"
+        placeholder={t.searchPlaceholder}
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        className="bg-zinc-900/60 border-zinc-800 text-zinc-200 placeholder:text-zinc-500"
+        className="shrink-0 bg-muted/50 border-border"
       />
-      <ScrollArea className="flex-1 -mx-1 pr-2">
-        <ul className="flex flex-col gap-1 px-1">
+      {/* Native overflow container — more reliable than shadcn ScrollArea in
+          a flex sidebar, and we style it via the .f1tv-scroll class. */}
+      <div className="f1tv-scroll min-h-0 flex-1 overflow-y-auto pr-1">
+        <ul className="flex flex-col gap-1">
           {filtered.map((c) => {
             const iso = countryFromId(c.id);
             const flag = countryFlag(iso);
@@ -65,8 +68,8 @@ export default function CircuitList({
                     "group w-full text-left px-3 py-2 rounded-md border transition-colors",
                     "flex items-center gap-3",
                     active
-                      ? "bg-red-600/15 border-red-600/60 text-white"
-                      : "bg-zinc-900/40 border-transparent text-zinc-300 hover:bg-zinc-800/60 hover:border-zinc-700",
+                      ? "bg-primary/15 border-primary/60 text-foreground"
+                      : "bg-card/40 border-transparent text-foreground/80 hover:bg-accent/60 hover:border-border",
                   )}
                 >
                   <span className="text-lg leading-none">{flag}</span>
@@ -74,24 +77,24 @@ export default function CircuitList({
                     <span className="block text-sm font-medium truncate">
                       {c.name}
                     </span>
-                    <span className="block text-[11px] text-zinc-500 truncate">
+                    <span className="block text-[11px] text-muted-foreground truncate">
                       {c.location} · {c.id}
                     </span>
                   </span>
                   {active && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-red-500 shadow-[0_0_8px_2px_rgba(255,30,30,0.6)]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_8px_2px_rgba(225,6,0,0.5)]" />
                   )}
                 </button>
               </li>
             );
           })}
           {filtered.length === 0 && (
-            <li className="px-3 py-6 text-center text-xs text-zinc-500">
-              Ничего не найдено
+            <li className="px-3 py-6 text-center text-xs text-muted-foreground">
+              {t.noResults}
             </li>
           )}
         </ul>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
