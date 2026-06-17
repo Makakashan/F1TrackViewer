@@ -21,7 +21,9 @@ export const metadata: Metadata = {
   keywords: ["F1", "Formula 1", "Three.js", "3D", "circuits", "tracks"],
   authors: [{ name: "Makakashan" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    shortcut: "/favicon.svg",
+    apple: "/favicon.svg",
   },
 };
 

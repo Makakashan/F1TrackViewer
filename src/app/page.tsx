@@ -2,11 +2,25 @@
 
 import { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { ChevronRight, RefreshCw, RotateCw, Flag, Mountain } from "lucide-react";
+import {
+  ChevronRight,
+  RefreshCw,
+  RotateCw,
+  Flag,
+  Mountain,
+  Menu,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import CircuitList from "@/components/circuit-list";
 import TrackInfo from "@/components/track-info";
 import SettingsMenu from "@/components/settings-menu";
@@ -24,9 +38,6 @@ import { fetchElevations } from "@/lib/geo-utils";
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
   ssr: false,
   loading: () => {
-    // Can't use hooks here; the parent passes the translated string via a
-    // prop on <TrackViewerLoaderFallback> if we wanted to. For now, English
-    // fallback is fine because the actual Canvas replaces it in <100ms.
     return (
       <div className="flex h-full w-full items-center justify-center bg-background text-muted-foreground">
         <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -50,6 +61,8 @@ export default function Home() {
   const [loadingElevations, setLoadingElevations] = useState(false);
   const [elevationEnabled, setElevationEnabled] = useState(true);
   const [elevationScale, setElevationScale] = useState(3);
+  const [mobileListOpen, setMobileListOpen] = useState(false);
+  const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,11 +88,8 @@ export default function Home() {
   useEffect(() => {
     if (!selectedId) return;
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingTrack(true);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingElevations(true);
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null);
 
     fetchCircuitGeoJson(selectedId)
@@ -107,7 +117,10 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
 
-  const handleSelect = useCallback((id: string) => setSelectedId(id), []);
+  const handleSelect = useCallback((id: string) => {
+    setSelectedId(id);
+    setMobileListOpen(false);
+  }, []);
 
   const handleReload = useCallback(() => {
     if (selectedId) setSelectedId(null);
@@ -121,8 +134,42 @@ export default function Home() {
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
       {/* === Top bar === */}
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-4 backdrop-blur">
-        <div className="flex items-center gap-3">
+      <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-3 backdrop-blur md:px-4">
+        <div className="flex items-center gap-2 md:gap-3">
+          {/* Mobile: open circuit list drawer */}
+          <Sheet open={mobileListOpen} onOpenChange={setMobileListOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="md:hidden px-2 text-muted-foreground hover:text-foreground"
+                aria-label="Open circuit list"
+              >
+                <Menu className="h-5 w-5" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[300px] p-0 bg-sidebar">
+              <SheetHeader className="px-4 pt-4 pb-2">
+                <SheetTitle className="text-sm uppercase tracking-wider text-muted-foreground">
+                  {t.circuits}
+                </SheetTitle>
+              </SheetHeader>
+              <div className="h-[calc(100%-3rem)]">
+                {loadingIndex ? (
+                  <div className="space-y-2 p-4 text-xs text-muted-foreground">
+                    {t.loadingCircuits}
+                  </div>
+                ) : (
+                  <CircuitList
+                    circuits={circuits}
+                    selectedId={selectedId}
+                    onSelect={handleSelect}
+                  />
+                )}
+              </div>
+            </SheetContent>
+          </Sheet>
+
           <div className="flex items-center gap-2">
             <div className="relative flex h-8 w-8 items-center justify-center rounded-md bg-gradient-to-br from-red-600 to-orange-600 shadow-[0_0_20px_rgba(225,6,0,0.4)]">
               <Flag className="h-4 w-4 text-white" />
@@ -131,13 +178,15 @@ export default function Home() {
               <div className="text-sm font-bold tracking-tight">
                 {t.appName}
               </div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              <div className="hidden text-[10px] uppercase tracking-wider text-muted-foreground sm:block">
                 {t.appTagline}
               </div>
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+
+        <div className="flex items-center gap-2 md:gap-3">
+          {/* Desktop-only controls — too cramped on mobile */}
           <div className="hidden items-center gap-3 text-xs text-muted-foreground md:flex">
             <div className="flex items-center gap-2">
               <Switch
@@ -200,6 +249,27 @@ export default function Home() {
               </span>
             </div>
           </div>
+
+          {/* Mobile: compact toggles only */}
+          <div className="flex items-center gap-2 md:hidden">
+            <Switch
+              id="autorotate-m"
+              checked={autoRotate}
+              onCheckedChange={setAutoRotate}
+            />
+            <Label htmlFor="autorotate-m" className="cursor-pointer text-xs">
+              <RotateCw className="inline h-3 w-3" />
+            </Label>
+            <Switch
+              id="elevation-m"
+              checked={elevationEnabled}
+              onCheckedChange={setElevationEnabled}
+            />
+            <Label htmlFor="elevation-m" className="cursor-pointer text-xs">
+              <Mountain className="inline h-3 w-3" />
+            </Label>
+          </div>
+
           <Separator orientation="vertical" className="h-5" />
           <Button
             variant="ghost"
@@ -209,17 +279,17 @@ export default function Home() {
             className="text-muted-foreground hover:text-foreground"
           >
             <RefreshCw
-              className={`mr-1.5 h-3.5 w-3.5 ${loadingTrack ? "animate-spin" : ""}`}
+              className={`h-3.5 w-3.5 ${loadingTrack ? "animate-spin" : ""}`}
             />
-            {t.btnReload}
+            <span className="hidden ml-1.5 md:inline">{t.btnReload}</span>
           </Button>
           <SettingsMenu />
         </div>
       </header>
 
-      {/* === Main 3-column layout === */}
+      {/* === Main 3-column layout (desktop) / single column (mobile) === */}
       <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[280px_minmax(0,1fr)_320px]">
-        {/* Left: circuit list */}
+        {/* Left: circuit list — desktop only */}
         <aside className="hidden min-h-0 border-r border-border bg-sidebar/50 md:block">
           {loadingIndex ? (
             <div className="space-y-2 p-4">
@@ -268,13 +338,14 @@ export default function Home() {
             </div>
           )}
 
+          {/* Track name overlay (bottom-left) */}
           {properties && (
-            <div className="pointer-events-none absolute bottom-4 left-4 z-10">
+            <div className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-[60vw]">
               <div className="flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] text-primary/80">
                 <ChevronRight className="h-3 w-3" />
                 {t.nowViewing}
               </div>
-              <div className="mt-0.5 text-2xl font-bold text-foreground drop-shadow-lg">
+              <div className="mt-0.5 text-xl font-bold text-foreground drop-shadow-lg md:text-2xl">
                 {properties.Name}
               </div>
               <div className="text-xs text-muted-foreground">
@@ -290,7 +361,37 @@ export default function Home() {
             </div>
           )}
 
-          <div className="pointer-events-none absolute bottom-4 right-4 z-10 rounded-md border border-border/80 bg-background/70 px-3 py-2 text-[10px] text-muted-foreground backdrop-blur">
+          {/* Mobile: info button — opens track info as a sheet */}
+          {properties && (
+            <Sheet open={mobileInfoOpen} onOpenChange={setMobileInfoOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="absolute bottom-4 right-4 z-10 md:hidden"
+                >
+                  {t.circuit}
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-[320px] p-0 bg-sidebar overflow-y-auto">
+                <SheetHeader className="px-4 pt-4 pb-2">
+                  <SheetTitle className="text-sm uppercase tracking-wider text-muted-foreground">
+                    {t.circuit}
+                  </SheetTitle>
+                </SheetHeader>
+                <TrackInfo
+                  properties={properties}
+                  loading={loadingTrack}
+                  pointCount={pointCount}
+                  elevations={elevations}
+                  elevationEnabled={elevationEnabled}
+                />
+              </SheetContent>
+            </Sheet>
+          )}
+
+          {/* Controls hint — desktop only (hidden on mobile, LMB/RMB don't apply) */}
+          <div className="pointer-events-none absolute bottom-4 right-4 z-10 hidden rounded-md border border-border/80 bg-background/70 px-3 py-2 text-[10px] text-muted-foreground backdrop-blur md:block">
             <div>
               <span className="text-foreground">{t.controlsLMB.split(" — ")[0]}</span>
               {" — "}
@@ -309,7 +410,7 @@ export default function Home() {
           </div>
         </main>
 
-        {/* Right: track info */}
+        {/* Right: track info — desktop only */}
         <aside className="hidden min-h-0 border-l border-border bg-sidebar/50 md:block">
           <TrackInfo
             properties={properties}
