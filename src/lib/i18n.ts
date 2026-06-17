@@ -75,7 +75,7 @@ const en = {
   geoSource: "Source: bacinger/f1-circuits (MIT)",
   mvpBadge: "MVP 1.5 · Static viewer + elevation",
   mvpDesc:
-    "Track built from GeoJSON LineString via CatmullRomCurve3 + ribbon mesh. Elevations come from Open-Meteo and are applied to the curve's Y with ×N amplification.",
+    "Track built from GeoJSON LineString via CatmullRomCurve3 + ribbon mesh. Elevations are loaded from static profiles and applied to the curve's Y in real meter scale.",
   // Viewer overlay
   nowViewing: "Now viewing",
   loadingElevations: "Loading elevation profile (Open-Meteo)…",
@@ -144,7 +144,7 @@ const ru: Dict = {
   geoSource: "Источник: bacinger/f1-circuits (MIT)",
   mvpBadge: "MVP 1.5 · Просмотрщик + высоты",
   mvpDesc:
-    "Трасса построена из GeoJSON LineString через CatmullRomCurve3 + ribbon mesh. Высоты подгружаются из Open-Meteo и применяются к Y-координатам curve с усилением ×N.",
+    "Трасса построена из GeoJSON LineString через CatmullRomCurve3 + ribbon mesh. Высоты загружаются из статичных профилей и применяются к Y-координатам в реальном масштабе метров.",
   nowViewing: "Сейчас просматриваете",
   loadingElevations: "Загрузка профиля высот (Open-Meteo)…",
   controlsLMB: "ЛКМ — вращать",

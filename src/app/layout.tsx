@@ -3,6 +3,9 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { AppPrefProvider } from "@/components/app-pref-provider";
 
+const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const faviconUrl = `${basePath}/favicon.svg`;
+
 export const metadata: Metadata = {
   title: "F1 Track Studio — 3D Circuit Viewer",
   description:
@@ -10,9 +13,9 @@ export const metadata: Metadata = {
   keywords: ["F1", "Formula 1", "Three.js", "3D", "circuits", "tracks"],
   authors: [{ name: "Makakashan" }],
   icons: {
-    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
-    shortcut: "/favicon.svg",
-    apple: "/favicon.svg",
+    icon: [{ url: faviconUrl, type: "image/svg+xml" }],
+    shortcut: faviconUrl,
+    apple: faviconUrl,
   },
 };
 

@@ -62,7 +62,6 @@ export default function Home() {
   const [elevations, setElevations] = useState<number[] | null>(null);
   const [loadingElevations, setLoadingElevations] = useState(false);
   const [elevationEnabled, setElevationEnabled] = useState(true);
-  const [elevationScale, setElevationScale] = useState(3);
   const [mobileListOpen, setMobileListOpen] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
 
@@ -238,24 +237,6 @@ export default function Home() {
                 {t.elevations}
               </Label>
             </div>
-            <div className="flex items-center gap-2">
-              <Label htmlFor="elevscale" className="text-muted-foreground">
-                ×
-              </Label>
-              <input
-                id="elevscale"
-                type="range"
-                min={1}
-                max={8}
-                step={1}
-                value={elevationScale}
-                onChange={(e) => setElevationScale(Number(e.target.value))}
-                className="h-1 w-20 cursor-pointer accent-[#e10600]"
-              />
-              <span className="w-6 tabular-nums text-foreground">
-                {elevationScale}
-              </span>
-            </div>
             <Separator orientation="vertical" className="h-5" />
             <div className="flex items-center gap-2">
               <Label htmlFor="width" className="text-muted-foreground">
@@ -350,10 +331,9 @@ export default function Home() {
           )}
           {geojson ? (
             <TrackViewer
-              key={`${selectedId}-${trackWidth}-${elevationEnabled}-${elevationScale}-${elevations?.length ?? 0}-${resolvedTheme}`}
+              key={`${selectedId}-${trackWidth}-${elevationEnabled}-${elevations?.length ?? 0}-${resolvedTheme}`}
               geojson={geojson}
               elevations={elevationEnabled ? elevations : null}
-              elevationScale={elevationScale}
               trackWidth={trackWidth}
               autoRotate={autoRotate}
               resolvedTheme={resolvedTheme}

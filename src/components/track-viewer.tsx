@@ -15,7 +15,6 @@ import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 export interface TrackViewerProps {
   geojson: CircuitGeoJSON;
   elevations?: number[] | null;
-  elevationScale?: number;
   /** Half-width of the track ribbon in meters. Real F1 tracks are ~7-8m
    * wide each side, so default 7 = ~14m total. */
   trackWidth?: number;
@@ -87,7 +86,10 @@ function buildExtrudedTrack(
     indices.push(i1, i3, i2, i2, i3, i4);
   }
 
-  // First pass: 4 vertices per sample (topL, topR, botL, botR).
+  // First pass: 6 vertices per sample:
+  // topL/topR for the road surface, wallL/wallR slightly below the road to
+  // avoid wall faces bleeding onto the drivable surface in tight bends, then
+  // botL/botR down on the ground plane.
   // Normals are placeholders (zero) — patched per-quad in the second pass.
   for (let i = 0; i <= N; i++) {
     const p = pts[i];
@@ -103,14 +105,17 @@ function buildExtrudedTrack(
     const lz = p.z + side.z * halfWidth;
     const rx = p.x - side.x * halfWidth;
     const rz = p.z - side.z * halfWidth;
+    const wallTopY = topY - 0.08;
 
     pushV(lx, topY, lz, 0, 0, 0);
     pushV(rx, topY, rz, 0, 0, 0);
+    pushV(lx, wallTopY, lz, 0, 0, 0);
+    pushV(rx, wallTopY, rz, 0, 0, 0);
     pushV(lx, groundY, lz, 0, 0, 0);
     pushV(rx, groundY, rz, 0, 0, 0);
   }
 
-  const stride = 4;
+  const stride = 6;
 
   function patchQuadNormal(
     i1: number,
@@ -137,24 +142,28 @@ function buildExtrudedTrack(
     const base1 = (i + 1) * stride;
     const tL0 = base0 + 0;
     const tR0 = base0 + 1;
-    const bL0 = base0 + 2;
-    const bR0 = base0 + 3;
+    const wL0 = base0 + 2;
+    const wR0 = base0 + 3;
+    const bL0 = base0 + 4;
+    const bR0 = base0 + 5;
     const tL1 = base1 + 0;
     const tR1 = base1 + 1;
-    const bL1 = base1 + 2;
-    const bR1 = base1 + 3;
+    const wL1 = base1 + 2;
+    const wR1 = base1 + 3;
+    const bL1 = base1 + 4;
+    const bR1 = base1 + 5;
 
     // Top surface quad
     pushQuad(tL0, tR0, tL1, tR1);
     patchQuadNormal(tL0, tR0, tL1, tR1);
 
     // Left wall
-    pushQuad(tL0, bL0, tL1, bL1);
-    patchQuadNormal(tL0, bL0, tL1, bL1);
+    pushQuad(wL0, bL0, wL1, bL1);
+    patchQuadNormal(wL0, bL0, wL1, bL1);
 
     // Right wall (winding reversed so the normal faces outward)
-    pushQuad(tR1, bR1, tR0, bR0);
-    patchQuadNormal(tR1, bR1, tR0, bR0);
+    pushQuad(wR1, bR1, wR0, bR0);
+    patchQuadNormal(wR1, bR1, wR0, bR0);
   }
 
   const geo = new THREE.BufferGeometry();
@@ -230,27 +239,29 @@ function TrackMesh({
   geojson,
   trackWidth,
   elevations,
-  elevationScale,
   resolvedTheme,
 }: {
   geojson: CircuitGeoJSON;
   trackWidth: number;
   elevations?: number[] | null;
-  elevationScale: number;
   resolvedTheme: "light" | "dark";
 }) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
 
-  const { curve, radius, peakY } = useMemo(() => {
+  const radius = useMemo(() => {
+    const b = computeBounds(coords);
+    return sceneRadiusFromBounds(b);
+  }, [coords]);
+
+  const { curve, peakY } = useMemo(() => {
     const b = computeBounds(coords);
     const c = buildTrackCurve(
       coords,
       b,
       elevations ?? undefined,
-      elevationScale,
+      1,
     );
-    const r = sceneRadiusFromBounds(b);
     let peak = 0;
     if (elevations && elevations.length) {
       let min = Infinity,
@@ -262,11 +273,10 @@ function TrackMesh({
         sum += e;
       }
       const mean = sum / elevations.length;
-      peak =
-        Math.max(Math.abs(min - mean), Math.abs(max - mean)) * elevationScale;
+      peak = Math.max(Math.abs(min - mean), Math.abs(max - mean));
     }
-    return { curve: c, radius: r, peakY: peak };
-  }, [coords, elevations, elevationScale]);
+    return { curve: c, peakY: peak };
+  }, [coords, elevations]);
 
   const groundY = useMemo(
     () => -peakY - trackWidth * 2 - 1,
@@ -388,7 +398,6 @@ function SceneSpinner() {
 export default function TrackViewer({
   geojson,
   elevations,
-  elevationScale = 3,
   trackWidth = 7,
   autoRotate = true,
   resolvedTheme = "dark",
@@ -444,7 +453,6 @@ export default function TrackViewer({
             geojson={geojson}
             trackWidth={trackWidth}
             elevations={elevations}
-            elevationScale={elevationScale}
             resolvedTheme={resolvedTheme}
           />
         </Suspense>
