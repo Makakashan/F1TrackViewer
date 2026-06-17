@@ -73,10 +73,25 @@ export function lonLatToXZ(
  * We strip the duplicate tail so the curve can be marked `closed=true` instead
  * of passing the same point twice — this avoids a zero-length segment that
  * would otherwise distort the Catmull-Rom tangent.
+ *
+ * @param coords            raw [lon, lat] from GeoJSON
+ * @param bounds            bbox computed by computeBounds()
+ * @param elevations        optional per-point elevation in meters (same length
+ *                          as `coords` minus the closing duplicate). If
+ *                          omitted, the curve is built flat (y = 0).
+ * @param elevationScale    vertical exaggeration factor — real elevation
+ *                          differences are usually small relative to track
+ *                          length, so 2–4× makes hills readable. Default 3.
+ * @param elevationOffset   if provided, the curve is shifted vertically so
+ *                          that its mean elevation sits at this Y value.
+ *                          Defaults to 0 (mean elevation → y = 0).
  */
 export function buildTrackCurve(
   coords: [number, number][],
   bounds: GeoBounds,
+  elevations?: number[],
+  elevationScale: number = 3,
+  elevationOffset: number = 0,
 ): THREE.CatmullRomCurve3 {
   let pts = coords;
   if (pts.length > 1) {
@@ -86,10 +101,115 @@ export function buildTrackCurve(
       pts = pts.slice(0, -1);
     }
   }
-  const points = pts.map(([lon, lat]) =>
-    lonLatToXZ(lon, lat, bounds.centerLon, bounds.centerLat),
-  );
+
+  // Compute mean elevation so we can center the curve vertically — otherwise
+  // tracks at 2000m altitude (Mexico) would sit absurdly high above the ground.
+  let meanElevation = 0;
+  if (elevations && elevations.length > 0) {
+    let sum = 0;
+    for (const e of elevations) sum += e;
+    meanElevation = sum / elevations.length;
+  }
+
+  const points = pts.map(([lon, lat], i) => {
+    const v = lonLatToXZ(lon, lat, bounds.centerLon, bounds.centerLat);
+    if (elevations && elevations[i] != null) {
+      v.y =
+        (elevations[i] - meanElevation) * elevationScale + elevationOffset;
+    }
+    return v;
+  });
   return new THREE.CatmullRomCurve3(points, true, "catmullrom", 0.5);
+}
+
+/**
+ * Fetch per-coordinate elevation (in meters above sea level) from the free
+ * Open-Meteo Elevation API.
+ *
+ * - No auth, no rate limit for our use case (~100–500 points per circuit).
+ * - Endpoint accepts up to 100 coordinates per request via comma-separated
+ *   `latitude` / `longitude` query params.
+ * - We chunk into 100-point batches and run them in parallel.
+ *
+ * Docs: https://open-meteo.com/en/docs#elevation-api
+ *
+ * @param coords  [lon, lat] array (same array you'd pass to buildTrackCurve).
+ *                The closing duplicate point (if any) is sent as-is — the
+ *                returned array has the SAME length as `coords`, ready to be
+ *                indexed 1:1 inside buildTrackCurve.
+ * @returns       array of elevations in meters; null if the API failed.
+ */
+export async function fetchElevations(
+  coords: [number, number][],
+): Promise<number[] | null> {
+  if (!coords.length) return [];
+  const CHUNK_SIZE = 100;
+  const chunks: [number, number][][] = [];
+  for (let i = 0; i < coords.length; i += CHUNK_SIZE) {
+    chunks.push(coords.slice(i, i + CHUNK_SIZE));
+  }
+
+  try {
+    const results = await Promise.all(
+      chunks.map(async (chunk) => {
+        const lats = chunk.map((c) => c[1]).join(",");
+        const lons = chunk.map((c) => c[0]).join(",");
+        const url = `https://api.open-meteo.com/v1/elevation?latitude=${lats}&longitude=${lons}`;
+        const res = await fetch(url, { next: { revalidate: 86400 } });
+        if (!res.ok) throw new Error(`elevation API ${res.status}`);
+        const data = (await res.json()) as { elevation: number[] };
+        return data.elevation;
+      }),
+    );
+    return results.flat();
+  } catch (e) {
+    console.warn("Failed to fetch elevations:", e);
+    return null;
+  }
+}
+
+/**
+ * Compute simple stats over an elevation array — min, max, total climb
+ * (sum of all uphill deltas between consecutive samples). Used by the info
+ * panel.
+ */
+export function elevationStats(elevations: number[]): {
+  min: number;
+  max: number;
+  range: number;
+  climb: number;
+  descent: number;
+  mean: number;
+} {
+  if (!elevations.length) {
+    return { min: 0, max: 0, range: 0, climb: 0, descent: 0, mean: 0 };
+  }
+  let min = Infinity,
+    max = -Infinity,
+    sum = 0;
+  for (const e of elevations) {
+    if (e < min) min = e;
+    if (e > max) max = e;
+    sum += e;
+  }
+  let climb = 0,
+    descent = 0;
+  // Treat the array as a closed loop (last sample → first sample also counts)
+  for (let i = 0; i < elevations.length; i++) {
+    const a = elevations[i];
+    const b = elevations[(i + 1) % elevations.length];
+    const d = b - a;
+    if (d > 0) climb += d;
+    else descent -= d;
+  }
+  return {
+    min,
+    max,
+    range: max - min,
+    climb,
+    descent,
+    mean: sum / elevations.length,
+  };
 }
 
 /**

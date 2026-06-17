@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import dynamic from "next/dynamic";
-import { ChevronRight, RefreshCw, RotateCw, Flag } from "lucide-react";
+import { ChevronRight, RefreshCw, RotateCw, Flag, Mountain } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -16,6 +16,7 @@ import {
   type CircuitGeoJSON,
   type CircuitProperties,
 } from "@/lib/f1-circuits";
+import { fetchElevations } from "@/lib/geo-utils";
 
 // Three.js scene must be client-only — no SSR for WebGL.
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
@@ -37,6 +38,10 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [autoRotate, setAutoRotate] = useState(true);
   const [trackWidth, setTrackWidth] = useState(8);
+  const [elevations, setElevations] = useState<number[] | null>(null);
+  const [loadingElevations, setLoadingElevations] = useState(false);
+  const [elevationEnabled, setElevationEnabled] = useState(true);
+  const [elevationScale, setElevationScale] = useState(3);
 
   // Load circuit index once on mount.
   useEffect(() => {
@@ -62,23 +67,44 @@ export default function Home() {
     };
   }, []);
 
-  // Fetch the selected circuit's GeoJSON whenever the selection changes.
+  // Fetch the selected circuit's GeoJSON + elevation profile in parallel.
+  // Both are independent requests, so we kick them off together and let them
+  // settle on their own — the 3D viewer renders as soon as the GeoJSON lands,
+  // then re-builds the curve when elevations arrive.
   useEffect(() => {
     if (!selectedId) return;
     let cancelled = false;
-    // Mark a new fetch in flight. The lint rule dislikes this, but it's the
-    // canonical "set loading flag before async fetch" pattern.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingTrack(true);
     // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoadingElevations(true);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setError(null);
+
     fetchCircuitGeoJson(selectedId)
-      .then((g) => !cancelled && setGeojson(g))
+      .then((g) => {
+        if (cancelled) return;
+        setGeojson(g);
+        // After GeoJSON is in hand, fetch elevations for its coordinates.
+        // We do this in a chained .then() (rather than Promise.all) so the
+        // 3D viewer can render the flat track immediately while elevation
+        // data trickles in.
+        const coords = g.features[0]?.geometry.coordinates ?? [];
+        return fetchElevations(coords);
+      })
+      .then((e) => {
+        if (cancelled) return;
+        setElevations(e);
+      })
       .catch((e) => {
         if (!cancelled)
           setError(`Не удалось загрузить трассу ${selectedId}: ${String(e)}`);
       })
-      .finally(() => !cancelled && setLoadingTrack(false));
+      .finally(() => {
+        if (cancelled) return;
+        setLoadingTrack(false);
+        setLoadingElevations(false);
+      });
     return () => {
       cancelled = true;
     };
@@ -129,8 +155,38 @@ export default function Home() {
             </div>
             <Separator orientation="vertical" className="h-5" />
             <div className="flex items-center gap-2">
+              <Switch
+                id="elevation"
+                checked={elevationEnabled}
+                onCheckedChange={setElevationEnabled}
+              />
+              <Label htmlFor="elevation" className="cursor-pointer">
+                <Mountain className="mr-1 inline h-3 w-3" />
+                Высоты
+              </Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="elevscale" className="text-zinc-500">
+                ×
+              </Label>
+              <input
+                id="elevscale"
+                type="range"
+                min={1}
+                max={8}
+                step={1}
+                value={elevationScale}
+                onChange={(e) => setElevationScale(Number(e.target.value))}
+                className="h-1 w-20 cursor-pointer accent-red-600"
+              />
+              <span className="w-6 tabular-nums text-zinc-300">
+                {elevationScale}
+              </span>
+            </div>
+            <Separator orientation="vertical" className="h-5" />
+            <div className="flex items-center gap-2">
               <Label htmlFor="width" className="text-zinc-400">
-                Ширина полотна
+                Ширина
               </Label>
               <input
                 id="width"
@@ -140,9 +196,9 @@ export default function Home() {
                 step={1}
                 value={trackWidth}
                 onChange={(e) => setTrackWidth(Number(e.target.value))}
-                className="h-1 w-24 cursor-pointer accent-red-600"
+                className="h-1 w-20 cursor-pointer accent-red-600"
               />
-              <span className="w-12 tabular-nums text-zinc-300">
+              <span className="w-10 tabular-nums text-zinc-300">
                 {trackWidth}м
               </span>
             </div>
@@ -196,8 +252,10 @@ export default function Home() {
           )}
           {geojson ? (
             <TrackViewer
-              key={`${selectedId}-${trackWidth}`}
+              key={`${selectedId}-${trackWidth}-${elevationEnabled}-${elevationScale}-${elevations?.length ?? 0}`}
               geojson={geojson}
+              elevations={elevationEnabled ? elevations : null}
+              elevationScale={elevationScale}
               trackWidth={trackWidth}
               autoRotate={autoRotate}
             />
@@ -222,6 +280,12 @@ export default function Home() {
                 {properties.Location} · {(properties.length / 1000).toFixed(3)}{" "}
                 км · opened {properties.opened}
               </div>
+              {loadingElevations && (
+                <div className="mt-1 flex items-center gap-1 text-[10px] text-amber-400/80">
+                  <RefreshCw className="h-2.5 w-2.5 animate-spin" />
+                  Загрузка профиля высот (Open-Meteo)…
+                </div>
+              )}
             </div>
           )}
 
@@ -245,6 +309,8 @@ export default function Home() {
             properties={properties}
             loading={loadingTrack}
             pointCount={pointCount}
+            elevations={elevations}
+            elevationEnabled={elevationEnabled}
           />
         </aside>
       </div>
