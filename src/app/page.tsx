@@ -93,6 +93,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoadingTrack(true);
     setLoadingElevations(true);
+    setElevations(null);
     setError(null);
 
     async function loadElevationsWithRetry(

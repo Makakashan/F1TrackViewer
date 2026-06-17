@@ -358,8 +358,8 @@ async function fetchStaticElevationProfile(
 ): Promise<number[] | null> {
   try {
     const res = await fetch(
-      `${PUBLIC_BASE_PATH}/elevations/${encodeURIComponent(circuitId)}.json`,
-      { cache: "force-cache" },
+      `${PUBLIC_BASE_PATH}/elevations/${encodeURIComponent(circuitId)}.json?v=${ELEVATION_CACHE_VERSION}`,
+      { cache: "no-cache" },
     );
     if (!res.ok) return null;
 
