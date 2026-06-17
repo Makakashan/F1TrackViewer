@@ -58,56 +58,59 @@ function smoothElevations(input: number[], passes: number = 3): number[] {
  *      its neighbors.
  *   3. Negative elevations on tracks that are above sea level.
  *
- * Strategy (rewritten — the previous version used a global median for
- * replacement, which created "pits" on tracks like Monaco where the
- * global median is dragged down by coastal noise points):
- *   a) Identify outlier samples: those that deviate from their 7-tap
- *      LOCAL median by more than max(threshold, 3 * localMAD).
- *   b) Replace each outlier with its 7-tap LOCAL median (computed from
- *      the non-outlier neighbors), NOT the global median. This preserves
- *      the actual local elevation profile.
- *   c) Multiple passes (3) to catch chains of consecutive outliers that
- *      the first pass couldn't fix because all 7 neighbors were bad.
+ * Strategy:
+ *   a) Compute the per-track median elevation M and the median absolute
+ *      deviation (MAD). These are robust to outliers.
+ *   b) Replace any sample <5 m on tracks whose median is >10 m (likely
+ *      coastal API glitch) with M.
+ *   c) Replace any sample that deviates from its 5-tap local median by
+ *      more than max(threshold, 4 * MAD) meters with that local median.
  *
- * The array is treated as a closed loop.
- *
- * Empirically verified on Monaco (160 samples, raw min=0, max=59,
- * 19 near-zero coastal glitches): after this pipeline, the residual
- * jumps between consecutive samples drop from max 31m to <2m.
+ * Two passes catch most artifacts. The array is treated as a closed loop.
  */
 function despikeElevations(
   input: number[],
   threshold: number = 15,
-  passes: number = 3,
+  passes: number = 2,
 ): number[] {
-  if (input.length < 7) return input.slice();
+  if (input.length < 5) return input.slice();
   let cur = input.slice();
   const n = cur.length;
 
+  // Robust track-level stats — median and MAD
+  const sortedAll = cur.slice().sort((a, b) => a - b);
+  const globalMedian = sortedAll[Math.floor(n / 2)];
+  const absDevs = cur
+    .map((v) => Math.abs(v - globalMedian))
+    .sort((a, b) => a - b);
+  const mad = absDevs[Math.floor(n / 2)];
+  const dynamicThreshold = Math.max(threshold, 4 * mad);
+
+  // First: replace near-zero values on tracks that are clearly above sea
+  // level (median > 10 m). These are coastal API glitches.
+  if (globalMedian > 10) {
+    cur = cur.map((v) => (v < 5 ? globalMedian : v));
+  }
+
+  // Then: median-filter spikes
   for (let p = 0; p < passes; p++) {
     const next = cur.slice();
-    let replaced = 0;
     for (let i = 0; i < n; i++) {
-      // 7-tap local window: i-3, i-2, i-1, i, i+1, i+2, i+3
-      const window: number[] = [];
-      for (let k = -3; k <= 3; k++) {
-        window.push(cur[(i + k + n) % n]);
-      }
-      window.sort((a, b) => a - b);
-      const localMedian = window[3]; // middle of 7 sorted values
-
-      // Local MAD — robust measure of how noisy this neighborhood is
-      const localAbsDevs = window.map((v) => Math.abs(v - localMedian)).sort((a, b) => a - b);
-      const localMad = localAbsDevs[3];
-      const localThreshold = Math.max(threshold, 3 * localMad);
-
-      if (Math.abs(cur[i] - localMedian) > localThreshold) {
+      const window = [
+        cur[(i - 2 + n) % n],
+        cur[(i - 1 + n) % n],
+        cur[i],
+        cur[(i + 1) % n],
+        cur[(i + 2) % n],
+      ]
+        .slice()
+        .sort((a, b) => a - b);
+      const localMedian = window[2];
+      if (Math.abs(cur[i] - localMedian) > dynamicThreshold) {
         next[i] = localMedian;
-        replaced++;
       }
     }
     cur = next;
-    if (replaced === 0) break; // converged
   }
   return cur;
 }
@@ -254,15 +257,9 @@ function buildExtrudedTrack(
 }
 
 /**
- * Build a line-segments geometry tracing both top edges of the ribbon —
- * the left edge (P + side * halfWidth) and the right edge (P - side * halfWidth)
- * at every sample. Used as a thin black outline on top of the red track
- * surface for visual definition.
- *
- * The geometry is laid out as a single lineSegments strip: pairs of
- * adjacent left-edge vertices form one segment, pairs of adjacent
- * right-edge vertices form another. Total: 2 * N segments = 4 * N vertices
- * (each segment needs two vertices).
+ * Build a line-segments geometry tracing both top edges of the ribbon.
+ * Used as a thin black outline on top of the track surface for visual
+ * definition.
  */
 function buildTrackOutline(
   curve: THREE.CatmullRomCurve3,
@@ -280,7 +277,6 @@ function buildTrackOutline(
   const up = new THREE.Vector3(0, 1, 0);
   const side = new THREE.Vector3();
 
-  // Collect top-edge points (left + right) for each sample
   const leftPts: number[] = [];
   const rightPts: number[] = [];
   for (let i = 0; i <= N; i++) {
@@ -294,18 +290,14 @@ function buildTrackOutline(
     rightPts.push(p.x - side.x * halfWidth, topY, p.z - side.z * halfWidth);
   }
 
-  // Build segment pairs: (left[i], left[i+1]) and (right[i], right[i+1])
-  // for i in 0..N-1. Closed curve — last segment connects back to first.
   const positions: number[] = [];
   for (let i = 0; i < N; i++) {
-    // Left segment
     positions.push(leftPts[i * 3], leftPts[i * 3 + 1], leftPts[i * 3 + 2]);
     positions.push(
       leftPts[(i + 1) * 3],
       leftPts[(i + 1) * 3 + 1],
       leftPts[(i + 1) * 3 + 2],
     );
-    // Right segment
     positions.push(
       rightPts[i * 3],
       rightPts[i * 3 + 1],
@@ -318,9 +310,12 @@ function buildTrackOutline(
     );
   }
 
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  return geo;
+  const outlineGeo = new THREE.BufferGeometry();
+  outlineGeo.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
+  );
+  return outlineGeo;
 }
 
 function TrackMesh({
@@ -344,20 +339,20 @@ function TrackMesh({
   // for coastal Monaco points where the real SRTM value is 30+); smoothing
   // kills the residual jitter between adjacent samples.
   const smoothedElevations = useMemo(() => {
-    if (!elevations || elevations.length < 7) return elevations;
-    return smoothElevations(despikeElevations(elevations, 15, 3), 5);
+    if (!elevations || elevations.length < 5) return elevations;
+    return smoothElevations(despikeElevations(elevations, 15, 2), 3);
   }, [elevations]);
 
-  const { curve, radius, peakY, effectiveElevationScale } = useMemo(() => {
+  const { curve, radius, peakY } = useMemo(() => {
     const b = computeBounds(coords);
+    const c = buildTrackCurve(
+      coords,
+      b,
+      smoothedElevations ?? undefined,
+      elevationScale,
+    );
     const r = sceneRadiusFromBounds(b);
-
-    // Compute raw peak (max deviation from mean) BEFORE applying elevation
-    // scale, so we can clamp the scale if the track would end up too
-    // vertically exaggerated relative to its horizontal size. Without this
-    // clamp, short tracks with significant elevation (Monaco — 55m range
-    // over 3.3km) render as American-coaster spikes when scaled ×3-×8.
-    let rawPeak = 0;
+    let peak = 0;
     if (smoothedElevations && smoothedElevations.length) {
       let min = Infinity,
         max = -Infinity,
@@ -368,33 +363,10 @@ function TrackMesh({
         sum += e;
       }
       const mean = sum / smoothedElevations.length;
-      rawPeak = Math.max(Math.abs(min - mean), Math.abs(max - mean));
+      peak =
+        Math.max(Math.abs(min - mean), Math.abs(max - mean)) * elevationScale;
     }
-
-    // Cap peakY at 35% of the track's horizontal radius. If the user's
-    // chosen elevationScale would exceed this, clamp it down — preserving
-    // the relative elevation profile but compressing the absolute height.
-    const peakYCap = r * 0.35;
-    const naturalScale = elevationScale;
-    const clampedScale =
-      rawPeak * naturalScale > peakYCap
-        ? Math.max(1, peakYCap / rawPeak)
-        : naturalScale;
-    const effective = clampedScale;
-    const peak = rawPeak * effective;
-
-    const c = buildTrackCurve(
-      coords,
-      b,
-      smoothedElevations ?? undefined,
-      effective,
-    );
-    return {
-      curve: c,
-      radius: r,
-      peakY: peak,
-      effectiveElevationScale: effective,
-    };
+    return { curve: c, radius: r, peakY: peak };
   }, [coords, smoothedElevations, elevationScale]);
 
   const groundY = useMemo(
@@ -424,21 +396,6 @@ function TrackMesh({
     };
   }, [trackGeometry, outlineGeometry]);
 
-  const startPoint = useMemo(() => curve.getPointAt(0), [curve]);
-  const startTangent = useMemo(() => curve.getTangentAt(0), [curve]);
-  const startQuaternion = useMemo(() => {
-    const dir = new THREE.Vector3(
-      startTangent.x,
-      0,
-      startTangent.z,
-    ).normalize();
-    const angle = Math.atan2(dir.x, dir.z);
-    return new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 1, 0),
-      angle,
-    );
-  }, [startTangent]);
-
   const { camera, controls } = useThree();
   useEffect(() => {
     const verticalFudge = 1 + Math.min(1, peakY / Math.max(radius, 1));
@@ -452,7 +409,7 @@ function TrackMesh({
     }
   }, [camera, controls, radius, peakY]);
 
-  // Track is F1 red on both themes — less neon than before (lower
+  // Track is F1 red on both themes — less neon than #e10600 (lower
   // emissiveIntensity + slightly darker base) so it doesn't burn the eyes.
   // Ground and rings are theme-dependent.
   const isDark = resolvedTheme === "dark";
@@ -479,15 +436,14 @@ function TrackMesh({
         />
       </mesh>
 
-      {/* Track outline — thin black lines running along both top edges of
-          the ribbon. Built as a line strip from the same centerline + side
-          vectors used by buildExtrudedTrack. Provides visual definition
-          between the track and the ground/scene background. */}
+      {/* Track outline — thin black lines along both top edges of the
+          ribbon. Provides visual definition between track and ground. */}
       <lineSegments geometry={outlineGeometry}>
         <lineBasicMaterial color={outlineColor} />
       </lineSegments>
 
-      {/* Ground plane — sits a bit below the track's lowest point. */}
+      {/* Ground plane — sits 0.5 m below the track's lowest point to avoid
+          z-fighting with the guide rings. */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, groundY - 0.5, 0]}
