@@ -15,141 +15,160 @@ export interface TrackViewerProps {
   geojson: CircuitGeoJSON;
   elevations?: number[] | null;
   elevationScale?: number;
-  /** Half-width of the track ribbon in meters. Real F1 tracks are ~7–8m
+  /** Half-width of the track ribbon in meters. Real F1 tracks are ~7-8m
    * wide each side, so default 7 = ~14m total. */
   trackWidth?: number;
   autoRotate?: boolean;
-  /** Resolved theme — affects ribbon colors / ground tint. */
   resolvedTheme?: "light" | "dark";
 }
 
 /**
- * Build a flat ribbon mesh from a CatmullRomCurve3.
+ * Build an extruded track mesh — top surface + side walls going all the way
+ * down to a fixed ground Y. This produces a solid 3D-printed look instead
+ * of a "floating ribbon".
  *
- * For each sampled point on the curve we compute:
- *   - the tangent T (direction of travel)
- *   - the world-up vector U = (0, 1, 0)
- *   - the side vector S = normalize(cross(T, U)) — perpendicular to travel,
- *     lying roughly horizontal
- *   - the actual up vector B = cross(S, T) — perpendicular to travel AND
- *     to S, used as the surface normal
+ * For each sample point on the curve:
+ *   - Compute tangent T and side vector S (perpendicular to T, roughly horizontal)
+ *   - Top-left  vertex = P + S * halfWidth, at the curve's Y (raised 0.5m)
+ *   - Top-right vertex = P - S * halfWidth, at the curve's Y (raised 0.5m)
+ *   - Bot-left  vertex = same X/Z as top-left, but Y = groundY
+ *   - Bot-right vertex = same X/Z as top-right, but Y = groundY
  *
- * Two vertices per sample (left side = +S, right side = -S), connected as
- * a triangle strip. The ribbon is raised `raise` meters above the curve to
- * avoid z-fighting with the ground plane on flat tracks.
+ * Indices:
+ *   - Top surface: triangles between (topL_i, topR_i, topL_{i+1}, topR_{i+1})
+ *   - Left wall:   triangles between (topL_i, botL_i, topL_{i+1}, botL_{i+1})
+ *   - Right wall:  triangles between (topR_i, botR_i, topR_{i+1}, botR_{i+1})
  *
- * We also compute per-vertex normals so lighting works, and bake a thin
- * darker "kerb" strip along each edge for visual definition.
+ * Normals are computed per-quad (flat shading) — good enough for a road
+ * surface and much cheaper than smooth normals.
  *
- * Returns the ribbon BufferGeometry + a separate kerb line geometry.
+ * Returns the BufferGeometry for the extruded mesh (top + walls together).
  */
-function buildRibbon(
+function buildExtrudedTrack(
   curve: THREE.CatmullRomCurve3,
   halfWidth: number,
-  raise: number,
-): {
-  surface: THREE.BufferGeometry;
-  kerbs: THREE.BufferGeometry;
-  centerline: THREE.BufferGeometry;
-} {
-  const N = 800;
-  const samples = curve.getSpacedPoints(N);
-  // getSpacedPoints doesn't compute tangents — use getTangentAt with the
-  // same normalized parameter range.
+  topRaise: number,
+  groundY: number,
+  samples: number,
+): THREE.BufferGeometry {
+  const N = samples;
+  // Sample N+1 points; the (N+1)-th equals the 1st because the curve is
+  // closed — we keep it so the last quad connects back to the first.
+  const pts = curve.getSpacedPoints(N);
   const tangents: THREE.Vector3[] = [];
   for (let i = 0; i <= N; i++) {
     tangents.push(curve.getTangentAt(i / N));
   }
-  // Close the loop: append first sample so the ribbon ends meet.
-  samples.push(samples[0]);
-  tangents.push(tangents[0]);
 
   const up = new THREE.Vector3(0, 1, 0);
   const side = new THREE.Vector3();
   const binorm = new THREE.Vector3();
 
+  // 4 vertices per sample × (N+1) samples
+  // Layout: [topL, topR, botL, botR] per sample
   const positions: number[] = [];
   const normals: number[] = [];
-  const uvs: number[] = [];
   const indices: number[] = [];
 
-  const kerbPositions: number[] = [];
-  const centerlinePositions: number[] = [];
+  // Scratch vectors for normal computation per quad
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const ab = new THREE.Vector3();
+  const ac = new THREE.Vector3();
+  const n = new THREE.Vector3();
 
-  for (let i = 0; i < samples.length; i++) {
-    const p = samples[i];
+  function pushV(x: number, y: number, z: number, nx: number, ny: number, nz: number) {
+    positions.push(x, y, z);
+    normals.push(nx, ny, nz);
+  }
+
+  function pushQuad(i1: number, i2: number, i3: number, i4: number) {
+    // Two triangles: (i1, i3, i2) and (i2, i3, i4) — CCW winding for
+    // outward-facing normal. We'll compute the normal from the actual
+    // vertex positions and assign it to all 4 verts (flat shading).
+    indices.push(i1, i3, i2, i2, i3, i4);
+  }
+
+  // First pass: compute and store 4 vertices per sample.
+  for (let i = 0; i <= N; i++) {
+    const p = pts[i];
     const t = tangents[i];
 
-    // Compute side vector. If tangent is nearly vertical (rare, but possible
-    // on elevation cliffs), fall back to world X as the side direction.
     side.crossVectors(t, up);
-    if (side.lengthSq() < 1e-6) {
-      side.set(1, 0, 0);
-    }
+    if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
     side.normalize();
     binorm.crossVectors(side, t).normalize();
 
-    // Centerline sample (slightly raised so it sits on top of the surface)
-    centerlinePositions.push(
-      p.x,
-      p.y + raise + 0.05,
-      p.z,
-    );
-
-    // Left edge (the sample point shifted by +side * halfWidth, plus a tiny
-    // raise to lift off the ground)
+    const topY = p.y + topRaise;
     const lx = p.x + side.x * halfWidth;
-    const ly = p.y + raise;
     const lz = p.z + side.z * halfWidth;
-    // Right edge (-side)
     const rx = p.x - side.x * halfWidth;
-    const ry = p.y + raise;
     const rz = p.z - side.z * halfWidth;
 
-    positions.push(lx, ly, lz, rx, ry, rz);
-
-    // Both vertices share the same normal (binormal) for flat shading
-    normals.push(binorm.x, binorm.y, binorm.z, binorm.x, binorm.y, binorm.z);
-
-    // UV: u goes 0..1 across the width (left=0, right=1), v goes 0..1 along
-    // the length. v wraps because we want the texture to loop seamlessly on
-    // a closed track.
-    const v = i / N;
-    uvs.push(0, v, 1, v);
-
-    // Two triangles between this quad and the next one. Last quad (i==N)
-    // connects back to i==0 — we handle that by NOT emitting the quad
-    // indices for the closing sample, since samples[N+1] === samples[0].
-    if (i < N) {
-      const a = i * 2;
-      const b = i * 2 + 1;
-      const c = (i + 1) * 2;
-      const d = (i + 1) * 2 + 1;
-      indices.push(a, c, b, b, c, d);
-    }
-
-    // Kerb lines — a thin strip just outside each edge, used for visual
-    // definition. We offset by an extra ~5% of halfWidth so they peek out.
-    const k = halfWidth * 1.06;
-    kerbPositions.push(
-      p.x + side.x * k, p.y + raise + 0.02, p.z + side.z * k,
-      p.x - side.x * k, p.y + raise + 0.02, p.z - side.z * k,
-    );
+    // topL, topR, botL, botR — normals will be patched in the second pass
+    // per-quad (flat shading), so we set them to zero here just to fill
+    // the buffer. The second pass overwrites the relevant vertices.
+    pushV(lx, topY, lz, 0, 0, 0);
+    pushV(rx, topY, rz, 0, 0, 0);
+    pushV(lx, groundY, lz, 0, 0, 0);
+    pushV(rx, groundY, rz, 0, 0, 0);
   }
 
-  const surface = new THREE.BufferGeometry();
-  surface.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  surface.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  surface.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
-  surface.setIndex(indices);
+  const stride = 4; // 4 verts per sample
+  // Helper to access the Float32Array backing the position attribute
+  // — we patch normals per quad using cross product of actual positions.
+  const posAttr = positions; // we mutate via index lookups below
 
-  const kerbs = new THREE.BufferGeometry();
-  kerbs.setAttribute("position", new THREE.Float32BufferAttribute(kerbPositions, 3));
+  function patchQuadNormal(
+    i1: number, i2: number, i3: number, i4: number,
+  ) {
+    // Read positions
+    a.set(posAttr[i1 * 3], posAttr[i1 * 3 + 1], posAttr[i1 * 3 + 2]);
+    b.set(posAttr[i2 * 3], posAttr[i2 * 3 + 1], posAttr[i2 * 3 + 2]);
+    c.set(posAttr[i3 * 3], posAttr[i3 * 3 + 1], posAttr[i3 * 3 + 2]);
+    ab.subVectors(b, a);
+    ac.subVectors(c, a);
+    n.crossVectors(ab, ac).normalize();
+    // Write back into the normals array
+    for (const idx of [i1, i2, i3, i4]) {
+      normals[idx * 3] = n.x;
+      normals[idx * 3 + 1] = n.y;
+      normals[idx * 3 + 2] = n.z;
+    }
+  }
 
-  const centerline = new THREE.BufferGeometry();
-  centerline.setAttribute("position", new THREE.Float32BufferAttribute(centerlinePositions, 3));
+  // Second pass: emit top + wall quads, patching normals per quad.
+  for (let i = 0; i < N; i++) {
+    const base0 = i * stride;       // topL_i, topR_i, botL_i, botR_i
+    const base1 = (i + 1) * stride; // topL_{i+1}, ...
+    const tL0 = base0 + 0;
+    const tR0 = base0 + 1;
+    const bL0 = base0 + 2;
+    const bR0 = base0 + 3;
+    const tL1 = base1 + 0;
+    const tR1 = base1 + 1;
+    const bL1 = base1 + 2;
+    const bR1 = base1 + 3;
 
-  return { surface, kerbs, centerline };
+    // Top surface quad (CCW when viewed from above)
+    pushQuad(tL0, tR0, tL1, tR1);
+    patchQuadNormal(tL0, tR0, tL1, tR1);
+
+    // Left wall — facing +side direction
+    pushQuad(tL0, bL0, tL1, bL1);
+    patchQuadNormal(tL0, bL0, tL1, bL1);
+
+    // Right wall — facing -side direction
+    pushQuad(tR1, bR1, tR0, bR0);
+    patchQuadNormal(tR1, bR1, tR0, bR0);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  geo.setIndex(indices);
+  return geo;
 }
 
 function TrackMesh({
@@ -170,6 +189,10 @@ function TrackMesh({
 
   const { curve, radius, peakY } = useMemo(() => {
     const b = computeBounds(coords);
+    // buildTrackCurve now uses centripetal parametrization internally —
+    // this prevents the "track jumps to a random far-away point" bug we
+    // had on street circuits where GeoJSON samples cluster tightly around
+    // hairpins (Monaco, Baku, Singapore, Jeddah).
     const c = buildTrackCurve(coords, b, elevations ?? undefined, elevationScale);
     const r = sceneRadiusFromBounds(b);
     let peak = 0;
@@ -188,21 +211,30 @@ function TrackMesh({
     return { curve: c, radius: r, peakY: peak };
   }, [coords, elevations, elevationScale]);
 
-  const { surface, kerbs, centerline } = useMemo(
-    () => buildRibbon(curve, trackWidth, 0.5),
-    [curve, trackWidth],
+  // Ground Y — sit a bit below the lowest curve point so the extrusion has
+  // visible depth even on flat tracks.
+  const groundY = useMemo(
+    () => -peakY - trackWidth * 2 - 1,
+    [peakY, trackWidth],
   );
 
-  // Cleanup geometries on unmount / re-build to avoid GPU memory leaks.
-  useEffect(() => {
-    return () => {
-      surface.dispose();
-      kerbs.dispose();
-      centerline.dispose();
-    };
-  }, [surface, kerbs, centerline]);
+  // Scale sample count with track length — longer tracks need more samples
+  // to avoid polygonal look on high-speed sections.
+  const samples = useMemo(() => {
+    const length = feature.properties.length;
+    return Math.max(400, Math.min(2000, Math.round(length / 4)));
+  }, [feature.properties.length]);
 
-  // Start/finish line marker at the first point of the curve
+  const trackGeometry = useMemo(
+    () => buildExtrudedTrack(curve, trackWidth, 0.5, groundY, samples),
+    [curve, trackWidth, groundY, samples],
+  );
+
+  useEffect(() => {
+    return () => trackGeometry.dispose();
+  }, [trackGeometry]);
+
+  // Start/finish line marker
   const startPoint = useMemo(() => curve.getPointAt(0), [curve]);
   const startTangent = useMemo(() => curve.getTangentAt(0), [curve]);
   const startQuaternion = useMemo(() => {
@@ -214,7 +246,6 @@ function TrackMesh({
     );
   }, [startTangent]);
 
-  // Camera fit — frame the whole track including vertical extent.
   const { camera, controls } = useThree();
   useEffect(() => {
     const verticalFudge = 1 + Math.min(1, peakY / Math.max(radius, 1));
@@ -228,47 +259,26 @@ function TrackMesh({
     }
   }, [camera, controls, radius, peakY]);
 
-  const groundY = -peakY - trackWidth * 2 - 1;
-
-  // Theme-aware colors
+  // Theme-aware colors — asphalt track, neutral ground
   const isDark = resolvedTheme === "dark";
   const trackColor = isDark ? "#1a1a1f" : "#2a2a30";
-  const trackEmissive = isDark ? "#000000" : "#000000";
   const groundColor = isDark ? "#0a0a0d" : "#d8d8dc";
   const ringColor1 = isDark ? "#1f1f24" : "#c4c4ca";
   const ringColor2 = isDark ? "#16161a" : "#cdcdd2";
 
   return (
     <group>
-      {/* Track surface — flat ribbon, dark asphalt */}
-      <mesh geometry={surface}>
+      {/* Extruded track — top surface + side walls in one geometry */}
+      <mesh geometry={trackGeometry}>
         <meshStandardMaterial
           color={trackColor}
-          emissive={trackEmissive}
-          emissiveIntensity={0}
           roughness={0.92}
           metalness={0.05}
           side={THREE.DoubleSide}
         />
       </mesh>
 
-      {/* Kerbs — thin red/white striped line along each edge. For now a
-          single solid red line; can upgrade to actual stripe pattern later
-          (e.g. via custom shader or texture). */}
-      <lineSegments geometry={kerbs}>
-        <lineBasicMaterial color="#e10600" />
-      </lineSegments>
-
-      {/* Centerline — thin white stripe on top of the surface */}
-      <line geometry={centerline}>
-        <lineBasicMaterial
-          color="#ffffff"
-          transparent
-          opacity={0.45}
-        />
-      </line>
-
-      {/* Start/finish line — checkered-ish white bar across the ribbon */}
+      {/* Start/finish line — white bar across the ribbon */}
       <mesh
         position={[startPoint.x, startPoint.y + 0.6, startPoint.z]}
         quaternion={startQuaternion}
@@ -283,17 +293,17 @@ function TrackMesh({
       </mesh>
 
       {/* Ground plane */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, groundY, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, groundY - 0.1, 0]}>
         <circleGeometry args={[radius * 4, 64]} />
         <meshStandardMaterial color={groundColor} roughness={1} metalness={0} />
       </mesh>
 
       {/* Concentric guide rings */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, groundY + 0.01, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, groundY - 0.05, 0]}>
         <ringGeometry args={[radius * 1.6, radius * 1.62, 96]} />
         <meshBasicMaterial color={ringColor1} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, groundY + 0.02, 0]}>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, groundY - 0.04, 0]}>
         <ringGeometry args={[radius * 2.4, radius * 2.42, 96]} />
         <meshBasicMaterial color={ringColor2} />
       </mesh>

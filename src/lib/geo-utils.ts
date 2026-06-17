@@ -119,7 +119,13 @@ export function buildTrackCurve(
     }
     return v;
   });
-  return new THREE.CatmullRomCurve3(points, true, "catmullrom", 0.5);
+  // IMPORTANT: centripetal parametrization (instead of uniform 'catmullrom')
+  // prevents self-intersections and "loops" when consecutive control points
+  // are very close together. This is the root cause of the "track jumps to
+  // a random far-away point and breaks" bug we had on street circuits
+  // (Monaco, Baku, Singapore, Jeddah) where GeoJSON samples cluster tightly
+  // around hairpins.
+  return new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
 }
 
 /**
