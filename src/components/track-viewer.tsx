@@ -166,8 +166,14 @@ function TrackMesh({
   // ─── Sector geometries ────────────────────────────────────────────
   const showSectors = viewMode === "sectors" && markers?.sectors?.length;
 
+  // Debug: log sector rendering state
+  useEffect(() => {
+    console.log("[MVP2.5] showSectors:", showSectors, "viewMode:", viewMode, "markers:", markers?.circuitId, "sectors:", markers?.sectors?.length);
+  }, [showSectors, viewMode, markers]);
+
   const sectorGeometries = useMemo(() => {
     if (!showSectors || !markers) return [];
+    console.log("[MVP2.5] Building sector meshes, count:", markers.sectors.length);
     return markers.sectors.map((sector) =>
       buildSectorMesh(curve, sector, markers, trackWidth, 0.5, groundY, samples),
     );
@@ -189,23 +195,24 @@ function TrackMesh({
       );
   }, [showSectors, curve, markers, trackWidth]);
 
+  // Separate cleanup effects so that sector geometry changes don't
+  // dispose the stable track/outline/marker geometries (which would
+  // wipe the very meshes we need when toggling back to normal mode).
   useEffect(() => {
     return () => {
       trackGeometry.dispose();
       outlineGeometry.dispose();
       startFinishGeometry.dispose();
       directionArrowGeometry.dispose();
+    };
+  }, [trackGeometry, outlineGeometry, startFinishGeometry, directionArrowGeometry]);
+
+  useEffect(() => {
+    return () => {
       sectorGeometries.forEach((g) => g.dispose());
       splitLineGeometries.forEach((g) => g.dispose());
     };
-  }, [
-    trackGeometry,
-    outlineGeometry,
-    startFinishGeometry,
-    directionArrowGeometry,
-    sectorGeometries,
-    splitLineGeometries,
-  ]);
+  }, [sectorGeometries, splitLineGeometries]);
 
   const { camera, controls } = useThree();
   useEffect(() => {

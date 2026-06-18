@@ -224,6 +224,10 @@ export function buildSectorMesh(
   const fraction = sectorArcFraction(fromS, toS, markers.directionSign);
   const N = Math.max(20, Math.round(totalSamples * fraction));
 
+  console.log(
+    `[MVP2.5] buildSectorMesh: sector=${sector.id} fromS=${fromS.toFixed(4)} toS=${toS.toFixed(4)} fraction=${fraction.toFixed(4)} N=${N} dir=${markers.directionSign}`,
+  );
+
   // Sample points along the sector
   const pts: THREE.Vector3[] = [];
   const tangents: THREE.Vector3[] = [];
