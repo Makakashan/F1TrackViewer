@@ -24,7 +24,9 @@ import fastf1
 import pandas as pd
 
 # Enable FastF1 cache
-fastf1.Cache.enable_cache(".fastf1-cache")
+FASTF1_CACHE_DIR = Path(".fastf1-cache")
+FASTF1_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+fastf1.Cache.enable_cache(str(FASTF1_CACHE_DIR))
 
 
 def seconds(td):

@@ -117,8 +117,8 @@ export default function F1TrackApp({
   // Load track markers when selected track changes
   useEffect(() => {
     if (!selectedId) {
-      setMarkers(null);
-      return;
+      const timer = window.setTimeout(() => setMarkers(null), 0);
+      return () => window.clearTimeout(timer);
     }
     let cancelled = false;
     fetchTrackMarkers(selectedId).then((m) => {
@@ -137,8 +137,13 @@ export default function F1TrackApp({
     if (viewMode === "sectors" && prevMarkersRef.current === undefined) {
       // markers was loaded but had no sectors — we already handled
     }
-    if (viewMode === "sectors" && markers !== null && !markers.sectors?.length) {
-      setViewMode("normal");
+    if (
+      viewMode === "sectors" &&
+      markers !== null &&
+      !markers.sectors?.length
+    ) {
+      const timer = window.setTimeout(() => setViewMode("normal"), 0);
+      return () => window.clearTimeout(timer);
     }
     prevMarkersRef.current = markers;
   }, [markers, viewMode]);
@@ -188,14 +193,19 @@ export default function F1TrackApp({
   // Hydrate viewMode from URL ?sectors=1
   useEffect(() => {
     if (didApplyInitialSectors.current) return;
-    const urlSectorsNow = new URLSearchParams(window.location.search).get("sectors");
-    const targetMode: TrackViewMode = urlSectorsNow === "1" ? "sectors" : "normal";
+    const urlSectorsNow = new URLSearchParams(window.location.search).get(
+      "sectors",
+    );
+    const targetMode: TrackViewMode =
+      urlSectorsNow === "1" ? "sectors" : "normal";
     if (targetMode === viewMode) {
       didApplyInitialSectors.current = true;
       return;
     }
-    didApplyInitialSectors.current = true;
-    const timer = window.setTimeout(() => setViewMode(targetMode), 0);
+    const timer = window.setTimeout(() => {
+      setViewMode(targetMode);
+      didApplyInitialSectors.current = true;
+    }, 0);
     return () => window.clearTimeout(timer);
   }, [viewMode]);
 
@@ -237,11 +247,7 @@ export default function F1TrackApp({
     } else {
       params.delete("camera");
     }
-    if (viewMode === "sectors") {
-      params.set("sectors", "1");
-    } else {
-      params.delete("sectors");
-    }
+    params.set("sectors", viewMode === "sectors" ? "1" : "0");
 
     const nextSearch = `?${params.toString()}`;
     if (nextSearch === window.location.search) return;
