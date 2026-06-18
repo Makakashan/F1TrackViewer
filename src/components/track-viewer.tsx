@@ -54,6 +54,24 @@ function disposeGeometry(value: unknown) {
   }
 }
 
+function canCreateWebGLContext(): boolean {
+  try {
+    const canvas = document.createElement("canvas");
+    const context =
+      canvas.getContext("webgl2") ??
+      canvas.getContext("webgl") ??
+      canvas.getContext("experimental-webgl");
+    if (!context) return false;
+    const loseContext = (
+      context as WebGLRenderingContext | WebGL2RenderingContext
+    ).getExtension("WEBGL_lose_context");
+    loseContext?.loseContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function TrackMesh({
   geojson,
   trackWidth,
@@ -454,6 +472,9 @@ export default function TrackViewer({
 }: TrackViewerProps) {
   const [canvasEventSource, setCanvasEventSource] =
     useState<HTMLDivElement | null>(null);
+  const [webglAvailable] = useState(() =>
+    typeof document === "undefined" ? true : canCreateWebGLContext(),
+  );
   const circuitId = geojson.features[0]?.properties.id;
   const [calibratedOverrides, setCalibratedOverrides] = useState<
     Record<string, number>
@@ -600,7 +621,20 @@ export default function TrackViewer({
           </div>
         )}
 
-        {canvasEventSource && (
+        {webglAvailable === false ? (
+          <div className="flex h-full w-full items-center justify-center bg-background px-6 text-center">
+            <div className="max-w-sm rounded-md border border-border bg-card/60 p-4 shadow-sm">
+              <div className="text-sm font-semibold text-foreground">
+                WebGL is unavailable
+              </div>
+              <div className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                This browser could not create a WebGL context. Enable WebGL or
+                hardware acceleration in browser settings, lower browser
+                shields for this site, or open the viewer in another browser.
+              </div>
+            </div>
+          </div>
+        ) : canvasEventSource ? (
           <Canvas
             eventSource={canvasEventSource}
             shadows={false}
@@ -670,7 +704,7 @@ export default function TrackViewer({
               maxPolarAngle={Math.PI / 2.05}
             />
           </Canvas>
-        )}
+        ) : null}
       </div>
     </PointerCaptureBoundary>
   );

@@ -44,7 +44,11 @@ export default function MobileMenu({
 					<Menu className="h-5 w-5" />
 				</Button>
 			</SheetTrigger>
-			<SheetContent side="left" className="w-75 p-0 bg-sidebar">
+			<SheetContent
+				side="left"
+				className="w-75 p-0 bg-sidebar"
+				onOpenAutoFocus={(event) => event.preventDefault()}
+			>
 				<SheetHeader className="px-4 pt-4 pb-2">
 					<SheetTitle className="text-sm uppercase tracking-wider text-muted-foreground">
 						{t.circuits}

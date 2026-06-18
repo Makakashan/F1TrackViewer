@@ -363,6 +363,8 @@ export default function F1TrackApp({
             pointCount={pointCount}
             elevations={elevations}
             elevationEnabled={elevationEnabled}
+            markers={markers}
+            viewMode={viewMode}
             open={mobileInfoOpen}
             onOpenChange={setMobileInfoOpen}
           />

@@ -11,6 +11,7 @@ import {
 import TrackInfo from "@/components/track-info";
 import { useAppPref } from "@/components/app-pref-provider";
 import type { CircuitProperties } from "@/lib/f1-circuits";
+import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 
 interface MobileInfoSheetProps {
 	properties: CircuitProperties | null;
@@ -18,6 +19,8 @@ interface MobileInfoSheetProps {
 	pointCount: number | undefined;
 	elevations: number[] | null;
 	elevationEnabled: boolean;
+	markers?: TrackMarkers | null;
+	viewMode?: TrackViewMode;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }
@@ -28,6 +31,8 @@ export default function MobileInfoSheet({
 	pointCount,
 	elevations,
 	elevationEnabled,
+	markers,
+	viewMode,
 	open,
 	onOpenChange,
 }: MobileInfoSheetProps) {
@@ -61,6 +66,8 @@ export default function MobileInfoSheet({
 					pointCount={pointCount}
 					elevations={elevations}
 					elevationEnabled={elevationEnabled}
+					markers={markers}
+					viewMode={viewMode}
 				/>
 			</SheetContent>
 		</Sheet>
