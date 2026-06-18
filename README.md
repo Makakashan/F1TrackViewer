@@ -32,7 +32,7 @@ Interactive 3D viewer for Formula 1 circuits — Next.js 16 + Three.js + Tailwin
 | Track data | [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) (MIT) |
 | Elevation | [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) (CC-BY 4.0) + [OpenTopoData](https://opentopodata.org/) |
 
-No backend, no API keys. Data fetched from public APIs at runtime.
+No backend, no API keys. Elevation profiles are pre-generated into static JSON files in `public/elevations`. At runtime the app loads static profiles first, then falls back to localStorage/API when needed.
 
 ---
 

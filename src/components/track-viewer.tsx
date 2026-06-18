@@ -8,10 +8,13 @@ import {
   buildTrackCurve,
   computeBounds,
   sceneRadiusFromBounds,
+  REAL_ELEVATION_SCALE,
 } from "@/lib/geo-utils";
 import { buildExtrudedTrack, buildTrackOutline } from "@/lib/track-geometry";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
+
+export type CameraPreset = "top" | "iso" | "side" | "reset";
 
 export interface TrackViewerProps {
   geojson: CircuitGeoJSON;
@@ -19,6 +22,7 @@ export interface TrackViewerProps {
   trackWidth?: number;
   autoRotate?: boolean;
   resolvedTheme?: "light" | "dark";
+  cameraPreset?: CameraPreset | null;
 }
 
 function TrackMesh({
@@ -26,11 +30,13 @@ function TrackMesh({
   trackWidth,
   elevations,
   resolvedTheme,
+  cameraPreset,
 }: {
   geojson: CircuitGeoJSON;
   trackWidth: number;
   elevations?: number[] | null;
   resolvedTheme: "light" | "dark";
+  cameraPreset?: CameraPreset | null;
 }) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -46,7 +52,7 @@ function TrackMesh({
       coords,
       b,
       elevations ?? undefined,
-      1,
+      REAL_ELEVATION_SCALE,
     );
     let peak = 0;
     if (elevations && elevations.length) {
@@ -103,6 +109,32 @@ function TrackMesh({
       (controls as any).update?.();
     }
   }, [camera, controls, radius, peakY]);
+
+  useEffect(() => {
+    if (!cameraPreset) return;
+    const distance = radius * 2.4;
+    const yOffset = Math.max(radius * 0.3, peakY * 1.2);
+
+    switch (cameraPreset) {
+      case "top":
+        camera.position.set(0, distance * 2, 0);
+        break;
+      case "iso":
+        camera.position.set(distance, distance * 0.6 + yOffset, distance);
+        break;
+      case "side":
+        camera.position.set(distance * 1.5, yOffset * 0.5, 0);
+        break;
+      case "reset":
+        camera.position.set(distance, distance * 0.6 + yOffset, distance);
+        break;
+    }
+    camera.lookAt(0, 0, 0);
+    if (controls && "target" in controls) {
+      (controls as any).target.set(0, 0, 0);
+      (controls as any).update?.();
+    }
+  }, [cameraPreset, camera, controls, radius, peakY]);
 
   // Track is F1 red on both themes — less neon than #e10600 (lower
   // emissiveIntensity + slightly darker base) so it doesn't burn the eyes.
@@ -187,6 +219,7 @@ export default function TrackViewer({
   trackWidth = 7,
   autoRotate = true,
   resolvedTheme = "dark",
+  cameraPreset = null,
 }: TrackViewerProps) {
   const bgGradient =
     resolvedTheme === "dark"
@@ -240,6 +273,7 @@ export default function TrackViewer({
             trackWidth={trackWidth}
             elevations={elevations}
             resolvedTheme={resolvedTheme}
+            cameraPreset={cameraPreset}
           />
         </Suspense>
 

@@ -2,6 +2,9 @@
 
 import * as THREE from "three";
 
+/** Elevation is rendered at real scale (1:1). No vertical exaggeration. */
+export const REAL_ELEVATION_SCALE = 1;
+
 export interface GeoBounds {
   minLon: number;
   minLat: number;
@@ -69,7 +72,7 @@ export function buildTrackCurve(
   coords: [number, number][],
   bounds: GeoBounds,
   elevations?: number[],
-  elevationScale: number = 3,
+  elevationScale: number = REAL_ELEVATION_SCALE,
   elevationOffset: number = 0,
 ): THREE.CatmullRomCurve3 {
   let pts = coords;

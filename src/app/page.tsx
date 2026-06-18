@@ -15,6 +15,7 @@ import { useAppPref } from "@/components/app-pref-provider";
 import { type CircuitProperties } from "@/lib/f1-circuits";
 import { useCircuits } from "@/hooks/use-circuts";
 import { useTrackData } from "@/hooks/use-track-data";
+import type { CameraPreset } from "@/components/track-viewer";
 
 // Three.js scene must be client-only — no SSR for WebGL.
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
@@ -43,6 +44,7 @@ export default function Home() {
 	const [elevationEnabled, setElevationEnabled] = useState(true);
 	const [mobileListOpen, setMobileListOpen] = useState(false);
 	const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
+	const [cameraPreset, setCameraPreset] = useState<CameraPreset | null>(null);
 
 	const handleSelect = useCallback(
 		(id: string) => {
@@ -52,10 +54,10 @@ export default function Home() {
 		[onSelect],
 	);
 
-	const handleReload = useCallback(() => {
-		if (selectedId) setSelectedId(null);
-		requestAnimationFrame(() => setSelectedId(selectedId));
-	}, [selectedId, setSelectedId]);
+	const handleCameraPreset = useCallback((preset: CameraPreset) => {
+		setCameraPreset(preset);
+		setTimeout(() => setCameraPreset(null), 50);
+	}, []);
 
 	const properties: CircuitProperties | null =
 		geojson?.features[0]?.properties ?? null;
@@ -98,9 +100,7 @@ export default function Home() {
 						setElevationEnabled={setElevationEnabled}
 						trackWidth={trackWidth}
 						setTrackWidth={setTrackWidth}
-						loadingTrack={loadingTrack}
-						selectedId={selectedId}
-						onReload={handleReload}
+						onCameraPreset={handleCameraPreset}
 					/>
 				</div>
 			</header>
@@ -128,6 +128,7 @@ export default function Home() {
 							trackWidth={trackWidth}
 							autoRotate={autoRotate}
 							resolvedTheme={resolvedTheme}
+							cameraPreset={cameraPreset}
 						/>
 					) : (
 						<div className="flex h-full w-full items-center justify-center text-muted-foreground">

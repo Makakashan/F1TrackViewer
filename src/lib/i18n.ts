@@ -39,7 +39,7 @@ const en = {
   btnReload: "Reload",
   // Top bar toggles
   autoRotate: "Auto-rotate",
-  elevations: "Elevation",
+  elevations: "Real elevation",
   trackWidth: "Width",
   // Settings
   settings: "Settings",
@@ -111,7 +111,7 @@ const ru: Dict = {
   appTagline: "3D просмотрщик трасс · MVP 1.5",
   btnReload: "Обновить",
   autoRotate: "Авто-вращение",
-  elevations: "Высоты",
+  elevations: "Реальный рельеф",
   trackWidth: "Ширина",
   settings: "Настройки",
   language: "Язык",
