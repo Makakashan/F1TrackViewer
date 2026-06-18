@@ -1,0 +1,32 @@
+{
+  "circuitId": "ar-1952",
+  "source": "manual",
+  "lapLengthMeters": 4322,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "confidence": "estimated",
+  "note": "Last F1 race 1998, no FastF1 data",
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1440.67,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1440.67,
+      "toDistance": 2881.33,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 2881.33,
+      "toDistance": 4322,
+      "color": "#00D084"
+    }
+  ]
+}

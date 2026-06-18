@@ -1,0 +1,34 @@
+{
+  "circuitId": "az-2016",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Azerbaijan",
+  "session": "Q",
+  "driver": "VER",
+  "lapLengthMeters": 6003,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 2001,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 2001,
+      "toDistance": 4002,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 4002,
+      "toDistance": 6003,
+      "color": "#00D084"
+    }
+  ]
+}

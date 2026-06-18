@@ -1,0 +1,34 @@
+{
+  "circuitId": "de-1932",
+  "source": "fastf1-telemetry-derived",
+  "year": 2019,
+  "event": "Germany",
+  "session": "Q",
+  "driver": "VER",
+  "lapLengthMeters": 4574,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1525,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1525,
+      "toDistance": 3049,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3049,
+      "toDistance": 4574,
+      "color": "#00D084"
+    }
+  ]
+}

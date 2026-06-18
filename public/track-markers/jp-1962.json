@@ -1,0 +1,34 @@
+{
+  "circuitId": "jp-1962",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Japan",
+  "session": "Q",
+  "driver": "VER",
+  "lapLengthMeters": 5807,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1936,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1936,
+      "toDistance": 3871,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3871,
+      "toDistance": 5807,
+      "color": "#00D084"
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "circuitId": "be-1925",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Belgium",
+  "session": "Q",
+  "driver": "VER",
+  "lapLengthMeters": 7004,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 2335,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 2335,
+      "toDistance": 4669,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 4669,
+      "toDistance": 7004,
+      "color": "#00D084"
+    }
+  ]
+}

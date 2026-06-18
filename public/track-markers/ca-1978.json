@@ -1,0 +1,34 @@
+{
+  "circuitId": "ca-1978",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Canada",
+  "session": "Q",
+  "driver": "VER",
+  "lapLengthMeters": 4361,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1454,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1454,
+      "toDistance": 2907,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 2907,
+      "toDistance": 4361,
+      "color": "#00D084"
+    }
+  ]
+}

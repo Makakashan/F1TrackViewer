@@ -1,0 +1,32 @@
+{
+  "circuitId": "br-1977",
+  "source": "manual",
+  "lapLengthMeters": 5031,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "confidence": "estimated",
+  "note": "Demolished, no FastF1 data",
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1677.0,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1677.0,
+      "toDistance": 3354.0,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3354.0,
+      "toDistance": 5031,
+      "color": "#00D084"
+    }
+  ]
+}

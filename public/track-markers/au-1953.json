@@ -1,0 +1,34 @@
+{
+  "circuitId": "au-1953",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Australia",
+  "session": "Q",
+  "driver": "VER",
+  "lapLengthMeters": 5278,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1759,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1759,
+      "toDistance": 3519,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3519,
+      "toDistance": 5278,
+      "color": "#00D084"
+    }
+  ]
+}

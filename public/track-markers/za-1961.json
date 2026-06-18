@@ -1,0 +1,32 @@
+{
+  "circuitId": "za-1961",
+  "source": "manual",
+  "lapLengthMeters": 4529,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "confidence": "estimated",
+  "note": "Last F1 race 1993, no FastF1 data",
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1509.67,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1509.67,
+      "toDistance": 3019.33,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3019.33,
+      "toDistance": 4529,
+      "color": "#00D084"
+    }
+  ]
+}

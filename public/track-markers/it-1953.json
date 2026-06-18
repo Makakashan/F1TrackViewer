@@ -1,0 +1,34 @@
+{
+  "circuitId": "it-1953",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Emilia Romagna",
+  "session": "Q",
+  "driver": "VER",
+  "lapLengthMeters": 4909,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1636,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1636,
+      "toDistance": 3273,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3273,
+      "toDistance": 4909,
+      "color": "#00D084"
+    }
+  ]
+}
