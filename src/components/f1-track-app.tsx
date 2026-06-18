@@ -9,8 +9,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import dynamic from "next/dynamic";
-import { RefreshCw, Flag } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
+import { RefreshCw, Flag, X } from "lucide-react";
 import CircuitSidebar from "@/components/circuit-sidebar";
 import TrackInfo from "@/components/track-info";
 import TrackControls from "@/components/track-controls";
@@ -95,6 +94,8 @@ export default function F1TrackApp({
   const [cameraPreset, setCameraPreset] = useState<CameraPreset | null>(null);
   const [startFinishPlacement, setStartFinishPlacement] =
     useState<StartFinishPlacement | null>(null);
+  const [footerExpanded, setFooterExpanded] = useState(false);
+  const [footerDismissed, setFooterDismissed] = useState(false);
   const didApplyInitialTrack = useRef(false);
   const didApplyInitialWidth = useRef(false);
   const didApplyInitialElevation = useRef(false);
@@ -306,22 +307,60 @@ export default function F1TrackApp({
         </aside>
       </div>
 
-      <footer className="shrink-0 border-t border-border bg-background/60 px-4 py-2">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-          <span className="font-semibold text-foreground/80">
-            {t.disclaimerTitle}:
-          </span>
-          <span className="max-w-[80vw] truncate md:max-w-none md:whitespace-normal">
-            {t.disclaimerBody}
-          </span>
-          <Separator orientation="vertical" className="hidden h-3 md:block" />
-          <span className="hidden md:inline">{t.dataSourcesTitle}:</span>
-          <span className="hidden md:inline">
-            bacinger/f1-circuits (MIT) · Open-Meteo (CC-BY 4.0) ·
-            Jolpica (AGPL-3.0) · TUMFTM/racetrack-database (LGPL-3.0)
-          </span>
-        </div>
-      </footer>
+      {!footerDismissed && (
+        <footer className="shrink-0 border-t border-border bg-background/80 text-[10px] text-muted-foreground backdrop-blur">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => setFooterExpanded((expanded) => !expanded)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              setFooterExpanded((expanded) => !expanded);
+            }}
+            className="grid w-full grid-cols-[1fr_auto] gap-3 px-4 py-2 text-left"
+          >
+            <span className="min-w-0">
+              <span className="font-semibold text-foreground/80">
+                {t.disclaimerTitle}:
+              </span>{" "}
+              <span
+                className={
+                  footerExpanded
+                    ? "whitespace-normal"
+                    : "line-clamp-1 md:line-clamp-none"
+                }
+              >
+                {t.disclaimerBody}
+              </span>
+              <span
+                className={
+                  footerExpanded
+                    ? "mt-1 block whitespace-normal text-muted-foreground/80"
+                    : "mt-1 hidden whitespace-normal text-muted-foreground/80 md:block"
+                }
+              >
+                <span className="font-medium text-foreground/70">
+                  {t.dataSourcesTitle}:
+                </span>{" "}
+                bacinger/f1-circuits (MIT) · Open-Meteo (CC-BY 4.0) · Jolpica
+                (AGPL-3.0) · TUMFTM/racetrack-database (LGPL-3.0)
+              </span>
+            </span>
+            <button
+              type="button"
+              aria-label="Hide disclaimer"
+              onClick={(event) => {
+                event.stopPropagation();
+                setFooterDismissed(true);
+              }}
+              className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </footer>
+      )}
     </div>
   );
 }
