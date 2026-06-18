@@ -53,13 +53,13 @@ bun install    # or: npm install / pnpm install
 bun run dev    # or: npm run dev
 ```
 
-Open http://localhost:3000
+Open http://localhost:4000
 
 ### Scripts
 
 | Command | Description |
 |---|---|
-| `bun run dev` | Dev server on port 3000 |
+| `bun run dev` | Dev server on port 4000 |
 | `bun run build` | Production build |
 | `bun run build:pages` | Static export for GitHub Pages |
 | `bun run lint` | ESLint check |
