@@ -35,7 +35,7 @@ export const THEMES: { code: Theme; labelKey: keyof typeof en; flag: string }[] 
 const en = {
   // App header
   appName: "F1 Track Studio",
-  appTagline: "3D Circuit Viewer · MVP 1.5",
+  appTagline: "3D Circuit Viewer · MVP 2",
   btnReload: "Reload",
   // Top bar toggles
   autoRotate: "Auto-rotate",
@@ -73,7 +73,7 @@ const en = {
   geometry: "Geometry",
   geometryDesc: (n: number) => `${n} points · LineString (closed)`,
   geoSource: "Source: bacinger/f1-circuits (MIT)",
-  mvpBadge: "MVP 1.5 · Static viewer + elevation",
+  mvpBadge: "MVP 2 · Track base + markers",
   mvpDesc:
     "Track built from GeoJSON LineString via CatmullRomCurve3 + ribbon mesh. Elevations are loaded from static profiles and applied to the curve's Y in real meter scale.",
   // Viewer overlay
@@ -108,7 +108,7 @@ type Dict = typeof en;
 
 const ru: Dict = {
   appName: "F1 Track Studio",
-  appTagline: "3D просмотрщик трасс · MVP 1.5",
+  appTagline: "3D просмотрщик трасс · MVP 2",
   btnReload: "Обновить",
   autoRotate: "Авто-вращение",
   elevations: "Реальный рельеф",
@@ -142,7 +142,7 @@ const ru: Dict = {
   geometry: "Геометрия",
   geometryDesc: (n: number) => `${n} точек · LineString (замкнутая)`,
   geoSource: "Источник: bacinger/f1-circuits (MIT)",
-  mvpBadge: "MVP 1.5 · Просмотрщик + высоты",
+  mvpBadge: "MVP 2 · База трасс + маркеры",
   mvpDesc:
     "Трасса построена из GeoJSON LineString через CatmullRomCurve3 + ribbon mesh. Высоты загружаются из статичных профилей и применяются к Y-координатам в реальном масштабе метров.",
   nowViewing: "Сейчас просматриваете",

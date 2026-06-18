@@ -11,7 +11,9 @@ Interactive 3D viewer for Formula 1 circuits — Next.js 16 + Three.js + Tailwin
 - **Elevation profile** via [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) — SRTM data smoothed for street circuits (Monaco, Baku)
 - **Mean-subtracted altitude** — high-altitude tracks (Mexico, ~2200 m) stay grounded
 - **OrbitControls** — left-drag to rotate, right-drag to pan, wheel to zoom
-- **Auto-rotate** toggle, **Elevation** toggle, and **Width** slider
+- **Auto-rotate** toggle, **Elevation** toggle, **Width** slider, and camera presets
+- **Start/finish marker** with direction arrow and verified marker overrides
+- **Shareable URL state** for selected track, width, elevation, and camera preset
 - **Light / Dark theme** — saved in localStorage
 - **Russian / English UI** — auto-detected, switchable from Settings
 - **Searchable circuit list** with country flags
@@ -27,8 +29,8 @@ Interactive 3D viewer for Formula 1 circuits — Next.js 16 + Three.js + Tailwin
 | Framework | Next.js 16 (App Router) + TypeScript 5 |
 | 3D | three@0.184 + @react-three/fiber@9 + @react-three/drei@10 |
 | Styling | Tailwind CSS 4 + shadcn/ui (New York) |
-| i18n | next-intl |
-| State | Zustand |
+| i18n | Lightweight local dictionaries |
+| State | React state + URL query params |
 | Track data | [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) (MIT) |
 | Elevation | [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) (CC-BY 4.0) + [OpenTopoData](https://opentopodata.org/) |
 
@@ -72,7 +74,7 @@ Open http://localhost:4000
 ```
 src/
 ├── app/
-│   ├── page.tsx              # Main page — 3-column layout
+│   ├── page.tsx              # Main page wrapper
 │   └── layout.tsx            # Root layout with providers
 ├── hooks/
 │   ├── use-circuits.ts       # Circuit index loading + selection
@@ -94,6 +96,7 @@ src/
 │   ├── elevation-api.ts      # Open-Meteo/OpenTopoData API + caching
 │   ├── track-geometry.ts     # Three.js BufferGeometry builders
 │   ├── f1-circuits.ts        # GitHub API helpers
+│   ├── start-finish.ts       # Marker overrides + start/finish geometry
 │   └── i18n.ts               # Language dictionaries
 └── docs/
     └── architecture.md       # Detailed architecture docs
@@ -105,9 +108,10 @@ src/
 
 - [x] **MVP 1** — static 3D viewer + OrbitControls
 - [x] **MVP 1.5** — elevation profile + ribbon mesh + i18n + theming
-- [ ] **MVP 2** — [OpenF1](https://openf1.org/) / [Jolpica](https://jolpi.ca/): sessions, telemetry
+- [x] **MVP 2** — corrected track base: real elevation x1, width control, camera presets, start/finish marker, direction arrow, URL state
+- [ ] **MVP 2.5** — richer circuit annotations: corners, sectors, and marker metadata
 - [ ] **MVP 3** — [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database): real track width
-- [ ] **MVP 4** — animated car position from OpenF1
+- [ ] **MVP 4** — sessions, telemetry, and animated car position
 
 ---
 
@@ -122,8 +126,6 @@ src/
 | [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) | Track geometry + metadata | MIT |
 | [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) | Elevation (SRTM-3) | CC-BY 4.0 |
 | [OpenTopoData](https://opentopodata.org/) | Alternative elevation source | CC-BY 4.0 |
-| [OpenF1](https://openf1.org/) | Session/telemetry data (planned) | Free |
-| [Jolpica](https://jolpi.ca/) | F1 API fallback (planned) | AGPL-3.0 |
 | [TUMFTM](https://github.com/TUMFTM/racetrack-database) | Track width data (planned) | LGPL-3.0 |
 
 ---
