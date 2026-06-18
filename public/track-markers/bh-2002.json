@@ -1,0 +1,35 @@
+{
+  "circuitId": "bh-2002",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Bahrain",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 16,
+  "lapLengthMeters": 5412,
+  "startFinish": {
+    "s": 0,
+    "verified": true
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1770.59,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1770.59,
+      "toDistance": 3958.07,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3958.07,
+      "toDistance": 5412,
+      "color": "#00D084"
+    }
+  ]
+}

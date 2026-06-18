@@ -1,0 +1,35 @@
+{
+  "circuitId": "mc-1929",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Monaco",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 24,
+  "lapLengthMeters": 3337,
+  "startFinish": {
+    "s": 0.74108,
+    "verified": true
+  },
+  "directionSign": -1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1041.24,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1041.24,
+      "toDistance": 2435.5,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 2435.5,
+      "toDistance": 3337,
+      "color": "#00D084"
+    }
+  ]
+}

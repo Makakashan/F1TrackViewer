@@ -1,0 +1,35 @@
+{
+  "circuitId": "gb-1948",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Great Britain",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 17,
+  "lapLengthMeters": 5891,
+  "startFinish": {
+    "s": 0.53798,
+    "verified": true
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1210.37,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1210.37,
+      "toDistance": 2890.1,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 2890.1,
+      "toDistance": 5891,
+      "color": "#00D084"
+    }
+  ]
+}

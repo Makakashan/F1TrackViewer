@@ -3,17 +3,22 @@
 import { ChevronRight, RefreshCw } from "lucide-react";
 import { useAppPref } from "@/components/app-pref-provider";
 import type { CircuitProperties } from "@/lib/f1-circuits";
+import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 
 interface TrackOverlayProps {
 	properties: CircuitProperties | null;
 	loadingElevations: boolean;
 	startFinishStatus?: string | null;
+	viewMode?: TrackViewMode;
+	markers?: TrackMarkers | null;
 }
 
 export default function TrackOverlay({
 	properties,
 	loadingElevations,
 	startFinishStatus,
+	viewMode = "normal",
+	markers,
 }: TrackOverlayProps) {
 	const { t } = useAppPref();
 
@@ -46,6 +51,15 @@ export default function TrackOverlay({
 					</div>
 				)}
 			</div>
+
+			{/* Sector unavailable notice */}
+			{viewMode === "sectors" && !markers?.sectors?.length && (
+				<div className="pointer-events-none absolute bottom-4 left-4 z-10 mt-2 rounded-md border border-amber-500/30 bg-background/80 px-3 py-2 backdrop-blur">
+					<div className="text-[11px] text-amber-500/80">
+						{t.sectorUnavailable}
+					</div>
+				</div>
+			)}
 
 			{/* Controls hint — desktop only */}
 			<div className="pointer-events-none absolute bottom-4 right-4 z-10 hidden rounded-md border border-border/80 bg-background/70 px-3 py-2 text-[10px] text-muted-foreground backdrop-blur md:block">

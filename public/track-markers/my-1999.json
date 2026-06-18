@@ -1,0 +1,31 @@
+{
+  "circuitId": "my-1999",
+  "source": "manual",
+  "lapLengthMeters": 5543,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "confidence": "low",
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1847.67,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1847.67,
+      "toDistance": 3695.33,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3695.33,
+      "toDistance": 5543,
+      "color": "#00D084"
+    }
+  ]
+}

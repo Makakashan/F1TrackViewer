@@ -1,0 +1,31 @@
+{
+  "circuitId": "us-1909",
+  "source": "manual",
+  "lapLengthMeters": 4192,
+  "startFinish": {
+    "s": 0,
+    "verified": false
+  },
+  "directionSign": 1,
+  "confidence": "low",
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1397.33,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1397.33,
+      "toDistance": 2794.67,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 2794.67,
+      "toDistance": 4192,
+      "color": "#00D084"
+    }
+  ]
+}

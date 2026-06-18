@@ -10,9 +10,15 @@ import {
   sceneRadiusFromBounds,
   REAL_ELEVATION_SCALE,
 } from "@/lib/geo-utils";
-import { buildExtrudedTrack, buildTrackOutline } from "@/lib/track-geometry";
+import {
+  buildExtrudedTrack,
+  buildTrackOutline,
+  buildSectorMesh,
+  buildSectorSplitLineGeometry,
+} from "@/lib/track-geometry";
 import {
   buildDirectionArrowGeometry,
+  buildStartFinishGantryGeometry,
   buildStartFinishGeometry,
   createCircuitMarkerSchema,
   findNearestCurveS,
@@ -21,6 +27,7 @@ import {
   type StartFinishPlacement,
 } from "@/lib/start-finish";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
+import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 
 export type CameraPreset = "top" | "iso" | "side" | "reset";
@@ -34,9 +41,18 @@ export interface TrackViewerProps {
   cameraPreset?: CameraPreset | null;
   startFinishCalibration?: boolean;
   onStartFinishPlacement?: (placement: StartFinishPlacement) => void;
+  viewMode?: TrackViewMode;
+  markers?: TrackMarkers | null;
 }
 
 const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
+
+function disposeGeometry(value: unknown) {
+  const disposable = value as { dispose?: unknown } | null | undefined;
+  if (typeof disposable?.dispose === "function") {
+    disposable.dispose();
+  }
+}
 
 function TrackMesh({
   geojson,
@@ -49,6 +65,8 @@ function TrackMesh({
   calibrationEnabled,
   onCalibrateStartFinish,
   onStartFinishPlacement,
+  viewMode,
+  markers,
 }: {
   geojson: CircuitGeoJSON;
   trackWidth: number;
@@ -60,6 +78,8 @@ function TrackMesh({
   calibrationEnabled?: boolean;
   onCalibrateStartFinish?: (s: number) => void;
   onStartFinishPlacement?: (placement: StartFinishPlacement) => void;
+  viewMode: TrackViewMode;
+  markers?: TrackMarkers | null;
 }) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -151,21 +171,73 @@ function TrackMesh({
     [curve, startFinishPlacement.s, trackWidth],
   );
 
+  const startFinishGantryGeometry = useMemo(
+    () =>
+      buildStartFinishGantryGeometry(
+        curve,
+        startFinishPlacement.s,
+        trackWidth,
+        0.5,
+      ),
+    [curve, startFinishPlacement.s, trackWidth],
+  );
+
+  // ─── Sector geometries ────────────────────────────────────────────
+  const showSectors = viewMode === "sectors" && markers?.sectors?.length;
+
+  const sectorGeometries = useMemo(() => {
+    if (!showSectors || !markers) return [];
+    return markers.sectors.map((sector) =>
+      buildSectorMesh(curve, sector, markers, trackWidth, 0.5, groundY, samples),
+    );
+  }, [showSectors, curve, markers, trackWidth, groundY, samples]);
+
+  const splitLineGeometries = useMemo(() => {
+    if (!showSectors || !markers) return [];
+    // Split lines at the end of S1 and S2 (not at S3 end = start/finish)
+    return markers.sectors
+      .slice(0, -1)
+      .map((sector) =>
+        buildSectorSplitLineGeometry(
+          curve,
+          sector.toDistance,
+          markers,
+          trackWidth,
+          0.5,
+        ),
+      );
+  }, [showSectors, curve, markers, trackWidth]);
+
+  // Separate cleanup effects so that sector geometry changes don't
+  // dispose the stable track/outline/marker geometries (which would
+  // wipe the very meshes we need when toggling back to normal mode).
   useEffect(() => {
     return () => {
       trackGeometry.dispose();
       outlineGeometry.dispose();
       startFinishGeometry.dispose();
       directionArrowGeometry.dispose();
+      disposeGeometry(startFinishGantryGeometry.posts);
+      disposeGeometry(startFinishGantryGeometry.beam);
     };
   }, [
     trackGeometry,
     outlineGeometry,
     startFinishGeometry,
     directionArrowGeometry,
+    startFinishGantryGeometry,
   ]);
 
+  useEffect(() => {
+    return () => {
+      sectorGeometries.forEach((g) => g.dispose());
+      splitLineGeometries.forEach((g) => g.dispose());
+    };
+  }, [sectorGeometries, splitLineGeometries]);
+
+  const isDark = resolvedTheme === "dark";
   const { camera, controls } = useThree();
+
   useEffect(() => {
     const verticalFudge = 1 + Math.min(1, peakY / Math.max(radius, 1));
     const distance = radius * 2.4 * verticalFudge;
@@ -207,37 +279,76 @@ function TrackMesh({
   // Track is F1 red on both themes — less neon than #e10600 (lower
   // emissiveIntensity + slightly darker base) so it doesn't burn the eyes.
   // Ground and rings are theme-dependent.
-  const isDark = resolvedTheme === "dark";
   const trackColor = "#c10500";
   const trackEmissive = "#c10500";
   const trackEmissiveIntensity = 0.12;
-  const outlineColor = "#0a0a0d";
-  const groundColor = isDark ? "#0a0a0d" : "#d8d8dc";
-  const ringColor1 = isDark ? "#1f1f24" : "#c4c4ca";
-  const ringColor2 = isDark ? "#16161a" : "#cdcdd2";
+  const outlineColor = isDark ? "#0a0a0d" : "#161a21";
+  const groundColor = isDark ? "#0a0a0d" : "#fbfcfe";
+  const ringColor1 = isDark ? "#1f1f24" : "#eef1f6";
+  const ringColor2 = isDark ? "#16161a" : "#f5f7fb";
+  const markerColor = isDark ? "#f5f5f5" : "#151820";
+  const sectorEmissiveIntensity = isDark ? 0.15 : 0.035;
+  const splitLineColor = isDark ? "#ffffff" : "#222936";
 
   return (
     <group>
-      {/* Extruded track — top surface + side walls in one geometry.
-          F1 red with emissive so it reads clearly on both themes. */}
-      <mesh
-        geometry={trackGeometry}
-        onPointerDown={(event) => {
-          if (!calibrationEnabled) return;
-          event.stopPropagation();
-          const nearestS = findNearestCurveS(curve, event.point, samples);
-          onCalibrateStartFinish?.(nearestS);
-        }}
-      >
-        <meshStandardMaterial
-          color={trackColor}
-          emissive={trackEmissive}
-          emissiveIntensity={trackEmissiveIntensity}
-          roughness={0.5}
-          metalness={0.05}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+      {/* Sector mode: colored sector meshes replace the single track mesh.
+          In normal mode, the single red track mesh is shown. */}
+      {showSectors ? (
+        <>
+          {markers!.sectors.map((sector, i) => (
+            <mesh
+              key={`sector-${sector.id}`}
+              geometry={sectorGeometries[i]}
+              onPointerDown={(event) => {
+                if (!calibrationEnabled) return;
+                event.stopPropagation();
+                const nearestS = findNearestCurveS(curve, event.point, samples);
+                onCalibrateStartFinish?.(nearestS);
+              }}
+            >
+              <meshStandardMaterial
+                color={sector.color}
+                emissive={sector.color}
+                emissiveIntensity={sectorEmissiveIntensity}
+                roughness={0.5}
+                metalness={0.05}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+          ))}
+
+          {/* Sector split lines */}
+          {splitLineGeometries.map((geo, i) => (
+            <mesh key={`split-${i}`} geometry={geo}>
+              <meshBasicMaterial color={splitLineColor} side={THREE.DoubleSide} />
+            </mesh>
+          ))}
+        </>
+      ) : (
+        <>
+          {/* Extruded track — top surface + side walls in one geometry.
+              F1 red with emissive so it reads clearly on both themes. */}
+          <mesh
+            geometry={trackGeometry}
+            onPointerDown={(event) => {
+              if (!calibrationEnabled) return;
+              event.stopPropagation();
+              const nearestS = findNearestCurveS(curve, event.point, samples);
+              onCalibrateStartFinish?.(nearestS);
+            }}
+          >
+            <meshStandardMaterial
+              color={trackColor}
+              emissive={trackEmissive}
+              emissiveIntensity={trackEmissiveIntensity}
+              roughness={0.5}
+              metalness={0.05}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </>
+      )}
 
       {/* Track outline — thin black lines along both top edges of the
           ribbon. Provides visual definition between track and ground. */}
@@ -246,11 +357,43 @@ function TrackMesh({
       </lineSegments>
 
       <mesh geometry={startFinishGeometry}>
-        <meshBasicMaterial vertexColors side={THREE.DoubleSide} />
+        <meshBasicMaterial
+          vertexColors
+          side={THREE.DoubleSide}
+          depthTest={false}
+          depthWrite={false}
+          polygonOffset
+          polygonOffsetFactor={-4}
+          polygonOffsetUnits={-4}
+        />
       </mesh>
 
       <mesh geometry={directionArrowGeometry}>
-        <meshBasicMaterial color="#f5f5f5" side={THREE.DoubleSide} />
+        <meshBasicMaterial
+          color={markerColor}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+          polygonOffset
+          polygonOffsetFactor={-5}
+          polygonOffsetUnits={-5}
+        />
+      </mesh>
+
+      <mesh geometry={startFinishGantryGeometry.posts}>
+        <meshStandardMaterial
+          color="#050507"
+          emissive="#000000"
+          emissiveIntensity={0}
+          roughness={0.48}
+          metalness={0.2}
+        />
+      </mesh>
+      <mesh geometry={startFinishGantryGeometry.beam}>
+        <meshStandardMaterial
+          vertexColors
+          roughness={0.42}
+          metalness={0.12}
+        />
       </mesh>
 
       {/* Ground plane — sits 0.5 m below the track's lowest point to avoid
@@ -306,7 +449,11 @@ export default function TrackViewer({
   cameraPreset = null,
   startFinishCalibration = false,
   onStartFinishPlacement,
+  viewMode = "normal",
+  markers,
 }: TrackViewerProps) {
+  const [canvasEventSource, setCanvasEventSource] =
+    useState<HTMLDivElement | null>(null);
   const circuitId = geojson.features[0]?.properties.id;
   const [calibratedOverrides, setCalibratedOverrides] = useState<
     Record<string, number>
@@ -388,133 +535,143 @@ export default function TrackViewer({
   const bgGradient =
     resolvedTheme === "dark"
       ? "linear-gradient(180deg, #0e0e12 0%, #050507 100%)"
-      : "linear-gradient(180deg, #e8e8ec 0%, #c8c8cc 100%)";
+      : "linear-gradient(180deg, #f7f8fb 0%, #e7eaf0 100%)";
+  const sceneBackgroundColor =
+    resolvedTheme === "dark" ? "#020204" : "#f4f6fa";
 
   return (
     <PointerCaptureBoundary>
-      {calibrationEnabled && circuitId && (
-        <div className="absolute left-4 top-4 z-20 max-h-[calc(100vh-2rem)] w-[min(360px,calc(100vw-2rem))] overflow-y-auto rounded-md border border-border/80 bg-background/90 p-3 text-xs shadow-lg backdrop-blur">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="font-semibold text-foreground">
-                Start/finish calibration
+      <div ref={setCanvasEventSource} className="relative h-full w-full">
+        {calibrationEnabled && circuitId && (
+          <div className="absolute left-4 top-4 z-20 max-h-[calc(100vh-2rem)] w-[min(360px,calc(100vw-2rem))] overflow-y-auto rounded-md border border-border/80 bg-background/90 p-3 text-xs shadow-lg backdrop-blur">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-semibold text-foreground">
+                  Start/finish calibration
+                </div>
+                <div className="mt-0.5 text-muted-foreground">
+                  {circuitId}: {displayedStartFinishS.toFixed(5)}
+                </div>
               </div>
-              <div className="mt-0.5 text-muted-foreground">
-                {circuitId}: {displayedStartFinishS.toFixed(5)}
+              <button
+                type="button"
+                onClick={resetCalibratedStartFinish}
+                className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                Reset
+              </button>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.0005}
+              value={displayedStartFinishS}
+              onChange={(event) =>
+                updateCalibratedStartFinish(Number(event.target.value))
+              }
+              className="mt-3 h-1 w-full cursor-pointer accent-[#e10600]"
+            />
+            <div className="mt-2 rounded-sm bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
+              "{circuitId}": {displayedStartFinishS.toFixed(5)}
+            </div>
+            <div className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              Click the correct point on the track, then fine-tune with the
+              slider if needed.
+            </div>
+            <div className="mt-3 space-y-2">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Current marker JSON
               </div>
+              <textarea
+                readOnly
+                value={currentMarkerExport}
+                className="h-28 w-full resize-none rounded-sm border border-border bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+              />
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Local overrides export
+              </div>
+              <textarea
+                readOnly
+                value={allMarkerExport}
+                className="h-40 w-full resize-none rounded-sm border border-border bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+              />
             </div>
-            <button
-              type="button"
-              onClick={resetCalibratedStartFinish}
-              className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              Reset
-            </button>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.0005}
-            value={displayedStartFinishS}
-            onChange={(event) =>
-              updateCalibratedStartFinish(Number(event.target.value))
-            }
-            className="mt-3 h-1 w-full cursor-pointer accent-[#e10600]"
-          />
-          <div className="mt-2 rounded-sm bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
-            "{circuitId}": {displayedStartFinishS.toFixed(5)}
-          </div>
-          <div className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            Click the correct point on the track, then fine-tune with the
-            slider if needed.
-          </div>
-          <div className="mt-3 space-y-2">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Current marker JSON
-            </div>
-            <textarea
-              readOnly
-              value={currentMarkerExport}
-              className="h-28 w-full resize-none rounded-sm border border-border bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+        )}
+
+        {canvasEventSource && (
+          <Canvas
+            eventSource={canvasEventSource}
+            shadows={false}
+            dpr={[1, 1.5]}
+            camera={{
+              fov: 50,
+              near: 0.1,
+              far: 200000,
+              position: [400, 300, 400],
+            }}
+            gl={{
+              antialias: true,
+              alpha: false,
+              powerPreference: "high-performance",
+            }}
+            onCreated={({ gl }) => {
+              gl.toneMapping = THREE.ACESFilmicToneMapping;
+              gl.toneMappingExposure = 1.05;
+              gl.outputColorSpace = THREE.SRGBColorSpace;
+            }}
+            style={{ background: bgGradient, touchAction: "none" }}
+          >
+            <color attach="background" args={[sceneBackgroundColor]} />
+            <ambientLight intensity={resolvedTheme === "dark" ? 0.5 : 0.7} />
+            <hemisphereLight
+              args={
+                resolvedTheme === "dark"
+                  ? ["#9bb4ff", "#1a1a1f", 0.5]
+                  : ["#b4c4ff", "#3a3a3f", 0.6]
+              }
             />
-            <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Local overrides export
-            </div>
-            <textarea
-              readOnly
-              value={allMarkerExport}
-              className="h-40 w-full resize-none rounded-sm border border-border bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+            <directionalLight
+              position={[500, 800, 400]}
+              intensity={resolvedTheme === "dark" ? 1.6 : 1.2}
             />
-          </div>
-        </div>
-      )}
+            <directionalLight
+              position={[-400, 300, -500]}
+              intensity={0.4}
+              color="#6b8cff"
+            />
 
-      <Canvas
-        shadows={false}
-        dpr={[1, 1.5]}
-        camera={{
-          fov: 50,
-          near: 0.1,
-          far: 200000,
-          position: [400, 300, 400],
-        }}
-        gl={{
-          antialias: true,
-          alpha: false,
-          powerPreference: "high-performance",
-        }}
-        onCreated={({ gl }) => {
-          gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.05;
-          gl.outputColorSpace = THREE.SRGBColorSpace;
-        }}
-        style={{ background: bgGradient, touchAction: "none" }}
-      >
-        <ambientLight intensity={resolvedTheme === "dark" ? 0.5 : 0.7} />
-        <hemisphereLight
-          args={
-            resolvedTheme === "dark"
-              ? ["#9bb4ff", "#1a1a1f", 0.5]
-              : ["#b4c4ff", "#3a3a3f", 0.6]
-          }
-        />
-        <directionalLight
-          position={[500, 800, 400]}
-          intensity={resolvedTheme === "dark" ? 1.6 : 1.2}
-        />
-        <directionalLight
-          position={[-400, 300, -500]}
-          intensity={0.4}
-          color="#6b8cff"
-        />
+            <Suspense fallback={<SceneSpinner />}>
+              <TrackMesh
+                geojson={geojson}
+                trackWidth={trackWidth}
+                elevations={elevations}
+                resolvedTheme={resolvedTheme}
+                cameraPreset={cameraPreset}
+                calibratedStartFinishS={calibratedStartFinishS}
+                onStartFinishResolved={setResolvedStartFinishS}
+                calibrationEnabled={calibrationEnabled}
+                onCalibrateStartFinish={updateCalibratedStartFinish}
+                onStartFinishPlacement={onStartFinishPlacement}
+                viewMode={viewMode}
+                markers={markers}
+              />
+            </Suspense>
 
-        <Suspense fallback={<SceneSpinner />}>
-          <TrackMesh
-            geojson={geojson}
-            trackWidth={trackWidth}
-            elevations={elevations}
-            resolvedTheme={resolvedTheme}
-            cameraPreset={cameraPreset}
-            calibratedStartFinishS={calibratedStartFinishS}
-            onStartFinishResolved={setResolvedStartFinishS}
-            calibrationEnabled={calibrationEnabled}
-            onCalibrateStartFinish={updateCalibratedStartFinish}
-            onStartFinishPlacement={onStartFinishPlacement}
-          />
-        </Suspense>
-
-        <OrbitControls
-          makeDefault
-          enableDamping
-          dampingFactor={0.08}
-          autoRotate={autoRotate}
-          autoRotateSpeed={0.5}
-          minDistance={20}
-          maxDistance={50000}
-          maxPolarAngle={Math.PI / 2.05}
-        />
-      </Canvas>
+            <OrbitControls
+              makeDefault
+              enableDamping
+              dampingFactor={0.08}
+              autoRotate={autoRotate}
+              autoRotateSpeed={0.5}
+              minDistance={20}
+              maxDistance={50000}
+              maxPolarAngle={Math.PI / 2.05}
+            />
+          </Canvas>
+        )}
+      </div>
     </PointerCaptureBoundary>
   );
 }

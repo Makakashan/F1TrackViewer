@@ -1,0 +1,35 @@
+{
+  "circuitId": "sg-2008",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Singapore",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 11,
+  "lapLengthMeters": 4928,
+  "startFinish": {
+    "s": 0,
+    "verified": true
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1629.38,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1629.38,
+      "toDistance": 3425.96,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3425.96,
+      "toDistance": 4928,
+      "color": "#00D084"
+    }
+  ]
+}

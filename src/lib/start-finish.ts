@@ -254,7 +254,7 @@ export function buildStartFinishGeometry(
   const markerLength = halfWidth * 2.15;
   const markerDepth = Math.max(2.4, halfWidth * 0.34);
   const cells = 10;
-  const y = center.y + topRaise + 0.09;
+  const y = center.y + topRaise + 0.35;
   const start = -markerLength / 2;
   const cellLength = markerLength / cells;
 
@@ -311,7 +311,7 @@ export function buildDirectionArrowGeometry(
 
   const length = Math.max(6, halfWidth * 1.35);
   const width = Math.max(5, halfWidth * 1.1);
-  const y = center.y + topRaise + 0.12;
+  const y = center.y + topRaise + 0.45;
 
   const tip = center
     .clone()
@@ -349,4 +349,178 @@ export function buildDirectionArrowGeometry(
   geometry.setIndex([0, 1, 2]);
   geometry.computeVertexNormals();
   return geometry;
+}
+
+export interface StartFinishGantryGeometries {
+  posts: THREE.BufferGeometry;
+  beam: THREE.BufferGeometry;
+}
+
+export function buildStartFinishGantryGeometry(
+  curve: THREE.CatmullRomCurve3,
+  s: number,
+  halfWidth: number,
+  topRaise: number,
+): StartFinishGantryGeometries {
+  const center = curve.getPointAt(wrap01(s));
+  const tangent = curve.getTangentAt(wrap01(s)).normalize();
+  const up = new THREE.Vector3(0, 1, 0);
+  const across = new THREE.Vector3().crossVectors(tangent, up);
+  if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
+  across.normalize();
+
+  const span = halfWidth * 2.08;
+  const postHeight = Math.max(7, halfWidth * 1.05);
+  const postWidth = Math.max(0.8, halfWidth * 0.12);
+  const beamHeight = Math.max(2.8, halfWidth * 0.42);
+  const beamDepth = Math.max(1.6, halfWidth * 0.24);
+  const baseY = center.y + topRaise + 0.12;
+  const beamCenterY = baseY + postHeight;
+
+  function createBoxGeometry(
+    boxCenter: THREE.Vector3,
+    widthAcross: number,
+    height: number,
+    depthAlong: number,
+    color?: [number, number, number],
+  ): THREE.BufferGeometry {
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const halfAcross = widthAcross / 2;
+    const halfHeight = height / 2;
+    const halfDepth = depthAlong / 2;
+
+    const corners = [
+      [-halfAcross, -halfHeight, -halfDepth],
+      [halfAcross, -halfHeight, -halfDepth],
+      [halfAcross, halfHeight, -halfDepth],
+      [-halfAcross, halfHeight, -halfDepth],
+      [-halfAcross, -halfHeight, halfDepth],
+      [halfAcross, -halfHeight, halfDepth],
+      [halfAcross, halfHeight, halfDepth],
+      [-halfAcross, halfHeight, halfDepth],
+    ].map(([a, y, d]) =>
+      boxCenter
+        .clone()
+        .addScaledVector(across, a)
+        .addScaledVector(up, y)
+        .addScaledVector(tangent, d),
+    );
+
+    for (const corner of corners) {
+      positions.push(corner.x, corner.y, corner.z);
+      if (color) colors.push(color[0], color[1], color[2]);
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    if (color) {
+      geometry.setAttribute(
+        "color",
+        new THREE.Float32BufferAttribute(colors, 3),
+      );
+    }
+    geometry.setIndex([
+      0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 0, 4, 5, 0, 5, 1, 3, 2, 6, 3, 6,
+      7, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2,
+    ]);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  const postY = baseY + postHeight / 2;
+  const postGeometries = [
+    createBoxGeometry(
+      center.clone().addScaledVector(across, -span / 2).setY(postY),
+      postWidth,
+      postHeight,
+      postWidth,
+    ),
+    createBoxGeometry(
+      center.clone().addScaledVector(across, span / 2).setY(postY),
+      postWidth,
+      postHeight,
+      postWidth,
+    ),
+  ];
+  const postPositions: number[] = [];
+  const postIndices: number[] = [];
+  for (const geometry of postGeometries) {
+    const position = geometry.getAttribute("position");
+    const index = geometry.getIndex();
+    const base = postPositions.length / 3;
+    for (let i = 0; i < position.count; i++) {
+      postPositions.push(position.getX(i), position.getY(i), position.getZ(i));
+    }
+    if (index) {
+      for (let i = 0; i < index.count; i++) {
+        postIndices.push(base + index.getX(i));
+      }
+    }
+    geometry.dispose();
+  }
+  const postsGeometry = new THREE.BufferGeometry();
+  postsGeometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(postPositions, 3),
+  );
+  postsGeometry.setIndex(postIndices);
+  postsGeometry.computeVertexNormals();
+
+  const beamCellCount = 14;
+  const beamCellWidth = (span + postWidth) / beamCellCount;
+  const beamGeometries: THREE.BufferGeometry[] = [];
+  for (let i = 0; i < beamCellCount; i++) {
+    const offset = -(span + postWidth) / 2 + beamCellWidth * (i + 0.5);
+    const color: [number, number, number] =
+      i % 2 === 0 ? [0.96, 0.96, 0.92] : [0.015, 0.015, 0.018];
+    beamGeometries.push(
+      createBoxGeometry(
+        center.clone().addScaledVector(across, offset).setY(beamCenterY),
+        beamCellWidth,
+        beamHeight,
+        beamDepth,
+        color,
+      ),
+    );
+  }
+
+  const beamPositions: number[] = [];
+  const beamColors: number[] = [];
+  const beamIndices: number[] = [];
+  for (const geometry of beamGeometries) {
+    const position = geometry.getAttribute("position");
+    const color = geometry.getAttribute("color");
+    const index = geometry.getIndex();
+    const base = beamPositions.length / 3;
+    for (let i = 0; i < position.count; i++) {
+      beamPositions.push(position.getX(i), position.getY(i), position.getZ(i));
+      beamColors.push(color.getX(i), color.getY(i), color.getZ(i));
+    }
+    if (index) {
+      for (let i = 0; i < index.count; i++) {
+        beamIndices.push(base + index.getX(i));
+      }
+    }
+    geometry.dispose();
+  }
+  const beamGeometry = new THREE.BufferGeometry();
+  beamGeometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(beamPositions, 3),
+  );
+  beamGeometry.setAttribute(
+    "color",
+    new THREE.Float32BufferAttribute(beamColors, 3),
+  );
+  beamGeometry.setIndex(beamIndices);
+  beamGeometry.computeVertexNormals();
+
+  return {
+    posts: postsGeometry,
+    beam: beamGeometry,
+  };
 }

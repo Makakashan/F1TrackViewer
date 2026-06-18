@@ -1,0 +1,35 @@
+{
+  "circuitId": "mx-1962",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Mexico",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 17,
+  "lapLengthMeters": 4304,
+  "startFinish": {
+    "s": 0,
+    "verified": true
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1901.89,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1901.89,
+      "toDistance": 3365.35,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3365.35,
+      "toDistance": 4304,
+      "color": "#00D084"
+    }
+  ]
+}

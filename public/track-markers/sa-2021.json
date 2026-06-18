@@ -1,0 +1,35 @@
+{
+  "circuitId": "sa-2021",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Saudi Arabia",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 14,
+  "lapLengthMeters": 6175,
+  "startFinish": {
+    "s": 0,
+    "verified": true
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 2075.35,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 2075.35,
+      "toDistance": 4112.39,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 4112.39,
+      "toDistance": 6175,
+      "color": "#00D084"
+    }
+  ]
+}

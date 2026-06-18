@@ -1,0 +1,35 @@
+{
+  "circuitId": "nl-1948",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Netherlands",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 13,
+  "lapLengthMeters": 4259,
+  "startFinish": {
+    "s": 0,
+    "verified": true
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1485.87,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1485.87,
+      "toDistance": 2939.29,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 2939.29,
+      "toDistance": 4259,
+      "color": "#00D084"
+    }
+  ]
+}

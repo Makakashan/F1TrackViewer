@@ -1,0 +1,35 @@
+{
+  "circuitId": "pt-2008",
+  "source": "fastf1-telemetry-derived",
+  "year": 2021,
+  "event": "Portugal",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 10,
+  "lapLengthMeters": 4653,
+  "startFinish": {
+    "s": 0,
+    "verified": true
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1476.39,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1476.39,
+      "toDistance": 3121.58,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3121.58,
+      "toDistance": 4653,
+      "color": "#00D084"
+    }
+  ]
+}

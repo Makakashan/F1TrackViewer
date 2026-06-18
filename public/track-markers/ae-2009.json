@@ -1,0 +1,35 @@
+{
+  "circuitId": "ae-2009",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Abu Dhabi",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 11,
+  "lapLengthMeters": 5281,
+  "startFinish": {
+    "s": 0,
+    "verified": true
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1197.28,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1197.28,
+      "toDistance": 3531.71,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3531.71,
+      "toDistance": 5281,
+      "color": "#00D084"
+    }
+  ]
+}

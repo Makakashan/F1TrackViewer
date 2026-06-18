@@ -1,0 +1,35 @@
+{
+  "circuitId": "it-1914",
+  "source": "fastf1-telemetry-derived",
+  "year": 2020,
+  "event": "Tuscany",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 5,
+  "lapLengthMeters": 5245,
+  "startFinish": {
+    "s": 0,
+    "verified": true
+  },
+  "directionSign": 1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1823.42,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1823.42,
+      "toDistance": 3337.86,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 3337.86,
+      "toDistance": 5245,
+      "color": "#00D084"
+    }
+  ]
+}
