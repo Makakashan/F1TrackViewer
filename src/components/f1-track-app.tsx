@@ -98,12 +98,16 @@ export default function F1TrackApp({
     useState<StartFinishPlacement | null>(null);
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [footerDismissed, setFooterDismissed] = useState(false);
-  const [viewMode, setViewMode] = useState<TrackViewMode>("normal");
+  const urlSectors = urlParams.get("sectors");
+  const [viewMode, setViewMode] = useState<TrackViewMode>(() =>
+    urlSectors === "1" ? "sectors" : "normal",
+  );
   const [markers, setMarkers] = useState<TrackMarkers | null>(null);
   const didApplyInitialTrack = useRef(false);
   const didApplyInitialWidth = useRef(false);
   const didApplyInitialElevation = useRef(false);
   const didApplyInitialCamera = useRef(false);
+  const didApplyInitialSectors = useRef(false);
 
   const urlTrack = urlParams.get("track");
   const urlWidth = parseWidthParam(urlParams.get("width"));
@@ -125,11 +129,18 @@ export default function F1TrackApp({
     };
   }, [selectedId]);
 
-  // Reset view mode when markers become unavailable
+  // Reset view mode only when markers explicitly confirm unavailability
+  // (null = still loading, not yet unavailable)
+  const prevMarkersRef = useRef<TrackMarkers | null>(null);
   useEffect(() => {
-    if (viewMode === "sectors" && !markers) {
+    // Only reset if markers were loaded and have no sectors
+    if (viewMode === "sectors" && prevMarkersRef.current === undefined) {
+      // markers was loaded but had no sectors — we already handled
+    }
+    if (viewMode === "sectors" && markers !== null && !markers.sectors?.length) {
       setViewMode("normal");
     }
+    prevMarkersRef.current = markers;
   }, [markers, viewMode]);
 
   useEffect(() => {
@@ -174,6 +185,20 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, [cameraPreset, urlCamera]);
 
+  // Hydrate viewMode from URL ?sectors=1
+  useEffect(() => {
+    if (didApplyInitialSectors.current) return;
+    const urlSectorsNow = new URLSearchParams(window.location.search).get("sectors");
+    const targetMode: TrackViewMode = urlSectorsNow === "1" ? "sectors" : "normal";
+    if (targetMode === viewMode) {
+      didApplyInitialSectors.current = true;
+      return;
+    }
+    didApplyInitialSectors.current = true;
+    const timer = window.setTimeout(() => setViewMode(targetMode), 0);
+    return () => window.clearTimeout(timer);
+  }, [viewMode]);
+
   useEffect(() => {
     if (didApplyInitialTrack.current) return;
     if (!circuits.length) return;
@@ -192,6 +217,8 @@ export default function F1TrackApp({
 
   useEffect(() => {
     if (typeof window === "undefined" || !selectedId) return;
+    // Don't write URL until initial hydration of all params is done
+    if (!didApplyInitialSectors.current) return;
     if (
       !didApplyInitialTrack.current &&
       urlTrack &&
