@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3000",
+    "dev": "next dev -p 4000",
     "build": "next build",
     "build:pages": "GITHUB_PAGES=true next build",
     "elevations:generate": "bun scripts/generate-elevations.ts",
-    "start": "next start -p 3000",
+    "start": "next start -p 4000",
     "lint": "eslint ."
   },
   "dependencies": {

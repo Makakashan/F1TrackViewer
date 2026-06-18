@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect, Suspense } from "react";
+import { useMemo, useEffect, Suspense, useState, useCallback } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -8,10 +8,22 @@ import {
   buildTrackCurve,
   computeBounds,
   sceneRadiusFromBounds,
+  REAL_ELEVATION_SCALE,
 } from "@/lib/geo-utils";
 import { buildExtrudedTrack, buildTrackOutline } from "@/lib/track-geometry";
+import {
+  buildDirectionArrowGeometry,
+  buildStartFinishGeometry,
+  createCircuitMarkerSchema,
+  findNearestCurveS,
+  formatMarkerExport,
+  resolveStartFinishPlacement,
+  type StartFinishPlacement,
+} from "@/lib/start-finish";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
+
+export type CameraPreset = "top" | "iso" | "side" | "reset";
 
 export interface TrackViewerProps {
   geojson: CircuitGeoJSON;
@@ -19,18 +31,35 @@ export interface TrackViewerProps {
   trackWidth?: number;
   autoRotate?: boolean;
   resolvedTheme?: "light" | "dark";
+  cameraPreset?: CameraPreset | null;
+  startFinishCalibration?: boolean;
+  onStartFinishPlacement?: (placement: StartFinishPlacement) => void;
 }
+
+const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
 
 function TrackMesh({
   geojson,
   trackWidth,
   elevations,
   resolvedTheme,
+  cameraPreset,
+  calibratedStartFinishS,
+  onStartFinishResolved,
+  calibrationEnabled,
+  onCalibrateStartFinish,
+  onStartFinishPlacement,
 }: {
   geojson: CircuitGeoJSON;
   trackWidth: number;
   elevations?: number[] | null;
   resolvedTheme: "light" | "dark";
+  cameraPreset?: CameraPreset | null;
+  calibratedStartFinishS?: number | null;
+  onStartFinishResolved?: (s: number) => void;
+  calibrationEnabled?: boolean;
+  onCalibrateStartFinish?: (s: number) => void;
+  onStartFinishPlacement?: (placement: StartFinishPlacement) => void;
 }) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -46,7 +75,7 @@ function TrackMesh({
       coords,
       b,
       elevations ?? undefined,
-      1,
+      REAL_ELEVATION_SCALE,
     );
     let peak = 0;
     if (elevations && elevations.length) {
@@ -84,12 +113,57 @@ function TrackMesh({
     [curve, trackWidth, samples],
   );
 
+  const startFinishPlacement = useMemo(
+    () =>
+      resolveStartFinishPlacement(
+        feature.properties.id,
+        curve,
+        samples,
+        calibratedStartFinishS,
+      ),
+    [feature.properties.id, curve, samples, calibratedStartFinishS],
+  );
+
+  useEffect(() => {
+    onStartFinishResolved?.(startFinishPlacement.s);
+    onStartFinishPlacement?.(startFinishPlacement);
+  }, [onStartFinishPlacement, onStartFinishResolved, startFinishPlacement]);
+
+  const startFinishGeometry = useMemo(
+    () =>
+      buildStartFinishGeometry(
+        curve,
+        startFinishPlacement.s,
+        trackWidth,
+        0.5,
+      ),
+    [curve, startFinishPlacement.s, trackWidth],
+  );
+
+  const directionArrowGeometry = useMemo(
+    () =>
+      buildDirectionArrowGeometry(
+        curve,
+        startFinishPlacement.s,
+        trackWidth,
+        0.5,
+      ),
+    [curve, startFinishPlacement.s, trackWidth],
+  );
+
   useEffect(() => {
     return () => {
       trackGeometry.dispose();
       outlineGeometry.dispose();
+      startFinishGeometry.dispose();
+      directionArrowGeometry.dispose();
     };
-  }, [trackGeometry, outlineGeometry]);
+  }, [
+    trackGeometry,
+    outlineGeometry,
+    startFinishGeometry,
+    directionArrowGeometry,
+  ]);
 
   const { camera, controls } = useThree();
   useEffect(() => {
@@ -103,6 +177,32 @@ function TrackMesh({
       (controls as any).update?.();
     }
   }, [camera, controls, radius, peakY]);
+
+  useEffect(() => {
+    if (!cameraPreset) return;
+    const distance = radius * 2.4;
+    const yOffset = Math.max(radius * 0.3, peakY * 1.2);
+
+    switch (cameraPreset) {
+      case "top":
+        camera.position.set(0, distance * 2, 0);
+        break;
+      case "iso":
+        camera.position.set(distance, distance * 0.6 + yOffset, distance);
+        break;
+      case "side":
+        camera.position.set(distance * 1.5, yOffset * 0.5, 0);
+        break;
+      case "reset":
+        camera.position.set(distance, distance * 0.6 + yOffset, distance);
+        break;
+    }
+    camera.lookAt(0, 0, 0);
+    if (controls && "target" in controls) {
+      (controls as any).target.set(0, 0, 0);
+      (controls as any).update?.();
+    }
+  }, [cameraPreset, camera, controls, radius, peakY]);
 
   // Track is F1 red on both themes — less neon than #e10600 (lower
   // emissiveIntensity + slightly darker base) so it doesn't burn the eyes.
@@ -120,7 +220,15 @@ function TrackMesh({
     <group>
       {/* Extruded track — top surface + side walls in one geometry.
           F1 red with emissive so it reads clearly on both themes. */}
-      <mesh geometry={trackGeometry}>
+      <mesh
+        geometry={trackGeometry}
+        onPointerDown={(event) => {
+          if (!calibrationEnabled) return;
+          event.stopPropagation();
+          const nearestS = findNearestCurveS(curve, event.point, samples);
+          onCalibrateStartFinish?.(nearestS);
+        }}
+      >
         <meshStandardMaterial
           color={trackColor}
           emissive={trackEmissive}
@@ -136,6 +244,14 @@ function TrackMesh({
       <lineSegments geometry={outlineGeometry}>
         <lineBasicMaterial color={outlineColor} />
       </lineSegments>
+
+      <mesh geometry={startFinishGeometry}>
+        <meshBasicMaterial vertexColors side={THREE.DoubleSide} />
+      </mesh>
+
+      <mesh geometry={directionArrowGeometry}>
+        <meshBasicMaterial color="#f5f5f5" side={THREE.DoubleSide} />
+      </mesh>
 
       {/* Ground plane — sits 0.5 m below the track's lowest point to avoid
           z-fighting with the guide rings. */}
@@ -187,7 +303,88 @@ export default function TrackViewer({
   trackWidth = 7,
   autoRotate = true,
   resolvedTheme = "dark",
+  cameraPreset = null,
+  startFinishCalibration = false,
+  onStartFinishPlacement,
 }: TrackViewerProps) {
+  const circuitId = geojson.features[0]?.properties.id;
+  const [calibratedOverrides, setCalibratedOverrides] = useState<
+    Record<string, number>
+  >(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      const raw = window.localStorage.getItem(START_FINISH_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [resolvedStartFinishS, setResolvedStartFinishS] = useState<
+    number | null
+  >(null);
+  const calibrationEnabled = startFinishCalibration;
+
+  const calibratedStartFinishS =
+    circuitId && calibratedOverrides[circuitId] != null
+      ? calibratedOverrides[circuitId]
+      : null;
+
+  const displayedStartFinishS =
+    calibratedStartFinishS ?? resolvedStartFinishS ?? 0;
+  const exportOverrides = useMemo(() => {
+    if (!circuitId) return calibratedOverrides;
+    return {
+      ...calibratedOverrides,
+      [circuitId]: Number(displayedStartFinishS.toFixed(5)),
+    };
+  }, [calibratedOverrides, circuitId, displayedStartFinishS]);
+  const currentMarkerExport = useMemo(() => {
+    if (!circuitId) return "";
+    return JSON.stringify(
+      createCircuitMarkerSchema(
+        circuitId,
+        displayedStartFinishS,
+        true,
+        calibratedStartFinishS != null
+          ? "local admin calibration"
+          : "current effective marker",
+      ),
+      null,
+      2,
+    );
+  }, [calibratedStartFinishS, circuitId, displayedStartFinishS]);
+  const allMarkerExport = useMemo(
+    () => formatMarkerExport(exportOverrides),
+    [exportOverrides],
+  );
+
+  const updateCalibratedStartFinish = useCallback(
+    (s: number) => {
+      if (!circuitId || typeof window === "undefined") return;
+      const next = {
+        ...calibratedOverrides,
+        [circuitId]: Number(s.toFixed(5)),
+      };
+      setCalibratedOverrides(next);
+      window.localStorage.setItem(
+        START_FINISH_STORAGE_KEY,
+        JSON.stringify(next),
+      );
+    },
+    [calibratedOverrides, circuitId],
+  );
+
+  const resetCalibratedStartFinish = useCallback(() => {
+    if (!circuitId || typeof window === "undefined") return;
+    const next = { ...calibratedOverrides };
+    delete next[circuitId];
+    setCalibratedOverrides(next);
+    window.localStorage.setItem(
+      START_FINISH_STORAGE_KEY,
+      JSON.stringify(next),
+    );
+  }, [calibratedOverrides, circuitId]);
+
   const bgGradient =
     resolvedTheme === "dark"
       ? "linear-gradient(180deg, #0e0e12 0%, #050507 100%)"
@@ -195,6 +392,64 @@ export default function TrackViewer({
 
   return (
     <PointerCaptureBoundary>
+      {calibrationEnabled && circuitId && (
+        <div className="absolute left-4 top-4 z-20 max-h-[calc(100vh-2rem)] w-[min(360px,calc(100vw-2rem))] overflow-y-auto rounded-md border border-border/80 bg-background/90 p-3 text-xs shadow-lg backdrop-blur">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="font-semibold text-foreground">
+                Start/finish calibration
+              </div>
+              <div className="mt-0.5 text-muted-foreground">
+                {circuitId}: {displayedStartFinishS.toFixed(5)}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={resetCalibratedStartFinish}
+              className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+            >
+              Reset
+            </button>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.0005}
+            value={displayedStartFinishS}
+            onChange={(event) =>
+              updateCalibratedStartFinish(Number(event.target.value))
+            }
+            className="mt-3 h-1 w-full cursor-pointer accent-[#e10600]"
+          />
+          <div className="mt-2 rounded-sm bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
+            "{circuitId}": {displayedStartFinishS.toFixed(5)}
+          </div>
+          <div className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+            Click the correct point on the track, then fine-tune with the
+            slider if needed.
+          </div>
+          <div className="mt-3 space-y-2">
+            <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Current marker JSON
+            </div>
+            <textarea
+              readOnly
+              value={currentMarkerExport}
+              className="h-28 w-full resize-none rounded-sm border border-border bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+            />
+            <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Local overrides export
+            </div>
+            <textarea
+              readOnly
+              value={allMarkerExport}
+              className="h-40 w-full resize-none rounded-sm border border-border bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+            />
+          </div>
+        </div>
+      )}
+
       <Canvas
         shadows={false}
         dpr={[1, 1.5]}
@@ -240,6 +495,12 @@ export default function TrackViewer({
             trackWidth={trackWidth}
             elevations={elevations}
             resolvedTheme={resolvedTheme}
+            cameraPreset={cameraPreset}
+            calibratedStartFinishS={calibratedStartFinishS}
+            onStartFinishResolved={setResolvedStartFinishS}
+            calibrationEnabled={calibrationEnabled}
+            onCalibrateStartFinish={updateCalibratedStartFinish}
+            onStartFinishPlacement={onStartFinishPlacement}
           />
         </Suspense>
 
