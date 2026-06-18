@@ -18,6 +18,7 @@ import {
 } from "@/lib/track-geometry";
 import {
   buildDirectionArrowGeometry,
+  buildStartFinishGantryGeometry,
   buildStartFinishGeometry,
   createCircuitMarkerSchema,
   findNearestCurveS,
@@ -45,6 +46,13 @@ export interface TrackViewerProps {
 }
 
 const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
+
+function disposeGeometry(value: unknown) {
+  const disposable = value as { dispose?: unknown } | null | undefined;
+  if (typeof disposable?.dispose === "function") {
+    disposable.dispose();
+  }
+}
 
 function TrackMesh({
   geojson,
@@ -163,6 +171,17 @@ function TrackMesh({
     [curve, startFinishPlacement.s, trackWidth],
   );
 
+  const startFinishGantryGeometry = useMemo(
+    () =>
+      buildStartFinishGantryGeometry(
+        curve,
+        startFinishPlacement.s,
+        trackWidth,
+        0.5,
+      ),
+    [curve, startFinishPlacement.s, trackWidth],
+  );
+
   // ─── Sector geometries ────────────────────────────────────────────
   const showSectors = viewMode === "sectors" && markers?.sectors?.length;
 
@@ -204,8 +223,16 @@ function TrackMesh({
       outlineGeometry.dispose();
       startFinishGeometry.dispose();
       directionArrowGeometry.dispose();
+      disposeGeometry(startFinishGantryGeometry.posts);
+      disposeGeometry(startFinishGantryGeometry.beam);
     };
-  }, [trackGeometry, outlineGeometry, startFinishGeometry, directionArrowGeometry]);
+  }, [
+    trackGeometry,
+    outlineGeometry,
+    startFinishGeometry,
+    directionArrowGeometry,
+    startFinishGantryGeometry,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -332,11 +359,43 @@ function TrackMesh({
       </lineSegments>
 
       <mesh geometry={startFinishGeometry}>
-        <meshBasicMaterial vertexColors side={THREE.DoubleSide} />
+        <meshBasicMaterial
+          vertexColors
+          side={THREE.DoubleSide}
+          depthTest={false}
+          depthWrite={false}
+          polygonOffset
+          polygonOffsetFactor={-4}
+          polygonOffsetUnits={-4}
+        />
       </mesh>
 
       <mesh geometry={directionArrowGeometry}>
-        <meshBasicMaterial color="#f5f5f5" side={THREE.DoubleSide} />
+        <meshBasicMaterial
+          color="#f5f5f5"
+          side={THREE.DoubleSide}
+          depthWrite={false}
+          polygonOffset
+          polygonOffsetFactor={-5}
+          polygonOffsetUnits={-5}
+        />
+      </mesh>
+
+      <mesh geometry={startFinishGantryGeometry.posts}>
+        <meshStandardMaterial
+          color="#050507"
+          emissive="#000000"
+          emissiveIntensity={0}
+          roughness={0.48}
+          metalness={0.2}
+        />
+      </mesh>
+      <mesh geometry={startFinishGantryGeometry.beam}>
+        <meshStandardMaterial
+          vertexColors
+          roughness={0.42}
+          metalness={0.12}
+        />
       </mesh>
 
       {/* Ground plane — sits 0.5 m below the track's lowest point to avoid
@@ -395,6 +454,8 @@ export default function TrackViewer({
   viewMode = "normal",
   markers,
 }: TrackViewerProps) {
+  const [canvasEventSource, setCanvasEventSource] =
+    useState<HTMLDivElement | null>(null);
   const circuitId = geojson.features[0]?.properties.id;
   const [calibratedOverrides, setCalibratedOverrides] = useState<
     Record<string, number>
@@ -480,131 +541,136 @@ export default function TrackViewer({
 
   return (
     <PointerCaptureBoundary>
-      {calibrationEnabled && circuitId && (
-        <div className="absolute left-4 top-4 z-20 max-h-[calc(100vh-2rem)] w-[min(360px,calc(100vw-2rem))] overflow-y-auto rounded-md border border-border/80 bg-background/90 p-3 text-xs shadow-lg backdrop-blur">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <div className="font-semibold text-foreground">
-                Start/finish calibration
+      <div ref={setCanvasEventSource} className="relative h-full w-full">
+        {calibrationEnabled && circuitId && (
+          <div className="absolute left-4 top-4 z-20 max-h-[calc(100vh-2rem)] w-[min(360px,calc(100vw-2rem))] overflow-y-auto rounded-md border border-border/80 bg-background/90 p-3 text-xs shadow-lg backdrop-blur">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="font-semibold text-foreground">
+                  Start/finish calibration
+                </div>
+                <div className="mt-0.5 text-muted-foreground">
+                  {circuitId}: {displayedStartFinishS.toFixed(5)}
+                </div>
               </div>
-              <div className="mt-0.5 text-muted-foreground">
-                {circuitId}: {displayedStartFinishS.toFixed(5)}
+              <button
+                type="button"
+                onClick={resetCalibratedStartFinish}
+                className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                Reset
+              </button>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.0005}
+              value={displayedStartFinishS}
+              onChange={(event) =>
+                updateCalibratedStartFinish(Number(event.target.value))
+              }
+              className="mt-3 h-1 w-full cursor-pointer accent-[#e10600]"
+            />
+            <div className="mt-2 rounded-sm bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
+              "{circuitId}": {displayedStartFinishS.toFixed(5)}
+            </div>
+            <div className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              Click the correct point on the track, then fine-tune with the
+              slider if needed.
+            </div>
+            <div className="mt-3 space-y-2">
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Current marker JSON
               </div>
+              <textarea
+                readOnly
+                value={currentMarkerExport}
+                className="h-28 w-full resize-none rounded-sm border border-border bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+              />
+              <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Local overrides export
+              </div>
+              <textarea
+                readOnly
+                value={allMarkerExport}
+                className="h-40 w-full resize-none rounded-sm border border-border bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+              />
             </div>
-            <button
-              type="button"
-              onClick={resetCalibratedStartFinish}
-              className="rounded-md border border-border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-            >
-              Reset
-            </button>
           </div>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.0005}
-            value={displayedStartFinishS}
-            onChange={(event) =>
-              updateCalibratedStartFinish(Number(event.target.value))
-            }
-            className="mt-3 h-1 w-full cursor-pointer accent-[#e10600]"
-          />
-          <div className="mt-2 rounded-sm bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground">
-            "{circuitId}": {displayedStartFinishS.toFixed(5)}
-          </div>
-          <div className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            Click the correct point on the track, then fine-tune with the
-            slider if needed.
-          </div>
-          <div className="mt-3 space-y-2">
-            <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Current marker JSON
-            </div>
-            <textarea
-              readOnly
-              value={currentMarkerExport}
-              className="h-28 w-full resize-none rounded-sm border border-border bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+        )}
+
+        {canvasEventSource && (
+          <Canvas
+            eventSource={canvasEventSource}
+            shadows={false}
+            dpr={[1, 1.5]}
+            camera={{
+              fov: 50,
+              near: 0.1,
+              far: 200000,
+              position: [400, 300, 400],
+            }}
+            gl={{
+              antialias: true,
+              alpha: false,
+              powerPreference: "high-performance",
+            }}
+            onCreated={({ gl }) => {
+              gl.toneMapping = THREE.ACESFilmicToneMapping;
+              gl.toneMappingExposure = 1.05;
+              gl.outputColorSpace = THREE.SRGBColorSpace;
+            }}
+            style={{ background: bgGradient, touchAction: "none" }}
+          >
+            <ambientLight intensity={resolvedTheme === "dark" ? 0.5 : 0.7} />
+            <hemisphereLight
+              args={
+                resolvedTheme === "dark"
+                  ? ["#9bb4ff", "#1a1a1f", 0.5]
+                  : ["#b4c4ff", "#3a3a3f", 0.6]
+              }
             />
-            <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Local overrides export
-            </div>
-            <textarea
-              readOnly
-              value={allMarkerExport}
-              className="h-40 w-full resize-none rounded-sm border border-border bg-muted/60 p-2 font-mono text-[10px] leading-relaxed text-muted-foreground"
+            <directionalLight
+              position={[500, 800, 400]}
+              intensity={resolvedTheme === "dark" ? 1.6 : 1.2}
             />
-          </div>
-        </div>
-      )}
+            <directionalLight
+              position={[-400, 300, -500]}
+              intensity={0.4}
+              color="#6b8cff"
+            />
 
-      <Canvas
-        shadows={false}
-        dpr={[1, 1.5]}
-        camera={{
-          fov: 50,
-          near: 0.1,
-          far: 200000,
-          position: [400, 300, 400],
-        }}
-        gl={{
-          antialias: true,
-          alpha: false,
-          powerPreference: "high-performance",
-        }}
-        onCreated={({ gl }) => {
-          gl.toneMapping = THREE.ACESFilmicToneMapping;
-          gl.toneMappingExposure = 1.05;
-          gl.outputColorSpace = THREE.SRGBColorSpace;
-        }}
-        style={{ background: bgGradient, touchAction: "none" }}
-      >
-        <ambientLight intensity={resolvedTheme === "dark" ? 0.5 : 0.7} />
-        <hemisphereLight
-          args={
-            resolvedTheme === "dark"
-              ? ["#9bb4ff", "#1a1a1f", 0.5]
-              : ["#b4c4ff", "#3a3a3f", 0.6]
-          }
-        />
-        <directionalLight
-          position={[500, 800, 400]}
-          intensity={resolvedTheme === "dark" ? 1.6 : 1.2}
-        />
-        <directionalLight
-          position={[-400, 300, -500]}
-          intensity={0.4}
-          color="#6b8cff"
-        />
+            <Suspense fallback={<SceneSpinner />}>
+              <TrackMesh
+                geojson={geojson}
+                trackWidth={trackWidth}
+                elevations={elevations}
+                resolvedTheme={resolvedTheme}
+                cameraPreset={cameraPreset}
+                calibratedStartFinishS={calibratedStartFinishS}
+                onStartFinishResolved={setResolvedStartFinishS}
+                calibrationEnabled={calibrationEnabled}
+                onCalibrateStartFinish={updateCalibratedStartFinish}
+                onStartFinishPlacement={onStartFinishPlacement}
+                viewMode={viewMode}
+                markers={markers}
+              />
+            </Suspense>
 
-        <Suspense fallback={<SceneSpinner />}>
-          <TrackMesh
-            geojson={geojson}
-            trackWidth={trackWidth}
-            elevations={elevations}
-            resolvedTheme={resolvedTheme}
-            cameraPreset={cameraPreset}
-            calibratedStartFinishS={calibratedStartFinishS}
-            onStartFinishResolved={setResolvedStartFinishS}
-            calibrationEnabled={calibrationEnabled}
-            onCalibrateStartFinish={updateCalibratedStartFinish}
-            onStartFinishPlacement={onStartFinishPlacement}
-            viewMode={viewMode}
-            markers={markers}
-          />
-        </Suspense>
-
-        <OrbitControls
-          makeDefault
-          enableDamping
-          dampingFactor={0.08}
-          autoRotate={autoRotate}
-          autoRotateSpeed={0.5}
-          minDistance={20}
-          maxDistance={50000}
-          maxPolarAngle={Math.PI / 2.05}
-        />
-      </Canvas>
+            <OrbitControls
+              makeDefault
+              enableDamping
+              dampingFactor={0.08}
+              autoRotate={autoRotate}
+              autoRotateSpeed={0.5}
+              minDistance={20}
+              maxDistance={50000}
+              maxPolarAngle={Math.PI / 2.05}
+            />
+          </Canvas>
+        )}
+      </div>
     </PointerCaptureBoundary>
   );
 }
