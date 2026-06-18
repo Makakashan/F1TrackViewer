@@ -24,8 +24,6 @@ export default function TrackOverlay({
 
 	if (!properties) return null;
 
-	const showSectors = viewMode === "sectors" && markers?.sectors?.length;
-
 	return (
 		<>
 			{/* Track name overlay (bottom-left) */}
@@ -50,41 +48,6 @@ export default function TrackOverlay({
 					<div className="mt-1 flex items-center gap-1 text-[10px] text-amber-500/80">
 						<RefreshCw className="h-2.5 w-2.5 animate-spin" />
 						{t.loadingElevations}
-					</div>
-				)}
-
-				{/* Sector legend */}
-				{showSectors && (
-					<div className="mt-3 rounded-md border border-border/60 bg-background/80 px-3 py-2 backdrop-blur">
-						<div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-							{t.sectorLegend}
-						</div>
-						<div className="mt-1.5 flex items-center gap-3">
-							{markers!.sectors.map((sector) => (
-								<div
-									key={sector.id}
-									className="flex items-center gap-1.5"
-								>
-									<div
-										className="h-2.5 w-2.5 rounded-sm"
-										style={{ backgroundColor: sector.color }}
-									/>
-									<span className="text-[11px] font-medium text-foreground">
-										{t.sectorN(sector.id)}
-									</span>
-								</div>
-							))}
-						</div>
-						{/* Source badge */}
-						<div className="mt-1.5 text-[9px] uppercase tracking-wider text-muted-foreground/70">
-							{markers!.source === "fastf1-telemetry-derived"
-								? t.sectorSourceFastf1
-								: markers!.source === "manual"
-									? t.sectorSourceManual
-									: t.sectorSourceEstimated}
-							{markers!.year ? ` · ${markers!.year}` : ""}
-							{markers!.session ? ` ${markers!.session}` : ""}
-						</div>
 					</div>
 				)}
 			</div>

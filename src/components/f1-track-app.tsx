@@ -100,7 +100,7 @@ export default function F1TrackApp({
   const [footerDismissed, setFooterDismissed] = useState(false);
   const urlSectors = urlParams.get("sectors");
   const [viewMode, setViewMode] = useState<TrackViewMode>(() =>
-    urlSectors === "1" ? "sectors" : "normal",
+    urlSectors === "0" ? "normal" : "sectors",
   );
   const [markers, setMarkers] = useState<TrackMarkers | null>(null);
   const didApplyInitialTrack = useRef(false);
@@ -190,14 +190,14 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, [cameraPreset, urlCamera]);
 
-  // Hydrate viewMode from URL ?sectors=1
+  // Hydrate viewMode from URL. Sector view is the default; ?sectors=0 disables it.
   useEffect(() => {
     if (didApplyInitialSectors.current) return;
     const urlSectorsNow = new URLSearchParams(window.location.search).get(
       "sectors",
     );
     const targetMode: TrackViewMode =
-      urlSectorsNow === "1" ? "sectors" : "normal";
+      urlSectorsNow === "0" ? "normal" : "sectors";
     if (targetMode === viewMode) {
       didApplyInitialSectors.current = true;
       return;
