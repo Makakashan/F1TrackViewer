@@ -42,6 +42,15 @@ yarn-error.log*
 next-env.d.ts
 local-*
 
+# local Python/FastF1 tooling artifacts
+.venv/
+.fastf1-cache/
+**/__pycache__/
+.python-version
+/main.py
+/pyproject.toml
+/uv.lock
+
 # logs
 *.log
 dev.log
