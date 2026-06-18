@@ -235,7 +235,9 @@ function TrackMesh({
     };
   }, [sectorGeometries, splitLineGeometries]);
 
+  const isDark = resolvedTheme === "dark";
   const { camera, controls } = useThree();
+
   useEffect(() => {
     const verticalFudge = 1 + Math.min(1, peakY / Math.max(radius, 1));
     const distance = radius * 2.4 * verticalFudge;
@@ -277,14 +279,16 @@ function TrackMesh({
   // Track is F1 red on both themes — less neon than #e10600 (lower
   // emissiveIntensity + slightly darker base) so it doesn't burn the eyes.
   // Ground and rings are theme-dependent.
-  const isDark = resolvedTheme === "dark";
   const trackColor = "#c10500";
   const trackEmissive = "#c10500";
   const trackEmissiveIntensity = 0.12;
-  const outlineColor = "#0a0a0d";
-  const groundColor = isDark ? "#0a0a0d" : "#d8d8dc";
-  const ringColor1 = isDark ? "#1f1f24" : "#c4c4ca";
-  const ringColor2 = isDark ? "#16161a" : "#cdcdd2";
+  const outlineColor = isDark ? "#0a0a0d" : "#161a21";
+  const groundColor = isDark ? "#0a0a0d" : "#fbfcfe";
+  const ringColor1 = isDark ? "#1f1f24" : "#eef1f6";
+  const ringColor2 = isDark ? "#16161a" : "#f5f7fb";
+  const markerColor = isDark ? "#f5f5f5" : "#151820";
+  const sectorEmissiveIntensity = isDark ? 0.15 : 0.035;
+  const splitLineColor = isDark ? "#ffffff" : "#222936";
 
   return (
     <group>
@@ -306,7 +310,7 @@ function TrackMesh({
               <meshStandardMaterial
                 color={sector.color}
                 emissive={sector.color}
-                emissiveIntensity={0.15}
+                emissiveIntensity={sectorEmissiveIntensity}
                 roughness={0.5}
                 metalness={0.05}
                 side={THREE.DoubleSide}
@@ -317,7 +321,7 @@ function TrackMesh({
           {/* Sector split lines */}
           {splitLineGeometries.map((geo, i) => (
             <mesh key={`split-${i}`} geometry={geo}>
-              <meshBasicMaterial color="#FFFFFF" side={THREE.DoubleSide} />
+              <meshBasicMaterial color={splitLineColor} side={THREE.DoubleSide} />
             </mesh>
           ))}
         </>
@@ -366,7 +370,7 @@ function TrackMesh({
 
       <mesh geometry={directionArrowGeometry}>
         <meshBasicMaterial
-          color="#f5f5f5"
+          color={markerColor}
           side={THREE.DoubleSide}
           depthWrite={false}
           polygonOffset
@@ -531,7 +535,9 @@ export default function TrackViewer({
   const bgGradient =
     resolvedTheme === "dark"
       ? "linear-gradient(180deg, #0e0e12 0%, #050507 100%)"
-      : "linear-gradient(180deg, #e8e8ec 0%, #c8c8cc 100%)";
+      : "linear-gradient(180deg, #f7f8fb 0%, #e7eaf0 100%)";
+  const sceneBackgroundColor =
+    resolvedTheme === "dark" ? "#020204" : "#f4f6fa";
 
   return (
     <PointerCaptureBoundary>
@@ -617,6 +623,7 @@ export default function TrackViewer({
             }}
             style={{ background: bgGradient, touchAction: "none" }}
           >
+            <color attach="background" args={[sceneBackgroundColor]} />
             <ambientLight intensity={resolvedTheme === "dark" ? 0.5 : 0.7} />
             <hemisphereLight
               args={
