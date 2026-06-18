@@ -8,10 +8,12 @@ import {
   Ruler,
   TrendingUp,
   TrendingDown,
+  Layers,
 } from "lucide-react";
 import { type CircuitProperties } from "@/lib/f1-circuits";
 import { elevationStats } from "@/lib/elevation";
 import { useAppPref } from "@/components/app-pref-provider";
+import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import ElevationSparkline from "@/components/elevation-sparkline";
 
 export interface TrackInfoProps {
@@ -20,6 +22,8 @@ export interface TrackInfoProps {
   pointCount?: number;
   elevations?: number[] | null;
   elevationEnabled?: boolean;
+  markers?: TrackMarkers | null;
+  viewMode?: TrackViewMode;
 }
 
 function Stat({
@@ -57,6 +61,8 @@ export default function TrackInfo({
   pointCount,
   elevations,
   elevationEnabled,
+  markers,
+  viewMode = "normal",
 }: TrackInfoProps) {
   const { t } = useAppPref();
 
@@ -123,6 +129,58 @@ export default function TrackInfo({
           value={properties.firstgp}
         />
       </div>
+
+      {/* Sector splits info */}
+      {markers?.sectors?.length ? (
+        <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+            <Layers className="h-3 w-3" />
+            {t.sectorLegend}
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {markers.sectors.map((sector) => {
+              const fromKm = (sector.fromDistance / 1000).toFixed(2);
+              const toKm = (sector.toDistance / 1000).toFixed(2);
+              const len = sector.toDistance - sector.fromDistance;
+              const lenKm = (len / 1000).toFixed(2);
+              return (
+                <div key={sector.id} className="flex items-center gap-2">
+                  <div
+                    className="h-3 w-3 rounded-sm shrink-0"
+                    style={{ backgroundColor: sector.color }}
+                  />
+                  <span className="text-[11px] font-medium text-foreground">
+                    {t.sectorN(sector.id)}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground tabular-nums">
+                    {fromKm}–{toKm} {t.unitKm} ({lenKm} {t.unitKm})
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-2 text-[10px] text-muted-foreground/70">
+            {markers.source === "fastf1-telemetry-derived"
+              ? t.sectorSourceFastf1
+              : markers.source === "manual"
+                ? t.sectorSourceManual
+                : t.sectorSourceEstimated}
+            {markers.year ? ` · ${markers.year}` : ""}
+            {markers.session ? ` ${markers.session}` : ""}
+            {markers.driver ? ` · ${markers.driver}` : ""}
+          </div>
+        </div>
+      ) : (
+        <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
+          <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+            <Layers className="h-3 w-3" />
+            {t.sectorLegend}
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {t.sectorUnavailable}
+          </div>
+        </div>
+      )}
 
       <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
         <div className="flex items-center justify-between">
