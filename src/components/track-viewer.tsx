@@ -10,7 +10,12 @@ import {
   sceneRadiusFromBounds,
   REAL_ELEVATION_SCALE,
 } from "@/lib/geo-utils";
-import { buildExtrudedTrack, buildTrackOutline } from "@/lib/track-geometry";
+import {
+  buildExtrudedTrack,
+  buildTrackOutline,
+  buildSectorMesh,
+  buildSectorSplitLineGeometry,
+} from "@/lib/track-geometry";
 import {
   buildDirectionArrowGeometry,
   buildStartFinishGeometry,
@@ -21,6 +26,7 @@ import {
   type StartFinishPlacement,
 } from "@/lib/start-finish";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
+import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 
 export type CameraPreset = "top" | "iso" | "side" | "reset";
@@ -34,6 +40,8 @@ export interface TrackViewerProps {
   cameraPreset?: CameraPreset | null;
   startFinishCalibration?: boolean;
   onStartFinishPlacement?: (placement: StartFinishPlacement) => void;
+  viewMode?: TrackViewMode;
+  markers?: TrackMarkers | null;
 }
 
 const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
@@ -49,6 +57,8 @@ function TrackMesh({
   calibrationEnabled,
   onCalibrateStartFinish,
   onStartFinishPlacement,
+  viewMode,
+  markers,
 }: {
   geojson: CircuitGeoJSON;
   trackWidth: number;
@@ -60,6 +70,8 @@ function TrackMesh({
   calibrationEnabled?: boolean;
   onCalibrateStartFinish?: (s: number) => void;
   onStartFinishPlacement?: (placement: StartFinishPlacement) => void;
+  viewMode: TrackViewMode;
+  markers?: TrackMarkers | null;
 }) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -151,18 +163,48 @@ function TrackMesh({
     [curve, startFinishPlacement.s, trackWidth],
   );
 
+  // ─── Sector geometries ────────────────────────────────────────────
+  const showSectors = viewMode === "sectors" && markers?.sectors?.length;
+
+  const sectorGeometries = useMemo(() => {
+    if (!showSectors || !markers) return [];
+    return markers.sectors.map((sector) =>
+      buildSectorMesh(curve, sector, markers, trackWidth, 0.5, groundY, samples),
+    );
+  }, [showSectors, curve, markers, trackWidth, groundY, samples]);
+
+  const splitLineGeometries = useMemo(() => {
+    if (!showSectors || !markers) return [];
+    // Split lines at the end of S1 and S2 (not at S3 end = start/finish)
+    return markers.sectors
+      .slice(0, -1)
+      .map((sector) =>
+        buildSectorSplitLineGeometry(
+          curve,
+          sector.toDistance,
+          markers,
+          trackWidth,
+          0.5,
+        ),
+      );
+  }, [showSectors, curve, markers, trackWidth]);
+
   useEffect(() => {
     return () => {
       trackGeometry.dispose();
       outlineGeometry.dispose();
       startFinishGeometry.dispose();
       directionArrowGeometry.dispose();
+      sectorGeometries.forEach((g) => g.dispose());
+      splitLineGeometries.forEach((g) => g.dispose());
     };
   }, [
     trackGeometry,
     outlineGeometry,
     startFinishGeometry,
     directionArrowGeometry,
+    sectorGeometries,
+    splitLineGeometries,
   ]);
 
   const { camera, controls } = useThree();
@@ -218,26 +260,63 @@ function TrackMesh({
 
   return (
     <group>
-      {/* Extruded track — top surface + side walls in one geometry.
-          F1 red with emissive so it reads clearly on both themes. */}
-      <mesh
-        geometry={trackGeometry}
-        onPointerDown={(event) => {
-          if (!calibrationEnabled) return;
-          event.stopPropagation();
-          const nearestS = findNearestCurveS(curve, event.point, samples);
-          onCalibrateStartFinish?.(nearestS);
-        }}
-      >
-        <meshStandardMaterial
-          color={trackColor}
-          emissive={trackEmissive}
-          emissiveIntensity={trackEmissiveIntensity}
-          roughness={0.5}
-          metalness={0.05}
-          side={THREE.DoubleSide}
-        />
-      </mesh>
+      {/* Sector mode: colored sector meshes replace the single track mesh.
+          In normal mode, the single red track mesh is shown. */}
+      {showSectors ? (
+        <>
+          {markers!.sectors.map((sector, i) => (
+            <mesh
+              key={`sector-${sector.id}`}
+              geometry={sectorGeometries[i]}
+              onPointerDown={(event) => {
+                if (!calibrationEnabled) return;
+                event.stopPropagation();
+                const nearestS = findNearestCurveS(curve, event.point, samples);
+                onCalibrateStartFinish?.(nearestS);
+              }}
+            >
+              <meshStandardMaterial
+                color={sector.color}
+                emissive={sector.color}
+                emissiveIntensity={0.15}
+                roughness={0.5}
+                metalness={0.05}
+                side={THREE.DoubleSide}
+              />
+            </mesh>
+          ))}
+
+          {/* Sector split lines */}
+          {splitLineGeometries.map((geo, i) => (
+            <mesh key={`split-${i}`} geometry={geo}>
+              <meshBasicMaterial color="#FFFFFF" side={THREE.DoubleSide} />
+            </mesh>
+          ))}
+        </>
+      ) : (
+        <>
+          {/* Extruded track — top surface + side walls in one geometry.
+              F1 red with emissive so it reads clearly on both themes. */}
+          <mesh
+            geometry={trackGeometry}
+            onPointerDown={(event) => {
+              if (!calibrationEnabled) return;
+              event.stopPropagation();
+              const nearestS = findNearestCurveS(curve, event.point, samples);
+              onCalibrateStartFinish?.(nearestS);
+            }}
+          >
+            <meshStandardMaterial
+              color={trackColor}
+              emissive={trackEmissive}
+              emissiveIntensity={trackEmissiveIntensity}
+              roughness={0.5}
+              metalness={0.05}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </>
+      )}
 
       {/* Track outline — thin black lines along both top edges of the
           ribbon. Provides visual definition between track and ground. */}
@@ -306,6 +385,8 @@ export default function TrackViewer({
   cameraPreset = null,
   startFinishCalibration = false,
   onStartFinishPlacement,
+  viewMode = "normal",
+  markers,
 }: TrackViewerProps) {
   const circuitId = geojson.features[0]?.properties.id;
   const [calibratedOverrides, setCalibratedOverrides] = useState<
@@ -501,6 +582,8 @@ export default function TrackViewer({
             calibrationEnabled={calibrationEnabled}
             onCalibrateStartFinish={updateCalibratedStartFinish}
             onStartFinishPlacement={onStartFinishPlacement}
+            viewMode={viewMode}
+            markers={markers}
           />
         </Suspense>
 

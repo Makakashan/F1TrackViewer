@@ -23,6 +23,8 @@ import { useCircuits } from "@/hooks/use-circuts";
 import { useTrackData } from "@/hooks/use-track-data";
 import type { CameraPreset } from "@/components/track-viewer";
 import type { StartFinishPlacement } from "@/lib/start-finish";
+import type { TrackViewMode, TrackMarkers } from "@/lib/track-markers";
+import { fetchTrackMarkers } from "@/lib/track-markers";
 
 // Three.js scene must be client-only — no SSR for WebGL.
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
@@ -96,6 +98,8 @@ export default function F1TrackApp({
     useState<StartFinishPlacement | null>(null);
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [footerDismissed, setFooterDismissed] = useState(false);
+  const [viewMode, setViewMode] = useState<TrackViewMode>("normal");
+  const [markers, setMarkers] = useState<TrackMarkers | null>(null);
   const didApplyInitialTrack = useRef(false);
   const didApplyInitialWidth = useRef(false);
   const didApplyInitialElevation = useRef(false);
@@ -105,6 +109,28 @@ export default function F1TrackApp({
   const urlWidth = parseWidthParam(urlParams.get("width"));
   const urlElevation = urlParams.get("elevation");
   const urlCamera = urlParams.get("camera");
+
+  // Load track markers when selected track changes
+  useEffect(() => {
+    if (!selectedId) {
+      setMarkers(null);
+      return;
+    }
+    let cancelled = false;
+    fetchTrackMarkers(selectedId).then((m) => {
+      if (!cancelled) setMarkers(m);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId]);
+
+  // Reset view mode when markers become unavailable
+  useEffect(() => {
+    if (viewMode === "sectors" && !markers) {
+      setViewMode("normal");
+    }
+  }, [markers, viewMode]);
 
   useEffect(() => {
     if (didApplyInitialWidth.current) return;
@@ -184,13 +210,18 @@ export default function F1TrackApp({
     } else {
       params.delete("camera");
     }
+    if (viewMode === "sectors") {
+      params.set("sectors", "1");
+    } else {
+      params.delete("sectors");
+    }
 
     const nextSearch = `?${params.toString()}`;
     if (nextSearch === window.location.search) return;
 
     window.history.replaceState(null, "", nextSearch);
     notifyUrlStateSubscribers();
-  }, [cameraPreset, circuits, elevationEnabled, selectedId, trackWidth, urlTrack]);
+  }, [cameraPreset, circuits, elevationEnabled, selectedId, trackWidth, urlTrack, viewMode]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -207,6 +238,7 @@ export default function F1TrackApp({
   const properties: CircuitProperties | null =
     geojson?.features[0]?.properties ?? null;
   const pointCount = geojson?.features[0]?.geometry.coordinates.length;
+  const sectorsAvailable = !!markers?.sectors?.length;
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
@@ -245,6 +277,9 @@ export default function F1TrackApp({
             trackWidth={trackWidth}
             setTrackWidth={setTrackWidth}
             onCameraPreset={handleCameraPreset}
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            sectorsAvailable={sectorsAvailable}
           />
         </div>
       </header>
@@ -271,6 +306,8 @@ export default function F1TrackApp({
               cameraPreset={cameraPreset}
               startFinishCalibration={startFinishCalibration}
               onStartFinishPlacement={setStartFinishPlacement}
+              viewMode={viewMode}
+              markers={markers}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -283,6 +320,8 @@ export default function F1TrackApp({
             properties={properties}
             loadingElevations={loadingElevations}
             startFinishStatus={startFinishPlacement?.source ?? null}
+            viewMode={viewMode}
+            markers={markers}
           />
 
           <MobileInfoSheet
@@ -303,6 +342,8 @@ export default function F1TrackApp({
             pointCount={pointCount}
             elevations={elevations}
             elevationEnabled={elevationEnabled}
+            markers={markers}
+            viewMode={viewMode}
           />
         </aside>
       </div>
