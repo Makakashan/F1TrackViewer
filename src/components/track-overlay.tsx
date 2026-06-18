@@ -7,11 +7,13 @@ import type { CircuitProperties } from "@/lib/f1-circuits";
 interface TrackOverlayProps {
 	properties: CircuitProperties | null;
 	loadingElevations: boolean;
+	startFinishStatus?: string | null;
 }
 
 export default function TrackOverlay({
 	properties,
 	loadingElevations,
+	startFinishStatus,
 }: TrackOverlayProps) {
 	const { t } = useAppPref();
 
@@ -32,6 +34,11 @@ export default function TrackOverlay({
 					{properties.Location} · {(properties.length / 1000).toFixed(3)}{" "}
 					{t.unitKm} · {t.opened.toLowerCase()} {properties.opened}
 				</div>
+				{startFinishStatus && (
+					<div className="mt-1 text-[10px] uppercase tracking-wider text-primary/80">
+						Start/Finish: {startFinishStatus}
+					</div>
+				)}
 				{loadingElevations && (
 					<div className="mt-1 flex items-center gap-1 text-[10px] text-amber-500/80">
 						<RefreshCw className="h-2.5 w-2.5 animate-spin" />

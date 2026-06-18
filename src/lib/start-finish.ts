@@ -1,10 +1,24 @@
 import * as THREE from "three";
 
-export type StartFinishSource = "manual" | "estimated";
+export type StartFinishSource = "verified" | "calibrated" | "estimated";
 
 export interface StartFinishPlacement {
   s: number;
   source: StartFinishSource;
+  verified: boolean;
+  note?: string;
+}
+
+export interface CircuitMarkerSchema {
+  circuitId: string;
+  startFinish: {
+    s: number;
+    verified: boolean;
+    note?: string;
+  };
+  direction: "clockwise" | "counterclockwise" | "unknown";
+  corners: [];
+  sectors: [];
 }
 
 export const START_FINISH_OVERRIDES: Record<string, number> = {
@@ -50,6 +64,38 @@ export const START_FINISH_OVERRIDES: Record<string, number> = {
   "us-1956": 0,
   "ae-2009": 0,
 };
+
+export function createCircuitMarkerSchema(
+  circuitId: string,
+  s: number,
+  verified = true,
+  note = "manual calibrated",
+): CircuitMarkerSchema {
+  return {
+    circuitId,
+    startFinish: {
+      s: Number(wrap01(s).toFixed(5)),
+      verified,
+      note,
+    },
+    direction: "unknown",
+    corners: [],
+    sectors: [],
+  };
+}
+
+export function formatMarkerExport(overrides: Record<string, number>): string {
+  const markerExport = Object.fromEntries(
+    Object.entries(overrides)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([circuitId, s]) => [
+        circuitId,
+        createCircuitMarkerSchema(circuitId, s),
+      ]),
+  );
+
+  return JSON.stringify(markerExport, null, 2);
+}
 
 function wrap01(value: number): number {
   return ((value % 1) + 1) % 1;
@@ -130,17 +176,29 @@ export function resolveStartFinishPlacement(
   calibratedOverride?: number | null,
 ): StartFinishPlacement {
   if (calibratedOverride != null) {
-    return { s: wrap01(calibratedOverride), source: "manual" };
+    return {
+      s: wrap01(calibratedOverride),
+      source: "calibrated",
+      verified: true,
+      note: "local admin calibration",
+    };
   }
 
   const override = START_FINISH_OVERRIDES[circuitId];
   if (override != null) {
-    return { s: wrap01(override), source: "manual" };
+    return {
+      s: wrap01(override),
+      source: "verified",
+      verified: true,
+      note: "checked marker override",
+    };
   }
 
   return {
     s: 0,
     source: "estimated",
+    verified: false,
+    note: "GeoJSON starts at fallback position",
   };
 }
 
@@ -233,6 +291,62 @@ export function buildStartFinishGeometry(
   );
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+export function buildDirectionArrowGeometry(
+  curve: THREE.CatmullRomCurve3,
+  startFinishS: number,
+  halfWidth: number,
+  topRaise: number,
+): THREE.BufferGeometry {
+  const arrowS = wrap01(startFinishS - 0.012);
+  const center = curve.getPointAt(arrowS);
+  const tangent = curve.getTangentAt(arrowS).normalize();
+  const up = new THREE.Vector3(0, 1, 0);
+  const across = new THREE.Vector3().crossVectors(tangent, up);
+  if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
+  across.normalize();
+
+  const length = Math.max(6, halfWidth * 1.35);
+  const width = Math.max(5, halfWidth * 1.1);
+  const y = center.y + topRaise + 0.12;
+
+  const tip = center
+    .clone()
+    .addScaledVector(tangent, length / 2)
+    .setY(y);
+  const left = center
+    .clone()
+    .addScaledVector(tangent, -length / 2)
+    .addScaledVector(across, width / 2)
+    .setY(y);
+  const right = center
+    .clone()
+    .addScaledVector(tangent, -length / 2)
+    .addScaledVector(across, -width / 2)
+    .setY(y);
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(
+      [
+        tip.x,
+        tip.y,
+        tip.z,
+        left.x,
+        left.y,
+        left.z,
+        right.x,
+        right.y,
+        right.z,
+      ],
+      3,
+    ),
+  );
+  geometry.setIndex([0, 1, 2]);
   geometry.computeVertexNormals();
   return geometry;
 }
