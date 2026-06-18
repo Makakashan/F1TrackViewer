@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import dynamic from "next/dynamic";
 import { RefreshCw, Flag } from "lucide-react";
 import { Separator } from "@/components/ui/separator";
@@ -16,6 +23,7 @@ import { type CircuitProperties } from "@/lib/f1-circuits";
 import { useCircuits } from "@/hooks/use-circuts";
 import { useTrackData } from "@/hooks/use-track-data";
 import type { CameraPreset } from "@/components/track-viewer";
+import type { StartFinishPlacement } from "@/lib/start-finish";
 
 // Three.js scene must be client-only — no SSR for WebGL.
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
@@ -34,6 +42,34 @@ interface F1TrackAppProps {
   startFinishCalibration?: boolean;
 }
 
+function subscribeUrlState(callback: () => void) {
+  window.addEventListener("popstate", callback);
+  return () => window.removeEventListener("popstate", callback);
+}
+
+function getClientUrlSnapshot() {
+  return window.location.search;
+}
+
+function getServerUrlSnapshot() {
+  return "";
+}
+
+function notifyUrlStateSubscribers() {
+  window.dispatchEvent(new PopStateEvent("popstate"));
+}
+
+function isCameraPreset(value: string | null): value is CameraPreset {
+  return value === "top" || value === "iso" || value === "side";
+}
+
+function parseWidthParam(value: string | null): number | null {
+  if (!value) return null;
+  const width = Number(value);
+  if (!Number.isFinite(width)) return null;
+  return Math.max(3, Math.min(15, Math.round(width)));
+}
+
 export default function F1TrackApp({
   startFinishCalibration = false,
 }: F1TrackAppProps) {
@@ -41,6 +77,12 @@ export default function F1TrackApp({
   const [error, setError] = useState<string | null>(null);
   const { circuits, selectedId, loadingIndex, onSelect } =
     useCircuits(setError);
+  const urlSearch = useSyncExternalStore(
+    subscribeUrlState,
+    getClientUrlSnapshot,
+    getServerUrlSnapshot,
+  );
+  const urlParams = useMemo(() => new URLSearchParams(urlSearch), [urlSearch]);
   const { geojson, loadingTrack, elevations, loadingElevations } = useTrackData(
     selectedId,
     setError,
@@ -51,6 +93,103 @@ export default function F1TrackApp({
   const [mobileListOpen, setMobileListOpen] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [cameraPreset, setCameraPreset] = useState<CameraPreset | null>(null);
+  const [startFinishPlacement, setStartFinishPlacement] =
+    useState<StartFinishPlacement | null>(null);
+  const didApplyInitialTrack = useRef(false);
+  const didApplyInitialWidth = useRef(false);
+  const didApplyInitialElevation = useRef(false);
+  const didApplyInitialCamera = useRef(false);
+
+  const urlTrack = urlParams.get("track");
+  const urlWidth = parseWidthParam(urlParams.get("width"));
+  const urlElevation = urlParams.get("elevation");
+  const urlCamera = urlParams.get("camera");
+
+  useEffect(() => {
+    if (didApplyInitialWidth.current) return;
+    if (urlWidth == null || urlWidth === trackWidth) {
+      didApplyInitialWidth.current = true;
+      return;
+    }
+    didApplyInitialWidth.current = true;
+    const timer = window.setTimeout(() => setTrackWidth(urlWidth), 0);
+    return () => window.clearTimeout(timer);
+  }, [trackWidth, urlWidth]);
+
+  useEffect(() => {
+    if (didApplyInitialElevation.current) return;
+    if (urlElevation !== "0" && urlElevation !== "1") {
+      didApplyInitialElevation.current = true;
+      return;
+    }
+    const next = urlElevation === "1";
+    if (next === elevationEnabled) {
+      didApplyInitialElevation.current = true;
+      return;
+    }
+    didApplyInitialElevation.current = true;
+    const timer = window.setTimeout(() => setElevationEnabled(next), 0);
+    return () => window.clearTimeout(timer);
+  }, [elevationEnabled, urlElevation]);
+
+  useEffect(() => {
+    if (didApplyInitialCamera.current) return;
+    if (!isCameraPreset(urlCamera)) {
+      didApplyInitialCamera.current = true;
+      return;
+    }
+    if (urlCamera === cameraPreset) {
+      didApplyInitialCamera.current = true;
+      return;
+    }
+    didApplyInitialCamera.current = true;
+    const timer = window.setTimeout(() => setCameraPreset(urlCamera), 0);
+    return () => window.clearTimeout(timer);
+  }, [cameraPreset, urlCamera]);
+
+  useEffect(() => {
+    if (didApplyInitialTrack.current) return;
+    if (!circuits.length) return;
+    if (!urlTrack || selectedId === urlTrack) {
+      didApplyInitialTrack.current = true;
+      return;
+    }
+    if (!circuits.some((circuit) => circuit.id === urlTrack)) {
+      didApplyInitialTrack.current = true;
+      return;
+    }
+    didApplyInitialTrack.current = true;
+    const timer = window.setTimeout(() => onSelect(urlTrack), 0);
+    return () => window.clearTimeout(timer);
+  }, [circuits, onSelect, selectedId, urlTrack]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !selectedId) return;
+    if (
+      !didApplyInitialTrack.current &&
+      urlTrack &&
+      selectedId !== urlTrack &&
+      circuits.some((circuit) => circuit.id === urlTrack)
+    ) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    params.set("track", selectedId);
+    params.set("width", String(trackWidth));
+    params.set("elevation", elevationEnabled ? "1" : "0");
+    if (cameraPreset && cameraPreset !== "reset") {
+      params.set("camera", cameraPreset);
+    } else {
+      params.delete("camera");
+    }
+
+    const nextSearch = `?${params.toString()}`;
+    if (nextSearch === window.location.search) return;
+
+    window.history.replaceState(null, "", nextSearch);
+    notifyUrlStateSubscribers();
+  }, [cameraPreset, circuits, elevationEnabled, selectedId, trackWidth, urlTrack]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -62,7 +201,6 @@ export default function F1TrackApp({
 
   const handleCameraPreset = useCallback((preset: CameraPreset) => {
     setCameraPreset(preset);
-    setTimeout(() => setCameraPreset(null), 50);
   }, []);
 
   const properties: CircuitProperties | null =
@@ -124,7 +262,6 @@ export default function F1TrackApp({
           {error && <ErrorBanner error={error} />}
           {geojson ? (
             <TrackViewer
-              key={`${selectedId}-${trackWidth}-${elevationEnabled}-${elevations?.length ?? 0}-${resolvedTheme}-${startFinishCalibration}`}
               geojson={geojson}
               elevations={elevationEnabled ? elevations : null}
               trackWidth={trackWidth}
@@ -132,6 +269,7 @@ export default function F1TrackApp({
               resolvedTheme={resolvedTheme}
               cameraPreset={cameraPreset}
               startFinishCalibration={startFinishCalibration}
+              onStartFinishPlacement={setStartFinishPlacement}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -143,6 +281,7 @@ export default function F1TrackApp({
           <TrackOverlay
             properties={properties}
             loadingElevations={loadingElevations}
+            startFinishStatus={startFinishPlacement?.source ?? null}
           />
 
           <MobileInfoSheet
@@ -178,7 +317,7 @@ export default function F1TrackApp({
           <Separator orientation="vertical" className="hidden h-3 md:block" />
           <span className="hidden md:inline">{t.dataSourcesTitle}:</span>
           <span className="hidden md:inline">
-            bacinger/f1-circuits (MIT) · Open-Meteo (CC-BY 4.0) · OpenF1 ·
+            bacinger/f1-circuits (MIT) · Open-Meteo (CC-BY 4.0) ·
             Jolpica (AGPL-3.0) · TUMFTM/racetrack-database (LGPL-3.0)
           </span>
         </div>
