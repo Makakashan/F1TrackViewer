@@ -5,28 +5,29 @@
   "event": "Austria",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 17,
   "lapLengthMeters": 4318,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1439,
+      "toDistance": 1210.37,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1439,
-      "toDistance": 2879,
+      "fromDistance": 1210.37,
+      "toDistance": 2890.1,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 2879,
+      "fromDistance": 2890.1,
       "toDistance": 4318,
       "color": "#00D084"
     }

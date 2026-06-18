@@ -5,28 +5,29 @@
   "event": "Turkey",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 24,
   "lapLengthMeters": 5338,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1779,
+      "toDistance": 1926.73,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1779,
-      "toDistance": 3559,
+      "fromDistance": 1926.73,
+      "toDistance": 3931.26,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 3559,
+      "fromDistance": 3931.26,
       "toDistance": 5338,
       "color": "#00D084"
     }

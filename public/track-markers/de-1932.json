@@ -5,28 +5,29 @@
   "event": "Germany",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 13,
   "lapLengthMeters": 4574,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1525,
+      "toDistance": 1028.5,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1525,
-      "toDistance": 3049,
+      "fromDistance": 1028.5,
+      "toDistance": 3233.89,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 3049,
+      "fromDistance": 3233.89,
       "toDistance": 4574,
       "color": "#00D084"
     }

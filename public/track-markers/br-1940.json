@@ -2,31 +2,32 @@
   "circuitId": "br-1940",
   "source": "fastf1-telemetry-derived",
   "year": 2024,
-  "event": "S\u00e3o Paulo",
+  "event": "São Paulo",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 13,
   "lapLengthMeters": 4309,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1436,
+      "toDistance": 1218.23,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1436,
-      "toDistance": 2873,
+      "fromDistance": 1218.23,
+      "toDistance": 3125.88,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 2873,
+      "fromDistance": 3125.88,
       "toDistance": 4309,
       "color": "#00D084"
     }

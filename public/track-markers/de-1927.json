@@ -5,28 +5,29 @@
   "event": "Eifel",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 8,
   "lapLengthMeters": 5148,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1716,
+      "toDistance": 1561.47,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1716,
-      "toDistance": 3432,
+      "fromDistance": 1561.47,
+      "toDistance": 3771.44,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 3432,
+      "fromDistance": 3771.44,
       "toDistance": 5148,
       "color": "#00D084"
     }

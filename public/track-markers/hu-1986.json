@@ -5,28 +5,29 @@
   "event": "Hungary",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 20,
   "lapLengthMeters": 4381,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1460,
+      "toDistance": 1726.34,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1460,
-      "toDistance": 2921,
+      "fromDistance": 1726.34,
+      "toDistance": 3251.03,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 2921,
+      "fromDistance": 3251.03,
       "toDistance": 4381,
       "color": "#00D084"
     }

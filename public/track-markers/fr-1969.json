@@ -5,28 +5,29 @@
   "event": "France",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 13,
   "lapLengthMeters": 5842,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1947,
+      "toDistance": 1368.18,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1947,
-      "toDistance": 3895,
+      "fromDistance": 1368.18,
+      "toDistance": 3246.13,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 3895,
+      "fromDistance": 3246.13,
       "toDistance": 5842,
       "color": "#00D084"
     }

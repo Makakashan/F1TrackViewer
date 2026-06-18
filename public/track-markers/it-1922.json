@@ -5,28 +5,29 @@
   "event": "Italy",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 11,
   "lapLengthMeters": 5793,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1931,
+      "toDistance": 1892.9,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1931,
-      "toDistance": 3862,
+      "fromDistance": 1892.9,
+      "toDistance": 3700.29,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 3862,
+      "fromDistance": 3700.29,
       "toDistance": 5793,
       "color": "#00D084"
     }

@@ -5,28 +5,29 @@
   "event": "Las Vegas",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 20,
   "lapLengthMeters": 6201,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 2067,
+      "toDistance": 1669.29,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 2067,
-      "toDistance": 4134,
+      "fromDistance": 1669.29,
+      "toDistance": 3349.4,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 4134,
+      "fromDistance": 3349.4,
       "toDistance": 6201,
       "color": "#00D084"
     }

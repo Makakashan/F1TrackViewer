@@ -5,28 +5,29 @@
   "event": "Azerbaijan",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 19,
   "lapLengthMeters": 6003,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 2001,
+      "toDistance": 1995.52,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 2001,
-      "toDistance": 4002,
+      "fromDistance": 1995.52,
+      "toDistance": 3990.92,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 4002,
+      "fromDistance": 3990.92,
       "toDistance": 6003,
       "color": "#00D084"
     }

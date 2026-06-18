@@ -5,28 +5,29 @@
   "event": "Qatar",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 21,
   "lapLengthMeters": 5380,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1793,
+      "toDistance": 2079.98,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1793,
-      "toDistance": 3587,
+      "fromDistance": 2079.98,
+      "toDistance": 3660.34,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 3587,
+      "fromDistance": 3660.34,
       "toDistance": 5380,
       "color": "#00D084"
     }

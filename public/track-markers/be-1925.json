@@ -5,28 +5,29 @@
   "event": "Belgium",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 17,
   "lapLengthMeters": 7004,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 2335,
+      "toDistance": 2250.11,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 2335,
-      "toDistance": 4669,
+      "fromDistance": 2250.11,
+      "toDistance": 5043.92,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 4669,
+      "fromDistance": 5043.92,
       "toDistance": 7004,
       "color": "#00D084"
     }

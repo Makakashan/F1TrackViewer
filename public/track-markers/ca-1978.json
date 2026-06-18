@@ -5,28 +5,29 @@
   "event": "Canada",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 26,
   "lapLengthMeters": 4361,
   "startFinish": {
     "s": 0,
-    "verified": false
+    "verified": true
   },
   "directionSign": 1,
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1454,
+      "toDistance": 1072.42,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1454,
-      "toDistance": 2907,
+      "fromDistance": 1072.42,
+      "toDistance": 2464.74,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 2907,
+      "fromDistance": 2464.74,
       "toDistance": 4361,
       "color": "#00D084"
     }

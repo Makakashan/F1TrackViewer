@@ -205,7 +205,7 @@ def generate_manual_sector_splits(
             "verified": start_finish_s != 0,
         },
         "directionSign": direction_sign,
-        "confidence": "estimated",
+        "confidence": "low",
         "sectors": [
             {
                 "id": 1,

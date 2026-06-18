@@ -5,6 +5,7 @@
   "event": "China",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 17,
   "lapLengthMeters": 5451,
   "startFinish": {
     "s": 0.9469,
@@ -15,18 +16,18 @@
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1817,
+      "toDistance": 1412.7,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1817,
-      "toDistance": 3634,
+      "fromDistance": 1412.7,
+      "toDistance": 2959.27,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 3634,
+      "fromDistance": 2959.27,
       "toDistance": 5451,
       "color": "#00D084"
     }
