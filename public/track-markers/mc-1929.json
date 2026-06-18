@@ -1,0 +1,35 @@
+{
+  "circuitId": "mc-1929",
+  "source": "fastf1-telemetry-derived",
+  "year": 2024,
+  "event": "Monaco Grand Prix",
+  "session": "Q",
+  "driver": "VER",
+  "lapNumber": 12,
+  "lapLengthMeters": 3337,
+  "startFinish": {
+    "s": 0.74108,
+    "verified": true
+  },
+  "directionSign": -1,
+  "sectors": [
+    {
+      "id": 1,
+      "fromDistance": 0,
+      "toDistance": 1112,
+      "color": "#00A3FF"
+    },
+    {
+      "id": 2,
+      "fromDistance": 1112,
+      "toDistance": 2224,
+      "color": "#B66DFF"
+    },
+    {
+      "id": 3,
+      "fromDistance": 2224,
+      "toDistance": 3337,
+      "color": "#00D084"
+    }
+  ]
+}
