@@ -113,12 +113,18 @@ export default function F1TrackApp({
   );
   const [environmentBundle, setEnvironmentBundle] =
     useState<EnvironmentBundle | null | undefined>(undefined);
+  // Terrain toggle (?terrain=1 / ?terrain=0). Defaults to ON when env is on.
+  const urlTerrain = urlParams.get("terrain");
+  const [environmentTerrain, setEnvironmentTerrain] = useState<boolean>(
+    () => urlTerrain !== "0",
+  );
   const didApplyInitialTrack = useRef(false);
   const didApplyInitialWidth = useRef(false);
   const didApplyInitialElevation = useRef(false);
   const didApplyInitialCamera = useRef(false);
   const didApplyInitialSectors = useRef(false);
   const didApplyInitialEnvironment = useRef(false);
+  const didApplyInitialTerrain = useRef(false);
 
   const urlTrack = urlParams.get("track");
   const urlWidth = parseWidthParam(urlParams.get("width"));
@@ -265,6 +271,24 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, [environmentEnabled]);
 
+  // Hydrate terrain toggle from URL (?terrain=0 disables it, default ON).
+  useEffect(() => {
+    if (didApplyInitialTerrain.current) return;
+    const urlT = new URLSearchParams(window.location.search).get("terrain");
+    if (urlT !== "0" && urlT !== "1") {
+      didApplyInitialTerrain.current = true;
+      return;
+    }
+    const next = urlT === "1";
+    if (next === environmentTerrain) {
+      didApplyInitialTerrain.current = true;
+      return;
+    }
+    didApplyInitialTerrain.current = true;
+    const timer = window.setTimeout(() => setEnvironmentTerrain(next), 0);
+    return () => window.clearTimeout(timer);
+  }, [environmentTerrain]);
+
   useEffect(() => {
     if (didApplyInitialTrack.current) return;
     if (!circuits.length) return;
@@ -286,6 +310,7 @@ export default function F1TrackApp({
     // Don't write URL until initial hydration of all params is done
     if (!didApplyInitialSectors.current) return;
     if (!didApplyInitialEnvironment.current) return;
+    if (!didApplyInitialTerrain.current) return;
     if (
       !didApplyInitialTrack.current &&
       urlTrack &&
@@ -309,8 +334,15 @@ export default function F1TrackApp({
     // avoids polluting the URL with ?environment=0 for the 39 other tracks.
     if (environmentBundle) {
       params.set("environment", environmentEnabled ? "1" : "0");
+      // Persist terrain flag only when environment is enabled.
+      if (environmentEnabled) {
+        params.set("terrain", environmentTerrain ? "1" : "0");
+      } else {
+        params.delete("terrain");
+      }
     } else {
       params.delete("environment");
+      params.delete("terrain");
     }
 
     const nextSearch = `?${params.toString()}`;
@@ -318,7 +350,7 @@ export default function F1TrackApp({
 
     window.history.replaceState(null, "", nextSearch);
     notifyUrlStateSubscribers();
-  }, [cameraPreset, circuits, elevationEnabled, environmentBundle, environmentEnabled, selectedId, trackWidth, urlTrack, viewMode]);
+  }, [cameraPreset, circuits, elevationEnabled, environmentBundle, environmentEnabled, environmentTerrain, selectedId, trackWidth, urlTrack, viewMode]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -380,6 +412,8 @@ export default function F1TrackApp({
             environmentAvailable={!!environmentBundle}
             environmentEnabled={environmentEnabled}
             setEnvironmentEnabled={setEnvironmentEnabled}
+            environmentTerrain={environmentTerrain}
+            setEnvironmentTerrain={setEnvironmentTerrain}
           />
         </div>
       </header>
@@ -411,6 +445,7 @@ export default function F1TrackApp({
               environmentBundle={
                 environmentEnabled ? environmentBundle ?? null : null
               }
+              environmentTerrain={environmentTerrain}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-muted-foreground">

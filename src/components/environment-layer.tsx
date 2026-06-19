@@ -35,21 +35,37 @@ function lonLatToXZ(
 }
 
 /**
- * Y offsets between diorama layers, in meters.
- *
- * These are deliberately SPREAD OUT (5–10 m apart) to eliminate z-fighting
- * flicker when the camera orbits. The reference look is a flat architectural
- * model, so we don't try to drape layers on terrain — we stack them with
- * clear vertical separation and let the track ribbon sit on top.
+ * Vertical offsets between diorama layers, in meters — used only when
+ * terrain is OFF. When terrain is ON, every layer is draped on the
+ * terrain mesh and offset by a few cm to avoid z-fighting.
  */
-const LAYER_Y = {
-  base: 0, // dark grid plane
-  landuse: 0.5, // parks/woods/grass
-  water: 1.0, // harbour / coastline
-  roads: 1.5, // street grid
-  buildings: 2.0, // building footprints start here
-  trackOverlay: 60, // track ribbon floats above the city
+const LAYER_Y_FLAT = {
+  base: 0,
+  landuse: 0.5,
+  water: 1.0,
+  roads: 1.5,
+  buildings: 2.0,
+  trackOverlay: 60,
 } as const;
+
+/**
+ * Vertical offsets above terrain (when terrain is ON). Tiny values so
+ * layers don't z-fight with the terrain mesh but still look coplanar.
+ */
+const LAYER_Y_DRAPE = {
+  landuse: 0.3,
+  water: 0.6,
+  roads: 0.9,
+  buildings: 1.2,
+  trackOverlay: 30,
+} as const;
+
+/**
+ * Vertical exaggeration for terrain. Monaco's actual elevation range is
+ * 0-454m which would dwarf the city; we exaggerate by 0.4 so hills are
+ * visible but the city still reads as a diorama.
+ */
+const TERRAIN_VERTICAL_SCALE = 0.4;
 
 export interface EnvironmentLayerProps {
   bundle: EnvironmentBundle;
@@ -61,10 +77,10 @@ export interface EnvironmentLayerProps {
    */
   baseY?: number;
   /**
-   * Show terrain elevation mesh. Defaults to false — the reference diorama
-   * style is a flat architectural model, and a 3D terrain mesh z-fights
-   * with the grid base and hides the track. Enable only if the circuit
-   * has dramatic elevation that benefits from a 3D hill.
+   * Show 3D terrain elevation mesh. Defaults to true.
+   * When ON: terrain mesh is rendered with hills/valleys, and buildings/
+   * water/roads are draped on the terrain heights.
+   * When OFF: flat diorama — layers stacked with clear vertical separation.
    */
   showTerrain?: boolean;
 }
@@ -72,44 +88,131 @@ export interface EnvironmentLayerProps {
 export default function EnvironmentLayer({
   bundle,
   baseY = 0,
-  showTerrain = false,
+  showTerrain = true,
 }: EnvironmentLayerProps) {
   const { manifest } = bundle;
   const originLon = manifest.center.lon;
   const originLat = manifest.center.lat;
+  const hasTerrain = showTerrain && bundle.terrain.gridSize > 0;
+
+  // Build a terrain sampler once — used by all draped layers to query the
+  // elevation at any [lon, lat] point.
+  const terrainSampler = useMemo(() => {
+    if (!hasTerrain) return null;
+    return buildTerrainSampler(bundle.terrain, manifest);
+  }, [bundle.terrain, manifest, hasTerrain]);
 
   return (
     <group>
-      <DioramaBase bundle={bundle} baseY={baseY} />
-      {showTerrain && bundle.terrain.gridSize > 0 && (
+      <DioramaBase bundle={bundle} baseY={baseY} hasTerrain={hasTerrain} />
+      {hasTerrain && (
         <TerrainMesh terrain={bundle.terrain} manifest={manifest} baseY={baseY} />
       )}
       <LandusePolygons
         polygons={bundle.landuse.polygons}
         originLon={originLon}
         originLat={originLat}
-        baseY={baseY + LAYER_Y.landuse}
+        baseY={baseY}
+        terrainSampler={terrainSampler}
+        drapeY={LAYER_Y_DRAPE.landuse}
+        flatY={LAYER_Y_FLAT.landuse}
       />
       <WaterPolygons
         polygons={bundle.water.polygons}
         originLon={originLon}
         originLat={originLat}
-        baseY={baseY + LAYER_Y.water}
+        baseY={baseY}
+        terrainSampler={terrainSampler}
+        drapeY={LAYER_Y_DRAPE.water}
+        flatY={LAYER_Y_FLAT.water}
       />
       <RoadLinesMesh
         roads={bundle.roads.roads}
         originLon={originLon}
         originLat={originLat}
-        baseY={baseY + LAYER_Y.roads}
+        baseY={baseY}
+        terrainSampler={terrainSampler}
+        drapeY={LAYER_Y_DRAPE.roads}
+        flatY={LAYER_Y_FLAT.roads}
       />
       <BuildingExtrusions
         buildings={bundle.buildings.buildings}
         originLon={originLon}
         originLat={originLat}
-        baseY={baseY + LAYER_Y.buildings}
+        baseY={baseY}
+        terrainSampler={terrainSampler}
+        drapeY={LAYER_Y_DRAPE.buildings}
+        flatY={LAYER_Y_FLAT.buildings}
       />
     </group>
   );
+}
+
+// ─── Terrain sampler ────────────────────────────────────────────────────────
+
+interface TerrainSampler {
+  /** Query terrain height (in local meters, before baseY offset) at [lon, lat]. */
+  heightAt(lon: number, lat: number): number;
+  /** Min/max terrain height across the grid, in local meters. */
+  minHeight: number;
+  maxHeight: number;
+}
+
+function buildTerrainSampler(
+  terrain: TerrainFile,
+  manifest: EnvironmentManifest,
+): TerrainSampler {
+  const n = terrain.gridSize;
+  const minLon = manifest.bbox.minLon;
+  const minLat = manifest.bbox.minLat;
+  const maxLat = manifest.bbox.maxLat;
+  const maxLon = manifest.bbox.maxLon;
+
+  let minH = Infinity;
+  let maxH = -Infinity;
+  for (const h of terrain.heights) {
+    if (h < minH) minH = h;
+    if (h > maxH) maxH = h;
+  }
+  const range = Math.max(1, maxH - minH);
+
+  // Precompute local-meters height for each grid cell.
+  const localHeights = new Float32Array(terrain.heights.length);
+  for (let i = 0; i < terrain.heights.length; i++) {
+    localHeights[i] = ((terrain.heights[i] - minH) / range) * TERRAIN_VERTICAL_SCALE * 100;
+    // ×100 because range is in absolute meters (e.g. 454m) and we want the
+    // terrain to occupy ~TERRAIN_VERTICAL_SCALE × range meters in the scene.
+  }
+
+  // Inverse: terrain heights are stored row-major, row 0 = minLat (south),
+  // col 0 = minLon (west).
+  function heightAt(lon: number, lat: number): number {
+    if (n < 2) return 0;
+    const u = (lon - minLon) / (maxLon - minLon); // 0..1 west→east
+    const v = (lat - minLat) / (maxLat - minLat); // 0..1 south→north
+    if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
+    const fx = u * (n - 1);
+    const fy = v * (n - 1);
+    const ix = Math.floor(fx);
+    const iy = Math.floor(fy);
+    const ix1 = Math.min(ix + 1, n - 1);
+    const iy1 = Math.min(iy + 1, n - 1);
+    const tx = fx - ix;
+    const ty = fy - iy;
+    const h00 = localHeights[iy * n + ix];
+    const h10 = localHeights[iy * n + ix1];
+    const h01 = localHeights[iy1 * n + ix];
+    const h11 = localHeights[iy1 * n + ix1];
+    const h0 = h00 * (1 - tx) + h10 * tx;
+    const h1 = h01 * (1 - tx) + h11 * tx;
+    return h0 * (1 - ty) + h1 * ty;
+  }
+
+  return {
+    heightAt,
+    minHeight: 0,
+    maxHeight: TERRAIN_VERTICAL_SCALE * 100,
+  };
 }
 
 // ─── DioramaBase ────────────────────────────────────────────────────────────
@@ -117,9 +220,11 @@ export default function EnvironmentLayer({
 function DioramaBase({
   bundle,
   baseY,
+  hasTerrain,
 }: {
   bundle: EnvironmentBundle;
   baseY: number;
+  hasTerrain: boolean;
 }) {
   const { manifest } = bundle;
   const halfW = manifest
@@ -172,10 +277,14 @@ function DioramaBase({
     };
   }, [gridTexture]);
 
+  // When terrain is on, lower the base plane so the terrain mesh sits above
+  // it and forms the "ground" of the diorama.
+  const yPos = baseY + (hasTerrain ? -2 : 0);
+
   return (
     <mesh
       rotation={[-Math.PI / 2, 0, 0]}
-      position={[0, baseY + LAYER_Y.base, 0]}
+      position={[0, yPos, 0]}
       receiveShadow
     >
       <planeGeometry args={[halfW * 2, halfW * 2, 1, 1]} />
@@ -191,8 +300,9 @@ function DioramaBase({
 
 // ─── TerrainMesh ────────────────────────────────────────────────────────────
 //
-// Only rendered when showTerrain=true. Subtle vertical scale (15 m max) so
-// the city still reads as a flat diorama but hills are hinted at.
+// Volumetric 3D terrain mesh, flat-shaded for the low-poly diorama look.
+// Vertical scale is exaggerated so hills are visible but the city still
+// reads on top.
 
 function TerrainMesh({
   terrain,
@@ -216,6 +326,7 @@ function TerrainMesh({
     const positions: number[] = [];
     const uvs: number[] = [];
     const indices: number[] = [];
+    const colors: number[] = [];
 
     let minH = Infinity;
     let maxH = -Infinity;
@@ -224,7 +335,15 @@ function TerrainMesh({
       if (h > maxH) maxH = h;
     }
     const range = Math.max(1, maxH - minH);
-    const verticalScale = 15; // subtle elevation hint, not a real hill
+    // Same scale as the sampler so draped layers align with the mesh.
+    const verticalScale = TERRAIN_VERTICAL_SCALE * 100;
+
+    // Two-tone gradient: low elevations = darker (closer to base color),
+    // high elevations = lighter. Matches the white-on-dark diorama style.
+    const colorLow = new THREE.Color("#2A2D33");
+    const colorMid = new THREE.Color("#7A7D82");
+    const colorHigh = new THREE.Color("#E8E8E8");
+    const tmp = new THREE.Color();
 
     for (let row = 0; row < n; row++) {
       for (let col = 0; col < n; col++) {
@@ -233,9 +352,18 @@ function TerrainMesh({
         const lat = minLat + ((maxLat - minLat) * row) / (n - 1);
         const { x, z } = lonLatToXZ(lon, lat, originLon, originLat);
         const h = terrain.heights[idx] ?? minH;
-        const y = ((h - minH) / range) * verticalScale;
+        const t = (h - minH) / range; // 0..1
+        const y = t * verticalScale;
         positions.push(x, y, z);
         uvs.push(col / (n - 1), row / (n - 1));
+
+        // Three-stop gradient: dark → mid → light
+        if (t < 0.5) {
+          tmp.copy(colorLow).lerp(colorMid, t * 2);
+        } else {
+          tmp.copy(colorMid).lerp(colorHigh, (t - 0.5) * 2);
+        }
+        colors.push(tmp.r, tmp.g, tmp.b);
       }
     }
 
@@ -253,6 +381,7 @@ function TerrainMesh({
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
     geo.setIndex(indices);
     geo.computeVertexNormals();
     return geo;
@@ -269,13 +398,56 @@ function TerrainMesh({
   return (
     <mesh geometry={geometry} position={[0, baseY, 0]} receiveShadow>
       <meshStandardMaterial
-        color={DIORAMA_COLORS.terrain}
+        vertexColors
         roughness={0.92}
         metalness={0}
         flatShading
       />
     </mesh>
   );
+}
+
+// ─── Draped polygon builder ─────────────────────────────────────────────────
+//
+// When terrain is on, polygons (water, landuse) are triangulated as a 2D
+// ShapeGeometry, then each vertex is displaced vertically by the terrain
+// height at its [x, z]. This drapes the polygon onto the terrain.
+
+function drapeShapeGeometry(
+  shapes: THREE.Shape[],
+  originLon: number,
+  originLat: number,
+  terrainSampler: TerrainSampler | null,
+  baseY: number,
+  drapeY: number,
+  flatY: number,
+): THREE.BufferGeometry | null {
+  if (!shapes.length) return null;
+  const geo = new THREE.ShapeGeometry(shapes);
+  if (!terrainSampler) {
+    // Flat mode — just lift the whole geometry to flatY.
+    geo.translate(0, 0, 0);
+    geo.rotateX(-Math.PI / 2);
+    geo.translate(0, baseY + flatY, 0);
+    return geo;
+  }
+  // Drape mode: rotate to XZ plane first, then for each vertex compute the
+  // [lon, lat] back from [x, z] and sample terrain height.
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.getAttribute("position") as THREE.BufferAttribute;
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = 111_320 * Math.cos((originLat * Math.PI) / 180);
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const lon = originLon + x / metersPerDegLon;
+    const lat = originLat - z / metersPerDegLat;
+    const h = terrainSampler.heightAt(lon, lat);
+    pos.setY(i, baseY + h + drapeY);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
 }
 
 // ─── WaterPolygons ──────────────────────────────────────────────────────────
@@ -285,11 +457,17 @@ function WaterPolygons({
   originLon,
   originLat,
   baseY,
+  terrainSampler,
+  drapeY,
+  flatY,
 }: {
   polygons: WaterPolygon[];
   originLon: number;
   originLat: number;
   baseY: number;
+  terrainSampler: TerrainSampler | null;
+  drapeY: number;
+  flatY: number;
 }) {
   const geometry = useMemo(() => {
     const shapes: THREE.Shape[] = [];
@@ -304,10 +482,8 @@ function WaterPolygons({
       shape.closePath();
       shapes.push(shape);
     }
-    if (!shapes.length) return null;
-    const geo = new THREE.ShapeGeometry(shapes);
-    return geo;
-  }, [polygons, originLon, originLat]);
+    return drapeShapeGeometry(shapes, originLon, originLat, terrainSampler, baseY, drapeY, flatY);
+  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
 
   useEffect(() => {
     return () => {
@@ -317,12 +493,10 @@ function WaterPolygons({
 
   if (!geometry) return null;
 
+  // When terrain is on, WaterPolygons is already rotated+positioned inside
+  // drapeShapeGeometry. When off, ditto. So no extra rotation here.
   return (
-    <mesh
-      geometry={geometry}
-      rotation={[-Math.PI / 2, 0, 0]}
-      position={[0, baseY, 0]}
-    >
+    <mesh geometry={geometry}>
       <meshStandardMaterial
         color={DIORAMA_COLORS.water}
         roughness={0.4}
@@ -340,14 +514,18 @@ function LandusePolygons({
   originLon,
   originLat,
   baseY,
+  terrainSampler,
+  drapeY,
+  flatY,
 }: {
   polygons: LandusePolygon[];
   originLon: number;
   originLat: number;
   baseY: number;
+  terrainSampler: TerrainSampler | null;
+  drapeY: number;
+  flatY: number;
 }) {
-  // Group polygons by color so we can build one merged geometry per color
-  // (cuts draw calls from 200+ down to ~7).
   const groups = useMemo(() => {
     const map = new Map<string, LandusePolygon[]>();
     for (const p of polygons) {
@@ -368,6 +546,9 @@ function LandusePolygons({
           originLon={originLon}
           originLat={originLat}
           baseY={baseY}
+          terrainSampler={terrainSampler}
+          drapeY={drapeY}
+          flatY={flatY}
         />
       ))}
     </group>
@@ -380,12 +561,18 @@ function LanduseGroup({
   originLon,
   originLat,
   baseY,
+  terrainSampler,
+  drapeY,
+  flatY,
 }: {
   color: string;
   polygons: LandusePolygon[];
   originLon: number;
   originLat: number;
   baseY: number;
+  terrainSampler: TerrainSampler | null;
+  drapeY: number;
+  flatY: number;
 }) {
   const geometry = useMemo(() => {
     const shapes: THREE.Shape[] = [];
@@ -400,9 +587,8 @@ function LanduseGroup({
       shape.closePath();
       shapes.push(shape);
     }
-    if (!shapes.length) return null;
-    return new THREE.ShapeGeometry(shapes);
-  }, [polygons, originLon, originLat]);
+    return drapeShapeGeometry(shapes, originLon, originLat, terrainSampler, baseY, drapeY, flatY);
+  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
 
   useEffect(() => {
     return () => {
@@ -413,11 +599,7 @@ function LanduseGroup({
   if (!geometry) return null;
 
   return (
-    <mesh
-      geometry={geometry}
-      rotation={[-Math.PI / 2, 0, 0]}
-      position={[0, baseY, 0]}
-    >
+    <mesh geometry={geometry}>
       <meshStandardMaterial
         color={color}
         roughness={1}
@@ -435,14 +617,21 @@ function RoadLinesMesh({
   originLon,
   originLat,
   baseY,
+  terrainSampler,
+  drapeY,
+  flatY,
 }: {
   roads: RoadLine[];
   originLon: number;
   originLat: number;
   baseY: number;
+  terrainSampler: TerrainSampler | null;
+  drapeY: number;
+  flatY: number;
 }) {
   const geometry = useMemo(() => {
     const positions: number[] = [];
+    const yOffset = terrainSampler ? drapeY : flatY;
     for (const road of roads) {
       if (road.points.length < 2) continue;
       for (let i = 0; i < road.points.length - 1; i++) {
@@ -453,14 +642,20 @@ function RoadLinesMesh({
           originLon,
           originLat,
         );
-        positions.push(a.x, 0, a.z, b.x, 0, b.z);
+        const ha = terrainSampler
+          ? terrainSampler.heightAt(road.points[i][0], road.points[i][1])
+          : 0;
+        const hb = terrainSampler
+          ? terrainSampler.heightAt(road.points[i + 1][0], road.points[i + 1][1])
+          : 0;
+        positions.push(a.x, baseY + ha + yOffset, a.z, b.x, baseY + hb + yOffset, b.z);
       }
     }
     if (!positions.length) return null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     return geo;
-  }, [roads, originLon, originLat]);
+  }, [roads, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
 
   useEffect(() => {
     return () => {
@@ -471,7 +666,7 @@ function RoadLinesMesh({
   if (!geometry) return null;
 
   return (
-    <lineSegments geometry={geometry} position={[0, baseY, 0]}>
+    <lineSegments geometry={geometry}>
       <lineBasicMaterial color={DIORAMA_COLORS.road} />
     </lineSegments>
   );
@@ -484,18 +679,20 @@ function BuildingExtrusions({
   originLon,
   originLat,
   baseY,
+  terrainSampler,
+  drapeY,
+  flatY,
 }: {
   buildings: BuildingFeature[];
   originLon: number;
   originLat: number;
   baseY: number;
+  terrainSampler: TerrainSampler | null;
+  drapeY: number;
+  flatY: number;
 }) {
-  // Cap to keep the vertex count browser-friendly. Generator already caps
-  // at 800 but we double-check here for safety with hand-edited files.
   const capped = useMemo(() => buildings.slice(0, 800), [buildings]);
 
-  // Build a single merged geometry for all buildings. Each footprint becomes
-  // an ExtrudeGeometry that we rotate so the extrusion axis maps to +Y.
   const geometry = useMemo(() => {
     const geos: THREE.BufferGeometry[] = [];
     for (const b of capped) {
@@ -508,7 +705,7 @@ function BuildingExtrusions({
       });
       shape.closePath();
       // Clamp building height so no single tower pokes through the track
-      // ribbon (which floats at LAYER_Y.trackOverlay = 60 m above baseY).
+      // ribbon (which floats above the city).
       const rawHeight = Math.max(2, b.height);
       const height = Math.min(rawHeight, 50);
       const extrude = new THREE.ExtrudeGeometry(shape, {
@@ -520,13 +717,31 @@ function BuildingExtrusions({
       // translate down so footprints sit on y=0 and roofs point upward.
       extrude.rotateX(-Math.PI / 2);
       extrude.translate(0, -height, 0);
+
+      // When terrain is on, sample the terrain height at the building's
+      // centroid and lift the whole building onto the terrain.
+      if (terrainSampler) {
+        let sumLon = 0;
+        let sumLat = 0;
+        for (const [lon, lat] of b.footprint) {
+          sumLon += lon;
+          sumLat += lat;
+        }
+        const centroidLon = sumLon / b.footprint.length;
+        const centroidLat = sumLat / b.footprint.length;
+        const h = terrainSampler.heightAt(centroidLon, centroidLat);
+        extrude.translate(0, baseY + h + drapeY, 0);
+      } else {
+        extrude.translate(0, baseY + flatY, 0);
+      }
+
       geos.push(extrude);
     }
     if (!geos.length) return null;
     const merged = mergeGeometries(geos);
     for (const g of geos) g.dispose();
     return merged;
-  }, [capped, originLon, originLat]);
+  }, [capped, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
 
   useEffect(() => {
     return () => {
@@ -537,7 +752,7 @@ function BuildingExtrusions({
   if (!geometry) return null;
 
   return (
-    <mesh geometry={geometry} position={[0, baseY, 0]} castShadow receiveShadow>
+    <mesh geometry={geometry} castShadow receiveShadow>
       <meshStandardMaterial
         color={DIORAMA_COLORS.building}
         roughness={0.85}

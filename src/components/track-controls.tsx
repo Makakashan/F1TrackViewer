@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RotateCw, Mountain, Camera, Layers, Building2 } from "lucide-react";
+import { RotateCw, Mountain, Camera, Layers, Building2, Map } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -29,6 +29,8 @@ interface TrackControlsProps {
         environmentAvailable: boolean;
         environmentEnabled: boolean;
         setEnvironmentEnabled: (v: boolean) => void;
+        environmentTerrain: boolean;
+        setEnvironmentTerrain: (v: boolean) => void;
 }
 
 export default function TrackControls({
@@ -45,6 +47,8 @@ export default function TrackControls({
         environmentAvailable,
         environmentEnabled,
         setEnvironmentEnabled,
+        environmentTerrain,
+        setEnvironmentTerrain,
 }: TrackControlsProps) {
         const { t } = useAppPref();
         const [menuOpen, setMenuOpen] = useState(false);
@@ -98,6 +102,25 @@ export default function TrackControls({
                                 >
                                         <Building2 className="h-3.5 w-3.5" />
                                         <span className="hidden sm:inline">Diorama</span>
+                                </Button>
+                        )}
+
+                        {/* Terrain toggle — only when diorama is on. Switches
+                            between flat architectural model and 3D hills. */}
+                        {environmentAvailable && environmentEnabled && (
+                                <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setEnvironmentTerrain(!environmentTerrain)}
+                                        className={`h-8 gap-1.5 px-2.5 text-xs ${
+                                                environmentTerrain
+                                                        ? "bg-primary/15 text-primary hover:bg-primary/25"
+                                                        : "text-muted-foreground hover:text-foreground"
+                                        }`}
+                                        title="Toggle 3D terrain"
+                                >
+                                        <Map className="h-3.5 w-3.5" />
+                                        <span className="hidden sm:inline">Terrain</span>
                                 </Button>
                         )}
 

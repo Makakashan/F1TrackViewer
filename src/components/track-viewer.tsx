@@ -46,6 +46,7 @@ export interface TrackViewerProps {
   viewMode?: TrackViewMode;
   markers?: TrackMarkers | null;
   environmentBundle?: EnvironmentBundle | null;
+  environmentTerrain?: boolean;
 }
 
 const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
@@ -89,6 +90,7 @@ function TrackMesh({
   viewMode,
   markers,
   environmentBundle,
+  environmentTerrain,
 }: {
   geojson: CircuitGeoJSON;
   trackWidth: number;
@@ -103,6 +105,7 @@ function TrackMesh({
   viewMode: TrackViewMode;
   markers?: TrackMarkers | null;
   environmentBundle?: EnvironmentBundle | null;
+  environmentTerrain?: boolean;
 }) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -325,14 +328,19 @@ function TrackMesh({
       {/* Environment diorama renders below the track so the red ribbon
           always reads on top of the white city. */}
       {hasEnvironment && (
-        <EnvironmentLayer bundle={environmentBundle!} baseY={groundY} />
+        <EnvironmentLayer
+          bundle={environmentBundle!}
+          baseY={groundY}
+          showTerrain={environmentTerrain}
+        />
       )}
 
       {/* When the diorama is on, lift the track ribbon above the city and
           disable depth-test so the red (or sector-colored) track is always
-          visible — like a painted line on top of an architectural model. */}
+          visible — like a painted line on top of an architectural model.
+          Lift higher when terrain is on so hills don't poke through. */}
       <group
-        position={[0, hasEnvironment ? 60 : 0, 0]}
+        position={[0, hasEnvironment ? (environmentTerrain ? 120 : 60) : 0, 0]}
         renderOrder={hasEnvironment ? 999 : 0}
       >
       {/* Sector mode: colored sector meshes replace the single track mesh.
@@ -524,6 +532,7 @@ export default function TrackViewer({
   viewMode = "normal",
   markers,
   environmentBundle,
+  environmentTerrain = true,
 }: TrackViewerProps) {
   const [canvasEventSource, setCanvasEventSource] =
     useState<HTMLDivElement | null>(null);
@@ -746,6 +755,7 @@ export default function TrackViewer({
                 viewMode={viewMode}
                 markers={markers}
                 environmentBundle={environmentBundle}
+                environmentTerrain={environmentTerrain}
               />
             </Suspense>
 
