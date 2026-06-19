@@ -19,7 +19,7 @@ Usage:
     python generate-sector-splits.py                    # all circuits
     python generate-sector-splits.py mc-1929 gb-1948   # specific circuits
     python generate-sector-splits.py --fastf1-only      # only circuits with FastF1 data
-    python generate-sector-splits.py --manual-only      # only manual 33/33/33 splits
+    python generate-sector-splits.py --manual-only      # only equal-thirds fallback splits
 
 FastF1 supports event schedule data from 2018+.
 """
@@ -82,6 +82,8 @@ def generate_sector_splits(
     start_finish_s: float,
     direction_sign: int,
     lap_length_meters: float,
+    start_finish_verified: bool = False,
+    direction_verified: bool = False,
     num_laps: int = 10,
 ):
     """
@@ -148,9 +150,14 @@ def generate_sector_splits(
         "lapLengthMeters": lap_length_meters,
         "startFinish": {
             "s": start_finish_s,
-            "verified": True,
+            "verified": start_finish_verified,
         },
         "directionSign": direction_sign,
+        "verification": {
+            "startFinish": start_finish_verified,
+            "direction": direction_verified,
+            "sectors": True,
+        },
         "sectors": [
             {
                 "id": 1,
@@ -181,6 +188,8 @@ def generate_manual_sector_splits(
     start_finish_s: float,
     direction_sign: int,
     lap_length_meters: float,
+    start_finish_verified: bool = False,
+    direction_verified: bool = False,
     note: str = "",
 ):
     """
@@ -191,20 +200,25 @@ def generate_manual_sector_splits(
     s1_end = round(lap_length_meters / 3, 2)
     s2_end = round(2 * lap_length_meters / 3, 2)
 
-    print(f"Manual 33/33/33 splits for {circuit_id}:")
+    print(f"Equal-thirds splits for {circuit_id}:")
     print(f"  S1 end: {s1_end:.2f}m")
     print(f"  S2 end: {s2_end:.2f}m")
     print(f"  S3 end: {lap_length_meters}m (lap length)")
 
     data = {
         "circuitId": circuit_id,
-        "source": "manual",
+        "source": "equal-thirds",
         "lapLengthMeters": lap_length_meters,
         "startFinish": {
             "s": start_finish_s,
-            "verified": start_finish_s != 0,
+            "verified": start_finish_verified,
         },
         "directionSign": direction_sign,
+        "verification": {
+            "startFinish": start_finish_verified,
+            "direction": direction_verified,
+            "sectors": False,
+        },
         "confidence": "low",
         "sectors": [
             {
@@ -261,7 +275,7 @@ def _write_marker_file(circuit_id: str, data: dict):
 # If sectors appear in the wrong order (S3 where S1 should be), flip the sign.
 #
 # For circuits with gp=None, no FastF1 session is available (pre-2018 or
-# never in F1 calendar). These get manual 33/33/33 sector splits.
+# never in F1 calendar). These get equal-thirds fallback sector splits.
 #
 # FastF1 event names use the official F1 event name as stored by FastF1.
 # For the 2024 season these are the country/event names from the schedule.
@@ -271,168 +285,208 @@ CIRCUITS = {
     "bh-2002": {
         "year": 2024, "gp": "Bahrain", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5412,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Bahrain International Circuit (Sakhir)
     "sa-2021": {
         "year": 2024, "gp": "Saudi Arabia", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 6175,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Jeddah Corniche Circuit (Jeddah)
     "au-1953": {
         "year": 2024, "gp": "Australia", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5278,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Albert Park Circuit (Melbourne)
     "jp-1962": {
         "year": 2024, "gp": "Japan", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5807,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Suzuka International Racing Course (Suzuka)
     "cn-2004": {
         "year": 2024, "gp": "China", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0.9469, "direction_sign": 1, "lap_length_meters": 5451,
+        "start_finish_verified": True, "direction_verified": False,
     },  # Shanghai International Circuit (Shanghai)
     "us-2022": {
         "year": 2024, "gp": "Miami", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5412,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Miami International Autodrome (Miami)
     "it-1953": {
         "year": 2024, "gp": "Emilia Romagna", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4909,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Autodromo Enzo e Dino Ferrari (Imola)
     "mc-1929": {
         "year": 2024, "gp": "Monaco", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0.74108, "direction_sign": -1, "lap_length_meters": 3337,
+        "start_finish_verified": True, "direction_verified": True,
     },  # Circuit de Monaco (Monaco) — VERIFIED direction_sign
     "ca-1978": {
         "year": 2024, "gp": "Canada", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4361,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Circuit Gilles-Villeneuve (Montreal)
     "es-1991": {
         "year": 2024, "gp": "Spain", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0.032, "direction_sign": 1, "lap_length_meters": 4655,
+        "start_finish_verified": True, "direction_verified": False,
     },  # Circuit de Barcelona-Catalunya (Barcelona)
     "at-1969": {
         "year": 2024, "gp": "Austria", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4318,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Red Bull Ring (Spielberg)
     "gb-1948": {
         "year": 2024, "gp": "Great Britain", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0.53798, "direction_sign": 1, "lap_length_meters": 5891,
+        "start_finish_verified": True, "direction_verified": False,
     },  # Silverstone Circuit (Silverstone)
     "hu-1986": {
         "year": 2024, "gp": "Hungary", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4381,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Hungaroring (Budapest)
     "be-1925": {
         "year": 2024, "gp": "Belgium", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 7004,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Circuit de Spa-Francorchamps (Spa)
     "nl-1948": {
         "year": 2024, "gp": "Netherlands", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4259,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Circuit Zandvoort (Zandvoort)
     "it-1922": {
         "year": 2024, "gp": "Italy", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5793,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Autodromo Nazionale Monza (Monza)
     "az-2016": {
         "year": 2024, "gp": "Azerbaijan", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 6003,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Baku City Circuit (Baku)
     "sg-2008": {
         "year": 2024, "gp": "Singapore", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4928,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Marina Bay Street Circuit (Singapore)
     "us-2012": {
         "year": 2024, "gp": "United States", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5514,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Circuit of the Americas (Austin)
     "mx-1962": {
         "year": 2024, "gp": "Mexico", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4304,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Autódromo Hermanos Rodríguez (Mexico City)
     "br-1940": {
         "year": 2024, "gp": "São Paulo", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4309,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Autódromo José Carlos Pace - Interlagos (São Paulo)
     "us-2023": {
         "year": 2024, "gp": "Las Vegas", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 6201,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Las Vegas Street Circuit (Las Vegas)
     "qa-2004": {
         "year": 2024, "gp": "Qatar", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5380,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Losail International Circuit (Lusail)
     "ae-2009": {
         "year": 2024, "gp": "Abu Dhabi", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5281,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Yas Marina Circuit (Abu Dhabi)
 
     # ─── Circuits with FastF1 data (not in 2024 calendar) ────────────
     "de-1927": {
         "year": 2020, "gp": "Eifel", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5148,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Nürburgring (Nürburg) — Eifel GP 2020
     "de-1932": {
         "year": 2019, "gp": "Germany", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4574,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Hockenheimring (Hockenheim) — German GP 2019
     "fr-1969": {
         "year": 2022, "gp": "France", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5842,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Circuit Paul Ricard (Le Castellet) — French GP 2018-2022
     "it-1914": {
         "year": 2020, "gp": "Tuscany", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5245,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Autodromo Internazionale del Mugello — Tuscan GP 2020
     "pt-2008": {
         "year": 2021, "gp": "Portugal", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4653,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Autódromo Internacional do Algarve (Portimão) — Portuguese GP 2020-2021
     "ru-2014": {
         "year": 2021, "gp": "Russia", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5848,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Sochi Autodrom (Sochi) — Russian GP 2018-2021
     "tr-2005": {
         "year": 2021, "gp": "Turkey", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5338,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Intercity Istanbul Park (Istanbul) — Turkish GP 2020-2021
 
-    # ─── Circuits WITHOUT FastF1 data (manual 33/33/33 splits) ───────
+    # ─── Circuits WITHOUT FastF1 data (equal-thirds fallback splits) ──
     # These circuits were last in F1 before 2018 or have never hosted F1.
     # gp=None signals that no FastF1 session is available.
     "ar-1952": {
         "year": None, "gp": None, "session_name": None, "driver": None,
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4322,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Autódromo Oscar y Juan Gálvez (Buenos Aires) — last F1 1998
     "br-1977": {
         "year": None, "gp": None, "session_name": None, "driver": None,
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5031,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Autódromo Internacional Nelson Piquet (Jacarepaguá) — last F1 2012 (demolished)
     "es-2026": {
         "year": None, "gp": None, "session_name": None, "driver": None,
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5474,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Circuito de Madring (Madrid) — future circuit, not yet raced
     "fr-1960": {
         "year": None, "gp": None, "session_name": None, "driver": None,
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4412,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Circuit de Nevers Magny-Cours — last F1 2008
     "my-1999": {
         "year": None, "gp": None, "session_name": None, "driver": None,
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5543,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Sepang International Circuit (Sepang) — last F1 2017
     "pt-1972": {
         "year": None, "gp": None, "session_name": None, "driver": None,
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4349,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Autódromo do Estoril (Estoril) — last F1 1996
     "us-1909": {
         "year": None, "gp": None, "session_name": None, "driver": None,
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4192,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Indianapolis Motor Speedway — last F1 2007
     "us-1956": {
         "year": None, "gp": None, "session_name": None, "driver": None,
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5430,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Watkins Glen International — last F1 1980
     "za-1961": {
         "year": None, "gp": None, "session_name": None, "driver": None,
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4529,
+        "start_finish_verified": False, "direction_verified": False,
     },  # Kyalami Grand Prix Circuit (Johannesburg) — last F1 1993
 }
 
@@ -458,6 +512,8 @@ if __name__ == "__main__":
                     start_finish_s=cfg["start_finish_s"],
                     direction_sign=cfg["direction_sign"],
                     lap_length_meters=cfg["lap_length_meters"],
+                    start_finish_verified=cfg.get("start_finish_verified", False),
+                    direction_verified=cfg.get("direction_verified", False),
                 )
             else:
                 generate_sector_splits(circuit_id=circuit_id, **cfg)
@@ -480,6 +536,8 @@ if __name__ == "__main__":
                     start_finish_s=cfg["start_finish_s"],
                     direction_sign=cfg["direction_sign"],
                     lap_length_meters=cfg["lap_length_meters"],
+                    start_finish_verified=cfg.get("start_finish_verified", False),
+                    direction_verified=cfg.get("direction_verified", False),
                 )
             else:
                 try:

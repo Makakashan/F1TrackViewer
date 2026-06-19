@@ -19,6 +19,10 @@ Interactive 3D viewer for Formula 1 circuits — Next.js 16 + Three.js + Tailwin
 - **Searchable circuit list** with country flags
 - **Info panel** with track stats, SVG sparkline elevation profile, and geometry metadata
 - **Responsive** — mobile layout with drawer menus, desktop 3-column layout
+- **Sector view mode** via `?sectors=1`
+- **Real sector split distances** from FastF1 telemetry where available
+- **33/33/33 fallback sector splits** for historical/future layouts
+- **Sector source badge**: FastF1-derived / approximate thirds
 
 ---
 
@@ -109,7 +113,7 @@ src/
 - [x] **MVP 1** — static 3D viewer + OrbitControls
 - [x] **MVP 1.5** — elevation profile + ribbon mesh + i18n + theming
 - [x] **MVP 2** — corrected track base: real elevation x1, width control, camera presets, start/finish marker, direction arrow, URL state
-- [ ] **MVP 2.5** — richer circuit annotations: corners, sectors, and marker metadata
+- [x] **MVP 2.5** — sector view mode, real sector splits from FastF1 telemetry, 33/33/33 fallback for historical circuits
 - [ ] **MVP 3** — [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database): real track width
 - [ ] **MVP 4** — sessions, telemetry, and animated car position
 
