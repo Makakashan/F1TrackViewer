@@ -109,39 +109,39 @@ function TrackMesh({
 }) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
+  const hasEnvironment = !!environmentBundle;
 
-  const radius = useMemo(() => {
-    const b = computeBounds(coords);
-    return sceneRadiusFromBounds(b);
-  }, [coords]);
+  const bounds = useMemo(() => computeBounds(coords), [coords]);
+
+  const radius = useMemo(() => sceneRadiusFromBounds(bounds), [bounds]);
 
   const { curve, peakY } = useMemo(() => {
-    const b = computeBounds(coords);
+    const renderedElevations = hasEnvironment ? undefined : (elevations ?? undefined);
     const c = buildTrackCurve(
       coords,
-      b,
-      elevations ?? undefined,
+      bounds,
+      renderedElevations,
       REAL_ELEVATION_SCALE,
     );
     let peak = 0;
-    if (elevations && elevations.length) {
+    if (renderedElevations && renderedElevations.length) {
       let min = Infinity,
         max = -Infinity,
         sum = 0;
-      for (const e of elevations) {
+      for (const e of renderedElevations) {
         if (e < min) min = e;
         if (e > max) max = e;
         sum += e;
       }
-      const mean = sum / elevations.length;
+      const mean = sum / renderedElevations.length;
       peak = Math.max(Math.abs(min - mean), Math.abs(max - mean));
     }
     return { curve: c, peakY: peak };
-  }, [coords, elevations]);
+  }, [bounds, coords, elevations, hasEnvironment]);
 
   const groundY = useMemo(
-    () => -peakY - trackWidth * 2 - 1,
-    [peakY, trackWidth],
+    () => (hasEnvironment ? -0.7 : -peakY - trackWidth * 2 - 1),
+    [hasEnvironment, peakY, trackWidth],
   );
 
   const samples = useMemo(() => {
@@ -264,8 +264,6 @@ function TrackMesh({
   const isDark = resolvedTheme === "dark";
   const { camera, controls } = useThree();
 
-  const hasEnvironment = !!environmentBundle;
-
   useEffect(() => {
     const verticalFudge = 1 + Math.min(1, peakY / Math.max(radius, 1));
     // When the diorama is on, pull the camera much further back so the whole
@@ -325,24 +323,19 @@ function TrackMesh({
 
   return (
     <group>
-      {/* Environment diorama renders below the track so the red ribbon
-          always reads on top of the white city. */}
+      {/* Environment diorama shares the track coordinate origin so Monaco
+          reads as one 3D scene instead of a floating overlay. */}
       {hasEnvironment && (
         <EnvironmentLayer
           bundle={environmentBundle!}
+          originLon={bounds.centerLon}
+          originLat={bounds.centerLat}
           baseY={groundY}
           showTerrain={environmentTerrain}
         />
       )}
 
-      {/* When the diorama is on, lift the track ribbon above the city and
-          disable depth-test so the red (or sector-colored) track is always
-          visible — like a painted line on top of an architectural model.
-          Lift higher when terrain is on so hills don't poke through. */}
-      <group
-        position={[0, hasEnvironment ? (environmentTerrain ? 120 : 60) : 0, 0]}
-        renderOrder={hasEnvironment ? 999 : 0}
-      >
+      <group>
       {/* Sector mode: colored sector meshes replace the single track mesh.
           In normal mode, the single red track mesh is shown. */}
       {showSectors ? (
@@ -351,7 +344,6 @@ function TrackMesh({
             <mesh
               key={`sector-${sector.id}`}
               geometry={sectorGeometries[i]}
-              renderOrder={hasEnvironment ? 999 : 0}
               onPointerDown={(event) => {
                 if (!calibrationEnabled) return;
                 event.stopPropagation();
@@ -366,8 +358,8 @@ function TrackMesh({
                 roughness={0.5}
                 metalness={0.05}
                 side={THREE.DoubleSide}
-                depthTest={!hasEnvironment}
-                depthWrite={!hasEnvironment}
+                depthTest
+                depthWrite
               />
             </mesh>
           ))}
@@ -377,13 +369,12 @@ function TrackMesh({
             <mesh
               key={`split-${i}`}
               geometry={geo}
-              renderOrder={hasEnvironment ? 1000 : 0}
             >
               <meshBasicMaterial
                 color={splitLineColor}
                 side={THREE.DoubleSide}
-                depthTest={!hasEnvironment}
-                depthWrite={!hasEnvironment}
+                depthTest
+                depthWrite
               />
             </mesh>
           ))}
@@ -394,7 +385,6 @@ function TrackMesh({
               F1 red with emissive so it reads clearly on both themes. */}
           <mesh
             geometry={trackGeometry}
-            renderOrder={hasEnvironment ? 999 : 0}
             onPointerDown={(event) => {
               if (!calibrationEnabled) return;
               event.stopPropagation();
@@ -409,8 +399,8 @@ function TrackMesh({
               roughness={0.5}
               metalness={0.05}
               side={THREE.DoubleSide}
-              depthTest={!hasEnvironment}
-              depthWrite={!hasEnvironment}
+              depthTest
+              depthWrite
             />
           </mesh>
         </>
@@ -418,14 +408,11 @@ function TrackMesh({
 
       {/* Track outline — thin black lines along both top edges of the
           ribbon. Provides visual definition between track and ground. */}
-      <lineSegments
-        geometry={outlineGeometry}
-        renderOrder={hasEnvironment ? 1000 : 0}
-      >
+      <lineSegments geometry={outlineGeometry}>
         <lineBasicMaterial
           color={outlineColor}
-          depthTest={!hasEnvironment}
-          depthWrite={!hasEnvironment}
+          depthTest
+          depthWrite
         />
       </lineSegments>
       </group>
@@ -705,8 +692,8 @@ export default function TrackViewer({
             dpr={[1, 1.5]}
             camera={{
               fov: 50,
-              near: 0.1,
-              far: 200000,
+              near: 2,
+              far: 20000,
               position: [400, 300, 400],
             }}
             gl={{

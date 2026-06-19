@@ -151,23 +151,25 @@ export default function F1TrackApp({
   // and the toggle hides itself.
   useEffect(() => {
     if (!selectedId) {
-      setEnvironmentBundle(null);
-      return;
+      const timer = window.setTimeout(() => setEnvironmentBundle(null), 0);
+      return () => window.clearTimeout(timer);
     }
     let cancelled = false;
-    setEnvironmentBundle(undefined);
+    const timer = window.setTimeout(() => setEnvironmentBundle(undefined), 0);
     fetchEnvironmentBundle(selectedId).then((bundle) => {
       if (!cancelled) setEnvironmentBundle(bundle);
     });
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [selectedId]);
 
   // Auto-disable environment when the selected circuit has no bundle.
   useEffect(() => {
     if (environmentBundle === null && environmentEnabled) {
-      setEnvironmentEnabled(false);
+      const timer = window.setTimeout(() => setEnvironmentEnabled(false), 0);
+      return () => window.clearTimeout(timer);
     }
   }, [environmentBundle, environmentEnabled]);
 

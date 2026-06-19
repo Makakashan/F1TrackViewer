@@ -1,12 +1,12 @@
 /**
  * Color palette for the MVP3 low-poly diorama.
  *
- * Reference look: white architectural model of the city on a dark
- * grid-textured base, with the F1 track painted in red on top.
+ * Reference look: white architectural model of the city on a pale
+ * map-board base, with water kept dark and the F1 track painted on top.
  */
 export const DIORAMA_COLORS = {
-  base: "#202225",
-  grid: "#3A3D42",
+  base: "#E8EBF1",
+  grid: "#C4CBD8",
   terrain: "#E8E8E8",
   terrainVerticalScale: 0.6,
   building: "#F2F2F2",
