@@ -73,3 +73,7 @@ server.log
 /upload
 prompt
 .claude
+
+# environment generator raw / cache (committed artifacts live in public/environments/)
+/data/raw/
+/data/cache/
