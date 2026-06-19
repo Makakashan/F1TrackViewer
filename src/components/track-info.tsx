@@ -162,9 +162,11 @@ export default function TrackInfo({
           <div className="mt-2 text-[10px] text-muted-foreground/70">
             {markers.source === "fastf1-telemetry-derived"
               ? t.sectorSourceFastf1
-              : markers.source === "manual"
+              : markers.source === "equal-thirds"
                 ? t.sectorSourceManual
-                : t.sectorSourceEstimated}
+                : markers.source === "manual"
+                  ? t.sectorSourceManual
+                  : t.sectorSourceEstimated}
             {markers.year ? ` · ${markers.year}` : ""}
             {markers.session ? ` ${markers.session}` : ""}
             {markers.driver ? ` · ${markers.driver}` : ""}

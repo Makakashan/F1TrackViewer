@@ -14,7 +14,7 @@ export interface SectorDefinition {
 
 export interface TrackMarkers {
   circuitId: string;
-  source: "fastf1-telemetry-derived" | "manual" | "estimated";
+  source: "fastf1-telemetry-derived" | "equal-thirds" | "manual" | "estimated";
   year?: number;
   event?: string;
   session?: string;
@@ -26,6 +26,11 @@ export interface TrackMarkers {
     verified: boolean;
   };
   directionSign: 1 | -1;
+  verification?: {
+    startFinish: boolean;
+    direction: boolean;
+    sectors: boolean;
+  };
   sectors: SectorDefinition[];
   confidence?: "high" | "medium" | "low";
 }

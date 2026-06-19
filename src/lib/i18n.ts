@@ -35,7 +35,7 @@ export const THEMES: { code: Theme; labelKey: keyof typeof en; flag: string }[] 
 const en = {
   // App header
   appName: "F1 Track Studio",
-  appTagline: "3D Circuit Viewer · MVP 2",
+  appTagline: "3D Circuit Viewer · MVP 2.5",
   btnReload: "Reload",
   // Top bar toggles
   autoRotate: "Auto-rotate",
@@ -118,7 +118,7 @@ type Dict = typeof en;
 
 const ru: Dict = {
   appName: "F1 Track Studio",
-  appTagline: "3D просмотрщик трасс · MVP 2",
+  appTagline: "3D просмотрщик трасс · MVP 2.5",
   btnReload: "Обновить",
   autoRotate: "Авто-вращение",
   elevations: "Реальный рельеф",
