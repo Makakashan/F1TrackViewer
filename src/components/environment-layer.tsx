@@ -10,8 +10,14 @@ import type {
   LandusePolygon,
   TerrainFile,
   EnvironmentManifest,
+  SurfaceFile,
 } from "@/lib/environment-types";
 import { DIORAMA_COLORS, landuseColor } from "@/lib/diorama-palette";
+import {
+  buildTerrainSampler,
+  TERRAIN_VERTICAL_SCALE,
+  type TerrainSampler,
+} from "@/lib/terrain-sampler";
 
 /**
  * Local-meters projection of a [lon, lat] pair onto the diorama plane.
@@ -63,8 +69,6 @@ const LAYER_Y_DRAPE = {
   buildings: 1.2,
 } as const;
 
-const TERRAIN_VERTICAL_SCALE = 0.4;
-
 const VISIBLE_LANDUSE_KINDS = new Set<LandusePolygon["kind"]>([
   "park",
   "wood",
@@ -72,6 +76,26 @@ const VISIBLE_LANDUSE_KINDS = new Set<LandusePolygon["kind"]>([
 ]);
 const BOARD_MARGIN = 1.35;
 const MIN_WATER_AREA_SQ_M = 2_500;
+const TERRAIN_SKIRT_BOTTOM_Y = -2;
+const TERRAIN_BASE_SLAB_DEPTH = 10;
+const TERRAIN_TRACK_CARVE_RADIUS_M = 18;
+const TERRAIN_TRACK_CARVE_DEPTH_M = 2.5;
+
+function isPointInPolygon(
+  point: { x: number; y: number },
+  polygon: { x: number; y: number }[],
+): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i];
+    const b = polygon[j];
+    const intersects =
+      a.y > point.y !== b.y > point.y &&
+      point.x < ((b.x - a.x) * (point.y - a.y)) / (b.y - a.y) + a.x;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
 
 function polygonArea2D(points: { x: number; y: number }[]): number {
   let area = 0;
@@ -83,38 +107,49 @@ function polygonArea2D(points: { x: number; y: number }[]): number {
   return Math.abs(area) / 2;
 }
 
+function distanceToSegmentSq2D(
+  point: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): number {
+  const vx = b.x - a.x;
+  const vy = b.y - a.y;
+  const wx = point.x - a.x;
+  const wy = point.y - a.y;
+  const lenSq = vx * vx + vy * vy;
+  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, (wx * vx + wy * vy) / lenSq));
+  const x = a.x + vx * t;
+  const y = a.y + vy * t;
+  const dx = point.x - x;
+  const dy = point.y - y;
+  return dx * dx + dy * dy;
+}
+
 export interface EnvironmentLayerProps {
   bundle: EnvironmentBundle;
+  trackCoordinates: [number, number][];
   originLon: number;
   originLat: number;
-  /**
-   * Vertical offset of the diorama base plane, in meters. The track mesh
-   * already centers itself around y=0 with its lowest point at
-   * `groundY = -peakY - trackWidth * 2 - 1`, so we want the diorama base to
-   * sit at the same y so buildings rise from the track's ground level.
-   */
   baseY?: number;
-  /**
-   * Show 3D terrain elevation mesh. Defaults to true.
-   * When ON: terrain mesh is rendered with hills/valleys, and buildings/
-   * water/roads are draped on the terrain heights.
-   * When OFF: flat diorama — layers stacked with clear vertical separation.
-   */
   showTerrain?: boolean;
+  resolvedTheme?: "light" | "dark";
 }
 
 export default function EnvironmentLayer({
   bundle,
+  trackCoordinates,
   originLon,
   originLat,
   baseY = 0,
   showTerrain = true,
+  resolvedTheme = "dark",
 }: EnvironmentLayerProps) {
   const { manifest } = bundle;
   const hasTerrain = showTerrain && bundle.terrain.gridSize > 0;
 
   // Build a terrain sampler once — used by all draped layers to query the
-  // elevation at any [lon, lat] point.
+  // elevation at any [lon, lat] point. Water areas are flattened based on
+  // proximity to known water polygon vertices.
   const terrainSampler = useMemo(() => {
     if (!hasTerrain) return null;
     return buildTerrainSampler(bundle.terrain, manifest);
@@ -128,6 +163,7 @@ export default function EnvironmentLayer({
         originLat={originLat}
         baseY={baseY}
         hasTerrain={hasTerrain}
+        resolvedTheme={resolvedTheme}
       />
       {hasTerrain && (
         <TerrainMesh
@@ -136,6 +172,10 @@ export default function EnvironmentLayer({
           originLon={originLon}
           originLat={originLat}
           baseY={baseY}
+          resolvedTheme={resolvedTheme}
+          waterPolygons={bundle.water.polygons}
+          surface={bundle.surface}
+          trackCoordinates={trackCoordinates}
         />
       )}
       <LandusePolygons
@@ -173,76 +213,10 @@ export default function EnvironmentLayer({
         terrainSampler={terrainSampler}
         drapeY={LAYER_Y_DRAPE.buildings}
         flatY={LAYER_Y_FLAT.buildings}
+        bbox={hasTerrain ? manifest.bbox : null}
       />
     </group>
   );
-}
-
-// ─── Terrain sampler ────────────────────────────────────────────────────────
-
-interface TerrainSampler {
-  /** Query terrain height (in local meters, before baseY offset) at [lon, lat]. */
-  heightAt(lon: number, lat: number): number;
-  /** Min/max terrain height across the grid, in local meters. */
-  minHeight: number;
-  maxHeight: number;
-}
-
-function buildTerrainSampler(
-  terrain: TerrainFile,
-  manifest: EnvironmentManifest,
-): TerrainSampler {
-  const n = terrain.gridSize;
-  const minLon = manifest.bbox.minLon;
-  const minLat = manifest.bbox.minLat;
-  const maxLat = manifest.bbox.maxLat;
-  const maxLon = manifest.bbox.maxLon;
-
-  let minH = Infinity;
-  let maxH = -Infinity;
-  for (const h of terrain.heights) {
-    if (h < minH) minH = h;
-    if (h > maxH) maxH = h;
-  }
-  const range = Math.max(1, maxH - minH);
-
-  // Precompute local-meters height for each grid cell.
-  const localHeights = new Float32Array(terrain.heights.length);
-  for (let i = 0; i < terrain.heights.length; i++) {
-    localHeights[i] = ((terrain.heights[i] - minH) / range) * TERRAIN_VERTICAL_SCALE * 100;
-    // ×100 because range is in absolute meters (e.g. 454m) and we want the
-    // terrain to occupy ~TERRAIN_VERTICAL_SCALE × range meters in the scene.
-  }
-
-  // Inverse: terrain heights are stored row-major, row 0 = minLat (south),
-  // col 0 = minLon (west).
-  function heightAt(lon: number, lat: number): number {
-    if (n < 2) return 0;
-    const u = (lon - minLon) / (maxLon - minLon); // 0..1 west→east
-    const v = (lat - minLat) / (maxLat - minLat); // 0..1 south→north
-    if (u < 0 || u > 1 || v < 0 || v > 1) return 0;
-    const fx = u * (n - 1);
-    const fy = v * (n - 1);
-    const ix = Math.floor(fx);
-    const iy = Math.floor(fy);
-    const ix1 = Math.min(ix + 1, n - 1);
-    const iy1 = Math.min(iy + 1, n - 1);
-    const tx = fx - ix;
-    const ty = fy - iy;
-    const h00 = localHeights[iy * n + ix];
-    const h10 = localHeights[iy * n + ix1];
-    const h01 = localHeights[iy1 * n + ix];
-    const h11 = localHeights[iy1 * n + ix1];
-    const h0 = h00 * (1 - tx) + h10 * tx;
-    const h1 = h01 * (1 - tx) + h11 * tx;
-    return h0 * (1 - ty) + h1 * ty;
-  }
-
-  return {
-    heightAt,
-    minHeight: 0,
-    maxHeight: TERRAIN_VERTICAL_SCALE * 100,
-  };
 }
 
 // ─── DioramaBase ────────────────────────────────────────────────────────────
@@ -253,12 +227,14 @@ function DioramaBase({
   originLat,
   baseY,
   hasTerrain,
+  resolvedTheme,
 }: {
   bundle: EnvironmentBundle;
   originLon: number;
   originLat: number;
   baseY: number;
   hasTerrain: boolean;
+  resolvedTheme: "light" | "dark";
 }) {
   const { manifest } = bundle;
   const center = lonLatToXZ(
@@ -279,6 +255,8 @@ function DioramaBase({
       )
     : 500) * BOARD_MARGIN;
 
+  const isDark = resolvedTheme === "dark";
+
   // Grid texture drawn procedurally on a canvas — keeps the look of the
   // reference image: dark base, thin lighter grid lines.
   const gridTexture = useMemo(() => {
@@ -288,9 +266,9 @@ function DioramaBase({
     canvas.height = size;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-    ctx.fillStyle = DIORAMA_COLORS.base;
+    ctx.fillStyle = isDark ? "#1a1e24" : DIORAMA_COLORS.base;
     ctx.fillRect(0, 0, size, size);
-    ctx.strokeStyle = DIORAMA_COLORS.grid;
+    ctx.strokeStyle = isDark ? "#2a2e36" : DIORAMA_COLORS.grid;
     ctx.lineWidth = 1;
     const step = size / 32;
     for (let i = 0; i <= 32; i++) {
@@ -310,7 +288,7 @@ function DioramaBase({
     tex.repeat.set(8, 8);
     tex.anisotropy = 4;
     return tex;
-  }, []);
+  }, [isDark]);
 
   useEffect(() => {
     return () => {
@@ -322,6 +300,37 @@ function DioramaBase({
   // it and forms the "ground" of the diorama.
   const yPos = baseY + (hasTerrain ? -2 : 0);
 
+  const material = (
+    <meshStandardMaterial
+      map={gridTexture}
+      color={hasTerrain ? (isDark ? "#262B2F" : "#C8CDD6") : DIORAMA_COLORS.base}
+      roughness={1}
+      metalness={0}
+      side={THREE.DoubleSide}
+      polygonOffset
+      polygonOffsetFactor={3}
+      polygonOffsetUnits={3}
+    />
+  );
+
+  if (hasTerrain) {
+    return (
+      <mesh
+        position={[
+          center.x,
+          yPos - TERRAIN_BASE_SLAB_DEPTH / 2,
+          center.z,
+        ]}
+        receiveShadow
+      >
+        <boxGeometry
+          args={[halfW * 2, TERRAIN_BASE_SLAB_DEPTH, halfW * 2, 1, 1, 1]}
+        />
+        {material}
+      </mesh>
+    );
+  }
+
   return (
     <mesh
       rotation={[-Math.PI / 2, 0, 0]}
@@ -329,15 +338,7 @@ function DioramaBase({
       receiveShadow
     >
       <planeGeometry args={[halfW * 2, halfW * 2, 1, 1]} />
-      <meshStandardMaterial
-        map={gridTexture}
-        color={DIORAMA_COLORS.base}
-        roughness={1}
-        metalness={0}
-        polygonOffset
-        polygonOffsetFactor={3}
-        polygonOffsetUnits={3}
-      />
+      {material}
     </mesh>
   );
 }
@@ -354,12 +355,20 @@ function TerrainMesh({
   originLon,
   originLat,
   baseY,
+  resolvedTheme,
+  waterPolygons,
+  surface,
+  trackCoordinates,
 }: {
   terrain: TerrainFile;
   manifest: EnvironmentManifest;
   originLon: number;
   originLat: number;
   baseY: number;
+  resolvedTheme: "light" | "dark";
+  waterPolygons: WaterPolygon[];
+  surface: SurfaceFile | null;
+  trackCoordinates: [number, number][];
 }) {
   const geometry = useMemo(() => {
     const n = terrain.gridSize;
@@ -373,22 +382,40 @@ function TerrainMesh({
     const indices: number[] = [];
     const colors: number[] = [];
 
-    let minH = Infinity;
-    let maxH = -Infinity;
-    for (const h of terrain.heights) {
-      if (h < minH) minH = h;
-      if (h > maxH) maxH = h;
-    }
-    const range = Math.max(1, maxH - minH);
-    // Same scale as the sampler so draped layers align with the mesh.
-    const verticalScale = TERRAIN_VERTICAL_SCALE * 100;
+    const terrainTop = new THREE.Color(resolvedTheme === "dark" ? "#D0D4DC" : "#F3F5F9");
+    const waterMasks = waterPolygons
+      .map((poly) =>
+        poly.points.map(([lon, lat]) =>
+          lonLatToShapeXY(lon, lat, originLon, originLat),
+        ),
+      )
+      .filter((poly) => poly.length >= 3 && polygonArea2D(poly) >= MIN_WATER_AREA_SQ_M);
+    const trackPoints = trackCoordinates.map(([lon, lat]) =>
+      lonLatToShapeXY(lon, lat, originLon, originLat),
+    );
+    const trackCarveRadiusSq =
+      TERRAIN_TRACK_CARVE_RADIUS_M * TERRAIN_TRACK_CARVE_RADIUS_M;
 
-    // Two-tone gradient: low elevations = darker (closer to base color),
-    // high elevations = lighter. Matches the white-on-dark diorama style.
-    const colorLow = new THREE.Color("#2A2D33");
-    const colorMid = new THREE.Color("#7A7D82");
-    const colorHigh = new THREE.Color("#E8E8E8");
-    const tmp = new THREE.Color();
+    function isInsideTrackCarve(point: { x: number; y: number }): boolean {
+      for (let i = 0; i < trackPoints.length - 1; i++) {
+        if (
+          distanceToSegmentSq2D(point, trackPoints[i], trackPoints[i + 1]) <=
+          trackCarveRadiusSq
+        ) {
+          return true;
+        }
+      }
+      if (trackPoints.length > 2) {
+        return (
+          distanceToSegmentSq2D(
+            point,
+            trackPoints[trackPoints.length - 1],
+            trackPoints[0],
+          ) <= trackCarveRadiusSq
+        );
+      }
+      return false;
+    }
 
     for (let row = 0; row < n; row++) {
       for (let col = 0; col < n; col++) {
@@ -396,19 +423,20 @@ function TerrainMesh({
         const lon = minLon + ((maxLon - minLon) * col) / (n - 1);
         const lat = minLat + ((maxLat - minLat) * row) / (n - 1);
         const { x, z } = lonLatToXZ(lon, lat, originLon, originLat);
-        const h = terrain.heights[idx] ?? minH;
-        const t = (h - minH) / range; // 0..1
-        const y = t * verticalScale;
+        const shapePoint = { x, y: -z };
+        const h = terrain.heights[idx] ?? 0;
+        const isWater =
+          surface?.gridSize === n
+            ? surface.waterMask[idx] === 1
+            : waterMasks.some((mask) => isPointInPolygon(shapePoint, mask));
+        const rawY = isWater ? 0 : Math.max(0, h) * TERRAIN_VERTICAL_SCALE;
+        const y = isInsideTrackCarve(shapePoint)
+          ? Math.max(0, rawY - TERRAIN_TRACK_CARVE_DEPTH_M)
+          : rawY;
         positions.push(x, y, z);
         uvs.push(col / (n - 1), row / (n - 1));
 
-        // Three-stop gradient: dark → mid → light
-        if (t < 0.5) {
-          tmp.copy(colorLow).lerp(colorMid, t * 2);
-        } else {
-          tmp.copy(colorMid).lerp(colorHigh, (t - 0.5) * 2);
-        }
-        colors.push(tmp.r, tmp.g, tmp.b);
+        colors.push(terrainTop.r, terrainTop.g, terrainTop.b);
       }
     }
 
@@ -423,6 +451,59 @@ function TerrainMesh({
       }
     }
 
+    const sideTop = new THREE.Color("#C7CDD8");
+    const sideBottom = new THREE.Color("#6F7784");
+
+    function appendSkirtSegment(a: number, b: number) {
+      const base = positions.length / 3;
+      const ax = positions[a * 3];
+      const ay = positions[a * 3 + 1];
+      const az = positions[a * 3 + 2];
+      const bx = positions[b * 3];
+      const by = positions[b * 3 + 1];
+      const bz = positions[b * 3 + 2];
+
+      positions.push(
+        ax,
+        ay,
+        az,
+        bx,
+        by,
+        bz,
+        ax,
+        TERRAIN_SKIRT_BOTTOM_Y,
+        az,
+        bx,
+        TERRAIN_SKIRT_BOTTOM_Y,
+        bz,
+      );
+      uvs.push(0, 0, 1, 0, 0, 1, 1, 1);
+      colors.push(
+        sideTop.r,
+        sideTop.g,
+        sideTop.b,
+        sideTop.r,
+        sideTop.g,
+        sideTop.b,
+        sideBottom.r,
+        sideBottom.g,
+        sideBottom.b,
+        sideBottom.r,
+        sideBottom.g,
+        sideBottom.b,
+      );
+      indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+    }
+
+    for (let col = 0; col < n - 1; col++) {
+      appendSkirtSegment(col, col + 1);
+      appendSkirtSegment((n - 1) * n + col + 1, (n - 1) * n + col);
+    }
+    for (let row = 0; row < n - 1; row++) {
+      appendSkirtSegment((row + 1) * n, row * n);
+      appendSkirtSegment(row * n + n - 1, (row + 1) * n + n - 1);
+    }
+
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
@@ -430,7 +511,16 @@ function TerrainMesh({
     geo.setIndex(indices);
     geo.computeVertexNormals();
     return geo;
-  }, [terrain, manifest, originLon, originLat]);
+  }, [
+    terrain,
+    manifest,
+    originLon,
+    originLat,
+    resolvedTheme,
+    waterPolygons,
+    surface,
+    trackCoordinates,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -447,6 +537,7 @@ function TerrainMesh({
         roughness={0.92}
         metalness={0}
         flatShading
+        side={THREE.DoubleSide}
       />
     </mesh>
   );
@@ -530,7 +621,20 @@ function WaterPolygons({
       shape.closePath();
       shapes.push(shape);
     }
-    return drapeShapeGeometry(shapes, originLon, originLat, terrainSampler, baseY, drapeY, flatY);
+    if (!shapes.length) return null;
+    const geo = new THREE.ShapeGeometry(shapes);
+    geo.rotateX(-Math.PI / 2);
+    if (terrainSampler) {
+      const pos = geo.getAttribute("position") as THREE.BufferAttribute;
+      const waterY = baseY + 0.1;
+      for (let i = 0; i < pos.count; i++) {
+        pos.setY(i, waterY);
+      }
+      pos.needsUpdate = true;
+    } else {
+      geo.translate(0, baseY + flatY, 0);
+    }
+    return geo;
   }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
 
   useEffect(() => {
@@ -581,6 +685,7 @@ function LandusePolygons({
   // polygons overlap heavily in OSM and cause z-fighting, so the base board
   // represents the generic city floor instead.
   const groups = useMemo(() => {
+    if (terrainSampler) return [];
     const map = new Map<string, LandusePolygon[]>();
     for (const p of polygons) {
       if (!VISIBLE_LANDUSE_KINDS.has(p.kind)) continue;
@@ -589,7 +694,9 @@ function LandusePolygons({
       map.get(color)!.push(p);
     }
     return Array.from(map.entries());
-  }, [polygons]);
+  }, [polygons, terrainSampler]);
+
+  if (!groups.length) return null;
 
   return (
     <group>
@@ -688,8 +795,8 @@ function RoadLinesMesh({
   flatY: number;
 }) {
   const geometry = useMemo(() => {
+    if (terrainSampler) return null;
     const positions: number[] = [];
-    const yOffset = terrainSampler ? drapeY : flatY;
     for (const road of roads) {
       if (road.points.length < 2) continue;
       for (let i = 0; i < road.points.length - 1; i++) {
@@ -700,20 +807,14 @@ function RoadLinesMesh({
           originLon,
           originLat,
         );
-        const ha = terrainSampler
-          ? terrainSampler.heightAt(road.points[i][0], road.points[i][1])
-          : 0;
-        const hb = terrainSampler
-          ? terrainSampler.heightAt(road.points[i + 1][0], road.points[i + 1][1])
-          : 0;
-        positions.push(a.x, baseY + ha + yOffset, a.z, b.x, baseY + hb + yOffset, b.z);
+        positions.push(a.x, baseY + flatY, a.z, b.x, baseY + flatY, b.z);
       }
     }
     if (!positions.length) return null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     return geo;
-  }, [roads, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
+  }, [roads, originLon, originLat, terrainSampler, baseY, flatY]);
 
   useEffect(() => {
     return () => {
@@ -745,6 +846,7 @@ function BuildingExtrusions({
   terrainSampler,
   drapeY,
   flatY,
+  bbox,
 }: {
   buildings: BuildingFeature[];
   originLon: number;
@@ -753,8 +855,31 @@ function BuildingExtrusions({
   terrainSampler: TerrainSampler | null;
   drapeY: number;
   flatY: number;
+  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
 }) {
-  const capped = useMemo(() => buildings.slice(0, 800), [buildings]);
+  const capped = useMemo(() => {
+    let filtered = buildings.slice(0, 800);
+    if (bbox) {
+      const pad = 0.0005;
+      filtered = filtered.filter((b) => {
+        if (b.footprint.length < 3) return false;
+        let sumLon = 0, sumLat = 0;
+        for (const [lon, lat] of b.footprint) {
+          sumLon += lon;
+          sumLat += lat;
+        }
+        const cLon = sumLon / b.footprint.length;
+        const cLat = sumLat / b.footprint.length;
+        return (
+          cLon >= bbox.minLon - pad &&
+          cLon <= bbox.maxLon + pad &&
+          cLat >= bbox.minLat - pad &&
+          cLat <= bbox.maxLat + pad
+        );
+      });
+    }
+    return filtered;
+  }, [buildings, bbox]);
 
   const geometry = useMemo(() => {
     const geos: THREE.BufferGeometry[] = [];

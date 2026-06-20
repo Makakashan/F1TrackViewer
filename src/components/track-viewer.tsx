@@ -5,6 +5,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import {
+  buildTrackCurveWithY,
   buildTrackCurve,
   computeBounds,
   sceneRadiusFromBounds,
@@ -29,6 +30,7 @@ import {
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
+import { buildTerrainSampler } from "@/lib/terrain-sampler";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 import EnvironmentLayer from "@/components/environment-layer";
 
@@ -50,6 +52,8 @@ export interface TrackViewerProps {
 }
 
 const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
+const TERRAIN_TRACK_OFFSET = 0.6;
+const TERRAIN_TRACK_WALL_DEPTH = 0.8;
 
 function disposeGeometry(value: unknown) {
   const disposable = value as { dispose?: unknown } | null | undefined;
@@ -115,15 +119,36 @@ function TrackMesh({
 
   const radius = useMemo(() => sceneRadiusFromBounds(bounds), [bounds]);
 
-  const { curve, peakY } = useMemo(() => {
-    const renderedElevations = hasEnvironment ? undefined : (elevations ?? undefined);
-    const c = buildTrackCurve(
-      coords,
-      bounds,
-      renderedElevations,
-      REAL_ELEVATION_SCALE,
-    );
+  const terrainSampler = useMemo(() => {
+    if (!environmentBundle || !environmentTerrain || environmentBundle.terrain.gridSize < 2) {
+      return null;
+    }
+    return buildTerrainSampler(environmentBundle.terrain, environmentBundle.manifest);
+  }, [environmentBundle, environmentTerrain]);
+
+  const { curve, peakY, minY } = useMemo(() => {
+    if (terrainSampler) {
+      let min = Infinity;
+      let max = -Infinity;
+      const c = buildTrackCurveWithY(coords, bounds, (lon, lat) => {
+        const y = terrainSampler.heightAt(lon, lat) + TERRAIN_TRACK_OFFSET;
+        if (y < min) min = y;
+        if (y > max) max = y;
+        return y;
+      });
+      return {
+        curve: c,
+        peakY: Math.max(Math.abs(min), Math.abs(max)),
+        minY: Number.isFinite(min) ? min : 0,
+      };
+    }
+
+    const renderedElevations = hasEnvironment
+      ? undefined
+      : (elevations ?? undefined);
+    const c = buildTrackCurve(coords, bounds, renderedElevations, REAL_ELEVATION_SCALE);
     let peak = 0;
+    let minCurveY = 0;
     if (renderedElevations && renderedElevations.length) {
       let min = Infinity,
         max = -Infinity,
@@ -135,13 +160,14 @@ function TrackMesh({
       }
       const mean = sum / renderedElevations.length;
       peak = Math.max(Math.abs(min - mean), Math.abs(max - mean));
+      minCurveY = min - mean;
     }
-    return { curve: c, peakY: peak };
-  }, [bounds, coords, elevations, hasEnvironment]);
+    return { curve: c, peakY: peak, minY: minCurveY };
+  }, [bounds, coords, elevations, hasEnvironment, terrainSampler]);
 
   const groundY = useMemo(
-    () => (hasEnvironment ? -0.7 : -peakY - trackWidth * 2 - 1),
-    [hasEnvironment, peakY, trackWidth],
+    () => (hasEnvironment ? minY - 1 : -peakY - trackWidth * 2 - 1),
+    [hasEnvironment, minY, peakY, trackWidth],
   );
 
   const samples = useMemo(() => {
@@ -150,8 +176,16 @@ function TrackMesh({
   }, [feature.properties.length]);
 
   const trackGeometry = useMemo(
-    () => buildExtrudedTrack(curve, trackWidth, 0.5, groundY, samples),
-    [curve, trackWidth, groundY, samples],
+    () =>
+      buildExtrudedTrack(
+        curve,
+        trackWidth,
+        0.5,
+        groundY,
+        samples,
+        terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
+      ),
+    [curve, trackWidth, groundY, samples, terrainSampler],
   );
 
   const outlineGeometry = useMemo(
@@ -214,9 +248,18 @@ function TrackMesh({
   const sectorGeometries = useMemo(() => {
     if (!showSectors || !markers) return [];
     return markers.sectors.map((sector) =>
-      buildSectorMesh(curve, sector, markers, trackWidth, 0.5, groundY, samples),
+      buildSectorMesh(
+        curve,
+        sector,
+        markers,
+        trackWidth,
+        0.5,
+        groundY,
+        samples,
+        terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
+      ),
     );
-  }, [showSectors, curve, markers, trackWidth, groundY, samples]);
+  }, [showSectors, curve, markers, trackWidth, groundY, samples, terrainSampler]);
 
   const splitLineGeometries = useMemo(() => {
     if (!showSectors || !markers) return [];
@@ -328,10 +371,12 @@ function TrackMesh({
       {hasEnvironment && (
         <EnvironmentLayer
           bundle={environmentBundle!}
+          trackCoordinates={coords}
           originLon={bounds.centerLon}
           originLat={bounds.centerLat}
           baseY={groundY}
           showTerrain={environmentTerrain}
+          resolvedTheme={resolvedTheme}
         />
       )}
 
