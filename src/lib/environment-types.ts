@@ -101,6 +101,18 @@ export interface TerrainFile {
   heights: number[];
 }
 
+export interface SurfaceFile {
+  schemaVersion: 1;
+  circuitId: string;
+  gridSize: number;
+  seaLevelMeters: number;
+  floodThresholdMeters: number;
+  /**
+   * Row-major mask matching terrain.json. 1 = water/sea/harbor, 0 = land.
+   */
+  waterMask: number[];
+}
+
 export interface EnvironmentBundle {
   manifest: EnvironmentManifest;
   buildings: BuildingsFile;
@@ -108,6 +120,7 @@ export interface EnvironmentBundle {
   roads: RoadsFile;
   landuse: LanduseFile;
   terrain: TerrainFile;
+  surface: SurfaceFile | null;
 }
 
 export const ENVIRONMENT_ATTRIBUTION = "© OpenStreetMap contributors";

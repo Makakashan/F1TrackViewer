@@ -12,6 +12,7 @@ import type {
   EnvironmentManifest,
   LanduseFile,
   RoadsFile,
+  SurfaceFile,
   TerrainFile,
   WaterFile,
 } from "./environment-types";
@@ -46,12 +47,13 @@ export async function fetchEnvironmentBundle(
   const manifest = await fetchJson<EnvironmentManifest>(`${base}/manifest.json`);
   if (!manifest) return null;
 
-  const [buildings, water, roads, landuse, terrain] = await Promise.all([
+  const [buildings, water, roads, landuse, terrain, surface] = await Promise.all([
     fetchJson<BuildingsFile>(`${base}/buildings.json`),
     fetchJson<WaterFile>(`${base}/water.json`),
     fetchJson<RoadsFile>(`${base}/roads.json`),
     fetchJson<LanduseFile>(`${base}/landuse.json`),
     fetchJson<TerrainFile>(`${base}/terrain.json`),
+    fetchJson<SurfaceFile>(`${base}/surface.json`),
   ]);
 
   if (!buildings) return null;
@@ -72,6 +74,7 @@ export async function fetchEnvironmentBundle(
       maxElevation: 0,
       heights: [],
     },
+    surface,
   };
 }
 

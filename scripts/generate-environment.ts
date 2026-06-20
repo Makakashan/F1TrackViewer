@@ -29,6 +29,7 @@ import type {
   LandusePolygon,
   RoadLine,
   RoadsFile,
+  SurfaceFile,
   TerrainFile,
   WaterFile,
   WaterPolygon,
@@ -69,6 +70,7 @@ interface Args {
   skipOverpass: boolean;
   partialTerrain: boolean;
   terrainProvider: "open-meteo" | "opentopodata";
+  terrainGridSize: number;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -78,11 +80,20 @@ function parseArgs(argv: string[]): Args {
   let skipOverpass = false;
   let partialTerrain = false;
   let terrainProvider: "open-meteo" | "opentopodata" = "opentopodata";
+  let terrainGridSize = 64;
   for (const arg of argv) {
     if (arg === "--refresh") refresh = true;
     else if (arg === "--skip-terrain") skipTerrain = true;
     else if (arg === "--skip-overpass") skipOverpass = true;
     else if (arg === "--partial-terrain") partialTerrain = true;
+    else if (arg.startsWith("--grid-size=")) {
+      const v = Number.parseInt(arg.split("=")[1] ?? "", 10);
+      if (Number.isFinite(v) && v >= 16 && v <= 256) {
+        terrainGridSize = v;
+      } else {
+        console.warn(`invalid --grid-size value: ${arg}; keeping ${terrainGridSize}`);
+      }
+    }
     else if (arg.startsWith("--provider=")) {
       const v = arg.split("=")[1];
       if (v === "open-meteo" || v === "opentopodata") {
@@ -106,6 +117,7 @@ function parseArgs(argv: string[]): Args {
     skipOverpass,
     partialTerrain,
     terrainProvider,
+    terrainGridSize,
   };
 }
 
@@ -115,6 +127,7 @@ const USAGE = `Usage:
   bun run environment:generate -- --skip-terrain mc-1929
   bun run environment:generate -- --skip-overpass mc-1929
   bun run environment:generate -- --partial-terrain mc-1929
+  bun run environment:generate -- --grid-size=128 mc-1929
   bun run environment:generate -- --provider=opentopodata mc-1929
   bun run environment:generate -- --provider=open-meteo mc-1929
 
@@ -124,6 +137,8 @@ Generates static environment JSON in public/environments/{circuitId}/.
   --skip-overpass          Skip Overpass fetches (keep existing files untouched).
   --partial-terrain        If rate-limited, write terrain.json with whatever
                            heights were collected and zero-fill the rest.
+  --grid-size=N            Terrain sample grid resolution. Default 64.
+                           Use 128 for cleaner coastlines; max 256.
   --provider=opentopodata  Use OpenTopoData (default; slower but reliable).
   --provider=open-meteo    Use Open-Meteo Elevation API (faster but daily quota).`;
 
@@ -321,19 +336,28 @@ async function main() {
     const outDir = join(publicEnvironmentsDir, circuitId);
     await mkdir(outDir, { recursive: true });
 
-    const geojson = await fetchJson<CircuitGeoJSON>(
-      `${RAW_BASE}/circuits/${circuitId}.geojson`,
+    const existingManifest = await readJsonIfExists<EnvironmentManifest>(
+      join(outDir, "manifest.json"),
     );
-    const coords = geojson.features[0]?.geometry.coordinates ?? [];
-    if (!coords.length) {
-      console.warn(`  no coordinates for ${circuitId}, skipping`);
-      continue;
-    }
+    let padded: BBox;
+    if (args.skipOverpass && args.skipTerrain && existingManifest) {
+      padded = existingManifest.bbox;
+      console.log(`  using existing manifest bbox: ${JSON.stringify(padded)}`);
+    } else {
+      const geojson = await fetchJson<CircuitGeoJSON>(
+        `${RAW_BASE}/circuits/${circuitId}.geojson`,
+      );
+      const coords = geojson.features[0]?.geometry.coordinates ?? [];
+      if (!coords.length) {
+        console.warn(`  no coordinates for ${circuitId}, skipping`);
+        continue;
+      }
 
-    const trackBBox = getTrackBBox(coords);
-    const padded = padBBox(trackBBox, 1_000);
-    console.log(`  track bbox: ${JSON.stringify(trackBBox)}`);
-    console.log(`  padded bbox: ${JSON.stringify(padded)}`);
+      const trackBBox = getTrackBBox(coords);
+      padded = padBBox(trackBBox, 1_000);
+      console.log(`  track bbox: ${JSON.stringify(trackBBox)}`);
+      console.log(`  padded bbox: ${JSON.stringify(padded)}`);
+    }
 
     const manifest: EnvironmentManifest = {
       schemaVersion: 1,
@@ -378,20 +402,30 @@ async function main() {
         args.refresh,
         args.partialTerrain,
         args.terrainProvider,
+        args.terrainGridSize,
       );
     } else {
-      console.log("  --skip-terrain: writing flat terrain.json");
-      await writeJson<TerrainFile>(join(outDir, "terrain.json"), {
-        schemaVersion: 1,
-        circuitId,
-        gridSize: 0,
-        widthMeters: 0,
-        heightMeters: 0,
-        minElevation: 0,
-        maxElevation: 0,
-        heights: [],
-      });
+      const existingTerrain = await readJsonIfExists<TerrainFile>(
+        join(outDir, "terrain.json"),
+      );
+      if (existingTerrain) {
+        console.log("  --skip-terrain: keeping existing terrain.json");
+      } else {
+        console.log("  --skip-terrain: writing flat terrain.json");
+        await writeJson<TerrainFile>(join(outDir, "terrain.json"), {
+          schemaVersion: 1,
+          circuitId,
+          gridSize: 0,
+          widthMeters: 0,
+          heightMeters: 0,
+          minElevation: 0,
+          maxElevation: 0,
+          heights: [],
+        });
+      }
     }
+
+    await generateSurface(circuitId, padded, outDir);
   }
 }
 
@@ -635,11 +669,12 @@ async function generateTerrain(
   refresh: boolean,
   partialTerrain: boolean,
   provider: "open-meteo" | "opentopodata",
+  gridSize: number,
 ): Promise<void> {
-  const gridSize = 64;
-  const cachePath = join(cacheDir, "open-meteo", `${circuitId}-terrain.json`);
-  const partialPath = join(cacheDir, "open-meteo", `${circuitId}-terrain.partial.json`);
-  const rawPath = join(rawDir, "open-meteo", `${circuitId}-terrain.raw.json`);
+  const cacheKey = `${circuitId}-terrain-${provider}-${gridSize}`;
+  const cachePath = join(cacheDir, "open-meteo", `${cacheKey}.json`);
+  const partialPath = join(cacheDir, "open-meteo", `${cacheKey}.partial.json`);
+  const rawPath = join(rawDir, "open-meteo", `${cacheKey}.raw.json`);
 
   let heights: number[] | null = null;
   if (!refresh) {
@@ -731,6 +766,157 @@ async function generateTerrain(
   await writeJson(join(outDir, "terrain.json"), file);
   console.log(
     `  wrote terrain.json (${gridSize}×${gridSize}, ${heights.length} pts, range ${min.toFixed(1)}–${max.toFixed(1)} m)`,
+  );
+}
+
+async function generateSurface(
+  circuitId: string,
+  bbox: BBox,
+  outDir: string,
+): Promise<void> {
+  const terrain = await readJsonIfExists<TerrainFile>(join(outDir, "terrain.json"));
+  if (!terrain || terrain.gridSize < 2 || !terrain.heights.length) {
+    console.log("  skipped surface.json (no terrain grid)");
+    return;
+  }
+
+  const water = await readJsonIfExists<WaterFile>(join(outDir, "water.json"));
+  const buildings = await readJsonIfExists<BuildingsFile>(join(outDir, "buildings.json"));
+  const roads = await readJsonIfExists<RoadsFile>(join(outDir, "roads.json"));
+  const waterPolygons = water?.polygons ?? [];
+  const buildingPolygons = buildings?.buildings.map((b) => b.footprint) ?? [];
+  const roadLines = roads?.roads ?? [];
+  const n = terrain.gridSize;
+  const seaLevelMeters = 0;
+  const floodThresholdMeters = 35;
+  const roadBlockRadiusMeters = 28;
+  const minInteriorWaterCells = 20;
+  const waterMask = new Array<number>(n * n).fill(0);
+  const lowMask = new Array<boolean>(n * n).fill(false);
+  const landBlockMask = new Array<boolean>(n * n).fill(false);
+  const polygonMasks = waterPolygons
+    .filter((poly) => poly.points.length >= 3 && polygonArea(poly.points) >= 2_500)
+    .map((poly) => poly.points);
+  const roadBlockRadiusSq = roadBlockRadiusMeters * roadBlockRadiusMeters;
+
+  function lonLatAt(row: number, col: number): [number, number] {
+    const lat = bbox.minLat + ((bbox.maxLat - bbox.minLat) * row) / (n - 1);
+    const lon = bbox.minLon + ((bbox.maxLon - bbox.minLon) * col) / (n - 1);
+    return [lon, lat];
+  }
+
+  function isNearRoad(point: [number, number]): boolean {
+    for (const road of roadLines) {
+      for (let i = 0; i < road.points.length - 1; i++) {
+        if (
+          distanceToSegmentMetersSq(point, road.points[i], road.points[i + 1]) <=
+          roadBlockRadiusSq
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  for (let row = 0; row < n; row++) {
+    for (let col = 0; col < n; col++) {
+      const idx = row * n + col;
+      const h = terrain.heights[idx] ?? 0;
+      const point = lonLatAt(row, col);
+      const isOsmWater = polygonMasks.some((poly) => pointInLonLatPolygon(point, poly));
+      const isBuilding = buildingPolygons.some((poly) => pointInLonLatPolygon(point, poly));
+      const isRoad = isNearRoad(point);
+      landBlockMask[idx] = !isOsmWater && (isBuilding || isRoad);
+      lowMask[idx] = h <= floodThresholdMeters && !landBlockMask[idx];
+      if (isOsmWater) {
+        waterMask[idx] = 1;
+        lowMask[idx] = true;
+      }
+    }
+  }
+
+  const queue: number[] = [];
+  function enqueueIfLow(row: number, col: number) {
+    if (row < 0 || row >= n || col < 0 || col >= n) return;
+    const idx = row * n + col;
+    if (landBlockMask[idx]) return;
+    if (!lowMask[idx] || waterMask[idx]) return;
+    waterMask[idx] = 1;
+    queue.push(idx);
+  }
+
+  for (let i = 0; i < n; i++) {
+    enqueueIfLow(0, i);
+    enqueueIfLow(n - 1, i);
+    enqueueIfLow(i, 0);
+    enqueueIfLow(i, n - 1);
+  }
+
+  for (let head = 0; head < queue.length; head++) {
+    const idx = queue[head];
+    const row = Math.floor(idx / n);
+    const col = idx % n;
+    enqueueIfLow(row - 1, col);
+    enqueueIfLow(row + 1, col);
+    enqueueIfLow(row, col - 1);
+    enqueueIfLow(row, col + 1);
+  }
+
+  const visited = new Array<boolean>(n * n).fill(false);
+  const component: number[] = [];
+  function collectWaterComponent(start: number): { touchesEdge: boolean; cells: number[] } {
+    component.length = 0;
+    let touchesEdge = false;
+    const stack = [start];
+    visited[start] = true;
+    while (stack.length) {
+      const idx = stack.pop()!;
+      component.push(idx);
+      const row = Math.floor(idx / n);
+      const col = idx % n;
+      if (row === 0 || row === n - 1 || col === 0 || col === n - 1) {
+        touchesEdge = true;
+      }
+      const neighbors = [
+        [row - 1, col],
+        [row + 1, col],
+        [row, col - 1],
+        [row, col + 1],
+      ] as const;
+      for (const [r, c] of neighbors) {
+        if (r < 0 || r >= n || c < 0 || c >= n) continue;
+        const next = r * n + c;
+        if (visited[next] || waterMask[next] !== 1) continue;
+        visited[next] = true;
+        stack.push(next);
+      }
+    }
+    return { touchesEdge, cells: [...component] };
+  }
+
+  let removedInteriorWaterCells = 0;
+  for (let idx = 0; idx < waterMask.length; idx++) {
+    if (waterMask[idx] !== 1 || visited[idx]) continue;
+    const part = collectWaterComponent(idx);
+    if (!part.touchesEdge && part.cells.length < minInteriorWaterCells) {
+      for (const cell of part.cells) waterMask[cell] = 0;
+      removedInteriorWaterCells += part.cells.length;
+    }
+  }
+
+  const file: SurfaceFile = {
+    schemaVersion: 1,
+    circuitId,
+    gridSize: n,
+    seaLevelMeters,
+    floodThresholdMeters,
+    waterMask,
+  };
+  const waterCount = waterMask.reduce((sum, v) => sum + v, 0);
+  await writeJson(join(outDir, "surface.json"), file);
+  console.log(
+    `  wrote surface.json (${waterCount}/${waterMask.length} water cells, threshold <= ${floodThresholdMeters} m, removed ${removedInteriorWaterCells} tiny interior cells)`,
   );
 }
 
@@ -942,7 +1128,58 @@ function polygonArea(coords: [number, number][]): number {
   return Math.abs((area * 6_378_137 * 6_378_137) / 2);
 }
 
+function pointInLonLatPolygon(
+  point: [number, number],
+  polygon: [number, number][],
+): boolean {
+  let inside = false;
+  const [x, y] = point;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const [xi, yi] = polygon[i];
+    const [xj, yj] = polygon[j];
+    const intersects =
+      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+function distanceToSegmentMetersSq(
+  point: [number, number],
+  a: [number, number],
+  b: [number, number],
+): number {
+  const centerLat = ((point[1] + a[1] + b[1]) / 3) * (Math.PI / 180);
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = 111_320 * Math.cos(centerLat);
+  const px = point[0] * metersPerDegLon;
+  const py = point[1] * metersPerDegLat;
+  const ax = a[0] * metersPerDegLon;
+  const ay = a[1] * metersPerDegLat;
+  const bx = b[0] * metersPerDegLon;
+  const by = b[1] * metersPerDegLat;
+  const vx = bx - ax;
+  const vy = by - ay;
+  const wx = px - ax;
+  const wy = py - ay;
+  const lenSq = vx * vx + vy * vy;
+  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, (wx * vx + wy * vy) / lenSq));
+  const x = ax + vx * t;
+  const y = ay + vy * t;
+  const dx = px - x;
+  const dy = py - y;
+  return dx * dx + dy * dy;
+}
+
 // ─── IO helpers ───────────────────────────────────────────────────────────
+
+async function readJsonIfExists<T>(path: string): Promise<T | null> {
+  try {
+    return JSON.parse(await readFile(path, "utf8")) as T;
+  } catch {
+    return null;
+  }
+}
 
 async function writeJson<T>(path: string, value: T): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
