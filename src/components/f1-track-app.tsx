@@ -25,6 +25,8 @@ import type { CameraPreset } from "@/components/track-viewer";
 import type { StartFinishPlacement } from "@/lib/start-finish";
 import type { TrackViewMode, TrackMarkers } from "@/lib/track-markers";
 import { fetchTrackMarkers } from "@/lib/track-markers";
+import type { EnvironmentBundle } from "@/lib/environment-types";
+import { fetchEnvironmentBundle } from "@/lib/environment-loader";
 
 // Three.js scene must be client-only — no SSR for WebGL.
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
@@ -103,11 +105,26 @@ export default function F1TrackApp({
     urlSectors === "0" ? "normal" : "sectors",
   );
   const [markers, setMarkers] = useState<TrackMarkers | null>(null);
+  // Environment diorama — Monaco MVP3. ?environment=1 opts in; null means
+  // "no bundle for this circuit", undefined means "still checking".
+  const urlEnvironment = urlParams.get("environment");
+  const [environmentEnabled, setEnvironmentEnabled] = useState<boolean>(
+    () => urlEnvironment === "1",
+  );
+  const [environmentBundle, setEnvironmentBundle] =
+    useState<EnvironmentBundle | null | undefined>(undefined);
+  // Terrain toggle (?terrain=1 / ?terrain=0). Defaults to ON when env is on.
+  const urlTerrain = urlParams.get("terrain");
+  const [environmentTerrain, setEnvironmentTerrain] = useState<boolean>(
+    () => urlTerrain !== "0",
+  );
   const didApplyInitialTrack = useRef(false);
   const didApplyInitialWidth = useRef(false);
   const didApplyInitialElevation = useRef(false);
   const didApplyInitialCamera = useRef(false);
   const didApplyInitialSectors = useRef(false);
+  const didApplyInitialEnvironment = useRef(false);
+  const didApplyInitialTerrain = useRef(false);
 
   const urlTrack = urlParams.get("track");
   const urlWidth = parseWidthParam(urlParams.get("width"));
@@ -128,6 +145,33 @@ export default function F1TrackApp({
       cancelled = true;
     };
   }, [selectedId]);
+
+  // Load environment bundle for the selected circuit. Only Monaco (mc-1929)
+  // ships a pre-generated diorama at MVP3; other circuits resolve to null
+  // and the toggle hides itself.
+  useEffect(() => {
+    if (!selectedId) {
+      const timer = window.setTimeout(() => setEnvironmentBundle(null), 0);
+      return () => window.clearTimeout(timer);
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => setEnvironmentBundle(undefined), 0);
+    fetchEnvironmentBundle(selectedId).then((bundle) => {
+      if (!cancelled) setEnvironmentBundle(bundle);
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [selectedId]);
+
+  // Auto-disable environment when the selected circuit has no bundle.
+  useEffect(() => {
+    if (environmentBundle === null && environmentEnabled) {
+      const timer = window.setTimeout(() => setEnvironmentEnabled(false), 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [environmentBundle, environmentEnabled]);
 
   // Reset view mode only when markers explicitly confirm unavailability
   // (null = still loading, not yet unavailable)
@@ -209,6 +253,44 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, [viewMode]);
 
+  // Hydrate environment toggle from URL (?environment=1).
+  useEffect(() => {
+    if (didApplyInitialEnvironment.current) return;
+    const urlEnv = new URLSearchParams(window.location.search).get(
+      "environment",
+    );
+    if (urlEnv !== "0" && urlEnv !== "1") {
+      didApplyInitialEnvironment.current = true;
+      return;
+    }
+    const next = urlEnv === "1";
+    if (next === environmentEnabled) {
+      didApplyInitialEnvironment.current = true;
+      return;
+    }
+    didApplyInitialEnvironment.current = true;
+    const timer = window.setTimeout(() => setEnvironmentEnabled(next), 0);
+    return () => window.clearTimeout(timer);
+  }, [environmentEnabled]);
+
+  // Hydrate terrain toggle from URL (?terrain=0 disables it, default ON).
+  useEffect(() => {
+    if (didApplyInitialTerrain.current) return;
+    const urlT = new URLSearchParams(window.location.search).get("terrain");
+    if (urlT !== "0" && urlT !== "1") {
+      didApplyInitialTerrain.current = true;
+      return;
+    }
+    const next = urlT === "1";
+    if (next === environmentTerrain) {
+      didApplyInitialTerrain.current = true;
+      return;
+    }
+    didApplyInitialTerrain.current = true;
+    const timer = window.setTimeout(() => setEnvironmentTerrain(next), 0);
+    return () => window.clearTimeout(timer);
+  }, [environmentTerrain]);
+
   useEffect(() => {
     if (didApplyInitialTrack.current) return;
     if (!circuits.length) return;
@@ -229,6 +311,8 @@ export default function F1TrackApp({
     if (typeof window === "undefined" || !selectedId) return;
     // Don't write URL until initial hydration of all params is done
     if (!didApplyInitialSectors.current) return;
+    if (!didApplyInitialEnvironment.current) return;
+    if (!didApplyInitialTerrain.current) return;
     if (
       !didApplyInitialTrack.current &&
       urlTrack &&
@@ -248,13 +332,27 @@ export default function F1TrackApp({
       params.delete("camera");
     }
     params.set("sectors", viewMode === "sectors" ? "1" : "0");
+    // Only persist environment flag when a bundle exists for this circuit —
+    // avoids polluting the URL with ?environment=0 for the 39 other tracks.
+    if (environmentBundle) {
+      params.set("environment", environmentEnabled ? "1" : "0");
+      // Persist terrain flag only when environment is enabled.
+      if (environmentEnabled) {
+        params.set("terrain", environmentTerrain ? "1" : "0");
+      } else {
+        params.delete("terrain");
+      }
+    } else {
+      params.delete("environment");
+      params.delete("terrain");
+    }
 
     const nextSearch = `?${params.toString()}`;
     if (nextSearch === window.location.search) return;
 
     window.history.replaceState(null, "", nextSearch);
     notifyUrlStateSubscribers();
-  }, [cameraPreset, circuits, elevationEnabled, selectedId, trackWidth, urlTrack, viewMode]);
+  }, [cameraPreset, circuits, elevationEnabled, environmentBundle, environmentEnabled, environmentTerrain, selectedId, trackWidth, urlTrack, viewMode]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -313,6 +411,11 @@ export default function F1TrackApp({
             viewMode={viewMode}
             setViewMode={setViewMode}
             sectorsAvailable={sectorsAvailable}
+            environmentAvailable={!!environmentBundle}
+            environmentEnabled={environmentEnabled}
+            setEnvironmentEnabled={setEnvironmentEnabled}
+            environmentTerrain={environmentTerrain}
+            setEnvironmentTerrain={setEnvironmentTerrain}
           />
         </div>
       </header>
@@ -341,6 +444,10 @@ export default function F1TrackApp({
               onStartFinishPlacement={setStartFinishPlacement}
               viewMode={viewMode}
               markers={markers}
+              environmentBundle={
+                environmentEnabled ? environmentBundle ?? null : null
+              }
+              environmentTerrain={environmentTerrain}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -355,6 +462,7 @@ export default function F1TrackApp({
             startFinishStatus={startFinishPlacement?.source ?? null}
             viewMode={viewMode}
             markers={markers}
+            environmentActive={environmentEnabled && !!environmentBundle}
           />
 
           <MobileInfoSheet
@@ -388,11 +496,17 @@ export default function F1TrackApp({
           <div
             role="button"
             tabIndex={0}
-            onClick={() => setFooterExpanded((expanded) => !expanded)}
+            onClick={() => {
+              if (window.innerWidth < 768) {
+                setFooterExpanded((expanded) => !expanded);
+              }
+            }}
             onKeyDown={(event) => {
               if (event.key !== "Enter" && event.key !== " ") return;
               event.preventDefault();
-              setFooterExpanded((expanded) => !expanded);
+              if (window.innerWidth < 768) {
+                setFooterExpanded((expanded) => !expanded);
+              }
             }}
             className="grid w-full grid-cols-[1fr_auto] gap-3 px-4 py-2 text-left"
           >
@@ -420,7 +534,8 @@ export default function F1TrackApp({
                   {t.dataSourcesTitle}:
                 </span>{" "}
                 bacinger/f1-circuits (MIT) · Open-Meteo (CC-BY 4.0) · Jolpica
-                (AGPL-3.0) · TUMFTM/racetrack-database (LGPL-3.0)
+                (AGPL-3.0) · TUMFTM/racetrack-database (LGPL-3.0) ·
+                OpenStreetMap (ODbL)
               </span>
             </span>
             <button

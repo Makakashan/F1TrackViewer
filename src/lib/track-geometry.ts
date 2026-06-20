@@ -9,6 +9,7 @@ export function buildExtrudedTrack(
   topRaise: number,
   groundY: number,
   samples: number,
+  wallDepth?: number,
 ): THREE.BufferGeometry {
   const N = samples;
   const pts = curve.getSpacedPoints(N);
@@ -63,13 +64,14 @@ export function buildExtrudedTrack(
     const rx = p.x - side.x * halfWidth;
     const rz = p.z - side.z * halfWidth;
     const wallTopY = topY - 0.08;
+    const bottomY = wallDepth == null ? groundY : topY - wallDepth;
 
     pushV(lx, topY, lz, 0, 0, 0);
     pushV(rx, topY, rz, 0, 0, 0);
     pushV(lx, wallTopY, lz, 0, 0, 0);
     pushV(rx, wallTopY, rz, 0, 0, 0);
-    pushV(lx, groundY, lz, 0, 0, 0);
-    pushV(rx, groundY, rz, 0, 0, 0);
+    pushV(lx, bottomY, lz, 0, 0, 0);
+    pushV(rx, bottomY, rz, 0, 0, 0);
   }
 
   const stride = 6;
@@ -207,6 +209,7 @@ export function buildSectorMesh(
   topRaise: number,
   groundY: number,
   totalSamples: number,
+  wallDepth?: number,
 ): THREE.BufferGeometry {
   const fromS = distanceToCurveS(
     sector.fromDistance,
@@ -288,13 +291,14 @@ export function buildSectorMesh(
     const rx = p.x - side.x * halfWidth;
     const rz = p.z - side.z * halfWidth;
     const wallTopY = topY - 0.08;
+    const bottomY = wallDepth == null ? groundY : topY - wallDepth;
 
     pushV(lx, topY, lz, 0, 0, 0);
     pushV(rx, topY, rz, 0, 0, 0);
     pushV(lx, wallTopY, lz, 0, 0, 0);
     pushV(rx, wallTopY, rz, 0, 0, 0);
-    pushV(lx, groundY, lz, 0, 0, 0);
-    pushV(rx, groundY, rz, 0, 0, 0);
+    pushV(lx, bottomY, lz, 0, 0, 0);
+    pushV(rx, bottomY, rz, 0, 0, 0);
   }
 
   const stride = 6;

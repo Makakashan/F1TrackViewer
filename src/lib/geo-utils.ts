@@ -103,6 +103,29 @@ export function buildTrackCurve(
   return new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
 }
 
+export function buildTrackCurveWithY(
+  coords: [number, number][],
+  bounds: GeoBounds,
+  getY: (lon: number, lat: number, index: number) => number,
+): THREE.CatmullRomCurve3 {
+  let pts = coords;
+  if (pts.length > 1) {
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    if (first[0] === last[0] && first[1] === last[1]) {
+      pts = pts.slice(0, -1);
+    }
+  }
+
+  const points = pts.map(([lon, lat], i) => {
+    const v = lonLatToXZ(lon, lat, bounds.centerLon, bounds.centerLat);
+    v.y = getY(lon, lat, i);
+    return v;
+  });
+
+  return new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
+}
+
 /**
  * Estimate a sensible scene radius (in meters) from the bbox.
  */

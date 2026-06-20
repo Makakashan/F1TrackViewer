@@ -5,6 +5,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import {
+  buildTrackCurveWithY,
   buildTrackCurve,
   computeBounds,
   sceneRadiusFromBounds,
@@ -28,7 +29,10 @@ import {
 } from "@/lib/start-finish";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
+import type { EnvironmentBundle } from "@/lib/environment-types";
+import { buildTerrainSampler } from "@/lib/terrain-sampler";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
+import EnvironmentLayer from "@/components/environment-layer";
 
 export type CameraPreset = "top" | "iso" | "side" | "reset";
 
@@ -43,9 +47,13 @@ export interface TrackViewerProps {
   onStartFinishPlacement?: (placement: StartFinishPlacement) => void;
   viewMode?: TrackViewMode;
   markers?: TrackMarkers | null;
+  environmentBundle?: EnvironmentBundle | null;
+  environmentTerrain?: boolean;
 }
 
 const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
+const TERRAIN_TRACK_OFFSET = 0.6;
+const TERRAIN_TRACK_WALL_DEPTH = 0.8;
 
 function disposeGeometry(value: unknown) {
   const disposable = value as { dispose?: unknown } | null | undefined;
@@ -85,6 +93,8 @@ function TrackMesh({
   onStartFinishPlacement,
   viewMode,
   markers,
+  environmentBundle,
+  environmentTerrain,
 }: {
   geojson: CircuitGeoJSON;
   trackWidth: number;
@@ -98,42 +108,66 @@ function TrackMesh({
   onStartFinishPlacement?: (placement: StartFinishPlacement) => void;
   viewMode: TrackViewMode;
   markers?: TrackMarkers | null;
+  environmentBundle?: EnvironmentBundle | null;
+  environmentTerrain?: boolean;
 }) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
+  const hasEnvironment = !!environmentBundle;
 
-  const radius = useMemo(() => {
-    const b = computeBounds(coords);
-    return sceneRadiusFromBounds(b);
-  }, [coords]);
+  const bounds = useMemo(() => computeBounds(coords), [coords]);
 
-  const { curve, peakY } = useMemo(() => {
-    const b = computeBounds(coords);
-    const c = buildTrackCurve(
-      coords,
-      b,
-      elevations ?? undefined,
-      REAL_ELEVATION_SCALE,
-    );
+  const radius = useMemo(() => sceneRadiusFromBounds(bounds), [bounds]);
+
+  const terrainSampler = useMemo(() => {
+    if (!environmentBundle || !environmentTerrain || environmentBundle.terrain.gridSize < 2) {
+      return null;
+    }
+    return buildTerrainSampler(environmentBundle.terrain, environmentBundle.manifest);
+  }, [environmentBundle, environmentTerrain]);
+
+  const { curve, peakY, minY } = useMemo(() => {
+    if (terrainSampler) {
+      let min = Infinity;
+      let max = -Infinity;
+      const c = buildTrackCurveWithY(coords, bounds, (lon, lat) => {
+        const y = terrainSampler.heightAt(lon, lat) + TERRAIN_TRACK_OFFSET;
+        if (y < min) min = y;
+        if (y > max) max = y;
+        return y;
+      });
+      return {
+        curve: c,
+        peakY: Math.max(Math.abs(min), Math.abs(max)),
+        minY: Number.isFinite(min) ? min : 0,
+      };
+    }
+
+    const renderedElevations = hasEnvironment
+      ? undefined
+      : (elevations ?? undefined);
+    const c = buildTrackCurve(coords, bounds, renderedElevations, REAL_ELEVATION_SCALE);
     let peak = 0;
-    if (elevations && elevations.length) {
+    let minCurveY = 0;
+    if (renderedElevations && renderedElevations.length) {
       let min = Infinity,
         max = -Infinity,
         sum = 0;
-      for (const e of elevations) {
+      for (const e of renderedElevations) {
         if (e < min) min = e;
         if (e > max) max = e;
         sum += e;
       }
-      const mean = sum / elevations.length;
+      const mean = sum / renderedElevations.length;
       peak = Math.max(Math.abs(min - mean), Math.abs(max - mean));
+      minCurveY = min - mean;
     }
-    return { curve: c, peakY: peak };
-  }, [coords, elevations]);
+    return { curve: c, peakY: peak, minY: minCurveY };
+  }, [bounds, coords, elevations, hasEnvironment, terrainSampler]);
 
   const groundY = useMemo(
-    () => -peakY - trackWidth * 2 - 1,
-    [peakY, trackWidth],
+    () => (hasEnvironment ? minY - 1 : -peakY - trackWidth * 2 - 1),
+    [hasEnvironment, minY, peakY, trackWidth],
   );
 
   const samples = useMemo(() => {
@@ -142,8 +176,16 @@ function TrackMesh({
   }, [feature.properties.length]);
 
   const trackGeometry = useMemo(
-    () => buildExtrudedTrack(curve, trackWidth, 0.5, groundY, samples),
-    [curve, trackWidth, groundY, samples],
+    () =>
+      buildExtrudedTrack(
+        curve,
+        trackWidth,
+        0.5,
+        groundY,
+        samples,
+        terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
+      ),
+    [curve, trackWidth, groundY, samples, terrainSampler],
   );
 
   const outlineGeometry = useMemo(
@@ -206,9 +248,18 @@ function TrackMesh({
   const sectorGeometries = useMemo(() => {
     if (!showSectors || !markers) return [];
     return markers.sectors.map((sector) =>
-      buildSectorMesh(curve, sector, markers, trackWidth, 0.5, groundY, samples),
+      buildSectorMesh(
+        curve,
+        sector,
+        markers,
+        trackWidth,
+        0.5,
+        groundY,
+        samples,
+        terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
+      ),
     );
-  }, [showSectors, curve, markers, trackWidth, groundY, samples]);
+  }, [showSectors, curve, markers, trackWidth, groundY, samples, terrainSampler]);
 
   const splitLineGeometries = useMemo(() => {
     if (!showSectors || !markers) return [];
@@ -258,7 +309,11 @@ function TrackMesh({
 
   useEffect(() => {
     const verticalFudge = 1 + Math.min(1, peakY / Math.max(radius, 1));
-    const distance = radius * 2.4 * verticalFudge;
+    // When the diorama is on, pull the camera much further back so the whole
+    // city fits in frame — the bbox is ~2700 m wide for Monaco vs. ~1000 m
+    // for the track alone.
+    const envMultiplier = hasEnvironment ? 2.6 : 2.4;
+    const distance = radius * envMultiplier * verticalFudge;
     const yOffset = Math.max(radius * 0.3, peakY * 1.2);
     camera.position.set(distance, distance * 0.6 + yOffset, distance);
     camera.lookAt(0, 0, 0);
@@ -266,11 +321,12 @@ function TrackMesh({
       (controls as any).target.set(0, 0, 0);
       (controls as any).update?.();
     }
-  }, [camera, controls, radius, peakY]);
+  }, [camera, controls, radius, peakY, hasEnvironment]);
 
   useEffect(() => {
     if (!cameraPreset) return;
-    const distance = radius * 2.4;
+    const envMultiplier = hasEnvironment ? 2.6 : 2.4;
+    const distance = radius * envMultiplier;
     const yOffset = Math.max(radius * 0.3, peakY * 1.2);
 
     switch (cameraPreset) {
@@ -310,6 +366,21 @@ function TrackMesh({
 
   return (
     <group>
+      {/* Environment diorama shares the track coordinate origin so Monaco
+          reads as one 3D scene instead of a floating overlay. */}
+      {hasEnvironment && (
+        <EnvironmentLayer
+          bundle={environmentBundle!}
+          trackCoordinates={coords}
+          originLon={bounds.centerLon}
+          originLat={bounds.centerLat}
+          baseY={groundY}
+          showTerrain={environmentTerrain}
+          resolvedTheme={resolvedTheme}
+        />
+      )}
+
+      <group>
       {/* Sector mode: colored sector meshes replace the single track mesh.
           In normal mode, the single red track mesh is shown. */}
       {showSectors ? (
@@ -332,14 +403,24 @@ function TrackMesh({
                 roughness={0.5}
                 metalness={0.05}
                 side={THREE.DoubleSide}
+                depthTest
+                depthWrite
               />
             </mesh>
           ))}
 
           {/* Sector split lines */}
           {splitLineGeometries.map((geo, i) => (
-            <mesh key={`split-${i}`} geometry={geo}>
-              <meshBasicMaterial color={splitLineColor} side={THREE.DoubleSide} />
+            <mesh
+              key={`split-${i}`}
+              geometry={geo}
+            >
+              <meshBasicMaterial
+                color={splitLineColor}
+                side={THREE.DoubleSide}
+                depthTest
+                depthWrite
+              />
             </mesh>
           ))}
         </>
@@ -363,6 +444,8 @@ function TrackMesh({
               roughness={0.5}
               metalness={0.05}
               side={THREE.DoubleSide}
+              depthTest
+              depthWrite
             />
           </mesh>
         </>
@@ -371,8 +454,13 @@ function TrackMesh({
       {/* Track outline — thin black lines along both top edges of the
           ribbon. Provides visual definition between track and ground. */}
       <lineSegments geometry={outlineGeometry}>
-        <lineBasicMaterial color={outlineColor} />
+        <lineBasicMaterial
+          color={outlineColor}
+          depthTest
+          depthWrite
+        />
       </lineSegments>
+      </group>
 
       <mesh geometry={startFinishGeometry}>
         <meshBasicMaterial
@@ -415,36 +503,42 @@ function TrackMesh({
       </mesh>
 
       {/* Ground plane — sits 0.5 m below the track's lowest point to avoid
-          z-fighting with the guide rings. */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, groundY - 0.5, 0]}
-      >
-        <circleGeometry args={[radius * 4, 64]} />
-        <meshStandardMaterial
-          color={groundColor}
-          roughness={1}
-          metalness={0}
-        />
-      </mesh>
+          z-fighting with the guide rings. Hidden when the diorama is on. */}
+      {!hasEnvironment && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, groundY - 0.5, 0]}
+        >
+          <circleGeometry args={[radius * 4, 64]} />
+          <meshStandardMaterial
+            color={groundColor}
+            roughness={1}
+            metalness={0}
+          />
+        </mesh>
+      )}
 
       {/* Concentric guide rings — sit clearly above the ground plane to
-          avoid z-fighting flicker when the camera orbits. Used to be at
-          groundY - 0.05 / - 0.04 (1 cm apart) which caused shimmer. */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, groundY + 0.1, 0]}
-      >
-        <ringGeometry args={[radius * 1.6, radius * 1.62, 96]} />
-        <meshBasicMaterial color={ringColor1} />
-      </mesh>
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, groundY + 0.2, 0]}
-      >
-        <ringGeometry args={[radius * 2.4, radius * 2.42, 96]} />
-        <meshBasicMaterial color={ringColor2} />
-      </mesh>
+          avoid z-fighting flicker when the camera orbits. Hidden when the
+          diorama is on so the city is the visual context. */}
+      {!hasEnvironment && (
+        <>
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, groundY + 0.1, 0]}
+          >
+            <ringGeometry args={[radius * 1.6, radius * 1.62, 96]} />
+            <meshBasicMaterial color={ringColor1} />
+          </mesh>
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, groundY + 0.2, 0]}
+          >
+            <ringGeometry args={[radius * 2.4, radius * 2.42, 96]} />
+            <meshBasicMaterial color={ringColor2} />
+          </mesh>
+        </>
+      )}
     </group>
   );
 }
@@ -469,6 +563,8 @@ export default function TrackViewer({
   onStartFinishPlacement,
   viewMode = "normal",
   markers,
+  environmentBundle,
+  environmentTerrain = true,
 }: TrackViewerProps) {
   const [canvasEventSource, setCanvasEventSource] =
     useState<HTMLDivElement | null>(null);
@@ -641,8 +737,8 @@ export default function TrackViewer({
             dpr={[1, 1.5]}
             camera={{
               fov: 50,
-              near: 0.1,
-              far: 200000,
+              near: 2,
+              far: 20000,
               position: [400, 300, 400],
             }}
             gl={{
@@ -690,6 +786,8 @@ export default function TrackViewer({
                 onStartFinishPlacement={onStartFinishPlacement}
                 viewMode={viewMode}
                 markers={markers}
+                environmentBundle={environmentBundle}
+                environmentTerrain={environmentTerrain}
               />
             </Suspense>
 
