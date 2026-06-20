@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { RotateCw, Mountain, Camera, Layers, Building2, Map } from "lucide-react";
+import { RotateCw, Mountain, Camera, Layers, Map, Flag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -51,80 +51,124 @@ export default function TrackControls({
         setEnvironmentTerrain,
 }: TrackControlsProps) {
         const { t } = useAppPref();
-        const [menuOpen, setMenuOpen] = useState(false);
+        const [trackMenuOpen, setTrackMenuOpen] = useState(false);
+        const [cameraMenuOpen, setCameraMenuOpen] = useState(false);
+
+        const hasTrackSettings = sectorsAvailable || environmentAvailable;
 
         return (
                 <div className="flex items-center gap-2 md:gap-3">
-                        {/* Sector mode toggle — always visible button */}
-                        <Button
-                                variant="ghost"
-                                size="sm"
-                                disabled={!sectorsAvailable}
-                                onClick={() =>
-                                        setViewMode(
-                                                viewMode === "sectors" ? "normal" : "sectors",
-                                        )
-                                }
-                                className={`h-8 gap-1.5 px-2.5 text-xs ${
-                                        viewMode === "sectors"
-                                                ? "bg-primary/15 text-primary hover:bg-primary/25"
-                                                : "text-muted-foreground hover:text-foreground"
-                                } ${!sectorsAvailable ? "opacity-40" : ""}`}
-                                title={
-                                        sectorsAvailable
-                                                ? viewMode === "sectors"
-                                                        ? t.viewModeNormal
-                                                        : t.viewModeSectors
-                                                : t.sectorUnavailable
-                                }
-                        >
-                                <Layers className="h-3.5 w-3.5" />
-                                <span className="hidden sm:inline">
-                                        {viewMode === "sectors"
-                                                ? t.viewModeSectors
-                                                : t.viewMode}
-                                </span>
-                        </Button>
+                        {/* Track settings — merged Sectors / Diorama / Terrain / Width */}
+                        {hasTrackSettings && (
+                                <Popover open={trackMenuOpen} onOpenChange={setTrackMenuOpen}>
+                                        <PopoverTrigger asChild>
+                                                <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className={`h-8 gap-1.5 px-2.5 text-xs ${
+                                                                viewMode === "sectors" || environmentEnabled
+                                                                        ? "bg-primary/15 text-primary hover:bg-primary/25"
+                                                                        : "text-muted-foreground hover:text-foreground"
+                                                        }`}
+                                                        title="Track settings"
+                                                >
+                                                        <Flag className="h-3.5 w-3.5" />
+                                                        <span className="hidden sm:inline">Track</span>
+                                                </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent
+                                                align="end"
+                                                className="w-56 p-0 bg-popover border-border"
+                                        >
+                                                {/* Sector mode toggle */}
+                                                {sectorsAvailable && (
+                                                        <div className="p-3">
+                                                                <div className="flex items-center justify-between">
+                                                                        <Label
+                                                                                className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
+                                                                        >
+                                                                                <Layers className="h-3 w-3" />
+                                                                                {t.viewModeSectors}
+                                                                        </Label>
+                                                                        <Switch
+                                                                                checked={viewMode === "sectors"}
+                                                                                onCheckedChange={(v) =>
+                                                                                        setViewMode(v ? "sectors" : "normal")
+                                                                                }
+                                                                        />
+                                                                </div>
+                                                        </div>
+                                                )}
 
-                        {/* Environment diorama toggle — only shown for circuits with a
-                            pre-generated bundle (Monaco MVP3). */}
-                        {environmentAvailable && (
-                                <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setEnvironmentEnabled(!environmentEnabled)}
-                                        className={`h-8 gap-1.5 px-2.5 text-xs ${
-                                                environmentEnabled
-                                                        ? "bg-primary/15 text-primary hover:bg-primary/25"
-                                                        : "text-muted-foreground hover:text-foreground"
-                                        }`}
-                                        title="Toggle city diorama"
-                                >
-                                        <Building2 className="h-3.5 w-3.5" />
-                                        <span className="hidden sm:inline">Diorama</span>
-                                </Button>
+                                                {/* Diorama toggle */}
+                                                {environmentAvailable && (
+                                                        <div className={`p-3 ${sectorsAvailable ? "border-t border-border" : ""}`}>
+                                                                <div className="flex items-center justify-between">
+                                                                        <Label
+                                                                                className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
+                                                                        >
+                                                                                <Flag className="h-3 w-3" />
+                                                                                Diorama
+                                                                        </Label>
+                                                                        <Switch
+                                                                                checked={environmentEnabled}
+                                                                                onCheckedChange={setEnvironmentEnabled}
+                                                                        />
+                                                                </div>
+                                                        </div>
+                                                )}
+
+                                                {/* Terrain toggle — only when diorama is on */}
+                                                {environmentAvailable && environmentEnabled && (
+                                                        <div className="p-3 border-t border-border">
+                                                                <div className="flex items-center justify-between">
+                                                                        <Label
+                                                                                className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
+                                                                        >
+                                                                                <Map className="h-3 w-3" />
+                                                                                Terrain
+                                                                        </Label>
+                                                                        <Switch
+                                                                                checked={environmentTerrain}
+                                                                                onCheckedChange={setEnvironmentTerrain}
+                                                                        />
+                                                                </div>
+                                                        </div>
+                                                )}
+
+                                                {/* Track width */}
+                                                <div className={`p-3 ${(sectorsAvailable || environmentAvailable) ? "border-t border-border" : ""}`}>
+                                                        <div className="flex items-center justify-between">
+                                                                <Label
+                                                                        htmlFor="width-track-menu"
+                                                                        className="text-xs text-muted-foreground"
+                                                                >
+                                                                        {t.trackWidth}
+                                                                </Label>
+                                                                <span className="text-xs tabular-nums text-foreground">
+                                                                        {trackWidth}
+                                                                        {t.unitM}
+                                                                </span>
+                                                        </div>
+                                                        <input
+                                                                id="width-track-menu"
+                                                                type="range"
+                                                                min={3}
+                                                                max={15}
+                                                                step={1}
+                                                                value={trackWidth}
+                                                                onChange={(e) =>
+                                                                        setTrackWidth(Number(e.target.value))
+                                                                }
+                                                                className="mt-2 h-1 w-full cursor-pointer accent-[#e10600]"
+                                                        />
+                                                </div>
+                                        </PopoverContent>
+                                </Popover>
                         )}
 
-                        {/* Terrain toggle — only when diorama is on. Switches
-                            between flat architectural model and 3D hills. */}
-                        {environmentAvailable && environmentEnabled && (
-                                <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => setEnvironmentTerrain(!environmentTerrain)}
-                                        className={`h-8 gap-1.5 px-2.5 text-xs ${
-                                                environmentTerrain
-                                                        ? "bg-primary/15 text-primary hover:bg-primary/25"
-                                                        : "text-muted-foreground hover:text-foreground"
-                                        }`}
-                                        title="Toggle 3D terrain"
-                                >
-                                        <Map className="h-3.5 w-3.5" />
-                                        <span className="hidden sm:inline">Terrain</span>
-                                </Button>
-                        )}
-
-                        <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+                        {/* Camera popover — presets, elevation, auto-rotate */}
+                        <Popover open={cameraMenuOpen} onOpenChange={setCameraMenuOpen}>
                                 <PopoverTrigger asChild>
                                         <Button
                                                 variant="ghost"
@@ -151,7 +195,7 @@ export default function TrackControls({
                                                                                 key={preset}
                                                                                 onClick={() => {
                                                                                         onCameraPreset(preset);
-                                                                                        setMenuOpen(false);
+                                                                                        setCameraMenuOpen(false);
                                                                                 }}
                                                                                 className="flex-1 rounded-md px-2 py-1.5 text-xs text-foreground/80 hover:bg-accent capitalize"
                                                                         >
@@ -196,34 +240,6 @@ export default function TrackControls({
                                                                 onCheckedChange={setAutoRotate}
                                                         />
                                                 </div>
-                                        </div>
-
-                                        {/* Track width */}
-                                        <div className="border-t border-border p-3">
-                                                <div className="flex items-center justify-between">
-                                                        <Label
-                                                                htmlFor="width-pop"
-                                                                className="text-xs text-muted-foreground"
-                                                        >
-                                                                {t.trackWidth}
-                                                        </Label>
-                                                        <span className="text-xs tabular-nums text-foreground">
-                                                                {trackWidth}
-                                                                {t.unitM}
-                                                        </span>
-                                                </div>
-                                                <input
-                                                        id="width-pop"
-                                                        type="range"
-                                                        min={3}
-                                                        max={15}
-                                                        step={1}
-                                                        value={trackWidth}
-                                                        onChange={(e) =>
-                                                                setTrackWidth(Number(e.target.value))
-                                                        }
-                                                        className="mt-2 h-1 w-full cursor-pointer accent-[#e10600]"
-                                                />
                                         </div>
                                 </PopoverContent>
                         </Popover>

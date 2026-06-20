@@ -496,11 +496,17 @@ export default function F1TrackApp({
           <div
             role="button"
             tabIndex={0}
-            onClick={() => setFooterExpanded((expanded) => !expanded)}
+            onClick={() => {
+              if (window.innerWidth < 768) {
+                setFooterExpanded((expanded) => !expanded);
+              }
+            }}
             onKeyDown={(event) => {
               if (event.key !== "Enter" && event.key !== " ") return;
               event.preventDefault();
-              setFooterExpanded((expanded) => !expanded);
+              if (window.innerWidth < 768) {
+                setFooterExpanded((expanded) => !expanded);
+              }
             }}
             className="grid w-full grid-cols-[1fr_auto] gap-3 px-4 py-2 text-left"
           >
