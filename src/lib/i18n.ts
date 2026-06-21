@@ -87,9 +87,15 @@ const en = {
   geometry: "Geometry",
   geometryDesc: (n: number) => `${n} points · LineString (closed)`,
   geoSource: "Source: bacinger/f1-circuits (MIT)",
-  mvpBadge: "MVP 3 · Diorama + real sector layer",
+  widthTitle: "Track width",
+  widthRealValue: (mean: number, min: number, max: number) =>
+    `~${mean} m avg · ${min}–${max} m (real, per-point)`,
+  widthRealSource: "Source: TUMFTM/racetrack-database (LGPL-3.0)",
+  widthUniformValue: (w: number) => `${w} m uniform (manual)`,
+  widthUnavailable: "No real-width data — using manual width",
+  mvpBadge: "MVP 3.5 · Real per-point track width",
   mvpDesc:
-    "Track built from GeoJSON LineString via CatmullRomCurve3 + ribbon mesh. Sector splits use FastF1 telemetry or manually verified split distances. Monaco includes an OpenStreetMap terrain diorama.",
+    "Track built from GeoJSON LineString via CatmullRomCurve3 + ribbon mesh. 20 circuits carry real per-point width from TUMFTM, curvature-aligned to the layout. Sector splits use FastF1 telemetry; Monaco includes an OpenStreetMap terrain diorama.",
   // Sector view
   viewMode: "View",
   viewModeNormal: "Normal",
@@ -180,9 +186,15 @@ const ru: Dict = {
   geometry: "Геометрия",
   geometryDesc: (n: number) => `${n} точек · LineString (замкнутая)`,
   geoSource: "Источник: bacinger/f1-circuits (MIT)",
-  mvpBadge: "MVP 3 · Диорама + реальные сектора",
+  widthTitle: "Ширина трассы",
+  widthRealValue: (mean: number, min: number, max: number) =>
+    `~${mean} м в ср. · ${min}–${max} м (реальная, по точкам)`,
+  widthRealSource: "Источник: TUMFTM/racetrack-database (LGPL-3.0)",
+  widthUniformValue: (w: number) => `${w} м равномерно (вручную)`,
+  widthUnavailable: "Нет данных реальной ширины — ручная ширина",
+  mvpBadge: "MVP 3.5 · Реальная ширина трассы по точкам",
   mvpDesc:
-    "Трасса построена из GeoJSON LineString через CatmullRomCurve3 + ribbon mesh. Разделение секторов использует телеметрию FastF1 или вручную проверенные дистанции. Для Monaco добавлена OpenStreetMap-диорама с рельефом.",
+    "Трасса построена из GeoJSON LineString через CatmullRomCurve3 + ribbon mesh. У 20 трасс — реальная ширина по точкам из TUMFTM, выровненная по кривизне разметки. Сектора используют телеметрию FastF1; для Monaco добавлена OpenStreetMap-диорама с рельефом.",
   // Sector view
   viewMode: "Вид",
   viewModeNormal: "Обычный",

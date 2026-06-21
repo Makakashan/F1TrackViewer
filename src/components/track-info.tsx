@@ -9,6 +9,7 @@ import {
   TrendingUp,
   TrendingDown,
   Layers,
+  Spline,
 } from "lucide-react";
 import { type CircuitProperties } from "@/lib/f1-circuits";
 import { elevationStats } from "@/lib/elevation";
@@ -24,6 +25,12 @@ export interface TrackInfoProps {
   elevationEnabled?: boolean;
   markers?: TrackMarkers | null;
   viewMode?: TrackViewMode;
+  trackWidth?: number;
+  realWidthAvailable?: boolean;
+  realWidthEnabled?: boolean;
+  meanWidthMeters?: number | null;
+  minWidthMeters?: number | null;
+  maxWidthMeters?: number | null;
 }
 
 function Stat({
@@ -63,8 +70,16 @@ export default function TrackInfo({
   elevationEnabled,
   markers,
   viewMode = "normal",
+  trackWidth = 7,
+  realWidthAvailable = false,
+  realWidthEnabled = false,
+  meanWidthMeters,
+  minWidthMeters,
+  maxWidthMeters,
 }: TrackInfoProps) {
   const { t } = useAppPref();
+  const realWidthActive =
+    realWidthAvailable && realWidthEnabled && meanWidthMeters != null;
 
   if (loading) {
     return (
@@ -251,6 +266,29 @@ export default function TrackInfo({
             {elevations === null ? t.elevationLoading : t.elevationUnavailable}
           </div>
         )}
+      </div>
+
+      <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
+        <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+          <Spline className="h-3 w-3" />
+          {t.widthTitle}
+        </div>
+        <div className="mt-1 text-sm text-foreground">
+          {realWidthActive
+            ? t.widthRealValue(
+                meanWidthMeters!,
+                minWidthMeters ?? meanWidthMeters!,
+                maxWidthMeters ?? meanWidthMeters!,
+              )
+            : t.widthUniformValue(trackWidth * 2)}
+        </div>
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          {realWidthActive
+            ? t.widthRealSource
+            : realWidthAvailable
+              ? t.realWidthHint
+              : t.widthUnavailable}
+        </div>
       </div>
 
       <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
