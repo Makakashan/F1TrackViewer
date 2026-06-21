@@ -35,7 +35,7 @@ export const THEMES: { code: Theme; labelKey: keyof typeof en; flag: string }[] 
 const en = {
   // App header
   appName: "F1 Track Studio",
-  appTagline: "3D Circuit Viewer · MVP 3",
+  appTagline: "3D Circuit Viewer · MVP 3.5",
   btnReload: "Reload",
   // Top bar toggles
   track: "Track",
@@ -53,6 +53,8 @@ const en = {
   autoRotate: "Auto-rotate",
   elevations: "Real elevation",
   trackWidth: "Width",
+  realWidth: "Real width",
+  realWidthHint: "Per-point width from TUMFTM",
   // Settings
   settings: "Settings",
   language: "Language",
@@ -130,7 +132,7 @@ type Dict = typeof en;
 
 const ru: Dict = {
   appName: "F1 Track Studio",
-  appTagline: "3D просмотрщик трасс · MVP 3",
+  appTagline: "3D просмотрщик трасс · MVP 3.5",
   btnReload: "Обновить",
   track: "Трасса",
   trackSettings: "Настройки трассы",
@@ -147,6 +149,8 @@ const ru: Dict = {
   autoRotate: "Авто-вращение",
   elevations: "Реальный рельеф",
   trackWidth: "Ширина",
+  realWidth: "Реальная ширина",
+  realWidthHint: "Ширина по точкам из TUMFTM",
   settings: "Настройки",
   language: "Язык",
   theme: "Тема",

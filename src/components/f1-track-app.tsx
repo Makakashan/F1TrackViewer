@@ -28,6 +28,8 @@ import type { TrackViewMode, TrackMarkers } from "@/lib/track-markers";
 import { fetchTrackMarkers } from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
 import { fetchEnvironmentBundle } from "@/lib/environment-loader";
+import type { TrackWidthProfile } from "@/lib/track-width";
+import { fetchTrackWidthProfile } from "@/lib/track-width";
 
 // Three.js scene must be client-only — no SSR for WebGL.
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
@@ -94,6 +96,14 @@ export default function F1TrackApp({
   const [autoRotate, setAutoRotate] = useState(true);
   const [trackWidth, setTrackWidth] = useState(7);
   const [elevationEnabled, setElevationEnabled] = useState(true);
+  // Real per-point track width (TUMFTM). null = no profile for this circuit,
+  // undefined = still loading.
+  const [widthProfile, setWidthProfile] =
+    useState<TrackWidthProfile | null | undefined>(undefined);
+  const urlRealWidth = urlParams.get("realwidth");
+  const [realWidthEnabled, setRealWidthEnabled] = useState<boolean>(
+    () => urlRealWidth !== "0",
+  );
   const [mobileListOpen, setMobileListOpen] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [cameraPreset, setCameraPreset] = useState<CameraPreset | null>(null);
@@ -126,6 +136,7 @@ export default function F1TrackApp({
   const didApplyInitialSectors = useRef(false);
   const didApplyInitialEnvironment = useRef(false);
   const didApplyInitialTerrain = useRef(false);
+  const didApplyInitialRealWidth = useRef(false);
 
   const urlTrack = urlParams.get("track");
   const urlWidth = parseWidthParam(urlParams.get("width"));
@@ -159,6 +170,25 @@ export default function F1TrackApp({
     const timer = window.setTimeout(() => setEnvironmentBundle(undefined), 0);
     fetchEnvironmentBundle(selectedId).then((bundle) => {
       if (!cancelled) setEnvironmentBundle(bundle);
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [selectedId]);
+
+  // Load the real-width profile (TUMFTM) for the selected circuit. Only ~20
+  // modern layouts ship a profile; the rest resolve to null and the toggle
+  // hides itself.
+  useEffect(() => {
+    if (!selectedId) {
+      const timer = window.setTimeout(() => setWidthProfile(null), 0);
+      return () => window.clearTimeout(timer);
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => setWidthProfile(undefined), 0);
+    fetchTrackWidthProfile(selectedId).then((profile) => {
+      if (!cancelled) setWidthProfile(profile);
     });
     return () => {
       cancelled = true;
@@ -292,6 +322,24 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, [environmentTerrain]);
 
+  // Hydrate real-width toggle from URL (?realwidth=0 disables it, default ON).
+  useEffect(() => {
+    if (didApplyInitialRealWidth.current) return;
+    const urlRw = new URLSearchParams(window.location.search).get("realwidth");
+    if (urlRw !== "0" && urlRw !== "1") {
+      didApplyInitialRealWidth.current = true;
+      return;
+    }
+    const next = urlRw === "1";
+    if (next === realWidthEnabled) {
+      didApplyInitialRealWidth.current = true;
+      return;
+    }
+    didApplyInitialRealWidth.current = true;
+    const timer = window.setTimeout(() => setRealWidthEnabled(next), 0);
+    return () => window.clearTimeout(timer);
+  }, [realWidthEnabled]);
+
   useEffect(() => {
     if (didApplyInitialTrack.current) return;
     if (!circuits.length) return;
@@ -314,6 +362,7 @@ export default function F1TrackApp({
     if (!didApplyInitialSectors.current) return;
     if (!didApplyInitialEnvironment.current) return;
     if (!didApplyInitialTerrain.current) return;
+    if (!didApplyInitialRealWidth.current) return;
     if (
       !didApplyInitialTrack.current &&
       urlTrack &&
@@ -347,13 +396,19 @@ export default function F1TrackApp({
       params.delete("environment");
       params.delete("terrain");
     }
+    // Persist the real-width flag only when a profile exists for this circuit.
+    if (widthProfile) {
+      params.set("realwidth", realWidthEnabled ? "1" : "0");
+    } else {
+      params.delete("realwidth");
+    }
 
     const nextSearch = `?${params.toString()}`;
     if (nextSearch === window.location.search) return;
 
     window.history.replaceState(null, "", nextSearch);
     notifyUrlStateSubscribers();
-  }, [cameraPreset, circuits, elevationEnabled, environmentBundle, environmentEnabled, environmentTerrain, selectedId, trackWidth, urlTrack, viewMode]);
+  }, [cameraPreset, circuits, elevationEnabled, environmentBundle, environmentEnabled, environmentTerrain, realWidthEnabled, selectedId, trackWidth, urlTrack, viewMode, widthProfile]);
 
   const handleSelect = useCallback(
     (id: string) => {
@@ -371,6 +426,7 @@ export default function F1TrackApp({
     geojson?.features[0]?.properties ?? null;
   const pointCount = geojson?.features[0]?.geometry.coordinates.length;
   const sectorsAvailable = !!markers?.sectors?.length;
+  const realWidthAvailable = !!widthProfile;
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
@@ -433,6 +489,8 @@ export default function F1TrackApp({
                 environmentEnabled ? environmentBundle ?? null : null
               }
               environmentTerrain={environmentTerrain}
+              widthProfile={widthProfile ?? null}
+              realWidthEnabled={realWidthEnabled}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -467,6 +525,10 @@ export default function F1TrackApp({
               setEnvironmentEnabled={setEnvironmentEnabled}
               environmentTerrain={environmentTerrain}
               setEnvironmentTerrain={setEnvironmentTerrain}
+              realWidthAvailable={realWidthAvailable}
+              realWidthEnabled={realWidthEnabled}
+              setRealWidthEnabled={setRealWidthEnabled}
+              meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
             />
           )}
 
@@ -505,6 +567,10 @@ export default function F1TrackApp({
             setEnvironmentEnabled={setEnvironmentEnabled}
             environmentTerrain={environmentTerrain}
             setEnvironmentTerrain={setEnvironmentTerrain}
+            realWidthAvailable={realWidthAvailable}
+            realWidthEnabled={realWidthEnabled}
+            setRealWidthEnabled={setRealWidthEnabled}
+            meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
           />
         </aside>
       </div>

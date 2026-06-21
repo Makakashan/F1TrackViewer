@@ -2,10 +2,20 @@ import * as THREE from "three";
 import { distanceToCurveS, sectorArcFraction } from "./track-markers";
 import type { SectorDefinition, TrackMarkers } from "./track-markers";
 
+/**
+ * Half-width may be a constant (manual slider) or a function of normalized
+ * arc position s ∈ [0, 1] for real, per-point track widths.
+ */
+export type HalfWidth = number | ((s: number) => number);
+
+function halfWidthAt(halfWidth: HalfWidth, s: number): number {
+  return typeof halfWidth === "function" ? halfWidth(s) : halfWidth;
+}
+
 /** Extruded track mesh — top surface + side walls down to groundY. Flat-shaded quads. */
 export function buildExtrudedTrack(
   curve: THREE.CatmullRomCurve3,
-  halfWidth: number,
+  halfWidth: HalfWidth,
   topRaise: number,
   groundY: number,
   samples: number,
@@ -58,11 +68,12 @@ export function buildExtrudedTrack(
     side.normalize();
     binorm.crossVectors(side, t).normalize();
 
+    const hw = halfWidthAt(halfWidth, i / N);
     const topY = p.y + topRaise;
-    const lx = p.x + side.x * halfWidth;
-    const lz = p.z + side.z * halfWidth;
-    const rx = p.x - side.x * halfWidth;
-    const rz = p.z - side.z * halfWidth;
+    const lx = p.x + side.x * hw;
+    const lz = p.z + side.z * hw;
+    const rx = p.x - side.x * hw;
+    const rz = p.z - side.z * hw;
     const wallTopY = topY - 0.08;
     const bottomY = wallDepth == null ? groundY : topY - wallDepth;
 
@@ -135,7 +146,7 @@ export function buildExtrudedTrack(
  */
 export function buildTrackOutline(
   curve: THREE.CatmullRomCurve3,
-  halfWidth: number,
+  halfWidth: HalfWidth,
   topRaise: number,
   samples: number,
 ): THREE.BufferGeometry {
@@ -157,9 +168,10 @@ export function buildTrackOutline(
     side.crossVectors(t, up);
     if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
     side.normalize();
+    const hw = halfWidthAt(halfWidth, i / N);
     const topY = p.y + topRaise;
-    leftPts.push(p.x + side.x * halfWidth, topY, p.z + side.z * halfWidth);
-    rightPts.push(p.x - side.x * halfWidth, topY, p.z - side.z * halfWidth);
+    leftPts.push(p.x + side.x * hw, topY, p.z + side.z * hw);
+    rightPts.push(p.x - side.x * hw, topY, p.z - side.z * hw);
   }
 
   const positions: number[] = [];
@@ -205,7 +217,7 @@ export function buildSectorMesh(
   curve: THREE.CatmullRomCurve3,
   sector: SectorDefinition,
   markers: TrackMarkers,
-  halfWidth: number,
+  halfWidth: HalfWidth,
   topRaise: number,
   groundY: number,
   totalSamples: number,
@@ -230,6 +242,7 @@ export function buildSectorMesh(
   // Sample points along the sector
   const pts: THREE.Vector3[] = [];
   const tangents: THREE.Vector3[] = [];
+  const arcS: number[] = [];
 
   for (let i = 0; i <= N; i++) {
     const t = i / N;
@@ -243,6 +256,7 @@ export function buildSectorMesh(
     }
     pts.push(curve.getPointAt(s));
     tangents.push(curve.getTangentAt(s));
+    arcS.push(s);
   }
 
   const up = new THREE.Vector3(0, 1, 0);
@@ -285,11 +299,12 @@ export function buildSectorMesh(
     side.normalize();
     binorm.crossVectors(side, t).normalize();
 
+    const hw = halfWidthAt(halfWidth, arcS[i]);
     const topY = p.y + topRaise;
-    const lx = p.x + side.x * halfWidth;
-    const lz = p.z + side.z * halfWidth;
-    const rx = p.x - side.x * halfWidth;
-    const rz = p.z - side.z * halfWidth;
+    const lx = p.x + side.x * hw;
+    const lz = p.z + side.z * hw;
+    const rx = p.x - side.x * hw;
+    const rz = p.z - side.z * hw;
     const wallTopY = topY - 0.08;
     const bottomY = wallDepth == null ? groundY : topY - wallDepth;
 
