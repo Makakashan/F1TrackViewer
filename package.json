@@ -8,6 +8,7 @@
     "build:pages": "GITHUB_PAGES=true next build",
     "elevations:generate": "bun scripts/generate-elevations.ts",
     "environment:generate": "bun scripts/generate-environment.ts",
+    "widths:generate": "bun scripts/generate-track-widths.ts",
     "start": "next start -p 4000",
     "lint": "eslint ."
   },

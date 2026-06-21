@@ -31,6 +31,12 @@ export default function TrackSidePanel({
   setEnvironmentEnabled,
   environmentTerrain,
   setEnvironmentTerrain,
+  realWidthAvailable,
+  realWidthEnabled,
+  setRealWidthEnabled,
+  meanWidthMeters,
+  minWidthMeters,
+  maxWidthMeters,
 }: TrackSidePanelProps) {
   const { t } = useAppPref();
 
@@ -61,6 +67,12 @@ export default function TrackSidePanel({
           elevationEnabled={elevationEnabled}
           markers={markers}
           viewMode={viewMode}
+          trackWidth={trackWidth}
+          realWidthAvailable={realWidthAvailable}
+          realWidthEnabled={realWidthEnabled}
+          meanWidthMeters={meanWidthMeters}
+          minWidthMeters={minWidthMeters}
+          maxWidthMeters={maxWidthMeters}
         />
       </TabsContent>
 
@@ -84,6 +96,10 @@ export default function TrackSidePanel({
           setEnvironmentEnabled={setEnvironmentEnabled}
           environmentTerrain={environmentTerrain}
           setEnvironmentTerrain={setEnvironmentTerrain}
+          realWidthAvailable={realWidthAvailable}
+          realWidthEnabled={realWidthEnabled}
+          setRealWidthEnabled={setRealWidthEnabled}
+          meanWidthMeters={meanWidthMeters}
         />
       </TabsContent>
     </Tabs>
