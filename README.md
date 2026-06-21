@@ -1,28 +1,27 @@
 # F1 Track Viewer
 
-Interactive 3D viewer for Formula 1 circuits — Next.js 16 + Three.js + Tailwind CSS. Orbit any of 40+ tracks with real elevation profiles, adjustable track width, and light/dark themes.
+Interactive 3D viewer for Formula 1 circuits — Next.js 16 + Three.js + Tailwind CSS. Orbit verified F1 layouts with real elevation profiles, adjustable track width, sector overlays, and a Monaco terrain diorama.
 
 ---
 
 ## Features
 
-- **40 circuits** from `bacinger/f1-circuits` (Monaco, Monza, Silverstone, Spa, Suzuka, Las Vegas, Jeddah, and more)
+- **31 circuits** from `bacinger/f1-circuits` with non-fallback sector data (Monaco, Monza, Silverstone, Spa, Suzuka, Las Vegas, Jeddah, and more)
 - **Extruded 3D track mesh** — solid ribbon with side walls, not a flat tube. Track width adjustable 3–15 m
 - **Elevation profile** via [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) — SRTM data smoothed for street circuits (Monaco, Baku)
 - **Mean-subtracted altitude** — high-altitude tracks (Mexico, ~2200 m) stay grounded
 - **OrbitControls** — left-drag to rotate, right-drag to pan, wheel to zoom
-- **Auto-rotate** toggle, **Elevation** toggle, **Width** slider, and camera presets
+- **Right-side Settings panel** with camera presets, layers, terrain, elevation, width, and auto-rotate controls
 - **Start/finish marker** with direction arrow and verified marker overrides
 - **Shareable URL state** for selected track, width, elevation, and camera preset
 - **Light / Dark theme** — saved in localStorage
 - **Russian / English UI** — auto-detected, switchable from Settings
 - **Searchable circuit list** with country flags
-- **Info panel** with track stats, SVG sparkline elevation profile, and geometry metadata
+- **Info panel** with track stats, SVG sparkline elevation profile, sector splits, and geometry metadata
 - **Responsive** — mobile layout with drawer menus, desktop 3-column layout
-- **Sector view mode** via `?sectors=1`
-- **Real sector split distances** from FastF1 telemetry where available
-- **33/33/33 fallback sector splits** for historical/future layouts
-- **Sector source badge**: FastF1-derived / approximate thirds
+- **Sector view mode** via `?sectors=1` with URL state
+- **Real sector split distances** from FastF1 telemetry or manually verified split distances
+- **Monaco diorama** via `?environment=1&terrain=1`, generated from OpenStreetMap + static elevation data
 
 ---
 
@@ -85,7 +84,8 @@ src/
 │   └── use-track-data.ts     # GeoJSON + elevation loading with retry
 ├── components/
 │   ├── track-viewer.tsx      # Three.js Canvas + OrbitControls
-│   ├── track-controls.tsx    # Autorotate, elevation, width controls
+│   ├── track-side-panel.tsx  # Desktop Info / Settings sidebar
+│   ├── track-settings-panel.tsx # Camera, layers, terrain, width controls
 │   ├── track-overlay.tsx     # Circuit name + controls hint
 │   ├── circuit-list.tsx      # Searchable circuit list
 │   ├── circuit-sidebar.tsx   # Sidebar wrapper with skeleton
@@ -113,8 +113,8 @@ src/
 - [x] **MVP 1** — static 3D viewer + OrbitControls
 - [x] **MVP 1.5** — elevation profile + ribbon mesh + i18n + theming
 - [x] **MVP 2** — corrected track base: real elevation x1, width control, camera presets, start/finish marker, direction arrow, URL state
-- [x] **MVP 2.5** — sector view mode, real sector splits from FastF1 telemetry, 33/33/33 fallback for historical circuits
-- [ ] **MVP 3** — [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database): real track width
+- [x] **MVP 3** — real sector view mode, no synthetic equal-split fallback layouts in the app, Monaco OpenStreetMap diorama, terrain draping, consolidated viewer controls
+- [ ] **MVP 3.5** — [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database): real track width
 - [ ] **MVP 4** — sessions, telemetry, and animated car position
 
 ---
