@@ -70,10 +70,10 @@ export default function TrackControls({
                                                                         ? "bg-primary/15 text-primary hover:bg-primary/25"
                                                                         : "text-muted-foreground hover:text-foreground"
                                                         }`}
-                                                        title="Track settings"
+                                                        title={t.trackSettings}
                                                 >
                                                         <Flag className="h-3.5 w-3.5" />
-                                                        <span className="hidden sm:inline">Track</span>
+                                                        <span className="hidden sm:inline">{t.track}</span>
                                                 </Button>
                                         </PopoverTrigger>
                                         <PopoverContent
@@ -108,7 +108,7 @@ export default function TrackControls({
                                                                                 className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
                                                                         >
                                                                                 <Flag className="h-3 w-3" />
-                                                                                Diorama
+                                                                                {t.diorama}
                                                                         </Label>
                                                                         <Switch
                                                                                 checked={environmentEnabled}
@@ -126,7 +126,7 @@ export default function TrackControls({
                                                                                 className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer"
                                                                         >
                                                                                 <Map className="h-3 w-3" />
-                                                                                Terrain
+                                                                                {t.terrain}
                                                                         </Label>
                                                                         <Switch
                                                                                 checked={environmentTerrain}
@@ -186,7 +186,7 @@ export default function TrackControls({
                                         <div className="p-3">
                                                 <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
                                                         <Camera className="h-3 w-3" />
-                                                        Camera
+                                                        {t.camera}
                                                 </div>
                                                 <div className="mt-2 flex gap-1">
                                                         {(["top", "iso", "side"] as CameraPreset[]).map(
@@ -199,7 +199,11 @@ export default function TrackControls({
                                                                                 }}
                                                                                 className="flex-1 rounded-md px-2 py-1.5 text-xs text-foreground/80 hover:bg-accent capitalize"
                                                                         >
-                                                                                {preset}
+                                                                                {preset === "top"
+                                                                                        ? t.cameraTop
+                                                                                        : preset === "iso"
+                                                                                          ? t.cameraIso
+                                                                                          : t.cameraSide}
                                                                         </button>
                                                                 ),
                                                         )}

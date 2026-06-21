@@ -19,7 +19,7 @@ Usage:
     python generate-sector-splits.py                    # all circuits
     python generate-sector-splits.py mc-1929 gb-1948   # specific circuits
     python generate-sector-splits.py --fastf1-only      # only circuits with FastF1 data
-    python generate-sector-splits.py --manual-only      # only equal-thirds fallback splits
+    python generate-sector-splits.py --manual-only      # only manually defined splits
 
 FastF1 supports event schedule data from 2018+.
 """
@@ -259,7 +259,7 @@ def _write_marker_file(circuit_id: str, data: dict):
 
 # ─── Circuit definitions ──────────────────────────────────────────────
 #
-# All 40 circuits from the bacinger/f1-circuits dataset.
+# Source circuits from the bacinger/f1-circuits dataset.
 #
 # Track lengths are from the GeoJSON properties (CircuitProperties.length).
 # start_finish_s values are from START_FINISH_OVERRIDES in start-finish.ts.
@@ -274,8 +274,9 @@ def _write_marker_file(circuit_id: str, data: dict):
 # that sector colors appear in the correct positions on the rendered track.
 # If sectors appear in the wrong order (S3 where S1 should be), flip the sign.
 #
-# For circuits with gp=None, no FastF1 session is available (pre-2018 or
-# never in F1 calendar). These get equal-thirds fallback sector splits.
+# Circuits without a FastF1 session should only be kept in the app when their
+# split distances are manually verified. Synthetic equal-split layouts
+# are filtered out of the viewer.
 #
 # FastF1 event names use the official F1 event name as stored by FastF1.
 # For the 2024 season these are the country/event names from the schedule.
@@ -440,7 +441,7 @@ CIRCUITS = {
         "start_finish_verified": False, "direction_verified": False,
     },  # Intercity Istanbul Park (Istanbul) — Turkish GP 2020-2021
 
-    # ─── Circuits WITHOUT FastF1 data (equal-thirds fallback splits) ──
+    # ─── Circuits WITHOUT FastF1 data (manual split candidates) ───────
     # These circuits were last in F1 before 2018 or have never hosted F1.
     # gp=None signals that no FastF1 session is available.
     "ar-1952": {

@@ -11,12 +11,13 @@ import {
 import dynamic from "next/dynamic";
 import { RefreshCw, Flag, X } from "lucide-react";
 import CircuitSidebar from "@/components/circuit-sidebar";
-import TrackInfo from "@/components/track-info";
-import TrackControls from "@/components/track-controls";
 import TrackOverlay from "@/components/track-overlay";
+import TrackSidePanel from "@/components/track-side-panel";
 import ErrorBanner from "@/components/error-banner";
 import MobileMenu from "@/components/mobile-menu";
 import MobileInfoSheet from "@/components/mobile-info-sheet";
+import MobileLayersSheet from "@/components/mobile-layers-sheet";
+import SettingsMenu from "@/components/settings-menu";
 import { useAppPref } from "@/components/app-pref-provider";
 import { type CircuitProperties } from "@/lib/f1-circuits";
 import { useCircuits } from "@/hooks/use-circuts";
@@ -400,23 +401,7 @@ export default function F1TrackApp({
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
-          <TrackControls
-            autoRotate={autoRotate}
-            setAutoRotate={setAutoRotate}
-            elevationEnabled={elevationEnabled}
-            setElevationEnabled={setElevationEnabled}
-            trackWidth={trackWidth}
-            setTrackWidth={setTrackWidth}
-            onCameraPreset={handleCameraPreset}
-            viewMode={viewMode}
-            setViewMode={setViewMode}
-            sectorsAvailable={sectorsAvailable}
-            environmentAvailable={!!environmentBundle}
-            environmentEnabled={environmentEnabled}
-            setEnvironmentEnabled={setEnvironmentEnabled}
-            environmentTerrain={environmentTerrain}
-            setEnvironmentTerrain={setEnvironmentTerrain}
-          />
+          <SettingsMenu />
         </div>
       </header>
 
@@ -465,6 +450,26 @@ export default function F1TrackApp({
             environmentActive={environmentEnabled && !!environmentBundle}
           />
 
+          {properties && (
+            <MobileLayersSheet
+              autoRotate={autoRotate}
+              setAutoRotate={setAutoRotate}
+              elevationEnabled={elevationEnabled}
+              setElevationEnabled={setElevationEnabled}
+              trackWidth={trackWidth}
+              setTrackWidth={setTrackWidth}
+              onCameraPreset={handleCameraPreset}
+              viewMode={viewMode}
+              setViewMode={setViewMode}
+              sectorsAvailable={sectorsAvailable}
+              environmentAvailable={!!environmentBundle}
+              environmentEnabled={environmentEnabled}
+              setEnvironmentEnabled={setEnvironmentEnabled}
+              environmentTerrain={environmentTerrain}
+              setEnvironmentTerrain={setEnvironmentTerrain}
+            />
+          )}
+
           <MobileInfoSheet
             properties={properties}
             loadingTrack={loadingTrack}
@@ -479,7 +484,7 @@ export default function F1TrackApp({
         </main>
 
         <aside className="hidden min-h-0 border-l border-border bg-sidebar/50 md:block">
-          <TrackInfo
+          <TrackSidePanel
             properties={properties}
             loading={loadingTrack}
             pointCount={pointCount}
@@ -487,6 +492,19 @@ export default function F1TrackApp({
             elevationEnabled={elevationEnabled}
             markers={markers}
             viewMode={viewMode}
+            autoRotate={autoRotate}
+            setAutoRotate={setAutoRotate}
+            setElevationEnabled={setElevationEnabled}
+            trackWidth={trackWidth}
+            setTrackWidth={setTrackWidth}
+            onCameraPreset={handleCameraPreset}
+            setViewMode={setViewMode}
+            sectorsAvailable={sectorsAvailable}
+            environmentAvailable={!!environmentBundle}
+            environmentEnabled={environmentEnabled}
+            setEnvironmentEnabled={setEnvironmentEnabled}
+            environmentTerrain={environmentTerrain}
+            setEnvironmentTerrain={setEnvironmentTerrain}
           />
         </aside>
       </div>
