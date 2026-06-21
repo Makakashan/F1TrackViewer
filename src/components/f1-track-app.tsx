@@ -540,6 +540,12 @@ export default function F1TrackApp({
             elevationEnabled={elevationEnabled}
             markers={markers}
             viewMode={viewMode}
+            trackWidth={trackWidth}
+            realWidthAvailable={realWidthAvailable}
+            realWidthEnabled={realWidthEnabled}
+            meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
+            minWidthMeters={widthProfile?.minWidthMeters ?? null}
+            maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
             open={mobileInfoOpen}
             onOpenChange={setMobileInfoOpen}
           />
@@ -571,6 +577,8 @@ export default function F1TrackApp({
             realWidthEnabled={realWidthEnabled}
             setRealWidthEnabled={setRealWidthEnabled}
             meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
+            minWidthMeters={widthProfile?.minWidthMeters ?? null}
+            maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
           />
         </aside>
       </div>
