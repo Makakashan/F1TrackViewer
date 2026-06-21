@@ -214,6 +214,7 @@ export default function EnvironmentLayer({
         drapeY={LAYER_Y_DRAPE.buildings}
         flatY={LAYER_Y_FLAT.buildings}
         bbox={hasTerrain ? manifest.bbox : null}
+        resolvedTheme={resolvedTheme}
       />
     </group>
   );
@@ -303,7 +304,7 @@ function DioramaBase({
   const material = (
     <meshStandardMaterial
       map={gridTexture}
-      color={hasTerrain ? (isDark ? "#262B2F" : "#C8CDD6") : DIORAMA_COLORS.base}
+      color={hasTerrain ? (isDark ? "#111111" : "#C8CDD6") : DIORAMA_COLORS.base}
       roughness={1}
       metalness={0}
       side={THREE.DoubleSide}
@@ -382,7 +383,7 @@ function TerrainMesh({
     const indices: number[] = [];
     const colors: number[] = [];
 
-    const terrainTop = new THREE.Color(resolvedTheme === "dark" ? "#D0D4DC" : "#F3F5F9");
+    const terrainTop = new THREE.Color(resolvedTheme === "dark" ? "#565656" : "#F3F5F9");
     const waterMasks = waterPolygons
       .map((poly) =>
         poly.points.map(([lon, lat]) =>
@@ -451,8 +452,8 @@ function TerrainMesh({
       }
     }
 
-    const sideTop = new THREE.Color("#C7CDD8");
-    const sideBottom = new THREE.Color("#6F7784");
+    const sideTop = new THREE.Color(resolvedTheme === "dark" ? "#444444" : "#C7CDD8");
+    const sideBottom = new THREE.Color(resolvedTheme === "dark" ? "#202020" : "#6F7784");
 
     function appendSkirtSegment(a: number, b: number) {
       const base = positions.length / 3;
@@ -847,6 +848,7 @@ function BuildingExtrusions({
   drapeY,
   flatY,
   bbox,
+  resolvedTheme,
 }: {
   buildings: BuildingFeature[];
   originLon: number;
@@ -856,6 +858,7 @@ function BuildingExtrusions({
   drapeY: number;
   flatY: number;
   bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
+  resolvedTheme: "light" | "dark";
 }) {
   const capped = useMemo(() => {
     let filtered = buildings.slice(0, 800);
@@ -939,7 +942,7 @@ function BuildingExtrusions({
   return (
     <mesh geometry={geometry} castShadow receiveShadow>
       <meshStandardMaterial
-        color={DIORAMA_COLORS.building}
+        color={resolvedTheme === "dark" ? "#B6B6B6" : DIORAMA_COLORS.building}
         roughness={0.85}
         metalness={0}
         flatShading

@@ -29,7 +29,7 @@ export default function TrackOverlay({
         return (
                 <>
                         {/* Track name overlay (bottom-left) */}
-                        <div className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-[60vw]">
+                        <div className="pointer-events-none absolute bottom-4 left-4 z-10 max-w-[72vw] md:hidden">
                                 <div className="flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] text-primary/80">
                                         <ChevronRight className="h-3 w-3" />
                                         {t.nowViewing}
@@ -94,7 +94,7 @@ export default function TrackOverlay({
                                         href="https://www.openstreetmap.org/copyright"
                                         target="_blank"
                                         rel="noreferrer noopener"
-                                        className="pointer-events-auto absolute right-4 top-4 z-10 rounded-md border border-border/80 bg-background/80 px-2 py-1 text-[10px] text-muted-foreground backdrop-blur hover:text-foreground"
+                                        className="pointer-events-auto absolute right-4 top-16 z-10 rounded-md border border-border/80 bg-background/80 px-2 py-1 text-[10px] text-muted-foreground backdrop-blur hover:text-foreground md:top-4"
                                 >
                                         © OpenStreetMap contributors
                                 </a>
