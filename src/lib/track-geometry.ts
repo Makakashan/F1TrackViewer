@@ -7,6 +7,7 @@ import type { SectorDefinition, TrackMarkers } from "./track-markers";
  * arc position s ∈ [0, 1] for real, per-point track widths.
  */
 export type HalfWidth = number | ((s: number) => number);
+export type TrackColorAt = (s: number, target: THREE.Color) => void;
 
 function halfWidthAt(halfWidth: HalfWidth, s: number): number {
   return typeof halfWidth === "function" ? halfWidth(s) : halfWidth;
@@ -20,6 +21,7 @@ export function buildExtrudedTrack(
   groundY: number,
   samples: number,
   wallDepth?: number,
+  colorAt?: TrackColorAt,
 ): THREE.BufferGeometry {
   const N = samples;
   const pts = curve.getSpacedPoints(N);
@@ -34,6 +36,7 @@ export function buildExtrudedTrack(
 
   const positions: number[] = [];
   const normals: number[] = [];
+  const colors: number[] = [];
   const indices: number[] = [];
 
   const a = new THREE.Vector3();
@@ -42,6 +45,7 @@ export function buildExtrudedTrack(
   const ab = new THREE.Vector3();
   const ac = new THREE.Vector3();
   const n = new THREE.Vector3();
+  const vertexColor = new THREE.Color();
 
   function pushV(
     x: number,
@@ -53,6 +57,7 @@ export function buildExtrudedTrack(
   ) {
     positions.push(x, y, z);
     normals.push(nx, ny, nz);
+    if (colorAt) colors.push(vertexColor.r, vertexColor.g, vertexColor.b);
   }
 
   function pushQuad(i1: number, i2: number, i3: number, i4: number) {
@@ -60,8 +65,10 @@ export function buildExtrudedTrack(
   }
 
   for (let i = 0; i <= N; i++) {
+    const s = i / N;
     const p = pts[i];
     const t = tangents[i];
+    colorAt?.(s, vertexColor);
 
     side.crossVectors(t, up);
     if (side.lengthSq() < 1e-6) side.set(1, 0, 0);
@@ -135,6 +142,9 @@ export function buildExtrudedTrack(
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  if (colors.length) {
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  }
   geo.setIndex(indices);
   return geo;
 }

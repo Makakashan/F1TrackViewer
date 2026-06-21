@@ -198,6 +198,24 @@ function TrackMesh({
     return Math.max(400, Math.min(2000, Math.round(length / 4)));
   }, [feature.properties.length]);
 
+  const widthColorAt = useMemo(() => {
+    if (!realWidthActive || !widthProfile) return undefined;
+    const narrow = new THREE.Color("#F59E0B");
+    const wide = new THREE.Color("#22D3EE");
+    const span = Math.max(
+      0.01,
+      widthProfile.maxWidthMeters - widthProfile.minWidthMeters,
+    );
+    return (s: number, target: THREE.Color) => {
+      const normalized = THREE.MathUtils.clamp(
+        (sampleWidthAt(widthProfile, s) - widthProfile.minWidthMeters) / span,
+        0,
+        1,
+      );
+      target.copy(narrow).lerp(wide, normalized);
+    };
+  }, [realWidthActive, widthProfile]);
+
   const trackGeometry = useMemo(
     () =>
       buildExtrudedTrack(
@@ -207,8 +225,9 @@ function TrackMesh({
         groundY,
         samples,
         terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
+        widthColorAt,
       ),
-    [curve, halfWidth, groundY, samples, terrainSampler],
+    [curve, halfWidth, groundY, samples, terrainSampler, widthColorAt],
   );
 
   const outlineGeometry = useMemo(
@@ -404,8 +423,7 @@ function TrackMesh({
       )}
 
       <group>
-      {/* Sector mode: colored sector meshes replace the single track mesh.
-          In normal mode, the single red track mesh is shown. */}
+      {/* Sector mode and width mode each replace the normal red top surface. */}
       {showSectors ? (
         <>
           {markers!.sectors.map((sector, i) => (
@@ -461,9 +479,10 @@ function TrackMesh({
             }}
           >
             <meshStandardMaterial
-              color={trackColor}
-              emissive={trackEmissive}
-              emissiveIntensity={trackEmissiveIntensity}
+              vertexColors={realWidthActive}
+              color={realWidthActive ? "#ffffff" : trackColor}
+              emissive={realWidthActive ? "#000000" : trackEmissive}
+              emissiveIntensity={realWidthActive ? 0 : trackEmissiveIntensity}
               roughness={0.5}
               metalness={0.05}
               side={THREE.DoubleSide}

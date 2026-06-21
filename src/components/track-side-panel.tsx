@@ -100,6 +100,8 @@ export default function TrackSidePanel({
           realWidthEnabled={realWidthEnabled}
           setRealWidthEnabled={setRealWidthEnabled}
           meanWidthMeters={meanWidthMeters}
+          minWidthMeters={minWidthMeters}
+          maxWidthMeters={maxWidthMeters}
         />
       </TabsContent>
     </Tabs>

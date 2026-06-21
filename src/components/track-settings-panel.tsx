@@ -36,6 +36,8 @@ export interface TrackSettingsPanelProps {
   realWidthEnabled: boolean;
   setRealWidthEnabled: (v: boolean) => void;
   meanWidthMeters: number | null;
+  minWidthMeters: number | null;
+  maxWidthMeters: number | null;
 }
 
 function SettingRow({
@@ -78,6 +80,8 @@ export default function TrackSettingsPanel({
   realWidthEnabled,
   setRealWidthEnabled,
   meanWidthMeters,
+  minWidthMeters,
+  maxWidthMeters,
 }: TrackSettingsPanelProps) {
   const { t } = useAppPref();
   const realWidthActive = realWidthAvailable && realWidthEnabled;
@@ -140,16 +144,21 @@ export default function TrackSettingsPanel({
           {t.track}
         </div>
 
-        {realWidthAvailable && (
-          <SettingRow
-            icon={<Spline className="h-3.5 w-3.5" />}
-            label={t.realWidth}
-          >
-            <Switch
-              checked={realWidthEnabled}
-              onCheckedChange={setRealWidthEnabled}
-            />
-          </SettingRow>
+        <SettingRow
+          icon={<Spline className="h-3.5 w-3.5" />}
+          label={t.realWidth}
+        >
+          <Switch
+            checked={realWidthActive}
+            disabled={!realWidthAvailable}
+            onCheckedChange={setRealWidthEnabled}
+          />
+        </SettingRow>
+
+        {!realWidthAvailable && (
+          <p className="px-1 text-[10px] leading-snug text-muted-foreground">
+            {t.widthUnavailable}
+          </p>
         )}
 
         <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
@@ -179,9 +188,20 @@ export default function TrackSettingsPanel({
             className="mt-3 h-1 w-full cursor-pointer accent-[#e10600] disabled:cursor-not-allowed disabled:opacity-40"
           />
           {realWidthActive && (
-            <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
-              {t.realWidthHint}
-            </p>
+            <div className="mt-3 space-y-1.5">
+              <div className="h-1.5 rounded-full bg-gradient-to-r from-amber-500 to-cyan-400" />
+              <div className="flex justify-between text-[10px] text-muted-foreground tabular-nums">
+                <span>
+                  {t.widthNarrow}: {minWidthMeters?.toFixed(1)}{t.unitM}
+                </span>
+                <span>
+                  {t.widthWide}: {maxWidthMeters?.toFixed(1)}{t.unitM}
+                </span>
+              </div>
+              <p className="text-[10px] leading-snug text-muted-foreground">
+                {t.realWidthHint}
+              </p>
+            </div>
           )}
         </div>
       </section>
