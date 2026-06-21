@@ -21,6 +21,12 @@ interface MobileInfoSheetProps {
 	elevationEnabled: boolean;
 	markers?: TrackMarkers | null;
 	viewMode?: TrackViewMode;
+	trackWidth?: number;
+	realWidthAvailable?: boolean;
+	realWidthEnabled?: boolean;
+	meanWidthMeters?: number | null;
+	minWidthMeters?: number | null;
+	maxWidthMeters?: number | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }
@@ -33,6 +39,12 @@ export default function MobileInfoSheet({
 	elevationEnabled,
 	markers,
 	viewMode,
+	trackWidth,
+	realWidthAvailable,
+	realWidthEnabled,
+	meanWidthMeters,
+	minWidthMeters,
+	maxWidthMeters,
 	open,
 	onOpenChange,
 }: MobileInfoSheetProps) {
@@ -68,6 +80,12 @@ export default function MobileInfoSheet({
 					elevationEnabled={elevationEnabled}
 					markers={markers}
 					viewMode={viewMode}
+					trackWidth={trackWidth}
+					realWidthAvailable={realWidthAvailable}
+					realWidthEnabled={realWidthEnabled}
+					meanWidthMeters={meanWidthMeters}
+					minWidthMeters={minWidthMeters}
+					maxWidthMeters={maxWidthMeters}
 				/>
 			</SheetContent>
 		</Sheet>

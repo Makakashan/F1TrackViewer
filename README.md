@@ -8,6 +8,7 @@ Interactive 3D viewer for Formula 1 circuits — Next.js 16 + Three.js + Tailwin
 
 - **31 circuits** from `bacinger/f1-circuits` with non-fallback sector data (Monaco, Monza, Silverstone, Spa, Suzuka, Las Vegas, Jeddah, and more)
 - **Extruded 3D track mesh** — solid ribbon with side walls, not a flat tube. Track width adjustable 3–15 m
+- **Real per-point track width** for 20 modern circuits from [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database) — the ribbon widens and narrows like the real circuit, aligned to the layout by curvature correlation
 - **Elevation profile** via [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) — SRTM data smoothed for street circuits (Monaco, Baku)
 - **Mean-subtracted altitude** — high-altitude tracks (Mexico, ~2200 m) stay grounded
 - **OrbitControls** — left-drag to rotate, right-drag to pan, wheel to zoom
@@ -69,6 +70,7 @@ Open http://localhost:4000
 | `bun run build:pages` | Static export for GitHub Pages |
 | `bun run lint` | ESLint check |
 | `bun run elevations:generate` | Pre-generate static elevation JSONs |
+| `bun run widths:generate` | Pre-generate static real-track-width JSONs (TUMFTM) |
 
 ---
 
@@ -101,6 +103,7 @@ src/
 │   ├── track-geometry.ts     # Three.js BufferGeometry builders
 │   ├── f1-circuits.ts        # GitHub API helpers
 │   ├── start-finish.ts       # Marker overrides + start/finish geometry
+│   ├── track-width.ts        # Real per-point width profile loader (TUMFTM)
 │   └── i18n.ts               # Language dictionaries
 └── docs/
     └── architecture.md       # Detailed architecture docs
@@ -114,7 +117,7 @@ src/
 - [x] **MVP 1.5** — elevation profile + ribbon mesh + i18n + theming
 - [x] **MVP 2** — corrected track base: real elevation x1, width control, camera presets, start/finish marker, direction arrow, URL state
 - [x] **MVP 3** — real sector view mode, no synthetic equal-split fallback layouts in the app, Monaco OpenStreetMap diorama, terrain draping, consolidated viewer controls
-- [ ] **MVP 3.5** — [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database): real track width
+- [x] **MVP 3.5** — [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database) real per-point track width for 20 circuits, curvature-aligned to each layout, with a "Real width" toggle and `?realwidth=` URL state
 - [ ] **MVP 4** — sessions, telemetry, and animated car position
 
 ---
@@ -130,7 +133,7 @@ src/
 | [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) | Track geometry + metadata | MIT |
 | [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) | Elevation (SRTM-3) | CC-BY 4.0 |
 | [OpenTopoData](https://opentopodata.org/) | Alternative elevation source | CC-BY 4.0 |
-| [TUMFTM](https://github.com/TUMFTM/racetrack-database) | Track width data (planned) | LGPL-3.0 |
+| [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database) | Real per-point track width | LGPL-3.0 |
 
 ---
 

@@ -1,6 +1,15 @@
 "use client";
 
-import { Camera, Flag, Layers, Map, Mountain, RotateCw, Ruler } from "lucide-react";
+import {
+  Camera,
+  Flag,
+  Layers,
+  Map,
+  Mountain,
+  RotateCw,
+  Ruler,
+  Spline,
+} from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAppPref } from "@/components/app-pref-provider";
@@ -23,6 +32,10 @@ export interface TrackSettingsPanelProps {
   setEnvironmentEnabled: (v: boolean) => void;
   environmentTerrain: boolean;
   setEnvironmentTerrain: (v: boolean) => void;
+  realWidthAvailable: boolean;
+  realWidthEnabled: boolean;
+  setRealWidthEnabled: (v: boolean) => void;
+  meanWidthMeters: number | null;
 }
 
 function SettingRow({
@@ -61,8 +74,13 @@ export default function TrackSettingsPanel({
   setEnvironmentEnabled,
   environmentTerrain,
   setEnvironmentTerrain,
+  realWidthAvailable,
+  realWidthEnabled,
+  setRealWidthEnabled,
+  meanWidthMeters,
 }: TrackSettingsPanelProps) {
   const { t } = useAppPref();
+  const realWidthActive = realWidthAvailable && realWidthEnabled;
 
   return (
     <div className="f1tv-scroll flex h-full flex-col gap-4 overflow-y-auto p-4">
@@ -121,6 +139,19 @@ export default function TrackSettingsPanel({
         <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
           {t.track}
         </div>
+
+        {realWidthAvailable && (
+          <SettingRow
+            icon={<Spline className="h-3.5 w-3.5" />}
+            label={t.realWidth}
+          >
+            <Switch
+              checked={realWidthEnabled}
+              onCheckedChange={setRealWidthEnabled}
+            />
+          </SettingRow>
+        )}
+
         <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
           <div className="flex items-center justify-between">
             <Label
@@ -131,8 +162,9 @@ export default function TrackSettingsPanel({
               {t.trackWidth}
             </Label>
             <span className="text-xs tabular-nums text-foreground">
-              {trackWidth}
-              {t.unitM}
+              {realWidthActive && meanWidthMeters != null
+                ? `~${meanWidthMeters}${t.unitM}`
+                : `${trackWidth}${t.unitM}`}
             </span>
           </div>
           <input
@@ -142,9 +174,15 @@ export default function TrackSettingsPanel({
             max={15}
             step={1}
             value={trackWidth}
+            disabled={realWidthActive}
             onChange={(event) => setTrackWidth(Number(event.target.value))}
-            className="mt-3 h-1 w-full cursor-pointer accent-[#e10600]"
+            className="mt-3 h-1 w-full cursor-pointer accent-[#e10600] disabled:cursor-not-allowed disabled:opacity-40"
           />
+          {realWidthActive && (
+            <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+              {t.realWidthHint}
+            </p>
+          )}
         </div>
       </section>
 

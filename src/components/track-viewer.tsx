@@ -16,7 +16,9 @@ import {
   buildTrackOutline,
   buildSectorMesh,
   buildSectorSplitLineGeometry,
+  type HalfWidth,
 } from "@/lib/track-geometry";
+import { sampleWidthAt, type TrackWidthProfile } from "@/lib/track-width";
 import {
   buildDirectionArrowGeometry,
   buildStartFinishGantryGeometry,
@@ -49,6 +51,8 @@ export interface TrackViewerProps {
   markers?: TrackMarkers | null;
   environmentBundle?: EnvironmentBundle | null;
   environmentTerrain?: boolean;
+  widthProfile?: TrackWidthProfile | null;
+  realWidthEnabled?: boolean;
 }
 
 const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
@@ -95,6 +99,8 @@ function TrackMesh({
   markers,
   environmentBundle,
   environmentTerrain,
+  widthProfile,
+  realWidthEnabled,
 }: {
   geojson: CircuitGeoJSON;
   trackWidth: number;
@@ -110,10 +116,27 @@ function TrackMesh({
   markers?: TrackMarkers | null;
   environmentBundle?: EnvironmentBundle | null;
   environmentTerrain?: boolean;
+  widthProfile?: TrackWidthProfile | null;
+  realWidthEnabled?: boolean;
 }) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
   const hasEnvironment = !!environmentBundle;
+
+  // Real per-point track width (TUMFTM) vs. the uniform manual slider.
+  // When active, the ribbon half-width varies along normalized arc length;
+  // overlay markers use the mean half-width so they stay proportional.
+  const realWidthActive = !!realWidthEnabled && !!widthProfile;
+  const halfWidth = useMemo<HalfWidth>(() => {
+    if (realWidthActive && widthProfile) {
+      return (s: number) => sampleWidthAt(widthProfile, s) / 2;
+    }
+    return trackWidth;
+  }, [realWidthActive, widthProfile, trackWidth]);
+  const markerHalfWidth =
+    realWidthActive && widthProfile
+      ? widthProfile.meanWidthMeters / 2
+      : trackWidth;
 
   const bounds = useMemo(() => computeBounds(coords), [coords]);
 
@@ -179,18 +202,18 @@ function TrackMesh({
     () =>
       buildExtrudedTrack(
         curve,
-        trackWidth,
+        halfWidth,
         0.5,
         groundY,
         samples,
         terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
       ),
-    [curve, trackWidth, groundY, samples, terrainSampler],
+    [curve, halfWidth, groundY, samples, terrainSampler],
   );
 
   const outlineGeometry = useMemo(
-    () => buildTrackOutline(curve, trackWidth, 0.5, samples),
-    [curve, trackWidth, samples],
+    () => buildTrackOutline(curve, halfWidth, 0.5, samples),
+    [curve, halfWidth, samples],
   );
 
   const startFinishPlacement = useMemo(
@@ -214,10 +237,10 @@ function TrackMesh({
       buildStartFinishGeometry(
         curve,
         startFinishPlacement.s,
-        trackWidth,
+        markerHalfWidth,
         0.5,
       ),
-    [curve, startFinishPlacement.s, trackWidth],
+    [curve, startFinishPlacement.s, markerHalfWidth],
   );
 
   const directionArrowGeometry = useMemo(
@@ -225,10 +248,10 @@ function TrackMesh({
       buildDirectionArrowGeometry(
         curve,
         startFinishPlacement.s,
-        trackWidth,
+        markerHalfWidth,
         0.5,
       ),
-    [curve, startFinishPlacement.s, trackWidth],
+    [curve, startFinishPlacement.s, markerHalfWidth],
   );
 
   const startFinishGantryGeometry = useMemo(
@@ -236,10 +259,10 @@ function TrackMesh({
       buildStartFinishGantryGeometry(
         curve,
         startFinishPlacement.s,
-        trackWidth,
+        markerHalfWidth,
         0.5,
       ),
-    [curve, startFinishPlacement.s, trackWidth],
+    [curve, startFinishPlacement.s, markerHalfWidth],
   );
 
   // ─── Sector geometries ────────────────────────────────────────────
@@ -252,14 +275,14 @@ function TrackMesh({
         curve,
         sector,
         markers,
-        trackWidth,
+        halfWidth,
         0.5,
         groundY,
         samples,
         terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
       ),
     );
-  }, [showSectors, curve, markers, trackWidth, groundY, samples, terrainSampler]);
+  }, [showSectors, curve, markers, halfWidth, groundY, samples, terrainSampler]);
 
   const splitLineGeometries = useMemo(() => {
     if (!showSectors || !markers) return [];
@@ -271,11 +294,11 @@ function TrackMesh({
           curve,
           sector.toDistance,
           markers,
-          trackWidth,
+          markerHalfWidth,
           0.5,
         ),
       );
-  }, [showSectors, curve, markers, trackWidth]);
+  }, [showSectors, curve, markers, markerHalfWidth]);
 
   // Separate cleanup effects so that sector geometry changes don't
   // dispose the stable track/outline/marker geometries (which would
@@ -565,6 +588,8 @@ export default function TrackViewer({
   markers,
   environmentBundle,
   environmentTerrain = true,
+  widthProfile,
+  realWidthEnabled = true,
 }: TrackViewerProps) {
   const [canvasEventSource, setCanvasEventSource] =
     useState<HTMLDivElement | null>(null);
@@ -788,6 +813,8 @@ export default function TrackViewer({
                 markers={markers}
                 environmentBundle={environmentBundle}
                 environmentTerrain={environmentTerrain}
+                widthProfile={widthProfile}
+                realWidthEnabled={realWidthEnabled}
               />
             </Suspense>
 
