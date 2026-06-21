@@ -102,7 +102,7 @@ export default function F1TrackApp({
     useState<TrackWidthProfile | null | undefined>(undefined);
   const urlRealWidth = urlParams.get("realwidth");
   const [realWidthEnabled, setRealWidthEnabled] = useState<boolean>(
-    () => urlRealWidth !== "0",
+    () => urlRealWidth === "1",
   );
   const [mobileListOpen, setMobileListOpen] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
@@ -113,7 +113,7 @@ export default function F1TrackApp({
   const [footerDismissed, setFooterDismissed] = useState(false);
   const urlSectors = urlParams.get("sectors");
   const [viewMode, setViewMode] = useState<TrackViewMode>(() =>
-    urlSectors === "0" ? "normal" : "sectors",
+    urlRealWidth === "1" || urlSectors === "0" ? "normal" : "sectors",
   );
   const [markers, setMarkers] = useState<TrackMarkers | null>(null);
   // Environment diorama — Monaco MVP3. ?environment=1 opts in; null means
@@ -265,14 +265,20 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, [cameraPreset, urlCamera]);
 
-  // Hydrate viewMode from URL. Sector view is the default; ?sectors=0 disables it.
+  // Width and sector visualization are mutually exclusive. Explicit width mode
+  // wins if an old/shared URL happens to contain both flags.
   useEffect(() => {
     if (didApplyInitialSectors.current) return;
     const urlSectorsNow = new URLSearchParams(window.location.search).get(
       "sectors",
     );
+    const urlRealWidthNow = new URLSearchParams(window.location.search).get(
+      "realwidth",
+    );
     const targetMode: TrackViewMode =
-      urlSectorsNow === "0" ? "normal" : "sectors";
+      urlRealWidthNow === "1" || urlSectorsNow === "0"
+        ? "normal"
+        : "sectors";
     if (targetMode === viewMode) {
       didApplyInitialSectors.current = true;
       return;
@@ -322,7 +328,8 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, [environmentTerrain]);
 
-  // Hydrate real-width toggle from URL (?realwidth=0 disables it, default ON).
+  // Hydrate real-width toggle from URL. It is opt-in because sector view is
+  // the default visualization and the two modes are mutually exclusive.
   useEffect(() => {
     if (didApplyInitialRealWidth.current) return;
     const urlRw = new URLSearchParams(window.location.search).get("realwidth");
@@ -422,6 +429,16 @@ export default function F1TrackApp({
     setCameraPreset(preset);
   }, []);
 
+  const handleViewModeChange = useCallback((next: TrackViewMode) => {
+    setViewMode(next);
+    if (next === "sectors") setRealWidthEnabled(false);
+  }, []);
+
+  const handleRealWidthChange = useCallback((enabled: boolean) => {
+    setRealWidthEnabled(enabled);
+    if (enabled) setViewMode("normal");
+  }, []);
+
   const properties: CircuitProperties | null =
     geojson?.features[0]?.properties ?? null;
   const pointCount = geojson?.features[0]?.geometry.coordinates.length;
@@ -518,7 +535,7 @@ export default function F1TrackApp({
               setTrackWidth={setTrackWidth}
               onCameraPreset={handleCameraPreset}
               viewMode={viewMode}
-              setViewMode={setViewMode}
+              setViewMode={handleViewModeChange}
               sectorsAvailable={sectorsAvailable}
               environmentAvailable={!!environmentBundle}
               environmentEnabled={environmentEnabled}
@@ -527,8 +544,10 @@ export default function F1TrackApp({
               setEnvironmentTerrain={setEnvironmentTerrain}
               realWidthAvailable={realWidthAvailable}
               realWidthEnabled={realWidthEnabled}
-              setRealWidthEnabled={setRealWidthEnabled}
+              setRealWidthEnabled={handleRealWidthChange}
               meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
+              minWidthMeters={widthProfile?.minWidthMeters ?? null}
+              maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
             />
           )}
 
@@ -566,7 +585,7 @@ export default function F1TrackApp({
             trackWidth={trackWidth}
             setTrackWidth={setTrackWidth}
             onCameraPreset={handleCameraPreset}
-            setViewMode={setViewMode}
+            setViewMode={handleViewModeChange}
             sectorsAvailable={sectorsAvailable}
             environmentAvailable={!!environmentBundle}
             environmentEnabled={environmentEnabled}
@@ -575,7 +594,7 @@ export default function F1TrackApp({
             setEnvironmentTerrain={setEnvironmentTerrain}
             realWidthAvailable={realWidthAvailable}
             realWidthEnabled={realWidthEnabled}
-            setRealWidthEnabled={setRealWidthEnabled}
+            setRealWidthEnabled={handleRealWidthChange}
             meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
             minWidthMeters={widthProfile?.minWidthMeters ?? null}
             maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
