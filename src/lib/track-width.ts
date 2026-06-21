@@ -24,12 +24,46 @@ export interface TrackWidthProfile {
 }
 
 /**
+ * Circuits that ship a real-width profile under public/track-widths/. Kept in
+ * sync with CIRCUIT_TO_TUMFTM in scripts/generate-track-widths.ts. Used to gate
+ * the fetch so we never request a missing file (which would 404 in the console
+ * for the ~20 circuits without TUMFTM data).
+ */
+export const TRACK_WIDTH_CIRCUIT_IDS = new Set([
+  "ae-2009",
+  "at-1969",
+  "au-1953",
+  "be-1925",
+  "bh-2002",
+  "br-1940",
+  "ca-1978",
+  "cn-2004",
+  "de-1927",
+  "de-1932",
+  "es-1991",
+  "gb-1948",
+  "hu-1986",
+  "it-1922",
+  "jp-1962",
+  "mx-1962",
+  "my-1999",
+  "nl-1948",
+  "ru-2014",
+  "us-2012",
+]);
+
+export function hasTrackWidthProfile(circuitId: string): boolean {
+  return TRACK_WIDTH_CIRCUIT_IDS.has(circuitId);
+}
+
+/**
  * Fetch the real-width profile for a circuit, or null when none is published
  * (only ~20 modern layouts exist in the TUMFTM dataset).
  */
 export async function fetchTrackWidthProfile(
   circuitId: string,
 ): Promise<TrackWidthProfile | null> {
+  if (!TRACK_WIDTH_CIRCUIT_IDS.has(circuitId)) return null;
   try {
     const res = await fetch(
       `${PUBLIC_BASE_PATH}/track-widths/${encodeURIComponent(circuitId)}.json`,
