@@ -74,7 +74,6 @@ const VISIBLE_LANDUSE_KINDS = new Set<LandusePolygon["kind"]>([
   "wood",
   "grass",
 ]);
-const BOARD_MARGIN = 1.35;
 const MIN_WATER_AREA_SQ_M = 2_500;
 const TERRAIN_SKIRT_BOTTOM_Y = -2;
 const TERRAIN_BASE_SLAB_DEPTH = 10;
@@ -95,6 +94,47 @@ function isPointInPolygon(
     if (intersects) inside = !inside;
   }
   return inside;
+}
+
+type LonLat = [number, number];
+
+function clipPolygonToBBox(points: LonLat[], bbox: { minLon: number; minLat: number; maxLon: number; maxLat: number }): LonLat[] {
+  if (points.length < 3) return points;
+  let out = points.slice();
+  const edges: [((p: LonLat) => number), number][] = [
+    [(p) => p[0], bbox.minLon],
+    [(p) => -p[0], -bbox.maxLon],
+    [(p) => p[1], bbox.minLat],
+    [(p) => -p[1], -bbox.maxLat],
+  ];
+  for (const [axis, val] of edges) {
+    if (out.length < 3) return out;
+    const input = out;
+    out = [];
+    for (let i = 0; i < input.length; i++) {
+      const cur = input[i];
+      const prev = input[(i + input.length - 1) % input.length];
+      const cInside = axis(cur) >= val;
+      const pInside = axis(prev) >= val;
+      if (cInside) {
+        if (!pInside) {
+          const denom = axis(cur) - axis(prev);
+          if (denom !== 0) {
+            const t = (val - axis(prev)) / denom;
+            out.push([prev[0] + t * (cur[0] - prev[0]), prev[1] + t * (cur[1] - prev[1])]);
+          }
+        }
+        out.push(cur);
+      } else if (pInside) {
+        const denom = axis(cur) - axis(prev);
+        if (denom !== 0) {
+          const t = (val - axis(prev)) / denom;
+          out.push([prev[0] + t * (cur[0] - prev[0]), prev[1] + t * (cur[1] - prev[1])]);
+        }
+      }
+    }
+  }
+  return out;
 }
 
 function polygonArea2D(points: { x: number; y: number }[]): number {
@@ -186,6 +226,7 @@ export default function EnvironmentLayer({
         terrainSampler={terrainSampler}
         drapeY={LAYER_Y_DRAPE.landuse}
         flatY={LAYER_Y_FLAT.landuse}
+        bbox={manifest.bbox}
       />
       <WaterPolygons
         polygons={bundle.water.polygons}
@@ -195,6 +236,7 @@ export default function EnvironmentLayer({
         terrainSampler={terrainSampler}
         drapeY={LAYER_Y_DRAPE.water}
         flatY={LAYER_Y_FLAT.water}
+        bbox={manifest.bbox}
       />
       <RoadLinesMesh
         roads={bundle.roads.roads}
@@ -204,6 +246,7 @@ export default function EnvironmentLayer({
         terrainSampler={terrainSampler}
         drapeY={LAYER_Y_DRAPE.roads}
         flatY={LAYER_Y_FLAT.roads}
+        bbox={manifest.bbox}
       />
       <BuildingExtrusions
         buildings={bundle.buildings.buildings}
@@ -245,16 +288,12 @@ function DioramaBase({
     originLat,
   );
   const halfW =
-    (manifest
-    ? Math.max(
-        bundle.terrain.widthMeters / 2,
-        ((manifest.bbox.maxLon - manifest.bbox.minLon) *
-          111_320 *
-          Math.cos((manifest.center.lat * Math.PI) / 180)) /
-          2,
-        ((manifest.bbox.maxLat - manifest.bbox.minLat) * 111_320) / 2,
-      )
-    : 500) * BOARD_MARGIN;
+    ((manifest.bbox.maxLon - manifest.bbox.minLon) *
+      111_320 *
+      Math.cos((manifest.center.lat * Math.PI) / 180)) /
+    2;
+  const halfH =
+    ((manifest.bbox.maxLat - manifest.bbox.minLat) * 111_320) / 2;
 
   const isDark = resolvedTheme === "dark";
 
@@ -325,7 +364,7 @@ function DioramaBase({
         receiveShadow
       >
         <boxGeometry
-          args={[halfW * 2, TERRAIN_BASE_SLAB_DEPTH, halfW * 2, 1, 1, 1]}
+          args={[halfW * 2, TERRAIN_BASE_SLAB_DEPTH, halfH * 2, 1, 1, 1]}
         />
         {material}
       </mesh>
@@ -338,7 +377,7 @@ function DioramaBase({
       position={[center.x, yPos, center.z]}
       receiveShadow
     >
-      <planeGeometry args={[halfW * 2, halfW * 2, 1, 1]} />
+      <planeGeometry args={[halfW * 2, halfH * 2, 1, 1]} />
       {material}
     </mesh>
   );
@@ -597,6 +636,7 @@ function WaterPolygons({
   terrainSampler,
   drapeY,
   flatY,
+  bbox,
 }: {
   polygons: WaterPolygon[];
   originLon: number;
@@ -605,12 +645,15 @@ function WaterPolygons({
   terrainSampler: TerrainSampler | null;
   drapeY: number;
   flatY: number;
+  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
 }) {
   const geometry = useMemo(() => {
     const shapes: THREE.Shape[] = [];
     for (const poly of polygons) {
       if (poly.points.length < 3) continue;
-      const projected = poly.points.map(([lon, lat]) =>
+      const pts = bbox ? clipPolygonToBBox(poly.points, bbox) : poly.points;
+      if (pts.length < 3) continue;
+      const projected = pts.map(([lon, lat]) =>
         lonLatToShapeXY(lon, lat, originLon, originLat),
       );
       if (polygonArea2D(projected) < MIN_WATER_AREA_SQ_M) continue;
@@ -636,7 +679,7 @@ function WaterPolygons({
       geo.translate(0, baseY + flatY, 0);
     }
     return geo;
-  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
+  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY, bbox]);
 
   useEffect(() => {
     return () => {
@@ -673,6 +716,7 @@ function LandusePolygons({
   terrainSampler,
   drapeY,
   flatY,
+  bbox,
 }: {
   polygons: LandusePolygon[];
   originLon: number;
@@ -681,21 +725,26 @@ function LandusePolygons({
   terrainSampler: TerrainSampler | null;
   drapeY: number;
   flatY: number;
+  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
 }) {
-  // Group only visible green-space polygons by color. Neutral landuse
-  // polygons overlap heavily in OSM and cause z-fighting, so the base board
-  // represents the generic city floor instead.
   const groups = useMemo(() => {
     if (terrainSampler) return [];
     const map = new Map<string, LandusePolygon[]>();
     for (const p of polygons) {
       if (!VISIBLE_LANDUSE_KINDS.has(p.kind)) continue;
+      if (bbox && p.points.length >= 3) {
+        let sumLon = 0, sumLat = 0;
+        for (const [lon, lat] of p.points) { sumLon += lon; sumLat += lat; }
+        const cLon = sumLon / p.points.length;
+        const cLat = sumLat / p.points.length;
+        if (cLon < bbox.minLon || cLon > bbox.maxLon || cLat < bbox.minLat || cLat > bbox.maxLat) continue;
+      }
       const color = landuseColor(p.kind);
       if (!map.has(color)) map.set(color, []);
       map.get(color)!.push(p);
     }
     return Array.from(map.entries());
-  }, [polygons, terrainSampler]);
+  }, [polygons, terrainSampler, bbox]);
 
   if (!groups.length) return null;
 
@@ -712,6 +761,7 @@ function LandusePolygons({
           terrainSampler={terrainSampler}
           drapeY={drapeY}
           flatY={flatY}
+          bbox={bbox}
         />
       ))}
     </group>
@@ -727,6 +777,7 @@ function LanduseGroup({
   terrainSampler,
   drapeY,
   flatY,
+  bbox,
 }: {
   color: string;
   polygons: LandusePolygon[];
@@ -736,13 +787,16 @@ function LanduseGroup({
   terrainSampler: TerrainSampler | null;
   drapeY: number;
   flatY: number;
+  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
 }) {
   const geometry = useMemo(() => {
     const shapes: THREE.Shape[] = [];
     for (const poly of polygons) {
       if (poly.points.length < 3) continue;
+      const pts = bbox ? clipPolygonToBBox(poly.points, bbox) : poly.points;
+      if (pts.length < 3) continue;
       const shape = new THREE.Shape();
-      poly.points.forEach(([lon, lat], i) => {
+      pts.forEach(([lon, lat], i) => {
         const { x, y } = lonLatToShapeXY(lon, lat, originLon, originLat);
         if (i === 0) shape.moveTo(x, y);
         else shape.lineTo(x, y);
@@ -751,7 +805,7 @@ function LanduseGroup({
       shapes.push(shape);
     }
     return drapeShapeGeometry(shapes, originLon, originLat, terrainSampler, baseY, drapeY, flatY);
-  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
+  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY, bbox]);
 
   useEffect(() => {
     return () => {
@@ -786,6 +840,7 @@ function RoadLinesMesh({
   terrainSampler,
   drapeY,
   flatY,
+  bbox,
 }: {
   roads: RoadLine[];
   originLon: number;
@@ -794,6 +849,7 @@ function RoadLinesMesh({
   terrainSampler: TerrainSampler | null;
   drapeY: number;
   flatY: number;
+  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
 }) {
   const geometry = useMemo(() => {
     if (terrainSampler) return null;
@@ -801,13 +857,15 @@ function RoadLinesMesh({
     for (const road of roads) {
       if (road.points.length < 2) continue;
       for (let i = 0; i < road.points.length - 1; i++) {
-        const a = lonLatToXZ(road.points[i][0], road.points[i][1], originLon, originLat);
-        const b = lonLatToXZ(
-          road.points[i + 1][0],
-          road.points[i + 1][1],
-          originLon,
-          originLat,
-        );
+        const [aLon, aLat] = road.points[i];
+        const [bLon, bLat] = road.points[i + 1];
+        if (bbox) {
+          const aIn = aLon >= bbox.minLon && aLon <= bbox.maxLon && aLat >= bbox.minLat && aLat <= bbox.maxLat;
+          const bIn = bLon >= bbox.minLon && bLon <= bbox.maxLon && bLat >= bbox.minLat && bLat <= bbox.maxLat;
+          if (!aIn && !bIn) continue;
+        }
+        const a = lonLatToXZ(aLon, aLat, originLon, originLat);
+        const b = lonLatToXZ(bLon, bLat, originLon, originLat);
         positions.push(a.x, baseY + flatY, a.z, b.x, baseY + flatY, b.z);
       }
     }
@@ -815,7 +873,7 @@ function RoadLinesMesh({
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     return geo;
-  }, [roads, originLon, originLat, terrainSampler, baseY, flatY]);
+  }, [roads, originLon, originLat, terrainSampler, baseY, flatY, bbox]);
 
   useEffect(() => {
     return () => {
@@ -863,7 +921,6 @@ function BuildingExtrusions({
   const capped = useMemo(() => {
     let filtered = buildings.slice(0, 800);
     if (bbox) {
-      const pad = 0.0005;
       filtered = filtered.filter((b) => {
         if (b.footprint.length < 3) return false;
         let sumLon = 0, sumLat = 0;
@@ -874,10 +931,10 @@ function BuildingExtrusions({
         const cLon = sumLon / b.footprint.length;
         const cLat = sumLat / b.footprint.length;
         return (
-          cLon >= bbox.minLon - pad &&
-          cLon <= bbox.maxLon + pad &&
-          cLat >= bbox.minLat - pad &&
-          cLat <= bbox.maxLat + pad
+          cLon >= bbox.minLon &&
+          cLon <= bbox.maxLon &&
+          cLat >= bbox.minLat &&
+          cLat <= bbox.maxLat
         );
       });
     }
