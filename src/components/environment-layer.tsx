@@ -921,7 +921,6 @@ function BuildingExtrusions({
   const capped = useMemo(() => {
     let filtered = buildings.slice(0, 800);
     if (bbox) {
-      const pad = 0.0005;
       filtered = filtered.filter((b) => {
         if (b.footprint.length < 3) return false;
         let sumLon = 0, sumLat = 0;
@@ -932,10 +931,10 @@ function BuildingExtrusions({
         const cLon = sumLon / b.footprint.length;
         const cLat = sumLat / b.footprint.length;
         return (
-          cLon >= bbox.minLon - pad &&
-          cLon <= bbox.maxLon + pad &&
-          cLat >= bbox.minLat - pad &&
-          cLat <= bbox.maxLat + pad
+          cLon >= bbox.minLon &&
+          cLon <= bbox.maxLon &&
+          cLat >= bbox.minLat &&
+          cLat <= bbox.maxLat
         );
       });
     }
