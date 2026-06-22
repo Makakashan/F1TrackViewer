@@ -246,6 +246,7 @@ export default function EnvironmentLayer({
         terrainSampler={terrainSampler}
         drapeY={LAYER_Y_DRAPE.roads}
         flatY={LAYER_Y_FLAT.roads}
+        bbox={manifest.bbox}
       />
       <BuildingExtrusions
         buildings={bundle.buildings.buildings}
@@ -839,6 +840,7 @@ function RoadLinesMesh({
   terrainSampler,
   drapeY,
   flatY,
+  bbox,
 }: {
   roads: RoadLine[];
   originLon: number;
@@ -847,6 +849,7 @@ function RoadLinesMesh({
   terrainSampler: TerrainSampler | null;
   drapeY: number;
   flatY: number;
+  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
 }) {
   const geometry = useMemo(() => {
     if (terrainSampler) return null;
@@ -854,13 +857,15 @@ function RoadLinesMesh({
     for (const road of roads) {
       if (road.points.length < 2) continue;
       for (let i = 0; i < road.points.length - 1; i++) {
-        const a = lonLatToXZ(road.points[i][0], road.points[i][1], originLon, originLat);
-        const b = lonLatToXZ(
-          road.points[i + 1][0],
-          road.points[i + 1][1],
-          originLon,
-          originLat,
-        );
+        const [aLon, aLat] = road.points[i];
+        const [bLon, bLat] = road.points[i + 1];
+        if (bbox) {
+          const aIn = aLon >= bbox.minLon && aLon <= bbox.maxLon && aLat >= bbox.minLat && aLat <= bbox.maxLat;
+          const bIn = bLon >= bbox.minLon && bLon <= bbox.maxLon && bLat >= bbox.minLat && bLat <= bbox.maxLat;
+          if (!aIn && !bIn) continue;
+        }
+        const a = lonLatToXZ(aLon, aLat, originLon, originLat);
+        const b = lonLatToXZ(bLon, bLat, originLon, originLat);
         positions.push(a.x, baseY + flatY, a.z, b.x, baseY + flatY, b.z);
       }
     }
@@ -868,7 +873,7 @@ function RoadLinesMesh({
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     return geo;
-  }, [roads, originLon, originLat, terrainSampler, baseY, flatY]);
+  }, [roads, originLon, originLat, terrainSampler, baseY, flatY, bbox]);
 
   useEffect(() => {
     return () => {
