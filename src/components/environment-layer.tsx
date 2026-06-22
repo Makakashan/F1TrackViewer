@@ -96,6 +96,47 @@ function isPointInPolygon(
   return inside;
 }
 
+type LonLat = [number, number];
+
+function clipPolygonToBBox(points: LonLat[], bbox: { minLon: number; minLat: number; maxLon: number; maxLat: number }): LonLat[] {
+  if (points.length < 3) return points;
+  let out = points.slice();
+  const edges: [((p: LonLat) => number), number][] = [
+    [(p) => p[0], bbox.minLon],
+    [(p) => -p[0], -bbox.maxLon],
+    [(p) => p[1], bbox.minLat],
+    [(p) => -p[1], -bbox.maxLat],
+  ];
+  for (const [axis, val] of edges) {
+    if (out.length < 3) return out;
+    const input = out;
+    out = [];
+    for (let i = 0; i < input.length; i++) {
+      const cur = input[i];
+      const prev = input[(i + input.length - 1) % input.length];
+      const cInside = axis(cur) >= val;
+      const pInside = axis(prev) >= val;
+      if (cInside) {
+        if (!pInside) {
+          const denom = axis(cur) - axis(prev);
+          if (denom !== 0) {
+            const t = (val - axis(prev)) / denom;
+            out.push([prev[0] + t * (cur[0] - prev[0]), prev[1] + t * (cur[1] - prev[1])]);
+          }
+        }
+        out.push(cur);
+      } else if (pInside) {
+        const denom = axis(cur) - axis(prev);
+        if (denom !== 0) {
+          const t = (val - axis(prev)) / denom;
+          out.push([prev[0] + t * (cur[0] - prev[0]), prev[1] + t * (cur[1] - prev[1])]);
+        }
+      }
+    }
+  }
+  return out;
+}
+
 function polygonArea2D(points: { x: number; y: number }[]): number {
   let area = 0;
   for (let i = 0; i < points.length; i++) {
@@ -185,6 +226,7 @@ export default function EnvironmentLayer({
         terrainSampler={terrainSampler}
         drapeY={LAYER_Y_DRAPE.landuse}
         flatY={LAYER_Y_FLAT.landuse}
+        bbox={manifest.bbox}
       />
       <WaterPolygons
         polygons={bundle.water.polygons}
@@ -194,6 +236,7 @@ export default function EnvironmentLayer({
         terrainSampler={terrainSampler}
         drapeY={LAYER_Y_DRAPE.water}
         flatY={LAYER_Y_FLAT.water}
+        bbox={manifest.bbox}
       />
       <RoadLinesMesh
         roads={bundle.roads.roads}
@@ -592,6 +635,7 @@ function WaterPolygons({
   terrainSampler,
   drapeY,
   flatY,
+  bbox,
 }: {
   polygons: WaterPolygon[];
   originLon: number;
@@ -600,12 +644,15 @@ function WaterPolygons({
   terrainSampler: TerrainSampler | null;
   drapeY: number;
   flatY: number;
+  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
 }) {
   const geometry = useMemo(() => {
     const shapes: THREE.Shape[] = [];
     for (const poly of polygons) {
       if (poly.points.length < 3) continue;
-      const projected = poly.points.map(([lon, lat]) =>
+      const pts = bbox ? clipPolygonToBBox(poly.points, bbox) : poly.points;
+      if (pts.length < 3) continue;
+      const projected = pts.map(([lon, lat]) =>
         lonLatToShapeXY(lon, lat, originLon, originLat),
       );
       if (polygonArea2D(projected) < MIN_WATER_AREA_SQ_M) continue;
@@ -631,7 +678,7 @@ function WaterPolygons({
       geo.translate(0, baseY + flatY, 0);
     }
     return geo;
-  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
+  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY, bbox]);
 
   useEffect(() => {
     return () => {
@@ -668,6 +715,7 @@ function LandusePolygons({
   terrainSampler,
   drapeY,
   flatY,
+  bbox,
 }: {
   polygons: LandusePolygon[];
   originLon: number;
@@ -676,21 +724,26 @@ function LandusePolygons({
   terrainSampler: TerrainSampler | null;
   drapeY: number;
   flatY: number;
+  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
 }) {
-  // Group only visible green-space polygons by color. Neutral landuse
-  // polygons overlap heavily in OSM and cause z-fighting, so the base board
-  // represents the generic city floor instead.
   const groups = useMemo(() => {
     if (terrainSampler) return [];
     const map = new Map<string, LandusePolygon[]>();
     for (const p of polygons) {
       if (!VISIBLE_LANDUSE_KINDS.has(p.kind)) continue;
+      if (bbox && p.points.length >= 3) {
+        let sumLon = 0, sumLat = 0;
+        for (const [lon, lat] of p.points) { sumLon += lon; sumLat += lat; }
+        const cLon = sumLon / p.points.length;
+        const cLat = sumLat / p.points.length;
+        if (cLon < bbox.minLon || cLon > bbox.maxLon || cLat < bbox.minLat || cLat > bbox.maxLat) continue;
+      }
       const color = landuseColor(p.kind);
       if (!map.has(color)) map.set(color, []);
       map.get(color)!.push(p);
     }
     return Array.from(map.entries());
-  }, [polygons, terrainSampler]);
+  }, [polygons, terrainSampler, bbox]);
 
   if (!groups.length) return null;
 
@@ -707,6 +760,7 @@ function LandusePolygons({
           terrainSampler={terrainSampler}
           drapeY={drapeY}
           flatY={flatY}
+          bbox={bbox}
         />
       ))}
     </group>
@@ -722,6 +776,7 @@ function LanduseGroup({
   terrainSampler,
   drapeY,
   flatY,
+  bbox,
 }: {
   color: string;
   polygons: LandusePolygon[];
@@ -731,13 +786,16 @@ function LanduseGroup({
   terrainSampler: TerrainSampler | null;
   drapeY: number;
   flatY: number;
+  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
 }) {
   const geometry = useMemo(() => {
     const shapes: THREE.Shape[] = [];
     for (const poly of polygons) {
       if (poly.points.length < 3) continue;
+      const pts = bbox ? clipPolygonToBBox(poly.points, bbox) : poly.points;
+      if (pts.length < 3) continue;
       const shape = new THREE.Shape();
-      poly.points.forEach(([lon, lat], i) => {
+      pts.forEach(([lon, lat], i) => {
         const { x, y } = lonLatToShapeXY(lon, lat, originLon, originLat);
         if (i === 0) shape.moveTo(x, y);
         else shape.lineTo(x, y);
@@ -746,7 +804,7 @@ function LanduseGroup({
       shapes.push(shape);
     }
     return drapeShapeGeometry(shapes, originLon, originLat, terrainSampler, baseY, drapeY, flatY);
-  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
+  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY, bbox]);
 
   useEffect(() => {
     return () => {
