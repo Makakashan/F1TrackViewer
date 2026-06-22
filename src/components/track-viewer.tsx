@@ -479,6 +479,7 @@ function TrackMesh({
             }}
           >
             <meshStandardMaterial
+              key={realWidthActive ? "real-width-colors" : "solid-track"}
               vertexColors={realWidthActive}
               color={realWidthActive ? "#ffffff" : trackColor}
               emissive={realWidthActive ? "#000000" : trackEmissive}
