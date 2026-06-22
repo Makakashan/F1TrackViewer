@@ -74,7 +74,6 @@ const VISIBLE_LANDUSE_KINDS = new Set<LandusePolygon["kind"]>([
   "wood",
   "grass",
 ]);
-const BOARD_MARGIN = 1.35;
 const MIN_WATER_AREA_SQ_M = 2_500;
 const TERRAIN_SKIRT_BOTTOM_Y = -2;
 const TERRAIN_BASE_SLAB_DEPTH = 10;
@@ -245,16 +244,12 @@ function DioramaBase({
     originLat,
   );
   const halfW =
-    (manifest
-    ? Math.max(
-        bundle.terrain.widthMeters / 2,
-        ((manifest.bbox.maxLon - manifest.bbox.minLon) *
-          111_320 *
-          Math.cos((manifest.center.lat * Math.PI) / 180)) /
-          2,
-        ((manifest.bbox.maxLat - manifest.bbox.minLat) * 111_320) / 2,
-      )
-    : 500) * BOARD_MARGIN;
+    ((manifest.bbox.maxLon - manifest.bbox.minLon) *
+      111_320 *
+      Math.cos((manifest.center.lat * Math.PI) / 180)) /
+    2;
+  const halfH =
+    ((manifest.bbox.maxLat - manifest.bbox.minLat) * 111_320) / 2;
 
   const isDark = resolvedTheme === "dark";
 
@@ -325,7 +320,7 @@ function DioramaBase({
         receiveShadow
       >
         <boxGeometry
-          args={[halfW * 2, TERRAIN_BASE_SLAB_DEPTH, halfW * 2, 1, 1, 1]}
+          args={[halfW * 2, TERRAIN_BASE_SLAB_DEPTH, halfH * 2, 1, 1, 1]}
         />
         {material}
       </mesh>
@@ -338,7 +333,7 @@ function DioramaBase({
       position={[center.x, yPos, center.z]}
       receiveShadow
     >
-      <planeGeometry args={[halfW * 2, halfW * 2, 1, 1]} />
+      <planeGeometry args={[halfW * 2, halfH * 2, 1, 1]} />
       {material}
     </mesh>
   );
