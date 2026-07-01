@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "mx-1962",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": -99.0899725,
+    "lat": 19.401727
+  },
+  "bbox": {
+    "minLon": -99.1063739517749,
+    "minLat": 19.38806088825009,
+    "maxLon": -99.0735710482251,
+    "maxLat": 19.41539311174991
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}

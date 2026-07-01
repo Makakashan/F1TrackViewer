@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "ru-2014",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": 39.9587295,
+    "lat": 43.4074555
+  },
+  "bbox": {
+    "minLon": 39.93494383272419,
+    "minLat": 43.393197888250086,
+    "maxLon": 39.98251516727581,
+    "maxLat": 43.421713111749916
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}

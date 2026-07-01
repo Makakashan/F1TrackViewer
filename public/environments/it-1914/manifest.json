@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "it-1914",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": 11.371521999999999,
+    "lat": 43.9974045
+  },
+  "bbox": {
+    "minLon": 11.353284551370878,
+    "minLat": 43.982554888250085,
+    "maxLon": 11.389759448629121,
+    "maxLat": 44.01225411174991
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}

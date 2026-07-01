@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "nl-1948",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": 4.545901499999999,
+    "lat": 52.388087
+  },
+  "bbox": {
+    "minLon": 4.52402306462117,
+    "minLat": 52.37537988825009,
+    "maxLon": 4.567779935378829,
+    "maxLat": 52.40079411174991
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}

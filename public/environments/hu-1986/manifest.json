@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "hu-1986",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": 19.2494675,
+    "lat": 47.5830225
+  },
+  "bbox": {
+    "minLon": 19.22900823901412,
+    "minLat": 47.568587888250086,
+    "maxLon": 19.26992676098588,
+    "maxLat": 47.59745711174991
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}
