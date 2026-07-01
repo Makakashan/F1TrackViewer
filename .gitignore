@@ -78,4 +78,6 @@ prompt
 /data/raw/
 /data/cache/
 images/
-public/
+public/*
+!public/environments/
+!public/environments/**
