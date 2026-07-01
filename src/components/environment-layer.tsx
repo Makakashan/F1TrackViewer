@@ -89,14 +89,14 @@ const THEME_COLORS = {
     road: "#C5CBD5",
   },
   dark: {
-    base: "#3F454E",
-    grid: "#59616C",
-    terrain: "#4A515B",
-    terrainSlab: "#343A43",
-    sideTop: "#3A414A",
-    sideBottom: "#252A31",
-    building: "#737B86",
-    road: DIORAMA_COLORS.road,
+    base: "#05070B",
+    grid: "#1A202A",
+    terrain: "#090D13",
+    terrainSlab: "#05070B",
+    sideTop: "#101722",
+    sideBottom: "#030406",
+    building: "#6F7887",
+    road: "#6F7784",
   },
 } as const;
 
