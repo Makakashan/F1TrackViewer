@@ -56,8 +56,9 @@ export interface TrackViewerProps {
 }
 
 const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
-const TERRAIN_TRACK_OFFSET = 0.6;
-const TERRAIN_TRACK_WALL_DEPTH = 0.8;
+const TERRAIN_TRACK_OFFSET = 2;
+const TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M = 14;
+const TERRAIN_TRACK_WALL_DEPTH = 3.2;
 
 function disposeGeometry(value: unknown) {
   const disposable = value as { dispose?: unknown } | null | undefined;
@@ -149,12 +150,37 @@ function TrackMesh({
     return buildTerrainSampler(environmentBundle.terrain, environmentBundle.manifest);
   }, [environmentBundle, environmentTerrain]);
 
+  const maxTerrainHeightNear = useCallback(
+    (lon: number, lat: number): number => {
+      if (!terrainSampler) return 0;
+      const metersPerDegLat = 111_320;
+      const metersPerDegLon = 111_320 * Math.cos((lat * Math.PI) / 180);
+      const dLat = TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M / metersPerDegLat;
+      const dLon = TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M / metersPerDegLon;
+      let max = terrainSampler.heightAt(lon, lat);
+      for (const [ox, oy] of [
+        [dLon, 0],
+        [-dLon, 0],
+        [0, dLat],
+        [0, -dLat],
+        [dLon, dLat],
+        [dLon, -dLat],
+        [-dLon, dLat],
+        [-dLon, -dLat],
+      ] as const) {
+        max = Math.max(max, terrainSampler.heightAt(lon + ox, lat + oy));
+      }
+      return max;
+    },
+    [terrainSampler],
+  );
+
   const { curve, peakY, minY } = useMemo(() => {
     if (terrainSampler) {
       let min = Infinity;
       let max = -Infinity;
       const c = buildTrackCurveWithY(coords, bounds, (lon, lat) => {
-        const y = terrainSampler.heightAt(lon, lat) + TERRAIN_TRACK_OFFSET;
+        const y = maxTerrainHeightNear(lon, lat) + TERRAIN_TRACK_OFFSET;
         if (y < min) min = y;
         if (y > max) max = y;
         return y;
@@ -186,7 +212,7 @@ function TrackMesh({
       minCurveY = min - mean;
     }
     return { curve: c, peakY: peak, minY: minCurveY };
-  }, [bounds, coords, elevations, hasEnvironment, terrainSampler]);
+  }, [bounds, coords, elevations, hasEnvironment, maxTerrainHeightNear, terrainSampler]);
 
   const groundY = useMemo(
     () => (hasEnvironment ? minY - 1 : -peakY - trackWidth * 2 - 1),
@@ -416,7 +442,7 @@ function TrackMesh({
           trackCoordinates={coords}
           originLon={bounds.centerLon}
           originLat={bounds.centerLat}
-          baseY={groundY}
+          baseY={terrainSampler ? 0 : groundY}
           showTerrain={environmentTerrain}
           resolvedTheme={resolvedTheme}
         />
@@ -430,6 +456,7 @@ function TrackMesh({
             <mesh
               key={`sector-${sector.id}`}
               geometry={sectorGeometries[i]}
+              renderOrder={30}
               onPointerDown={(event) => {
                 if (!calibrationEnabled) return;
                 event.stopPropagation();
@@ -444,8 +471,11 @@ function TrackMesh({
                 roughness={0.5}
                 metalness={0.05}
                 side={THREE.DoubleSide}
-                depthTest
-                depthWrite
+                depthTest={false}
+                depthWrite={false}
+                polygonOffset
+                polygonOffsetFactor={-10}
+                polygonOffsetUnits={-10}
               />
             </mesh>
           ))}
@@ -471,6 +501,7 @@ function TrackMesh({
               F1 red with emissive so it reads clearly on both themes. */}
           <mesh
             geometry={trackGeometry}
+            renderOrder={30}
             onPointerDown={(event) => {
               if (!calibrationEnabled) return;
               event.stopPropagation();
@@ -487,8 +518,11 @@ function TrackMesh({
               roughness={0.5}
               metalness={0.05}
               side={THREE.DoubleSide}
-              depthTest
-              depthWrite
+              depthTest={false}
+              depthWrite={false}
+              polygonOffset
+              polygonOffsetFactor={-10}
+              polygonOffsetUnits={-10}
             />
           </mesh>
         </>
@@ -496,11 +530,11 @@ function TrackMesh({
 
       {/* Track outline — thin black lines along both top edges of the
           ribbon. Provides visual definition between track and ground. */}
-      <lineSegments geometry={outlineGeometry}>
+      <lineSegments geometry={outlineGeometry} renderOrder={31}>
         <lineBasicMaterial
           color={outlineColor}
-          depthTest
-          depthWrite
+          depthTest={false}
+          depthWrite={false}
         />
       </lineSegments>
       </group>
