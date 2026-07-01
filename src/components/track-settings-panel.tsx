@@ -85,6 +85,8 @@ export default function TrackSettingsPanel({
 }: TrackSettingsPanelProps) {
   const { t } = useAppPref();
   const realWidthActive = realWidthAvailable && realWidthEnabled;
+  const terrainModeActive =
+    environmentAvailable && environmentEnabled && environmentTerrain;
 
   return (
     <div className="f1tv-scroll flex h-full flex-col gap-4 overflow-y-auto p-4">
@@ -133,10 +135,16 @@ export default function TrackSettingsPanel({
 
         <SettingRow icon={<Mountain className="h-3.5 w-3.5" />} label={t.elevations}>
           <Switch
-            checked={elevationEnabled}
+            checked={!terrainModeActive && elevationEnabled}
+            disabled={terrainModeActive}
             onCheckedChange={setElevationEnabled}
           />
         </SettingRow>
+        {terrainModeActive && (
+          <p className="px-1 text-[10px] leading-snug text-muted-foreground">
+            {t.elevationTerrainModeHint}
+          </p>
+        )}
       </section>
 
       <section className="space-y-2">

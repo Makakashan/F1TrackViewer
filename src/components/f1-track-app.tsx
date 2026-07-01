@@ -444,6 +444,8 @@ export default function F1TrackApp({
   const pointCount = geojson?.features[0]?.geometry.coordinates.length;
   const sectorsAvailable = !!markers?.sectors?.length;
   const realWidthAvailable = !!widthProfile;
+  const terrainModeActive =
+    !!environmentBundle && environmentEnabled && environmentTerrain;
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
@@ -556,7 +558,7 @@ export default function F1TrackApp({
             loadingTrack={loadingTrack}
             pointCount={pointCount}
             elevations={elevations}
-            elevationEnabled={elevationEnabled}
+            elevationEnabled={elevationEnabled && !terrainModeActive}
             markers={markers}
             viewMode={viewMode}
             trackWidth={trackWidth}
