@@ -39,6 +39,8 @@ export default function TrackSidePanel({
   maxWidthMeters,
 }: TrackSidePanelProps) {
   const { t } = useAppPref();
+  const terrainModeActive =
+    environmentAvailable && environmentEnabled && environmentTerrain;
 
   return (
     <Tabs defaultValue="info" className="h-full min-h-0 gap-0">
@@ -64,7 +66,7 @@ export default function TrackSidePanel({
           loading={loading}
           pointCount={pointCount}
           elevations={elevations}
-          elevationEnabled={elevationEnabled}
+          elevationEnabled={elevationEnabled && !terrainModeActive}
           markers={markers}
           viewMode={viewMode}
           trackWidth={trackWidth}
