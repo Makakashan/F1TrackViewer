@@ -8,6 +8,26 @@ export interface TerrainSampler {
   maxHeight: number;
 }
 
+export function terrainReferenceElevation(terrain: TerrainFile): number {
+  let min = Infinity;
+  let minNonNegative = Infinity;
+  for (const h of terrain.heights) {
+    if (!Number.isFinite(h)) continue;
+    if (h < min) min = h;
+    if (h >= 0 && h < minNonNegative) minNonNegative = h;
+  }
+  if (Number.isFinite(minNonNegative)) return minNonNegative;
+  return Number.isFinite(min) ? min : 0;
+}
+
+export function terrainLocalHeight(
+  height: number,
+  referenceElevation: number,
+): number {
+  if (!Number.isFinite(height)) return 0;
+  return Math.max(0, height - referenceElevation) * TERRAIN_VERTICAL_SCALE;
+}
+
 export function buildTerrainSampler(
   terrain: TerrainFile,
   manifest: EnvironmentManifest,
@@ -18,15 +38,21 @@ export function buildTerrainSampler(
   const maxLat = manifest.bbox.maxLat;
   const maxLon = manifest.bbox.maxLon;
 
-  let maxH = -Infinity;
+  const referenceElevation = terrainReferenceElevation(terrain);
+  let maxLocalHeight = 0;
   for (const h of terrain.heights) {
-    if (h > maxH) maxH = h;
+    maxLocalHeight = Math.max(
+      maxLocalHeight,
+      terrainLocalHeight(h, referenceElevation),
+    );
   }
-  const maxLocalHeight = Math.max(0, maxH) * TERRAIN_VERTICAL_SCALE;
 
   const localHeights = new Float32Array(terrain.heights.length);
   for (let i = 0; i < terrain.heights.length; i++) {
-    localHeights[i] = Math.max(0, terrain.heights[i]) * TERRAIN_VERTICAL_SCALE;
+    localHeights[i] = terrainLocalHeight(
+      terrain.heights[i],
+      referenceElevation,
+    );
   }
 
   function heightAt(lon: number, lat: number): number {
