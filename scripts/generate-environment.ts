@@ -18,7 +18,7 @@
  *   bun run environment:generate -- --skip-terrain mc-1929
  */
 
-import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
+import { mkdir, readFile, writeFile, stat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import type {
@@ -33,9 +33,10 @@ import type {
   TerrainFile,
   WaterFile,
   WaterPolygon,
+  EnvironmentIndex,
 } from "../src/lib/environment-types";
 import { ENVIRONMENT_ATTRIBUTION } from "../src/lib/environment-types";
-import type { CircuitGeoJSON } from "../src/lib/f1-circuits";
+import type { CircuitGeoJSON, CircuitLocation } from "../src/lib/f1-circuits";
 
 const RAW_BASE = "https://raw.githubusercontent.com/bacinger/f1-circuits/master";
 const OVERPASS_ENDPOINTS = [
@@ -65,6 +66,7 @@ interface BBox {
 
 interface Args {
   circuitIds: string[];
+  all: boolean;
   refresh: boolean;
   skipTerrain: boolean;
   skipOverpass: boolean;
@@ -75,6 +77,7 @@ interface Args {
 
 function parseArgs(argv: string[]): Args {
   const positional: string[] = [];
+  let all = false;
   let refresh = false;
   let skipTerrain = false;
   let skipOverpass = false;
@@ -82,7 +85,8 @@ function parseArgs(argv: string[]): Args {
   let terrainProvider: "open-meteo" | "opentopodata" = "opentopodata";
   let terrainGridSize = 64;
   for (const arg of argv) {
-    if (arg === "--refresh") refresh = true;
+    if (arg === "--all") all = true;
+    else if (arg === "--refresh") refresh = true;
     else if (arg === "--skip-terrain") skipTerrain = true;
     else if (arg === "--skip-overpass") skipOverpass = true;
     else if (arg === "--partial-terrain") partialTerrain = true;
@@ -112,6 +116,7 @@ function parseArgs(argv: string[]): Args {
   }
   return {
     circuitIds: positional,
+    all,
     refresh,
     skipTerrain,
     skipOverpass,
@@ -123,6 +128,8 @@ function parseArgs(argv: string[]): Args {
 
 const USAGE = `Usage:
   bun run environment:generate -- mc-1929
+  bun run environment:generate -- --all
+  bun run environment:generate -- --all --partial-terrain --grid-size=64
   bun run environment:generate -- --refresh mc-1929
   bun run environment:generate -- --skip-terrain mc-1929
   bun run environment:generate -- --skip-overpass mc-1929
@@ -132,6 +139,8 @@ const USAGE = `Usage:
   bun run environment:generate -- --provider=open-meteo mc-1929
 
 Generates static environment JSON in public/environments/{circuitId}/.
+  --all                    Generate environments for every circuit in
+                           bacinger/f1-circuits f1-locations.json.
   --refresh                Ignore on-disk Overpass / Open-Meteo cache.
   --skip-terrain           Skip terrain grid (writes a flat terrain.json).
   --skip-overpass          Skip Overpass fetches (keep existing files untouched).
@@ -320,8 +329,8 @@ function bboxFragment(bbox: BBox): string {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  if (!args.circuitIds.length) {
-    console.error("No circuit ids supplied. Pass at least one, e.g. mc-1929.");
+  if (!args.all && !args.circuitIds.length) {
+    console.error("No circuit ids supplied. Pass at least one, e.g. mc-1929, or use --all.");
     console.error(USAGE);
     process.exit(1);
   }
@@ -330,8 +339,11 @@ async function main() {
   const rawDir = join(projectRoot, "data", "raw");
   const cacheDir = join(projectRoot, "data", "cache");
   const publicEnvironmentsDir = join(projectRoot, "public", "environments");
+  const circuitIds = args.all
+    ? await fetchAllCircuitIds()
+    : args.circuitIds;
 
-  for (const circuitId of args.circuitIds) {
+  for (const circuitId of circuitIds) {
     console.log(`\n=== ${circuitId} ===`);
     const outDir = join(publicEnvironmentsDir, circuitId);
     await mkdir(outDir, { recursive: true });
@@ -384,10 +396,46 @@ async function main() {
     console.log(`  wrote manifest.json`);
 
     if (!args.skipOverpass) {
-      await generateBuildings(circuitId, padded, outDir, rawDir, cacheDir, args.refresh);
-      await generateWater(circuitId, padded, outDir, rawDir, cacheDir, args.refresh);
-      await generateRoads(circuitId, padded, outDir, rawDir, cacheDir, args.refresh);
-      await generateLanduse(circuitId, padded, outDir, rawDir, cacheDir, args.refresh);
+      await generateOverpassLayer(
+        "buildings",
+        join(outDir, "buildings.json"),
+        () => generateBuildings(circuitId, padded, outDir, rawDir, cacheDir, args.refresh),
+        () => ({
+          schemaVersion: 1,
+          circuitId,
+          buildings: [],
+        } satisfies BuildingsFile),
+      );
+      await generateOverpassLayer(
+        "water",
+        join(outDir, "water.json"),
+        () => generateWater(circuitId, padded, outDir, rawDir, cacheDir, args.refresh),
+        () => ({
+          schemaVersion: 1,
+          circuitId,
+          polygons: [],
+        } satisfies WaterFile),
+      );
+      await generateOverpassLayer(
+        "roads",
+        join(outDir, "roads.json"),
+        () => generateRoads(circuitId, padded, outDir, rawDir, cacheDir, args.refresh),
+        () => ({
+          schemaVersion: 1,
+          circuitId,
+          roads: [],
+        } satisfies RoadsFile),
+      );
+      await generateOverpassLayer(
+        "landuse",
+        join(outDir, "landuse.json"),
+        () => generateLanduse(circuitId, padded, outDir, rawDir, cacheDir, args.refresh),
+        () => ({
+          schemaVersion: 1,
+          circuitId,
+          polygons: [],
+        } satisfies LanduseFile),
+      );
     } else {
       console.log("  --skip-overpass: keeping existing buildings/water/roads/landuse");
     }
@@ -427,6 +475,42 @@ async function main() {
 
     await generateSurface(circuitId, padded, outDir);
   }
+
+  await writeEnvironmentIndex(publicEnvironmentsDir);
+}
+
+async function fetchAllCircuitIds(): Promise<string[]> {
+  const locations = await fetchJson<CircuitLocation[]>(
+    `${RAW_BASE}/f1-locations.json`,
+  );
+  const ids = locations.map((location) => location.id).filter(Boolean);
+  ids.sort();
+  console.log(`Generating ${ids.length} environment bundles (--all)`);
+  return ids;
+}
+
+async function generateOverpassLayer<T>(
+  label: string,
+  outPath: string,
+  generate: () => Promise<void>,
+  emptyFile: () => T,
+): Promise<void> {
+  try {
+    await generate();
+  } catch (error) {
+    console.warn(`  WARNING: ${label} generation failed: ${formatError(error)}`);
+    if (await fileExists(outPath)) {
+      console.warn(`  keeping existing ${label}.json`);
+      return;
+    }
+    await writeJson(outPath, emptyFile());
+    console.warn(`  wrote empty ${label}.json fallback`);
+  }
+}
+
+function formatError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
 // ─── per-source generators (filled in subsequent commits) ────────────────
@@ -1184,6 +1268,29 @@ async function readJsonIfExists<T>(path: string): Promise<T | null> {
 async function writeJson<T>(path: string, value: T): Promise<void> {
   await mkdir(join(path, ".."), { recursive: true });
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function writeEnvironmentIndex(publicEnvironmentsDir: string): Promise<void> {
+  const entries = await readdir(publicEnvironmentsDir, { withFileTypes: true });
+  const circuitIds: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const circuitId = entry.name;
+    const hasManifest = await fileExists(
+      join(publicEnvironmentsDir, circuitId, "manifest.json"),
+    );
+    const hasBuildings = await fileExists(
+      join(publicEnvironmentsDir, circuitId, "buildings.json"),
+    );
+    if (hasManifest && hasBuildings) circuitIds.push(circuitId);
+  }
+  circuitIds.sort();
+  const index: EnvironmentIndex = {
+    schemaVersion: 1,
+    circuitIds,
+  };
+  await writeJson(join(publicEnvironmentsDir, "index.json"), index);
+  console.log(`\nWrote environments/index.json (${circuitIds.length} circuit${circuitIds.length === 1 ? "" : "s"})`);
 }
 
 main().catch((error) => {

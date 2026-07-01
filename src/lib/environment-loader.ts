@@ -9,6 +9,7 @@
 import type {
   BuildingsFile,
   EnvironmentBundle,
+  EnvironmentIndex,
   EnvironmentManifest,
   LanduseFile,
   RoadsFile,
@@ -20,13 +21,28 @@ import type {
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 /**
- * Circuits that ship a pre-generated diorama under public/environments/. Gating
- * on this avoids a 404 in the console for every circuit without a bundle.
+ * Fallback for older builds without public/environments/index.json.
  */
-export const ENVIRONMENT_CIRCUIT_IDS = new Set(["mc-1929"]);
+export const FALLBACK_ENVIRONMENT_CIRCUIT_IDS = new Set(["mc-1929"]);
+
+let environmentIndexPromise: Promise<Set<string>> | null = null;
+
+async function fetchEnvironmentCircuitIds(): Promise<Set<string>> {
+  if (!environmentIndexPromise) {
+    environmentIndexPromise = fetchJson<EnvironmentIndex>(
+      `${PUBLIC_BASE_PATH}/environments/index.json`,
+    ).then((index) => {
+      if (!index?.circuitIds?.length) {
+        return FALLBACK_ENVIRONMENT_CIRCUIT_IDS;
+      }
+      return new Set(index.circuitIds);
+    });
+  }
+  return environmentIndexPromise;
+}
 
 export function hasEnvironmentBundle(circuitId: string): boolean {
-  return ENVIRONMENT_CIRCUIT_IDS.has(circuitId);
+  return FALLBACK_ENVIRONMENT_CIRCUIT_IDS.has(circuitId);
 }
 
 function environmentBaseUrl(circuitId: string): string {
@@ -52,7 +68,8 @@ async function fetchJson<T>(url: string): Promise<T | null> {
 export async function fetchEnvironmentBundle(
   circuitId: string,
 ): Promise<EnvironmentBundle | null> {
-  if (!ENVIRONMENT_CIRCUIT_IDS.has(circuitId)) return null;
+  const circuitIds = await fetchEnvironmentCircuitIds();
+  if (!circuitIds.has(circuitId)) return null;
   const base = environmentBaseUrl(circuitId);
 
   const manifest = await fetchJson<EnvironmentManifest>(`${base}/manifest.json`);
@@ -94,7 +111,8 @@ export async function fetchEnvironmentBundle(
  * bundle. Used to gate the Environment toggle in the UI.
  */
 export async function hasEnvironment(circuitId: string): Promise<boolean> {
-  if (!ENVIRONMENT_CIRCUIT_IDS.has(circuitId)) return false;
+  const circuitIds = await fetchEnvironmentCircuitIds();
+  if (!circuitIds.has(circuitId)) return false;
   try {
     const res = await fetch(
       `${environmentBaseUrl(circuitId)}/manifest.json`,
