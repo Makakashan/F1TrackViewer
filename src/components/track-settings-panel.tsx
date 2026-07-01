@@ -2,7 +2,6 @@
 
 import {
   Camera,
-  Flag,
   Layers,
   Map,
   Mountain,
@@ -115,20 +114,13 @@ export default function TrackSettingsPanel({
         </SettingRow>
 
         {environmentAvailable && (
-          <SettingRow icon={<Flag className="h-3.5 w-3.5" />} label={t.diorama}>
-            <Switch
-              checked={environmentEnabled}
-              onCheckedChange={setEnvironmentEnabled}
-            />
-          </SettingRow>
-        )}
-
-        {environmentAvailable && (
           <SettingRow icon={<Map className="h-3.5 w-3.5" />} label={t.terrain}>
             <Switch
               checked={environmentEnabled && environmentTerrain}
-              disabled={!environmentEnabled}
-              onCheckedChange={setEnvironmentTerrain}
+              onCheckedChange={(enabled) => {
+                setEnvironmentEnabled(enabled);
+                setEnvironmentTerrain(enabled);
+              }}
             />
           </SettingRow>
         )}
