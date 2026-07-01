@@ -505,7 +505,7 @@ export default function F1TrackApp({
               viewMode={viewMode}
               markers={markers}
               environmentBundle={
-                environmentEnabled ? environmentBundle ?? null : null
+                terrainModeActive ? environmentBundle ?? null : null
               }
               environmentTerrain={environmentTerrain}
               widthProfile={widthProfile ?? null}
@@ -524,7 +524,7 @@ export default function F1TrackApp({
             startFinishStatus={startFinishPlacement?.source ?? null}
             viewMode={viewMode}
             markers={markers}
-            environmentActive={environmentEnabled && !!environmentBundle}
+            environmentActive={terrainModeActive}
           />
 
           {properties && (

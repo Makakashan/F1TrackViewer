@@ -79,14 +79,14 @@ const MAX_BROADCAST_BUILDINGS = 420;
 
 const THEME_COLORS = {
   light: {
-    base: "#F0F2F5",
-    grid: "#D7DCE4",
-    terrain: "#F6F7FA",
-    terrainSlab: "#E2E6EC",
-    sideTop: "#D9DEE6",
-    sideBottom: "#B4BCC8",
-    building: "#FBFCFE",
-    road: "#C5CBD5",
+    base: "#EEF1F5",
+    grid: "#CCD3DE",
+    terrain: "#E5EAF1",
+    terrainSlab: "#D5DCE6",
+    sideTop: "#C9D1DC",
+    sideBottom: "#AEB8C6",
+    building: "#FFFFFF",
+    road: "#AAB4C2",
   },
   dark: {
     base: "#05070B",
