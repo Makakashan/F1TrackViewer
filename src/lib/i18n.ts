@@ -52,6 +52,8 @@ const en = {
   layers: "Layers",
   autoRotate: "Auto-rotate",
   elevations: "Real elevation",
+  elevationTerrainModeHint:
+    "Disabled while Terrain is on; the track is draped on the terrain mesh.",
   trackWidth: "Width",
   realWidth: "Real width",
   realWidthHint: "Track color maps width along the lap",
@@ -156,6 +158,8 @@ const ru: Dict = {
   layers: "Слои",
   autoRotate: "Авто-вращение",
   elevations: "Реальный рельеф",
+  elevationTerrainModeHint:
+    "Недоступно при включённом ландшафте: трасса ложится на terrain mesh.",
   trackWidth: "Ширина",
   realWidth: "Реальная ширина",
   realWidthHint: "Цвет трассы показывает ширину по кругу",
