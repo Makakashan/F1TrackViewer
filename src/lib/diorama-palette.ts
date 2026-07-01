@@ -1,27 +1,27 @@
 /**
- * Color palette for the MVP3 low-poly diorama.
+ * Color palette for the F1 TV style low-poly diorama.
  *
- * Reference look: white architectural model of the city on a pale
- * map-board base, with water kept dark and the F1 track painted on top.
+ * Reference look: pale map-board outside the venue, saturated green circuit
+ * grounds, white architectural blocks and a strongly legible red track.
  */
 export const DIORAMA_COLORS = {
-  base: "#E8EBF1",
-  grid: "#C4CBD8",
-  terrain: "#E8E8E8",
+  base: "#D8DCE2",
+  grid: "#AEB5C0",
+  terrain: "#ECEEF1",
   terrainVerticalScale: 0.6,
-  building: "#E8EAEE",
-  buildingSide: "#C8CCD4",
-  water: "#1F2937",
-  waterTop: "#2A3441",
-  road: "#4B5563",
-  landusePark: "#D8E4D0",
-  landuseWood: "#C9D6BF",
-  landuseGrass: "#E5EBDC",
-  landuseResidential: "#EAEAEA",
-  landuseCommercial: "#E0E0E0",
-  landuseIndustrial: "#D2D2D2",
-  landuseOther: "#DEDEDE",
-  track: "#D7262E",
+  building: "#F4F6F8",
+  buildingSide: "#D5DAE1",
+  water: "#1F6D91",
+  waterTop: "#28A6D9",
+  road: "#808893",
+  landusePark: "#3C9B3B",
+  landuseWood: "#247033",
+  landuseGrass: "#55B34A",
+  landuseResidential: "#E6E8EB",
+  landuseCommercial: "#D9DDE2",
+  landuseIndustrial: "#C9CED6",
+  landuseOther: "#DDE1E6",
+  track: "#D90416",
 } as const;
 
 /**

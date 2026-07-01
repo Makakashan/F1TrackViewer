@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "br-1977",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": -43.3945795,
+    "lat": -22.9771635
+  },
+  "bbox": {
+    "minLon": -43.40961624667765,
+    "minLat": -22.98918711174991,
+    "maxLon": -43.37954275332235,
+    "maxLat": -22.96513988825009
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}

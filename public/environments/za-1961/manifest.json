@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "za-1961",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": 28.067639999999997,
+    "lat": -25.9969
+  },
+  "bbox": {
+    "minLon": 28.050289636160908,
+    "minLat": -26.00956411174991,
+    "maxLon": 28.08499036383909,
+    "maxLat": -25.98423588825009
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}

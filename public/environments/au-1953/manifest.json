@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "au-1953",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": 144.97036400000002,
+    "lat": -37.845965500000005
+  },
+  "bbox": {
+    "minLon": 144.95076212049588,
+    "minLat": -37.862909111749914,
+    "maxLon": 144.98996587950413,
+    "maxLat": -37.82902188825009
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}
