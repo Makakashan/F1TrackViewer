@@ -123,4 +123,9 @@ export interface EnvironmentBundle {
   surface: SurfaceFile | null;
 }
 
+export interface EnvironmentIndex {
+  schemaVersion: 1;
+  circuitIds: string[];
+}
+
 export const ENVIRONMENT_ATTRIBUTION = "© OpenStreetMap contributors";
