@@ -533,8 +533,8 @@ function TrackMesh({
       <lineSegments geometry={outlineGeometry} renderOrder={31}>
         <lineBasicMaterial
           color={outlineColor}
-          depthTest
-          depthWrite
+          depthTest={false}
+          depthWrite={false}
         />
       </lineSegments>
       </group>
