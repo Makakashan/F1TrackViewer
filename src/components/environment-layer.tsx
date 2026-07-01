@@ -14,7 +14,8 @@ import type {
 import { DIORAMA_COLORS } from "@/lib/diorama-palette";
 import {
   buildTerrainSampler,
-  TERRAIN_VERTICAL_SCALE,
+  terrainLocalHeight,
+  terrainReferenceElevation,
   type TerrainSampler,
 } from "@/lib/terrain-sampler";
 
@@ -71,8 +72,8 @@ const LAYER_Y_DRAPE = {
 const MIN_WATER_AREA_SQ_M = 2_500;
 const TERRAIN_SKIRT_BOTTOM_Y = -2;
 const TERRAIN_BASE_SLAB_DEPTH = 10;
-const TERRAIN_TRACK_CARVE_RADIUS_M = 18;
-const TERRAIN_TRACK_CARVE_DEPTH_M = 2.5;
+const TERRAIN_TRACK_CARVE_RADIUS_M = 24;
+const TERRAIN_TRACK_CARVE_DEPTH_M = 1.5;
 const BROADCAST_VIEW_PADDING_M = 360;
 const MAX_BROADCAST_BUILDINGS = 420;
 
@@ -120,47 +121,6 @@ function isPointInPolygon(
     if (intersects) inside = !inside;
   }
   return inside;
-}
-
-type LonLat = [number, number];
-
-function clipPolygonToBBox(points: LonLat[], bbox: BBox): LonLat[] {
-  if (points.length < 3) return points;
-  let out = points.slice();
-  const edges: [((p: LonLat) => number), number][] = [
-    [(p) => p[0], bbox.minLon],
-    [(p) => -p[0], -bbox.maxLon],
-    [(p) => p[1], bbox.minLat],
-    [(p) => -p[1], -bbox.maxLat],
-  ];
-  for (const [axis, val] of edges) {
-    if (out.length < 3) return out;
-    const input = out;
-    out = [];
-    for (let i = 0; i < input.length; i++) {
-      const cur = input[i];
-      const prev = input[(i + input.length - 1) % input.length];
-      const cInside = axis(cur) >= val;
-      const pInside = axis(prev) >= val;
-      if (cInside) {
-        if (!pInside) {
-          const denom = axis(cur) - axis(prev);
-          if (denom !== 0) {
-            const t = (val - axis(prev)) / denom;
-            out.push([prev[0] + t * (cur[0] - prev[0]), prev[1] + t * (cur[1] - prev[1])]);
-          }
-        }
-        out.push(cur);
-      } else if (pInside) {
-        const denom = axis(cur) - axis(prev);
-        if (denom !== 0) {
-          const t = (val - axis(prev)) / denom;
-          out.push([prev[0] + t * (cur[0] - prev[0]), prev[1] + t * (cur[1] - prev[1])]);
-        }
-      }
-    }
-  }
-  return out;
 }
 
 function buildTrackFocusBBox(
@@ -297,16 +257,6 @@ export default function EnvironmentLayer({
           resolvedTheme={resolvedTheme}
         />
       )}
-      <WaterPolygons
-        polygons={bundle.water.polygons}
-        originLon={originLon}
-        originLat={originLat}
-        baseY={baseY}
-        terrainSampler={terrainSampler}
-        drapeY={LAYER_Y_DRAPE.water}
-        flatY={LAYER_Y_FLAT.water}
-        bbox={broadcastBBox}
-      />
       <RoadLinesMesh
         roads={bundle.roads.roads}
         originLon={originLon}
@@ -505,6 +455,7 @@ function TerrainMesh({
     const uvs: number[] = [];
     const indices: number[] = [];
     const colors: number[] = [];
+    const referenceElevation = terrainReferenceElevation(terrain);
 
     const themeColors = THEME_COLORS[resolvedTheme];
     const terrainTop = new THREE.Color(themeColors.terrain);
@@ -554,7 +505,7 @@ function TerrainMesh({
           surface?.gridSize === n
             ? surface.waterMask[idx] === 1
             : waterMasks.some((mask) => isPointInPolygon(shapePoint, mask));
-        const rawY = isWater ? 0 : Math.max(0, h) * TERRAIN_VERTICAL_SCALE;
+        const rawY = isWater ? 0 : terrainLocalHeight(h, referenceElevation);
         const y = isInsideTrackCarve(shapePoint)
           ? Math.max(0, rawY - TERRAIN_TRACK_CARVE_DEPTH_M)
           : rawY;
@@ -667,129 +618,6 @@ function TerrainMesh({
         metalness={0}
         flatShading
         side={THREE.DoubleSide}
-      />
-    </mesh>
-  );
-}
-
-// ─── Draped polygon builder ─────────────────────────────────────────────────
-//
-// When terrain is on, polygons (water, landuse) are triangulated as a 2D
-// ShapeGeometry, then each vertex is displaced vertically by the terrain
-// height at its [x, z]. This drapes the polygon onto the terrain.
-
-function drapeShapeGeometry(
-  shapes: THREE.Shape[],
-  originLon: number,
-  originLat: number,
-  terrainSampler: TerrainSampler | null,
-  baseY: number,
-  drapeY: number,
-  flatY: number,
-): THREE.BufferGeometry | null {
-  if (!shapes.length) return null;
-  const geo = new THREE.ShapeGeometry(shapes);
-  if (!terrainSampler) {
-    // Flat mode — just lift the whole geometry to flatY.
-    geo.translate(0, 0, 0);
-    geo.rotateX(-Math.PI / 2);
-    geo.translate(0, baseY + flatY, 0);
-    return geo;
-  }
-  // Drape mode: rotate to XZ plane first, then for each vertex compute the
-  // [lon, lat] back from [x, z] and sample terrain height.
-  geo.rotateX(-Math.PI / 2);
-  const pos = geo.getAttribute("position") as THREE.BufferAttribute;
-  const metersPerDegLat = 111_320;
-  const metersPerDegLon = 111_320 * Math.cos((originLat * Math.PI) / 180);
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i);
-    const z = pos.getZ(i);
-    const lon = originLon + x / metersPerDegLon;
-    const lat = originLat - z / metersPerDegLat;
-    const h = terrainSampler.heightAt(lon, lat);
-    pos.setY(i, baseY + h + drapeY);
-  }
-  pos.needsUpdate = true;
-  geo.computeVertexNormals();
-  return geo;
-}
-
-// ─── WaterPolygons ──────────────────────────────────────────────────────────
-
-function WaterPolygons({
-  polygons,
-  originLon,
-  originLat,
-  baseY,
-  terrainSampler,
-  drapeY,
-  flatY,
-  bbox,
-}: {
-  polygons: WaterPolygon[];
-  originLon: number;
-  originLat: number;
-  baseY: number;
-  terrainSampler: TerrainSampler | null;
-  drapeY: number;
-  flatY: number;
-  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
-}) {
-  const geometry = useMemo(() => {
-    const shapes: THREE.Shape[] = [];
-    for (const poly of polygons) {
-      if (poly.points.length < 3) continue;
-      const pts = bbox ? clipPolygonToBBox(poly.points, bbox) : poly.points;
-      if (pts.length < 3) continue;
-      const projected = pts.map(([lon, lat]) =>
-        lonLatToShapeXY(lon, lat, originLon, originLat),
-      );
-      if (polygonArea2D(projected) < MIN_WATER_AREA_SQ_M) continue;
-      const shape = new THREE.Shape();
-      projected.forEach(({ x, y }, i) => {
-        if (i === 0) shape.moveTo(x, y);
-        else shape.lineTo(x, y);
-      });
-      shape.closePath();
-      shapes.push(shape);
-    }
-    if (!shapes.length) return null;
-    const geo = new THREE.ShapeGeometry(shapes);
-    geo.rotateX(-Math.PI / 2);
-    if (terrainSampler) {
-      const pos = geo.getAttribute("position") as THREE.BufferAttribute;
-      const waterY = baseY + 0.1;
-      for (let i = 0; i < pos.count; i++) {
-        pos.setY(i, waterY);
-      }
-      pos.needsUpdate = true;
-    } else {
-      geo.translate(0, baseY + flatY, 0);
-    }
-    return geo;
-  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY, bbox]);
-
-  useEffect(() => {
-    return () => {
-      geometry?.dispose();
-    };
-  }, [geometry]);
-
-  if (!geometry) return null;
-
-  // When terrain is on, WaterPolygons is already rotated+positioned inside
-  // drapeShapeGeometry. When off, ditto. So no extra rotation here.
-  return (
-    <mesh geometry={geometry}>
-      <meshStandardMaterial
-        color={DIORAMA_COLORS.water}
-        roughness={0.4}
-        metalness={0.2}
-        side={THREE.DoubleSide}
-        polygonOffset
-        polygonOffsetFactor={-2}
-        polygonOffsetUnits={-2}
       />
     </mesh>
   );
