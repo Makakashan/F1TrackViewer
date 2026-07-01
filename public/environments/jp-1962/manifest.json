@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "jp-1962",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": 136.53267499999998,
+    "lat": 34.843665
+  },
+  "bbox": {
+    "minLon": 136.51098251666454,
+    "minLat": 34.82997288825009,
+    "maxLon": 136.55436748333545,
+    "maxLat": 34.85735711174991
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}
