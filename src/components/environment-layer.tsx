@@ -167,6 +167,52 @@ function bboxCenter(bbox: BBox): { lon: number; lat: number } {
   };
 }
 
+function isLonLatInBBox(lon: number, lat: number, bbox: BBox): boolean {
+  return (
+    lon >= bbox.minLon &&
+    lon <= bbox.maxLon &&
+    lat >= bbox.minLat &&
+    lat <= bbox.maxLat
+  );
+}
+
+function clipSegmentToBBox(
+  a: [number, number],
+  b: [number, number],
+  bbox: BBox,
+): [[number, number], [number, number]] | null {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const tests: [number, number][] = [
+    [-dx, a[0] - bbox.minLon],
+    [dx, bbox.maxLon - a[0]],
+    [-dy, a[1] - bbox.minLat],
+    [dy, bbox.maxLat - a[1]],
+  ];
+
+  for (const [p, q] of tests) {
+    if (p === 0) {
+      if (q < 0) return null;
+      continue;
+    }
+    const r = q / p;
+    if (p < 0) {
+      if (r > t1) return null;
+      if (r > t0) t0 = r;
+    } else {
+      if (r < t0) return null;
+      if (r < t1) t1 = r;
+    }
+  }
+
+  return [
+    [a[0] + dx * t0, a[1] + dy * t0],
+    [a[0] + dx * t1, a[1] + dy * t1],
+  ];
+}
+
 function polygonArea2D(points: { x: number; y: number }[]): number {
   let area = 0;
   for (let i = 0; i < points.length; i++) {
@@ -649,12 +695,12 @@ function RoadLinesMesh({
     for (const road of roads) {
       if (road.points.length < 2) continue;
       for (let i = 0; i < road.points.length - 1; i++) {
-        const [aLon, aLat] = road.points[i];
-        const [bLon, bLat] = road.points[i + 1];
+        let [aLon, aLat] = road.points[i];
+        let [bLon, bLat] = road.points[i + 1];
         if (bbox) {
-          const aIn = aLon >= bbox.minLon && aLon <= bbox.maxLon && aLat >= bbox.minLat && aLat <= bbox.maxLat;
-          const bIn = bLon >= bbox.minLon && bLon <= bbox.maxLon && bLat >= bbox.minLat && bLat <= bbox.maxLat;
-          if (!aIn && !bIn) continue;
+          const clipped = clipSegmentToBBox([aLon, aLat], [bLon, bLat], bbox);
+          if (!clipped) continue;
+          [[aLon, aLat], [bLon, bLat]] = clipped;
         }
         const a = lonLatToXZ(aLon, aLat, originLon, originLat);
         const b = lonLatToXZ(bLon, bLat, originLon, originLat);
@@ -721,19 +767,10 @@ function BuildingExtrusions({
     if (bbox) {
       filtered = filtered.filter((b) => {
         if (b.footprint.length < 3) return false;
-        let sumLon = 0, sumLat = 0;
         for (const [lon, lat] of b.footprint) {
-          sumLon += lon;
-          sumLat += lat;
+          if (!isLonLatInBBox(lon, lat, bbox)) return false;
         }
-        const cLon = sumLon / b.footprint.length;
-        const cLat = sumLat / b.footprint.length;
-        return (
-          cLon >= bbox.minLon &&
-          cLon <= bbox.maxLon &&
-          cLat >= bbox.minLat &&
-          cLat <= bbox.maxLat
-        );
+        return true;
       });
     }
     return filtered.slice(0, MAX_BROADCAST_BUILDINGS);
