@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "ca-1978",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": -73.52594450000001,
+    "lat": 45.505679
+  },
+  "bbox": {
+    "minLon": -73.54275766185958,
+    "minLat": 45.488076888250085,
+    "maxLon": -73.50913133814042,
+    "maxLat": 45.52328111174991
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}

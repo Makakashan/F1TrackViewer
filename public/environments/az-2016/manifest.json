@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "az-2016",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": 49.843058,
+    "lat": 40.3693935
+  },
+  "bbox": {
+    "minLon": 49.81913635094407,
+    "minLat": 40.35365588825009,
+    "maxLon": 49.866979649055935,
+    "maxLat": 40.385131111749914
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}

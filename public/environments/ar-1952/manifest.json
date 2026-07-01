@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "ar-1952",
+  "style": "low-poly-diorama",
+  "sources": {
+    "buildings": "openstreetmap",
+    "water": "openstreetmap",
+    "roads": "openstreetmap",
+    "landuse": "openstreetmap",
+    "terrain": "open-meteo-elevation"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "center": {
+    "lon": -58.4606445,
+    "lat": -34.694771
+  },
+  "bbox": {
+    "minLon": -58.47619175473274,
+    "minLat": -34.70710811174991,
+    "maxLon": -58.44509724526726,
+    "maxLat": -34.68243388825009
+  },
+  "paddingMeters": 1000,
+  "generatedAt": "2026-07-01"
+}
