@@ -7,12 +7,11 @@ import type {
   BuildingFeature,
   WaterPolygon,
   RoadLine,
-  LandusePolygon,
   TerrainFile,
   EnvironmentManifest,
   SurfaceFile,
 } from "@/lib/environment-types";
-import { DIORAMA_COLORS, landuseColor } from "@/lib/diorama-palette";
+import { DIORAMA_COLORS } from "@/lib/diorama-palette";
 import {
   buildTerrainSampler,
   TERRAIN_VERTICAL_SCALE,
@@ -69,16 +68,43 @@ const LAYER_Y_DRAPE = {
   buildings: 1.2,
 } as const;
 
-const VISIBLE_LANDUSE_KINDS = new Set<LandusePolygon["kind"]>([
-  "park",
-  "wood",
-  "grass",
-]);
 const MIN_WATER_AREA_SQ_M = 2_500;
 const TERRAIN_SKIRT_BOTTOM_Y = -2;
 const TERRAIN_BASE_SLAB_DEPTH = 10;
 const TERRAIN_TRACK_CARVE_RADIUS_M = 18;
 const TERRAIN_TRACK_CARVE_DEPTH_M = 2.5;
+const BROADCAST_VIEW_PADDING_M = 360;
+const MAX_BROADCAST_BUILDINGS = 420;
+
+const THEME_COLORS = {
+  light: {
+    base: DIORAMA_COLORS.base,
+    grid: DIORAMA_COLORS.grid,
+    terrain: DIORAMA_COLORS.terrain,
+    terrainSlab: "#C7CCD4",
+    sideTop: "#C8CED7",
+    sideBottom: "#87909B",
+    building: DIORAMA_COLORS.building,
+  },
+  dark: {
+    base: "#3F454E",
+    grid: "#59616C",
+    terrain: "#4A515B",
+    terrainSlab: "#343A43",
+    sideTop: "#3A414A",
+    sideBottom: "#252A31",
+    building: "#737B86",
+  },
+} as const;
+
+type EnvironmentTheme = keyof typeof THEME_COLORS;
+
+interface BBox {
+  minLon: number;
+  minLat: number;
+  maxLon: number;
+  maxLat: number;
+}
 
 function isPointInPolygon(
   point: { x: number; y: number },
@@ -98,7 +124,7 @@ function isPointInPolygon(
 
 type LonLat = [number, number];
 
-function clipPolygonToBBox(points: LonLat[], bbox: { minLon: number; minLat: number; maxLon: number; maxLat: number }): LonLat[] {
+function clipPolygonToBBox(points: LonLat[], bbox: BBox): LonLat[] {
   if (points.length < 3) return points;
   let out = points.slice();
   const edges: [((p: LonLat) => number), number][] = [
@@ -137,6 +163,50 @@ function clipPolygonToBBox(points: LonLat[], bbox: { minLon: number; minLat: num
   return out;
 }
 
+function buildTrackFocusBBox(
+  trackCoordinates: [number, number][],
+  originLat: number,
+  paddingMeters: number,
+): BBox | null {
+  if (!trackCoordinates.length) return null;
+  let minLon = Infinity;
+  let minLat = Infinity;
+  let maxLon = -Infinity;
+  let maxLat = -Infinity;
+  for (const [lon, lat] of trackCoordinates) {
+    minLon = Math.min(minLon, lon);
+    minLat = Math.min(minLat, lat);
+    maxLon = Math.max(maxLon, lon);
+    maxLat = Math.max(maxLat, lat);
+  }
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = 111_320 * Math.cos((originLat * Math.PI) / 180);
+  const dLon = paddingMeters / metersPerDegLon;
+  const dLat = paddingMeters / metersPerDegLat;
+  return {
+    minLon: minLon - dLon,
+    minLat: minLat - dLat,
+    maxLon: maxLon + dLon,
+    maxLat: maxLat + dLat,
+  };
+}
+
+function clampBBox(inner: BBox, outer: BBox): BBox {
+  return {
+    minLon: Math.max(inner.minLon, outer.minLon),
+    minLat: Math.max(inner.minLat, outer.minLat),
+    maxLon: Math.min(inner.maxLon, outer.maxLon),
+    maxLat: Math.min(inner.maxLat, outer.maxLat),
+  };
+}
+
+function bboxCenter(bbox: BBox): { lon: number; lat: number } {
+  return {
+    lon: (bbox.minLon + bbox.maxLon) / 2,
+    lat: (bbox.minLat + bbox.maxLat) / 2,
+  };
+}
+
 function polygonArea2D(points: { x: number; y: number }[]): number {
   let area = 0;
   for (let i = 0; i < points.length; i++) {
@@ -172,7 +242,7 @@ export interface EnvironmentLayerProps {
   originLat: number;
   baseY?: number;
   showTerrain?: boolean;
-  resolvedTheme?: "light" | "dark";
+  resolvedTheme?: EnvironmentTheme;
 }
 
 export default function EnvironmentLayer({
@@ -186,6 +256,14 @@ export default function EnvironmentLayer({
 }: EnvironmentLayerProps) {
   const { manifest } = bundle;
   const hasTerrain = showTerrain && bundle.terrain.gridSize > 0;
+  const broadcastBBox = useMemo(() => {
+    const focus = buildTrackFocusBBox(
+      trackCoordinates,
+      originLat,
+      BROADCAST_VIEW_PADDING_M,
+    );
+    return focus ? clampBBox(focus, manifest.bbox) : manifest.bbox;
+  }, [trackCoordinates, originLat, manifest.bbox]);
 
   // Build a terrain sampler once — used by all draped layers to query the
   // elevation at any [lon, lat] point. Water areas are flattened based on
@@ -198,7 +276,7 @@ export default function EnvironmentLayer({
   return (
     <group>
       <DioramaBase
-        bundle={bundle}
+        bbox={broadcastBBox}
         originLon={originLon}
         originLat={originLat}
         baseY={baseY}
@@ -212,22 +290,13 @@ export default function EnvironmentLayer({
           originLon={originLon}
           originLat={originLat}
           baseY={baseY}
-          resolvedTheme={resolvedTheme}
           waterPolygons={bundle.water.polygons}
           surface={bundle.surface}
           trackCoordinates={trackCoordinates}
+          bbox={broadcastBBox}
+          resolvedTheme={resolvedTheme}
         />
       )}
-      <LandusePolygons
-        polygons={bundle.landuse.polygons}
-        originLon={originLon}
-        originLat={originLat}
-        baseY={baseY}
-        terrainSampler={terrainSampler}
-        drapeY={LAYER_Y_DRAPE.landuse}
-        flatY={LAYER_Y_FLAT.landuse}
-        bbox={manifest.bbox}
-      />
       <WaterPolygons
         polygons={bundle.water.polygons}
         originLon={originLon}
@@ -236,7 +305,7 @@ export default function EnvironmentLayer({
         terrainSampler={terrainSampler}
         drapeY={LAYER_Y_DRAPE.water}
         flatY={LAYER_Y_FLAT.water}
-        bbox={manifest.bbox}
+        bbox={broadcastBBox}
       />
       <RoadLinesMesh
         roads={bundle.roads.roads}
@@ -246,7 +315,7 @@ export default function EnvironmentLayer({
         terrainSampler={terrainSampler}
         drapeY={LAYER_Y_DRAPE.roads}
         flatY={LAYER_Y_FLAT.roads}
-        bbox={manifest.bbox}
+        bbox={broadcastBBox}
       />
       <BuildingExtrusions
         buildings={bundle.buildings.buildings}
@@ -256,7 +325,7 @@ export default function EnvironmentLayer({
         terrainSampler={terrainSampler}
         drapeY={LAYER_Y_DRAPE.buildings}
         flatY={LAYER_Y_FLAT.buildings}
-        bbox={hasTerrain ? manifest.bbox : null}
+        bbox={broadcastBBox}
         resolvedTheme={resolvedTheme}
       />
     </group>
@@ -266,39 +335,33 @@ export default function EnvironmentLayer({
 // ─── DioramaBase ────────────────────────────────────────────────────────────
 
 function DioramaBase({
-  bundle,
+  bbox,
   originLon,
   originLat,
   baseY,
   hasTerrain,
   resolvedTheme,
 }: {
-  bundle: EnvironmentBundle;
+  bbox: BBox;
   originLon: number;
   originLat: number;
   baseY: number;
   hasTerrain: boolean;
-  resolvedTheme: "light" | "dark";
+  resolvedTheme: EnvironmentTheme;
 }) {
-  const { manifest } = bundle;
-  const center = lonLatToXZ(
-    manifest.center.lon,
-    manifest.center.lat,
-    originLon,
-    originLat,
-  );
+  const colors = THEME_COLORS[resolvedTheme];
+  const centerLonLat = bboxCenter(bbox);
+  const center = lonLatToXZ(centerLonLat.lon, centerLonLat.lat, originLon, originLat);
   const halfW =
-    ((manifest.bbox.maxLon - manifest.bbox.minLon) *
+    ((bbox.maxLon - bbox.minLon) *
       111_320 *
-      Math.cos((manifest.center.lat * Math.PI) / 180)) /
+      Math.cos((centerLonLat.lat * Math.PI) / 180)) /
     2;
   const halfH =
-    ((manifest.bbox.maxLat - manifest.bbox.minLat) * 111_320) / 2;
+    ((bbox.maxLat - bbox.minLat) * 111_320) / 2;
 
-  const isDark = resolvedTheme === "dark";
-
-  // Grid texture drawn procedurally on a canvas — keeps the look of the
-  // reference image: dark base, thin lighter grid lines.
+  // Grid texture drawn procedurally on a canvas, matching the pale broadcast
+  // map-board outside the circuit grounds.
   const gridTexture = useMemo(() => {
     const size = 512;
     const canvas = document.createElement("canvas");
@@ -306,9 +369,9 @@ function DioramaBase({
     canvas.height = size;
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
-    ctx.fillStyle = isDark ? "#1a1e24" : DIORAMA_COLORS.base;
+    ctx.fillStyle = colors.base;
     ctx.fillRect(0, 0, size, size);
-    ctx.strokeStyle = isDark ? "#2a2e36" : DIORAMA_COLORS.grid;
+    ctx.strokeStyle = colors.grid;
     ctx.lineWidth = 1;
     const step = size / 32;
     for (let i = 0; i <= 32; i++) {
@@ -328,7 +391,7 @@ function DioramaBase({
     tex.repeat.set(8, 8);
     tex.anisotropy = 4;
     return tex;
-  }, [isDark]);
+  }, [colors.base, colors.grid]);
 
   useEffect(() => {
     return () => {
@@ -343,7 +406,7 @@ function DioramaBase({
   const material = (
     <meshStandardMaterial
       map={gridTexture}
-      color={hasTerrain ? (isDark ? "#111111" : "#C8CDD6") : DIORAMA_COLORS.base}
+      color={hasTerrain ? colors.terrainSlab : colors.base}
       roughness={1}
       metalness={0}
       side={THREE.DoubleSide}
@@ -395,20 +458,22 @@ function TerrainMesh({
   originLon,
   originLat,
   baseY,
-  resolvedTheme,
   waterPolygons,
   surface,
   trackCoordinates,
+  bbox,
+  resolvedTheme,
 }: {
   terrain: TerrainFile;
   manifest: EnvironmentManifest;
   originLon: number;
   originLat: number;
   baseY: number;
-  resolvedTheme: "light" | "dark";
   waterPolygons: WaterPolygon[];
   surface: SurfaceFile | null;
   trackCoordinates: [number, number][];
+  bbox: BBox;
+  resolvedTheme: EnvironmentTheme;
 }) {
   const geometry = useMemo(() => {
     const n = terrain.gridSize;
@@ -417,12 +482,32 @@ function TerrainMesh({
     const minLat = manifest.bbox.minLat;
     const maxLat = manifest.bbox.maxLat;
     const maxLon = manifest.bbox.maxLon;
+    const colStart = Math.max(
+      0,
+      Math.floor(((bbox.minLon - minLon) / (maxLon - minLon)) * (n - 1)),
+    );
+    const colEnd = Math.min(
+      n - 1,
+      Math.ceil(((bbox.maxLon - minLon) / (maxLon - minLon)) * (n - 1)),
+    );
+    const rowStart = Math.max(
+      0,
+      Math.floor(((bbox.minLat - minLat) / (maxLat - minLat)) * (n - 1)),
+    );
+    const rowEnd = Math.min(
+      n - 1,
+      Math.ceil(((bbox.maxLat - minLat) / (maxLat - minLat)) * (n - 1)),
+    );
+    const cols = colEnd - colStart + 1;
+    const rows = rowEnd - rowStart + 1;
+    if (cols < 2 || rows < 2) return null;
     const positions: number[] = [];
     const uvs: number[] = [];
     const indices: number[] = [];
     const colors: number[] = [];
 
-    const terrainTop = new THREE.Color(resolvedTheme === "dark" ? "#565656" : "#F3F5F9");
+    const themeColors = THEME_COLORS[resolvedTheme];
+    const terrainTop = new THREE.Color(themeColors.terrain);
     const waterMasks = waterPolygons
       .map((poly) =>
         poly.points.map(([lon, lat]) =>
@@ -457,8 +542,8 @@ function TerrainMesh({
       return false;
     }
 
-    for (let row = 0; row < n; row++) {
-      for (let col = 0; col < n; col++) {
+    for (let row = rowStart; row <= rowEnd; row++) {
+      for (let col = colStart; col <= colEnd; col++) {
         const idx = row * n + col;
         const lon = minLon + ((maxLon - minLon) * col) / (n - 1);
         const lat = minLat + ((maxLat - minLat) * row) / (n - 1);
@@ -474,25 +559,28 @@ function TerrainMesh({
           ? Math.max(0, rawY - TERRAIN_TRACK_CARVE_DEPTH_M)
           : rawY;
         positions.push(x, y, z);
-        uvs.push(col / (n - 1), row / (n - 1));
+        uvs.push(
+          cols === 1 ? 0 : (col - colStart) / (cols - 1),
+          rows === 1 ? 0 : (row - rowStart) / (rows - 1),
+        );
 
         colors.push(terrainTop.r, terrainTop.g, terrainTop.b);
       }
     }
 
-    for (let row = 0; row < n - 1; row++) {
-      for (let col = 0; col < n - 1; col++) {
-        const a = row * n + col;
-        const b = row * n + col + 1;
-        const c = (row + 1) * n + col;
-        const d = (row + 1) * n + col + 1;
+    for (let row = 0; row < rows - 1; row++) {
+      for (let col = 0; col < cols - 1; col++) {
+        const a = row * cols + col;
+        const b = row * cols + col + 1;
+        const c = (row + 1) * cols + col;
+        const d = (row + 1) * cols + col + 1;
         indices.push(a, c, b);
         indices.push(b, c, d);
       }
     }
 
-    const sideTop = new THREE.Color(resolvedTheme === "dark" ? "#444444" : "#C7CDD8");
-    const sideBottom = new THREE.Color(resolvedTheme === "dark" ? "#202020" : "#6F7784");
+    const sideTop = new THREE.Color(themeColors.sideTop);
+    const sideBottom = new THREE.Color(themeColors.sideBottom);
 
     function appendSkirtSegment(a: number, b: number) {
       const base = positions.length / 3;
@@ -535,13 +623,13 @@ function TerrainMesh({
       indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
     }
 
-    for (let col = 0; col < n - 1; col++) {
+    for (let col = 0; col < cols - 1; col++) {
       appendSkirtSegment(col, col + 1);
-      appendSkirtSegment((n - 1) * n + col + 1, (n - 1) * n + col);
+      appendSkirtSegment((rows - 1) * cols + col + 1, (rows - 1) * cols + col);
     }
-    for (let row = 0; row < n - 1; row++) {
-      appendSkirtSegment((row + 1) * n, row * n);
-      appendSkirtSegment(row * n + n - 1, (row + 1) * n + n - 1);
+    for (let row = 0; row < rows - 1; row++) {
+      appendSkirtSegment((row + 1) * cols, row * cols);
+      appendSkirtSegment(row * cols + cols - 1, (row + 1) * cols + cols - 1);
     }
 
     const geo = new THREE.BufferGeometry();
@@ -556,10 +644,11 @@ function TerrainMesh({
     manifest,
     originLon,
     originLat,
-    resolvedTheme,
     waterPolygons,
     surface,
     trackCoordinates,
+    bbox,
+    resolvedTheme,
   ]);
 
   useEffect(() => {
@@ -706,130 +795,6 @@ function WaterPolygons({
   );
 }
 
-// ─── LandusePolygons ────────────────────────────────────────────────────────
-
-function LandusePolygons({
-  polygons,
-  originLon,
-  originLat,
-  baseY,
-  terrainSampler,
-  drapeY,
-  flatY,
-  bbox,
-}: {
-  polygons: LandusePolygon[];
-  originLon: number;
-  originLat: number;
-  baseY: number;
-  terrainSampler: TerrainSampler | null;
-  drapeY: number;
-  flatY: number;
-  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
-}) {
-  const groups = useMemo(() => {
-    if (terrainSampler) return [];
-    const map = new Map<string, LandusePolygon[]>();
-    for (const p of polygons) {
-      if (!VISIBLE_LANDUSE_KINDS.has(p.kind)) continue;
-      if (bbox && p.points.length >= 3) {
-        let sumLon = 0, sumLat = 0;
-        for (const [lon, lat] of p.points) { sumLon += lon; sumLat += lat; }
-        const cLon = sumLon / p.points.length;
-        const cLat = sumLat / p.points.length;
-        if (cLon < bbox.minLon || cLon > bbox.maxLon || cLat < bbox.minLat || cLat > bbox.maxLat) continue;
-      }
-      const color = landuseColor(p.kind);
-      if (!map.has(color)) map.set(color, []);
-      map.get(color)!.push(p);
-    }
-    return Array.from(map.entries());
-  }, [polygons, terrainSampler, bbox]);
-
-  if (!groups.length) return null;
-
-  return (
-    <group>
-      {groups.map(([color, group]) => (
-        <LanduseGroup
-          key={color}
-          color={color}
-          polygons={group}
-          originLon={originLon}
-          originLat={originLat}
-          baseY={baseY}
-          terrainSampler={terrainSampler}
-          drapeY={drapeY}
-          flatY={flatY}
-          bbox={bbox}
-        />
-      ))}
-    </group>
-  );
-}
-
-function LanduseGroup({
-  color,
-  polygons,
-  originLon,
-  originLat,
-  baseY,
-  terrainSampler,
-  drapeY,
-  flatY,
-  bbox,
-}: {
-  color: string;
-  polygons: LandusePolygon[];
-  originLon: number;
-  originLat: number;
-  baseY: number;
-  terrainSampler: TerrainSampler | null;
-  drapeY: number;
-  flatY: number;
-  bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
-}) {
-  const geometry = useMemo(() => {
-    const shapes: THREE.Shape[] = [];
-    for (const poly of polygons) {
-      if (poly.points.length < 3) continue;
-      const pts = bbox ? clipPolygonToBBox(poly.points, bbox) : poly.points;
-      if (pts.length < 3) continue;
-      const shape = new THREE.Shape();
-      pts.forEach(([lon, lat], i) => {
-        const { x, y } = lonLatToShapeXY(lon, lat, originLon, originLat);
-        if (i === 0) shape.moveTo(x, y);
-        else shape.lineTo(x, y);
-      });
-      shape.closePath();
-      shapes.push(shape);
-    }
-    return drapeShapeGeometry(shapes, originLon, originLat, terrainSampler, baseY, drapeY, flatY);
-  }, [polygons, originLon, originLat, terrainSampler, baseY, drapeY, flatY, bbox]);
-
-  useEffect(() => {
-    return () => {
-      geometry?.dispose();
-    };
-  }, [geometry]);
-
-  if (!geometry) return null;
-
-  return (
-    <mesh geometry={geometry}>
-      <meshStandardMaterial
-        color={color}
-        roughness={1}
-        metalness={0}
-        side={THREE.DoubleSide}
-        polygonOffset
-        polygonOffsetFactor={-3}
-        polygonOffsetUnits={-3}
-      />
-    </mesh>
-  );
-}
-
 // ─── RoadLinesMesh ──────────────────────────────────────────────────────────
 
 function RoadLinesMesh({
@@ -852,7 +817,6 @@ function RoadLinesMesh({
   bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
 }) {
   const geometry = useMemo(() => {
-    if (terrainSampler) return null;
     const positions: number[] = [];
     for (const road of roads) {
       if (road.points.length < 2) continue;
@@ -866,14 +830,20 @@ function RoadLinesMesh({
         }
         const a = lonLatToXZ(aLon, aLat, originLon, originLat);
         const b = lonLatToXZ(bLon, bLat, originLon, originLat);
-        positions.push(a.x, baseY + flatY, a.z, b.x, baseY + flatY, b.z);
+        const aY = terrainSampler
+          ? baseY + terrainSampler.heightAt(aLon, aLat) + drapeY
+          : baseY + flatY;
+        const bY = terrainSampler
+          ? baseY + terrainSampler.heightAt(bLon, bLat) + drapeY
+          : baseY + flatY;
+        positions.push(a.x, aY, a.z, b.x, bY, b.z);
       }
     }
     if (!positions.length) return null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
     return geo;
-  }, [roads, originLon, originLat, terrainSampler, baseY, flatY, bbox]);
+  }, [roads, originLon, originLat, terrainSampler, baseY, drapeY, flatY, bbox]);
 
   useEffect(() => {
     return () => {
@@ -916,10 +886,10 @@ function BuildingExtrusions({
   drapeY: number;
   flatY: number;
   bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
-  resolvedTheme: "light" | "dark";
+  resolvedTheme: EnvironmentTheme;
 }) {
   const capped = useMemo(() => {
-    let filtered = buildings.slice(0, 800);
+    let filtered = buildings;
     if (bbox) {
       filtered = filtered.filter((b) => {
         if (b.footprint.length < 3) return false;
@@ -938,7 +908,7 @@ function BuildingExtrusions({
         );
       });
     }
-    return filtered;
+    return filtered.slice(0, MAX_BROADCAST_BUILDINGS);
   }, [buildings, bbox]);
 
   const geometry = useMemo(() => {
@@ -955,7 +925,7 @@ function BuildingExtrusions({
       // Clamp building height so no single tower pokes through the track
       // ribbon (which floats above the city).
       const rawHeight = Math.max(2, b.height);
-      const height = Math.min(rawHeight, 50);
+      const height = Math.min(rawHeight, 34);
       const extrude = new THREE.ExtrudeGeometry(shape, {
         depth: height,
         bevelEnabled: false,
@@ -999,8 +969,8 @@ function BuildingExtrusions({
   return (
     <mesh geometry={geometry} castShadow receiveShadow>
       <meshStandardMaterial
-        color={resolvedTheme === "dark" ? "#B6B6B6" : DIORAMA_COLORS.building}
-        roughness={0.85}
+        color={THEME_COLORS[resolvedTheme].building}
+        roughness={0.82}
         metalness={0}
         flatShading
         side={THREE.DoubleSide}
