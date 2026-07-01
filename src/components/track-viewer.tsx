@@ -471,8 +471,8 @@ function TrackMesh({
                 roughness={0.5}
                 metalness={0.05}
                 side={THREE.DoubleSide}
-                depthTest={false}
-                depthWrite={false}
+                depthTest
+                depthWrite
                 polygonOffset
                 polygonOffsetFactor={-10}
                 polygonOffsetUnits={-10}
@@ -518,8 +518,8 @@ function TrackMesh({
               roughness={0.5}
               metalness={0.05}
               side={THREE.DoubleSide}
-              depthTest={false}
-              depthWrite={false}
+              depthTest
+              depthWrite
               polygonOffset
               polygonOffsetFactor={-10}
               polygonOffsetUnits={-10}
