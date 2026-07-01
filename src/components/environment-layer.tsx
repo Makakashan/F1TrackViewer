@@ -79,13 +79,14 @@ const MAX_BROADCAST_BUILDINGS = 420;
 
 const THEME_COLORS = {
   light: {
-    base: DIORAMA_COLORS.base,
-    grid: DIORAMA_COLORS.grid,
-    terrain: DIORAMA_COLORS.terrain,
-    terrainSlab: "#C7CCD4",
-    sideTop: "#C8CED7",
-    sideBottom: "#87909B",
-    building: DIORAMA_COLORS.building,
+    base: "#F0F2F5",
+    grid: "#D7DCE4",
+    terrain: "#F6F7FA",
+    terrainSlab: "#E2E6EC",
+    sideTop: "#D9DEE6",
+    sideBottom: "#B4BCC8",
+    building: "#FBFCFE",
+    road: "#C5CBD5",
   },
   dark: {
     base: "#3F454E",
@@ -95,6 +96,7 @@ const THEME_COLORS = {
     sideTop: "#3A414A",
     sideBottom: "#252A31",
     building: "#737B86",
+    road: DIORAMA_COLORS.road,
   },
 } as const;
 
@@ -312,6 +314,7 @@ export default function EnvironmentLayer({
         drapeY={LAYER_Y_DRAPE.roads}
         flatY={LAYER_Y_FLAT.roads}
         bbox={broadcastBBox}
+        resolvedTheme={resolvedTheme}
       />
       <BuildingExtrusions
         buildings={bundle.buildings.buildings}
@@ -680,6 +683,7 @@ function RoadLinesMesh({
   drapeY,
   flatY,
   bbox,
+  resolvedTheme,
 }: {
   roads: RoadLine[];
   originLon: number;
@@ -689,6 +693,7 @@ function RoadLinesMesh({
   drapeY: number;
   flatY: number;
   bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
+  resolvedTheme: EnvironmentTheme;
 }) {
   const geometry = useMemo(() => {
     const positions: number[] = [];
@@ -730,7 +735,7 @@ function RoadLinesMesh({
   return (
     <lineSegments geometry={geometry} renderOrder={10}>
       <lineBasicMaterial
-        color={DIORAMA_COLORS.road}
+        color={THEME_COLORS[resolvedTheme].road}
         depthWrite={false}
         transparent
         opacity={0.72}
