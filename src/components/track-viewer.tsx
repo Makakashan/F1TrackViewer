@@ -35,6 +35,7 @@ import type { EnvironmentBundle } from "@/lib/environment-types";
 import { buildTerrainSampler } from "@/lib/terrain-sampler";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 import EnvironmentLayer from "@/components/environment-layer";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 export type CameraPreset = "top" | "iso" | "side" | "reset";
 
@@ -57,7 +58,7 @@ export interface TrackViewerProps {
 
 const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
 const TRACK_SURFACE_RAISE = 0.5;
-const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.08;
+const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.18;
 const TRACK_RENDER_ORDER = 100;
 const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
 const TERRAIN_TRACK_OFFSET = 2;
@@ -641,6 +642,7 @@ export default function TrackViewer({
 }: TrackViewerProps) {
   const [canvasEventSource, setCanvasEventSource] =
     useState<HTMLDivElement | null>(null);
+  const isMobile = useIsMobile();
   const [webglAvailable] = useState(() =>
     typeof document === "undefined" ? true : canCreateWebGLContext(),
   );
@@ -807,16 +809,17 @@ export default function TrackViewer({
           <Canvas
             eventSource={canvasEventSource}
             shadows={false}
-            dpr={[1, 1.5]}
+            dpr={isMobile ? 1 : [1, 1.5]}
             camera={{
               fov: 50,
-              near: 2,
+              near: isMobile ? 8 : 2,
               far: 20000,
               position: [400, 300, 400],
             }}
             gl={{
-              antialias: true,
+              antialias: !isMobile,
               alpha: false,
+              logarithmicDepthBuffer: true,
               powerPreference: "high-performance",
             }}
             onCreated={({ gl }) => {
