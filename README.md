@@ -1,141 +1,126 @@
-# F1 Track Viewer
+# F1 Track Studio
 
-Interactive 3D viewer for Formula 1 circuits — Next.js 16 + Three.js + Tailwind CSS. Orbit verified F1 layouts with real elevation profiles, adjustable track width, sector overlays, and a Monaco terrain diorama.
+Interactive Formula 1 circuit explorer built with Next.js, React Three Fiber, and Three.js.
 
----
+MVP 4 adds a globe-first entry flow: open the site, rotate a textured Earth, pick an F1 circuit marker, and jump into the detailed 3D TrackViewer.
 
-## Features
+![Globe circuit selector](docs/screenshots/globe-landing.png)
 
-- **31 circuits** from `bacinger/f1-circuits` with non-fallback sector data (Monaco, Monza, Silverstone, Spa, Suzuka, Las Vegas, Jeddah, and more)
-- **Extruded 3D track mesh** — solid ribbon with side walls, not a flat tube. Track width adjustable 3–15 m
-- **Real per-point track width** for 20 modern circuits from [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database) — the ribbon widens and narrows like the real circuit, aligned to the layout by curvature correlation
-- **Elevation profile** via [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) — SRTM data smoothed for street circuits (Monaco, Baku)
-- **Mean-subtracted altitude** — high-altitude tracks (Mexico, ~2200 m) stay grounded
-- **OrbitControls** — left-drag to rotate, right-drag to pan, wheel to zoom
-- **Right-side Settings panel** with camera presets, layers, terrain, elevation, width, and auto-rotate controls
-- **Start/finish marker** with direction arrow and verified marker overrides
-- **Shareable URL state** for selected track, width, elevation, and camera preset
-- **Light / Dark theme** — saved in localStorage
-- **Russian / English UI** — auto-detected, switchable from Settings
-- **Searchable circuit list** with country flags
-- **Info panel** with track stats, SVG sparkline elevation profile, sector splits, and geometry metadata
-- **Responsive** — mobile layout with drawer menus, desktop 3-column layout
-- **Sector view mode** via `?sectors=1` with URL state
-- **Real sector split distances** from FastF1 telemetry or manually verified split distances
-- **Monaco diorama** via `?environment=1&terrain=1`, generated from OpenStreetMap + static elevation data
+![3D track viewer](docs/screenshots/track-viewer.png)
 
----
+## Highlights
 
-## Tech Stack
+- **Globe circuit selector** with local Earth textures, compact markers, search, desktop sidebar, and mobile circuit panel.
+- **No runtime map APIs** for the globe. Earth assets live under `public/textures/earth/`.
+- **3D TrackViewer** for existing `?track=...` URLs, with the original track experience preserved.
+- **Static circuit data** from `bacinger/f1-circuits`, plus a local `public/circuits-index.json` for globe marker placement.
+- **Real elevation profiles** from pre-generated static JSON, with Open-Meteo/OpenTopoData fallback logic.
+- **Sector overlays** from FastF1 telemetry or manually verified sector distances.
+- **Real per-point track width** for supported modern circuits using TUMFTM racetrack data.
+- **Static environment layers** for generated circuit dioramas: terrain, roads, water, buildings, landuse, and surface data.
+- **Shareable URLs** for track, width, elevation, sector, environment, terrain, and real-width state.
+- **Dark F1-style UI**, English/Russian dictionaries, responsive desktop and mobile layouts.
 
-| Layer | What |
-|---|---|
-| Framework | Next.js 16 (App Router) + TypeScript 5 |
-| 3D | three@0.184 + @react-three/fiber@9 + @react-three/drei@10 |
-| Styling | Tailwind CSS 4 + shadcn/ui (New York) |
-| i18n | Lightweight local dictionaries |
-| State | React state + URL query params |
-| Track data | [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) (MIT) |
-| Elevation | [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) (CC-BY 4.0) + [OpenTopoData](https://opentopodata.org/) |
+## How It Works
 
-No backend, no API keys. Elevation profiles are pre-generated into static JSON files in `public/elevations`. At runtime the app loads static profiles first, then falls back to localStorage/API when needed.
+Opening `/` with no `track` query param shows the globe landing page.
 
----
+Opening a URL with `?track=...` renders the existing TrackViewer directly:
+
+```txt
+/?track=es-1991&width=7&elevation=1&sectors=0&realwidth=0&environment=1&terrain=1
+```
+
+Selecting a circuit on the globe does not replace the viewer. It only previews the circuit and offers an `Open Circuit` action that navigates to the existing TrackViewer route.
 
 ## Local Development
 
-### Prerequisites
+Requirements:
 
-- Node.js 20+ or [Bun](https://bun.sh) 1.1+
-- Modern browser with WebGL
-
-### Setup
+- Bun 1.1+ or Node.js 20+
+- A modern browser with WebGL
 
 ```bash
-git clone https://github.com/Makakashan/F1TrackViewer.git
-cd F1TrackViewer
-
-bun install    # or: npm install / pnpm install
-bun run dev    # or: npm run dev
+bun install
+bun run dev
 ```
 
-Open http://localhost:4000
+Open:
 
-### Scripts
+```txt
+http://localhost:4000
+```
 
-| Command | Description |
+## Scripts
+
+| Command | Purpose |
 |---|---|
-| `bun run dev` | Dev server on port 4000 |
+| `bun run dev` | Start the Next.js dev server on port 4000 |
 | `bun run build` | Production build |
 | `bun run build:pages` | Static export for GitHub Pages |
-| `bun run lint` | ESLint check |
-| `bun run elevations:generate` | Pre-generate static elevation JSONs |
-| `bun run widths:generate` | Pre-generate static real-track-width JSONs (TUMFTM) |
+| `bun run lint` | ESLint |
+| `bun run elevations:generate` | Generate static elevation JSON files |
+| `bun run widths:generate` | Generate TUMFTM real-width profiles |
+| `bun run environment:generate` | Generate static environment bundles |
 
----
+## Project Layout
 
-## Project Structure
-
-```
+```txt
 src/
-├── app/
-│   ├── page.tsx              # Main page wrapper
-│   └── layout.tsx            # Root layout with providers
-├── hooks/
-│   ├── use-circuits.ts       # Circuit index loading + selection
-│   └── use-track-data.ts     # GeoJSON + elevation loading with retry
-├── components/
-│   ├── track-viewer.tsx      # Three.js Canvas + OrbitControls
-│   ├── track-side-panel.tsx  # Desktop Info / Settings sidebar
-│   ├── track-settings-panel.tsx # Camera, layers, terrain, width controls
-│   ├── track-overlay.tsx     # Circuit name + controls hint
-│   ├── circuit-list.tsx      # Searchable circuit list
-│   ├── circuit-sidebar.tsx   # Sidebar wrapper with skeleton
-│   ├── mobile-menu.tsx       # Mobile hamburger drawer
-│   ├── mobile-info-sheet.tsx # Mobile track info panel
-│   ├── elevation-sparkline.tsx # SVG elevation profile
-│   ├── error-banner.tsx      # Centered error display
-│   └── ui/                   # shadcn/ui components
-├── lib/
-│   ├── geo-utils.ts          # WGS84 → metric, bounds, CatmullRom curve
-│   ├── elevation.ts          # SRTM smoothing, normalization, stats
-│   ├── elevation-api.ts      # Open-Meteo/OpenTopoData API + caching
-│   ├── track-geometry.ts     # Three.js BufferGeometry builders
-│   ├── f1-circuits.ts        # GitHub API helpers
-│   ├── start-finish.ts       # Marker overrides + start/finish geometry
-│   ├── track-width.ts        # Real per-point width profile loader (TUMFTM)
-│   └── i18n.ts               # Language dictionaries
-└── docs/
-    └── architecture.md       # Detailed architecture docs
+  app/
+    page.tsx                 # Routes globe vs TrackViewer based on ?track=
+  components/
+    globe/                   # Globe landing, Earth scene, markers, info card
+    track-viewer.tsx         # Main Three.js circuit renderer
+    track-side-panel.tsx     # Desktop info/settings panel
+    track-settings-panel.tsx # Camera, layers, terrain, width controls
+    mobile-info-sheet.tsx    # Mobile TrackViewer info panel
+    ui/                      # shadcn/ui components
+  hooks/
+    use-circuts.ts           # Circuit index loading + URL initial selection
+    use-track-data.ts        # GeoJSON + elevation loading
+  lib/
+    f1-circuits.ts           # Circuit metadata helpers
+    track-geometry.ts        # Ribbon/mesh geometry builders
+    track-width.ts           # TUMFTM width-profile loader
+    environment-loader.ts    # Static environment bundle loader
+    i18n.ts                  # English/Russian dictionaries
+public/
+  circuits-index.json        # Globe circuit marker index
+  elevations/                # Static elevation profiles
+  environments/              # Static diorama/environment bundles
+  textures/earth/            # Local Earth texture assets
+docs/
+  architecture.md
+  earth-textures.md
+  screenshots/
 ```
 
----
+## Earth Textures
 
-## Roadmap
+The globe looks for:
 
-- [x] **MVP 1** — static 3D viewer + OrbitControls
-- [x] **MVP 1.5** — elevation profile + ribbon mesh + i18n + theming
-- [x] **MVP 2** — corrected track base: real elevation x1, width control, camera presets, start/finish marker, direction arrow, URL state
-- [x] **MVP 3** — real sector view mode, no synthetic equal-split fallback layouts in the app, Monaco OpenStreetMap diorama, terrain draping, consolidated viewer controls
-- [x] **MVP 3.5** — [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database) real per-point track width for 20 circuits, curvature-aligned to each layout, with a "Real width" toggle and `?realwidth=` URL state
-- [ ] **MVP 4** — sessions, telemetry, and animated car position
+```txt
+public/textures/earth/earth-day.jpg
+public/textures/earth/earth-clouds.png   # optional
+public/textures/earth/earth-night.jpg    # reserved for future night-side work
+```
 
----
-
-## Disclaimer
-
-**Unofficial, non-commercial project.** Not affiliated with Formula 1, FIA, or data providers. "F1" and related marks are trademarks of Formula One Licensing B.V.
+Use equirectangular Earth maps. A 2048 or 4096 pixel wide JPG/WebP is a good first target. Avoid huge 16k/32k files for initial load and GitHub Pages.
 
 ## Data Sources
 
 | Source | Used for | License |
 |---|---|---|
-| [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) | Track geometry + metadata | MIT |
-| [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) | Elevation (SRTM-3) | CC-BY 4.0 |
-| [OpenTopoData](https://opentopodata.org/) | Alternative elevation source | CC-BY 4.0 |
+| [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) | Track geometry and metadata | MIT |
+| [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) | Elevation data | CC-BY 4.0 |
+| [OpenTopoData](https://opentopodata.org/) | Elevation fallback | CC-BY 4.0 |
 | [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database) | Real per-point track width | LGPL-3.0 |
+| [OpenStreetMap](https://www.openstreetmap.org/copyright) | Generated environment layers | ODbL |
 
----
+## Disclaimer
+
+Unofficial, non-commercial project. Not affiliated with, endorsed by, or sponsored by Formula 1, Formula One Licensing B.V., the FIA, or any data provider. F1, FORMULA ONE, and related marks are trademarks of Formula One Licensing B.V. Used here for identification purposes only.
 
 ## License
 
