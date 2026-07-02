@@ -1,5 +1,5 @@
 /**
- * Static environment layer schema for the MVP3 Monaco diorama.
+ * Static environment layer schema for generated circuit dioramas.
  *
  * All artifacts are produced by `scripts/generate-environment.ts` and served
  * as static JSON from `public/environments/{circuitId}/*.json`. The browser
