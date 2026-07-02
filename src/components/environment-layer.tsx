@@ -58,18 +58,19 @@ const LAYER_Y_FLAT = {
   base: 0,
   water: 0.08,
   landuse: 0.16,
-  roads: 0.45,
+  roads: 0.24,
   buildings: 0.08,
 } as const;
 
 const LAYER_Y_DRAPE = {
   landuse: 0.3,
   water: 0.6,
-  roads: 2.4,
+  roads: 0.55,
   buildings: 1.2,
 } as const;
 
 const MIN_WATER_AREA_SQ_M = 2_500;
+const ROAD_RIBBON_WIDTH_M = 1.2;
 const TERRAIN_SKIRT_BOTTOM_Y = -2;
 const TERRAIN_BASE_SLAB_DEPTH = 10;
 const TERRAIN_TRACK_CARVE_RADIUS_M = 24;
@@ -697,6 +698,7 @@ function RoadLinesMesh({
 }) {
   const geometry = useMemo(() => {
     const positions: number[] = [];
+    const indices: number[] = [];
     for (const road of roads) {
       if (road.points.length < 2) continue;
       for (let i = 0; i < road.points.length - 1; i++) {
@@ -715,12 +717,37 @@ function RoadLinesMesh({
         const bY = terrainSampler
           ? baseY + terrainSampler.heightAt(bLon, bLat) + drapeY
           : baseY + flatY;
-        positions.push(a.x, aY, a.z, b.x, bY, b.z);
+
+        const dx = b.x - a.x;
+        const dz = b.z - a.z;
+        const len = Math.hypot(dx, dz);
+        if (len < 0.01) continue;
+        const halfWidth = ROAD_RIBBON_WIDTH_M / 2;
+        const offsetX = (-dz / len) * halfWidth;
+        const offsetZ = (dx / len) * halfWidth;
+        const base = positions.length / 3;
+
+        positions.push(
+          a.x + offsetX,
+          aY,
+          a.z + offsetZ,
+          a.x - offsetX,
+          aY,
+          a.z - offsetZ,
+          b.x + offsetX,
+          bY,
+          b.z + offsetZ,
+          b.x - offsetX,
+          bY,
+          b.z - offsetZ,
+        );
+        indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
       }
     }
     if (!positions.length) return null;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setIndex(indices);
     return geo;
   }, [roads, originLon, originLat, terrainSampler, baseY, drapeY, flatY, bbox]);
 
@@ -733,14 +760,19 @@ function RoadLinesMesh({
   if (!geometry) return null;
 
   return (
-    <lineSegments geometry={geometry} renderOrder={10}>
-      <lineBasicMaterial
+    <mesh geometry={geometry} renderOrder={10}>
+      <meshBasicMaterial
         color={THEME_COLORS[resolvedTheme].road}
+        side={THREE.DoubleSide}
+        depthTest
         depthWrite={false}
+        polygonOffset
+        polygonOffsetFactor={-4}
+        polygonOffsetUnits={-4}
         transparent
         opacity={0.72}
       />
-    </lineSegments>
+    </mesh>
   );
 }
 
