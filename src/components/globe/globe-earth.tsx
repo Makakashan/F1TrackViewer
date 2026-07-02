@@ -24,8 +24,9 @@ interface GlobeEarthProps {
 const EARTH_RADIUS = 2;
 const MARKER_SURFACE_OFFSET = 0.004;
 const GLOBE_ROTATION_Y = -0.35;
-const EARTH_DAY_TEXTURE = "/textures/earth/earth-day.jpg";
-const EARTH_CLOUDS_TEXTURE = "/textures/earth/earth-clouds.png";
+const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const EARTH_DAY_TEXTURE = `${PUBLIC_BASE_PATH}/textures/earth/earth-day.jpg`;
+const EARTH_CLOUDS_TEXTURE = `${PUBLIC_BASE_PATH}/textures/earth/earth-clouds.png`;
 const CLOSE_MARKER_THRESHOLD_RADIANS = 0.018;
 
 function lonLatToTexturePoint(lon: number, lat: number, size: number) {

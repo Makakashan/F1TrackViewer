@@ -13,6 +13,8 @@ interface CircuitsIndex {
   circuits: GlobeCircuit[];
 }
 
+const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+
 function openCircuitSearch(circuit: GlobeCircuit) {
   const params = new URLSearchParams();
   params.set("track", circuit.id);
@@ -50,7 +52,7 @@ export default function GlobeLanding() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/circuits-index.json")
+    fetch(`${PUBLIC_BASE_PATH}/circuits-index.json`)
       .then((response) => {
         if (!response.ok) {
           throw new Error(`Failed to load circuit index: ${response.status}`);
