@@ -809,7 +809,7 @@ export default function TrackViewer({
           <Canvas
             eventSource={canvasEventSource}
             shadows={false}
-            dpr={isMobile ? [1.5, 2] : [1, 1.5]}
+            dpr={isMobile ? 2 : [1, 1.5]}
             camera={{
               fov: 50,
               near: isMobile ? 8 : 2,
@@ -817,7 +817,7 @@ export default function TrackViewer({
               position: [400, 300, 400],
             }}
             gl={{
-              antialias: !isMobile,
+              antialias: true,
               alpha: false,
               logarithmicDepthBuffer: true,
               powerPreference: "high-performance",
