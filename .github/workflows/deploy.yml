@@ -48,11 +48,39 @@ jobs:
     timeout-minutes: 30
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: https://makakashan.github.io/F1TrackViewer/
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true
         uses: actions/deploy-pages@v5
         with:
-          timeout: 1800000
+          timeout: 600000
+          error_count: 30
+          reporting_interval: 15000
+
+      - name: Wait before Pages deploy retry
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 30
+
+      - name: Retry deploy to GitHub Pages
+        id: deployment_retry_1
+        if: steps.deployment.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/deploy-pages@v5
+        with:
+          timeout: 600000
+          error_count: 30
+          reporting_interval: 15000
+
+      - name: Wait before final Pages deploy retry
+        if: steps.deployment.outcome == 'failure' && steps.deployment_retry_1.outcome == 'failure'
+        run: sleep 60
+
+      - name: Final retry deploy to GitHub Pages
+        if: steps.deployment.outcome == 'failure' && steps.deployment_retry_1.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+        with:
+          timeout: 600000
+          error_count: 30
           reporting_interval: 15000
