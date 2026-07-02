@@ -9,15 +9,14 @@ import {
   useSyncExternalStore,
 } from "react";
 import dynamic from "next/dynamic";
-import { RefreshCw, Flag, X } from "lucide-react";
-import CircuitSidebar from "@/components/circuit-sidebar";
+import { Globe2, RefreshCw, Flag, X } from "lucide-react";
 import TrackOverlay from "@/components/track-overlay";
 import TrackSidePanel from "@/components/track-side-panel";
 import ErrorBanner from "@/components/error-banner";
-import MobileMenu from "@/components/mobile-menu";
 import MobileInfoSheet from "@/components/mobile-info-sheet";
 import MobileLayersSheet from "@/components/mobile-layers-sheet";
 import SettingsMenu from "@/components/settings-menu";
+import { Button } from "@/components/ui/button";
 import { useAppPref } from "@/components/app-pref-provider";
 import { type CircuitProperties } from "@/lib/f1-circuits";
 import { useCircuits } from "@/hooks/use-circuts";
@@ -81,8 +80,7 @@ export default function F1TrackApp({
 }: F1TrackAppProps) {
   const { t, resolvedTheme } = useAppPref();
   const [error, setError] = useState<string | null>(null);
-  const { circuits, selectedId, loadingIndex, onSelect } =
-    useCircuits(setError);
+  const { circuits, selectedId, onSelect } = useCircuits(setError);
   const urlSearch = useSyncExternalStore(
     subscribeUrlState,
     getClientUrlSnapshot,
@@ -104,7 +102,6 @@ export default function F1TrackApp({
   const [realWidthEnabled, setRealWidthEnabled] = useState<boolean>(
     () => urlRealWidth === "1",
   );
-  const [mobileListOpen, setMobileListOpen] = useState(false);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [cameraPreset, setCameraPreset] = useState<CameraPreset | null>(null);
   const [startFinishPlacement, setStartFinishPlacement] =
@@ -116,7 +113,7 @@ export default function F1TrackApp({
     urlRealWidth === "1" || urlSectors === "0" ? "normal" : "sectors",
   );
   const [markers, setMarkers] = useState<TrackMarkers | null>(null);
-  // Environment diorama — Monaco MVP3. ?environment=1 opts in; null means
+  // Environment diorama. ?environment=1 opts in; null means
   // "no bundle for this circuit", undefined means "still checking".
   const urlEnvironment = urlParams.get("environment");
   const [environmentEnabled, setEnvironmentEnabled] = useState<boolean>(
@@ -158,9 +155,8 @@ export default function F1TrackApp({
     };
   }, [selectedId]);
 
-  // Load environment bundle for the selected circuit. Only Monaco (mc-1929)
-  // ships a pre-generated diorama at MVP3; other circuits resolve to null
-  // and the toggle hides itself.
+  // Load environment bundle for the selected circuit. Circuits without a
+  // generated static bundle resolve to null and the toggle hides itself.
   useEffect(() => {
     if (!selectedId) {
       const timer = window.setTimeout(() => setEnvironmentBundle(null), 0);
@@ -417,14 +413,6 @@ export default function F1TrackApp({
     notifyUrlStateSubscribers();
   }, [cameraPreset, circuits, elevationEnabled, environmentBundle, environmentEnabled, environmentTerrain, realWidthEnabled, selectedId, trackWidth, urlTrack, viewMode, widthProfile]);
 
-  const handleSelect = useCallback(
-    (id: string) => {
-      onSelect(id);
-      setMobileListOpen(false);
-    },
-    [onSelect],
-  );
-
   const handleCameraPreset = useCallback((preset: CameraPreset) => {
     setCameraPreset(preset);
   }, []);
@@ -439,6 +427,10 @@ export default function F1TrackApp({
     if (enabled) setViewMode("normal");
   }, []);
 
+  const handleBackToGlobe = useCallback(() => {
+    window.location.href = window.location.pathname || "/";
+  }, []);
+
   const properties: CircuitProperties | null =
     geojson?.features[0]?.properties ?? null;
   const pointCount = geojson?.features[0]?.geometry.coordinates.length;
@@ -451,15 +443,6 @@ export default function F1TrackApp({
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-3 backdrop-blur md:px-4">
         <div className="flex items-center gap-2 md:gap-3">
-          <MobileMenu
-            circuits={circuits}
-            selectedId={selectedId}
-            loadingIndex={loadingIndex}
-            onSelect={handleSelect}
-            open={mobileListOpen}
-            onOpenChange={setMobileListOpen}
-          />
-
           <div className="flex items-center gap-2">
             <div className="relative flex h-8 w-8 items-center justify-center rounded-md bg-linear-to-br from-red-600 to-orange-600 shadow-[0_0_20px_rgba(225,6,0,0.4)]">
               <Flag className="h-4 w-4 text-white" />
@@ -476,20 +459,20 @@ export default function F1TrackApp({
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={handleBackToGlobe}
+          >
+            <Globe2 className="h-4 w-4" />
+            Earth
+          </Button>
           <SettingsMenu />
         </div>
       </header>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[280px_minmax(0,1fr)_320px]">
-        <aside className="hidden min-h-0 border-r border-border bg-sidebar/50 md:block">
-          <CircuitSidebar
-            circuits={circuits}
-            selectedId={selectedId}
-            loadingIndex={loadingIndex}
-            onSelect={handleSelect}
-          />
-        </aside>
-
+      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_320px]">
         <main className="relative min-h-0 bg-background">
           {error && <ErrorBanner error={error} />}
           {geojson ? (

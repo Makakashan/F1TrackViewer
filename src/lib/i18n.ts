@@ -35,7 +35,7 @@ export const THEMES: { code: Theme; labelKey: keyof typeof en; flag: string }[] 
 const en = {
   // App header
   appName: "F1 Track Studio",
-  appTagline: "3D Circuit Viewer · MVP 3.5",
+  appTagline: "Globe Circuit Viewer · MVP 4",
   btnReload: "Reload",
   // Top bar toggles
   track: "Track",
@@ -97,9 +97,9 @@ const en = {
   widthRealSource: "Source: TUMFTM/racetrack-database (LGPL-3.0)",
   widthUniformValue: (w: number) => `${w} m uniform (manual)`,
   widthUnavailable: "This circuit is not available in the TUMFTM width dataset",
-  mvpBadge: "MVP 3.5 · Real per-point track width",
+  mvpBadge: "MVP 4 · Globe circuit selector",
   mvpDesc:
-    "Track built from GeoJSON LineString via CatmullRomCurve3 + ribbon mesh. 20 circuits carry real per-point width from TUMFTM, curvature-aligned to the layout. Sector splits use FastF1 telemetry; Monaco includes an OpenStreetMap terrain diorama.",
+    "Start from a textured 3D Earth, select a circuit by marker or menu, then open the detailed TrackViewer. Tracks are built from GeoJSON LineString via CatmullRomCurve3 + ribbon mesh, with sector splits, elevation, static environments, and real per-point width where available.",
   // Sector view
   viewMode: "View",
   viewModeNormal: "Normal",
@@ -142,7 +142,7 @@ type Dict = typeof en;
 
 const ru: Dict = {
   appName: "F1 Track Studio",
-  appTagline: "3D просмотрщик трасс · MVP 3.5",
+  appTagline: "Глобус выбора трасс · MVP 4",
   btnReload: "Обновить",
   track: "Трасса",
   trackSettings: "Настройки трассы",
@@ -200,9 +200,9 @@ const ru: Dict = {
   widthRealSource: "Источник: TUMFTM/racetrack-database (LGPL-3.0)",
   widthUniformValue: (w: number) => `${w} м равномерно (вручную)`,
     widthUnavailable: "Этой трассы нет в датасете ширины TUMFTM",
-  mvpBadge: "MVP 3.5 · Реальная ширина трассы по точкам",
+  mvpBadge: "MVP 4 · Выбор трасс на глобусе",
   mvpDesc:
-    "Трасса построена из GeoJSON LineString через CatmullRomCurve3 + ribbon mesh. У 20 трасс — реальная ширина по точкам из TUMFTM, выровненная по кривизне разметки. Сектора используют телеметрию FastF1; для Monaco добавлена OpenStreetMap-диорама с рельефом.",
+    "Стартовый экран теперь показывает текстурированную 3D Землю: трассу можно выбрать по маркеру или меню, а затем открыть подробный TrackViewer. Трассы строятся из GeoJSON LineString через CatmullRomCurve3 + ribbon mesh, с секторами, высотами, статичными окружениями и реальной шириной там, где она доступна.",
   // Sector view
   viewMode: "Вид",
   viewModeNormal: "Обычный",
