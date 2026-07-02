@@ -58,14 +58,14 @@ const LAYER_Y_FLAT = {
   base: 0,
   water: 0.08,
   landuse: 0.16,
-  roads: 0.28,
+  roads: 0.45,
   buildings: 0.08,
 } as const;
 
 const LAYER_Y_DRAPE = {
   landuse: 0.3,
   water: 0.6,
-  roads: 0.9,
+  roads: 2.4,
   buildings: 1.2,
 } as const;
 
