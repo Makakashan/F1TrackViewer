@@ -56,6 +56,10 @@ export interface TrackViewerProps {
 }
 
 const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
+const TRACK_SURFACE_RAISE = 0.5;
+const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.08;
+const TRACK_RENDER_ORDER = 100;
+const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
 const TERRAIN_TRACK_OFFSET = 2;
 const TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M = 14;
 const TERRAIN_TRACK_WALL_DEPTH = 3.2;
@@ -247,7 +251,7 @@ function TrackMesh({
       buildExtrudedTrack(
         curve,
         halfWidth,
-        0.5,
+        TRACK_SURFACE_RAISE,
         groundY,
         samples,
         terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
@@ -257,7 +261,7 @@ function TrackMesh({
   );
 
   const outlineGeometry = useMemo(
-    () => buildTrackOutline(curve, halfWidth, 0.5, samples),
+    () => buildTrackOutline(curve, halfWidth, TRACK_OVERLAY_RAISE, samples),
     [curve, halfWidth, samples],
   );
 
@@ -283,7 +287,7 @@ function TrackMesh({
         curve,
         startFinishPlacement.s,
         markerHalfWidth,
-        0.5,
+        TRACK_OVERLAY_RAISE,
       ),
     [curve, startFinishPlacement.s, markerHalfWidth],
   );
@@ -294,7 +298,7 @@ function TrackMesh({
         curve,
         startFinishPlacement.s,
         markerHalfWidth,
-        0.5,
+        TRACK_OVERLAY_RAISE,
       ),
     [curve, startFinishPlacement.s, markerHalfWidth],
   );
@@ -305,7 +309,7 @@ function TrackMesh({
         curve,
         startFinishPlacement.s,
         markerHalfWidth,
-        0.5,
+        TRACK_OVERLAY_RAISE,
       ),
     [curve, startFinishPlacement.s, markerHalfWidth],
   );
@@ -321,7 +325,7 @@ function TrackMesh({
         sector,
         markers,
         halfWidth,
-        0.5,
+        TRACK_SURFACE_RAISE,
         groundY,
         samples,
         terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
@@ -456,7 +460,7 @@ function TrackMesh({
             <mesh
               key={`sector-${sector.id}`}
               geometry={sectorGeometries[i]}
-              renderOrder={30}
+              renderOrder={TRACK_RENDER_ORDER}
               onPointerDown={(event) => {
                 if (!calibrationEnabled) return;
                 event.stopPropagation();
@@ -473,9 +477,6 @@ function TrackMesh({
                 side={THREE.DoubleSide}
                 depthTest
                 depthWrite
-                polygonOffset
-                polygonOffsetFactor={-10}
-                polygonOffsetUnits={-10}
               />
             </mesh>
           ))}
@@ -485,6 +486,7 @@ function TrackMesh({
             <mesh
               key={`split-${i}`}
               geometry={geo}
+              renderOrder={TRACK_OVERLAY_RENDER_ORDER}
             >
               <meshBasicMaterial
                 color={splitLineColor}
@@ -501,7 +503,7 @@ function TrackMesh({
               F1 red with emissive so it reads clearly on both themes. */}
           <mesh
             geometry={trackGeometry}
-            renderOrder={30}
+            renderOrder={TRACK_RENDER_ORDER}
             onPointerDown={(event) => {
               if (!calibrationEnabled) return;
               event.stopPropagation();
@@ -520,9 +522,6 @@ function TrackMesh({
               side={THREE.DoubleSide}
               depthTest
               depthWrite
-              polygonOffset
-              polygonOffsetFactor={-10}
-              polygonOffsetUnits={-10}
             />
           </mesh>
         </>
@@ -530,35 +529,30 @@ function TrackMesh({
 
       {/* Track outline — thin black lines along both top edges of the
           ribbon. Provides visual definition between track and ground. */}
-      <lineSegments geometry={outlineGeometry} renderOrder={31}>
+      <lineSegments geometry={outlineGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
         <lineBasicMaterial
           color={outlineColor}
-          depthTest={false}
+          depthTest
           depthWrite={false}
         />
       </lineSegments>
       </group>
 
-      <mesh geometry={startFinishGeometry}>
+      <mesh geometry={startFinishGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
         <meshBasicMaterial
           vertexColors
           side={THREE.DoubleSide}
-          depthTest={false}
+          depthTest
           depthWrite={false}
-          polygonOffset
-          polygonOffsetFactor={-4}
-          polygonOffsetUnits={-4}
         />
       </mesh>
 
-      <mesh geometry={directionArrowGeometry}>
+      <mesh geometry={directionArrowGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
         <meshBasicMaterial
           color={markerColor}
           side={THREE.DoubleSide}
+          depthTest
           depthWrite={false}
-          polygonOffset
-          polygonOffsetFactor={-5}
-          polygonOffsetUnits={-5}
         />
       </mesh>
 

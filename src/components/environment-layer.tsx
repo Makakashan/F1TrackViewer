@@ -837,13 +837,17 @@ function BuildingExtrusions({
   if (!geometry) return null;
 
   return (
-    <mesh geometry={geometry} castShadow receiveShadow>
+    <mesh geometry={geometry} renderOrder={60} castShadow receiveShadow>
       <meshStandardMaterial
         color={THEME_COLORS[resolvedTheme].building}
         roughness={0.82}
         metalness={0}
         flatShading
         side={THREE.DoubleSide}
+        transparent={false}
+        opacity={1}
+        depthTest
+        depthWrite
       />
     </mesh>
   );
