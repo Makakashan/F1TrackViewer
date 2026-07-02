@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { fetchCircuitIndex, type CircuitLocation } from "@/lib/f1-circuits";
-import { hasOnlyFallbackSectors } from "@/lib/track-markers";
 import { useAppPref } from "@/components/app-pref-provider";
 
 export function useCircuits(setError: (msg: string | null) => void) {
@@ -14,13 +13,20 @@ export function useCircuits(setError: (msg: string | null) => void) {
 		fetchCircuitIndex()
 			.then((list) => {
 				if (canceled) return;
-				const verifiedList = list
-					.filter((circuit) => !hasOnlyFallbackSectors(circuit.id))
+				const sortedList = list
 					.sort((a, b) => a.name.localeCompare(b.name));
-				setCircuits(verifiedList);
+				setCircuits(sortedList);
+				const urlTrack =
+					typeof window === "undefined"
+						? null
+						: new URLSearchParams(window.location.search).get("track");
+				const urlCircuit = urlTrack
+					? sortedList.find((circuit) => circuit.id === urlTrack)
+					: null;
 				const initial =
-					verifiedList.find((c) => c.id === "mc-1929") ??
-					verifiedList[0] ??
+					urlCircuit ??
+					sortedList.find((c) => c.id === "mc-1929") ??
+					sortedList[0] ??
 					null;
 				if (initial) setSelectedId(initial.id);
 			})
