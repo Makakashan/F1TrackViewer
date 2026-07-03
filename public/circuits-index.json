@@ -13,17 +13,6 @@
       "hasTerrain": true
     },
     {
-      "id": "ar-1952",
-      "name": "Autodromo Oscar y Juan Galvez",
-      "shortName": "Buenos Aires",
-      "country": "Argentina",
-      "lat": -34.694771,
-      "lon": -58.4606445,
-      "type": "permanent",
-      "hasEnvironment": true,
-      "hasTerrain": true
-    },
-    {
       "id": "at-1969",
       "name": "Red Bull Ring",
       "shortName": "Spielberg",
@@ -90,17 +79,6 @@
       "hasTerrain": true
     },
     {
-      "id": "br-1977",
-      "name": "Autodromo Internacional Nelson Piquet",
-      "shortName": "Jacarepagua",
-      "country": "Brazil",
-      "lat": -22.9771635,
-      "lon": -43.3945795,
-      "type": "permanent",
-      "hasEnvironment": true,
-      "hasTerrain": true
-    },
-    {
       "id": "ca-1978",
       "name": "Circuit Gilles Villeneuve",
       "shortName": "Montreal",
@@ -152,28 +130,6 @@
       "lat": 41.5694695,
       "lon": 2.2579015,
       "type": "permanent",
-      "hasEnvironment": true,
-      "hasTerrain": true
-    },
-    {
-      "id": "es-2026",
-      "name": "Madring",
-      "shortName": "Madrid",
-      "country": "Spain",
-      "lat": 40.4724595,
-      "lon": -3.618664,
-      "type": "street",
-      "hasEnvironment": true,
-      "hasTerrain": true
-    },
-    {
-      "id": "fr-1960",
-      "name": "Circuit de Charade",
-      "shortName": "Charade",
-      "country": "France",
-      "lat": 46.863756,
-      "lon": 3.164657,
-      "type": "road",
       "hasEnvironment": true,
       "hasTerrain": true
     },
@@ -277,34 +233,12 @@
       "hasTerrain": true
     },
     {
-      "id": "my-1999",
-      "name": "Sepang International Circuit",
-      "shortName": "Sepang",
-      "country": "Malaysia",
-      "lat": 2.760878,
-      "lon": 101.737806,
-      "type": "permanent",
-      "hasEnvironment": true,
-      "hasTerrain": true
-    },
-    {
       "id": "nl-1948",
       "name": "Circuit Zandvoort",
       "shortName": "Zandvoort",
       "country": "Netherlands",
       "lat": 52.388087,
       "lon": 4.5459015,
-      "type": "permanent",
-      "hasEnvironment": true,
-      "hasTerrain": true
-    },
-    {
-      "id": "pt-1972",
-      "name": "Circuito do Estoril",
-      "shortName": "Estoril",
-      "country": "Portugal",
-      "lat": 38.7504225,
-      "lon": -9.3937865,
       "type": "permanent",
       "hasEnvironment": true,
       "hasTerrain": true
@@ -376,28 +310,6 @@
       "hasTerrain": true
     },
     {
-      "id": "us-1909",
-      "name": "Indianapolis Motor Speedway",
-      "shortName": "Indianapolis",
-      "country": "United States",
-      "lat": 39.7946775,
-      "lon": -86.2349455,
-      "type": "permanent",
-      "hasEnvironment": true,
-      "hasTerrain": true
-    },
-    {
-      "id": "us-1956",
-      "name": "Watkins Glen International",
-      "shortName": "Watkins Glen",
-      "country": "United States",
-      "lat": 42.3363855,
-      "lon": -76.924733,
-      "type": "permanent",
-      "hasEnvironment": true,
-      "hasTerrain": true
-    },
-    {
       "id": "us-2012",
       "name": "Circuit of The Americas",
       "shortName": "COTA",
@@ -427,17 +339,6 @@
       "lat": 36.116734,
       "lon": -115.166644,
       "type": "street",
-      "hasEnvironment": true,
-      "hasTerrain": true
-    },
-    {
-      "id": "za-1961",
-      "name": "Kyalami Grand Prix Circuit",
-      "shortName": "Kyalami",
-      "country": "South Africa",
-      "lat": -25.9969,
-      "lon": 28.06764,
-      "type": "permanent",
       "hasEnvironment": true,
       "hasTerrain": true
     }
