@@ -1,7 +1,7 @@
 "use client";
 
 import { Canvas } from "@react-three/fiber";
-import { Eye, EyeOff, Flag, List, RefreshCw, Search, X } from "lucide-react";
+import { Eye, EyeOff, Flag, List, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import GlobeEarth from "./globe-earth";
 import GlobeInfoCard from "./globe-info-card";
@@ -33,7 +33,6 @@ export default function GlobeLanding() {
   const [circuits, setCircuits] = useState<GlobeCircuit[]>([]);
   const [loading, setLoading] = useState(true);
   const [earthReady, setEarthReady] = useState(false);
-  const [minimumIntroElapsed, setMinimumIntroElapsed] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -44,11 +43,6 @@ export default function GlobeLanding() {
   const [hoveredCircuit, setHoveredCircuit] = useState<GlobeCircuit | null>(
     null,
   );
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => setMinimumIntroElapsed(true), 1800);
-    return () => window.clearTimeout(timer);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,7 +82,7 @@ export default function GlobeLanding() {
       ),
     );
   }, [circuits, query]);
-  const showLoading = loading || !earthReady || !minimumIntroElapsed;
+  const showLoading = loading || !earthReady;
 
   const handleSelectCircuit = useCallback((circuit: GlobeCircuit | null) => {
     setSelectedCircuit(circuit);
@@ -276,9 +270,33 @@ export default function GlobeLanding() {
       )}
 
       {showLoading && (
-        <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center text-sm text-white/64">
-          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-          Loading globe
+        <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-[#03050a]/72 text-white backdrop-blur-sm">
+          <div className="relative flex h-48 w-48 items-center justify-center">
+            <div className="absolute inset-0 rounded-full border border-white/10 shadow-[0_0_70px_rgba(225,6,0,0.14)]" />
+            <div className="absolute inset-4 rounded-full border border-dashed border-white/14" />
+            <div className="absolute inset-0 rounded-full border border-transparent border-b-primary/65 border-r-primary/25" />
+            <div className="absolute inset-0 animate-spin [animation-duration:1.35s]">
+              <div className="relative mx-auto h-8 w-12 -translate-y-3">
+                <div className="absolute left-1/2 top-5 h-1.5 w-10 -translate-x-1/2 rounded-full bg-primary/35 blur-sm" />
+                <div className="absolute left-1/2 top-3 h-2 w-9 -translate-x-1/2 rounded-[999px_999px_5px_5px] bg-primary shadow-[0_0_18px_rgba(225,6,0,0.75)]" />
+                <div className="absolute left-1/2 top-1 h-4 w-4 -translate-x-1/2 rounded-t-full border-t border-white/60 bg-white/20" />
+                <div className="absolute left-0 top-4 h-2 w-2 rounded-full bg-white/82 shadow-[0_0_8px_rgba(255,255,255,0.45)]" />
+                <div className="absolute right-0 top-4 h-2 w-2 rounded-full bg-white/82 shadow-[0_0_8px_rgba(255,255,255,0.45)]" />
+                <div className="absolute left-1/2 top-2 h-7 w-0.5 -translate-x-1/2 rounded-full bg-white/75" />
+              </div>
+            </div>
+            <div className="text-center">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-primary">
+                F1 Track Studio
+              </div>
+              <div className="mt-2 text-sm font-semibold text-white/88">
+                {loading ? "Loading circuits" : "Preparing globe"}
+              </div>
+              <div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-white/38">
+                telemetry map
+              </div>
+            </div>
+          </div>
         </div>
       )}
       {error && (
