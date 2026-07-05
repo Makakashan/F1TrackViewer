@@ -299,6 +299,7 @@ export default function F1TrackApp({
             viewMode={viewMode}
             markers={markers}
             environmentActive={terrainModeActive}
+            onOpenCircuit={() => setMobileInfoOpen(true)}
           />
 
           {properties && (
@@ -343,10 +344,11 @@ export default function F1TrackApp({
             maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
             open={mobileInfoOpen}
             onOpenChange={setMobileInfoOpen}
+            showTrigger={false}
           />
         </main>
 
-        <aside className="hidden min-h-0 border-l border-border bg-sidebar/50 md:block">
+        <aside className="hidden min-h-0 border-l border-white/10 bg-sidebar/70 shadow-[-24px_0_80px_rgba(0,0,0,0.22)] backdrop-blur-xl md:block">
           <TrackSidePanel
             properties={properties}
             loading={loadingTrack}
