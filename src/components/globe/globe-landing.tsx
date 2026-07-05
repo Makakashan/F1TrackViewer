@@ -43,6 +43,7 @@ export default function GlobeLanding() {
   const [hoveredCircuit, setHoveredCircuit] = useState<GlobeCircuit | null>(
     null,
   );
+  const [cardTopPx, setCardTopPx] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +84,8 @@ export default function GlobeLanding() {
     );
   }, [circuits, query]);
   const showLoading = loading || !earthReady;
+  const effectiveCardTop =
+    activeCircuit && !mobileMenuOpen ? cardTopPx : 0;
 
   const handleSelectCircuit = useCallback((circuit: GlobeCircuit | null) => {
     setSelectedCircuit(circuit);
@@ -129,6 +132,7 @@ export default function GlobeLanding() {
           selectedCircuit={selectedCircuit}
           hoveredCircuit={hoveredCircuit}
           focusCircuit={selectedCircuit}
+          cardTopPx={effectiveCardTop}
           onHoverCircuit={setHoveredCircuit}
           onSelectCircuit={handleSelectCircuit}
           onClearHover={() => setHoveredCircuit(null)}
@@ -308,6 +312,9 @@ export default function GlobeLanding() {
       <GlobeInfoCard
         circuit={mobileMenuOpen ? null : activeCircuit}
         onOpen={handleOpenCircuit}
+        onRectChange={(rect) => {
+          setCardTopPx(rect.top);
+        }}
       />
     </main>
   );

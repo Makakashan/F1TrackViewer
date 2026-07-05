@@ -40,6 +40,8 @@ interface F1TrackAppProps {
   startFinishCalibration?: boolean;
 }
 
+const DISCLAIMER_DISMISSED_STORAGE_KEY = "f1tv-disclaimer-dismissed";
+
 export default function F1TrackApp({
   startFinishCalibration = false,
 }: F1TrackAppProps) {
@@ -81,7 +83,14 @@ export default function F1TrackApp({
   const [startFinishPlacement, setStartFinishPlacement] =
     useState<StartFinishPlacement | null>(null);
   const [footerExpanded, setFooterExpanded] = useState(false);
-  const [footerDismissed, setFooterDismissed] = useState(false);
+  const [footerDismissed, setFooterDismissed] = useState(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return localStorage.getItem(DISCLAIMER_DISMISSED_STORAGE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [markers, setMarkers] = useState<TrackMarkers | null>(null);
   // Environment diorama. ?environment=1 opts in; null means
   // "no bundle for this circuit", undefined means "still checking".
@@ -432,6 +441,11 @@ export default function F1TrackApp({
               aria-label="Hide disclaimer"
               onClick={(event) => {
                 event.stopPropagation();
+                try {
+                  localStorage.setItem(DISCLAIMER_DISMISSED_STORAGE_KEY, "1");
+                } catch {
+                  // Ignore storage failures; the current session still hides it.
+                }
                 setFooterDismissed(true);
               }}
               className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
