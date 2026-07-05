@@ -15,6 +15,7 @@ interface GlobeEarthProps {
   selectedCircuit: GlobeCircuit | null;
   hoveredCircuit: GlobeCircuit | null;
   focusCircuit: GlobeCircuit | null;
+  cardTopPx?: number;
   onHoverCircuit: (circuit: GlobeCircuit) => void;
   onSelectCircuit: (circuit: GlobeCircuit | null) => void;
   onClearHover: () => void;
@@ -569,6 +570,7 @@ export default function GlobeEarth({
   selectedCircuit,
   hoveredCircuit,
   focusCircuit,
+  cardTopPx,
   onHoverCircuit,
   onSelectCircuit,
   onClearHover,
@@ -579,6 +581,7 @@ export default function GlobeEarth({
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const focusTargetRef = useRef<THREE.Vector3 | null>(null);
   const lastFocusCircuitIdRef = useRef<string | null>(null);
+  const userInteractedRef = useRef(false);
   const projectedMarkerRef = useRef(new THREE.Vector3());
   const lastScreenPointRef = useRef<{ x: number; y: number } | null>(null);
   const markerOffsets = useMemo(() => buildMarkerOffsets(circuits), [circuits]);
@@ -592,15 +595,63 @@ export default function GlobeEarth({
   }, [earthLoading, earthTextures, onEarthReady]);
 
   useEffect(() => {
-    if (!focusCircuit) return;
-    if (lastFocusCircuitIdRef.current === focusCircuit.id) return;
-    lastFocusCircuitIdRef.current = focusCircuit.id;
+    if (!focusCircuit) {
+      focusTargetRef.current = null;
+      lastFocusCircuitIdRef.current = null;
+      userInteractedRef.current = false;
+      return;
+    }
+    if (lastFocusCircuitIdRef.current !== focusCircuit.id) {
+      userInteractedRef.current = false;
+      lastFocusCircuitIdRef.current = focusCircuit.id;
+    }
+    if (userInteractedRef.current) return;
+
     const direction = latLonToVector3(focusCircuit.lat, focusCircuit.lon, 1)
       .applyAxisAngle(new THREE.Vector3(0, 1, 0), GLOBE_ROTATION_Y)
       .normalize();
     const distance = THREE.MathUtils.clamp(camera.position.length(), 3.7, 5.2);
-    focusTargetRef.current = direction.multiplyScalar(distance);
-  }, [camera, focusCircuit]);
+    const target = direction.clone().multiplyScalar(distance);
+
+    const isMobileViewport = size.width < 768;
+    if (
+      isMobileViewport &&
+      cardTopPx &&
+      cardTopPx > 0 &&
+      size.height > 0
+    ) {
+      const TOP_MARGIN_PX = 28;
+      const markerY = size.height / 2;
+      const rawLiftPx = markerY - cardTopPx + TOP_MARGIN_PX;
+      const maxLiftPx = Math.max(0, markerY - 48);
+      const liftPx = Math.max(0, Math.min(rawLiftPx, maxLiftPx));
+      if (liftPx > 0) {
+        const persp = camera as THREE.PerspectiveCamera;
+        const fovRad = THREE.MathUtils.degToRad(persp.fov);
+        const markerRadius = EARTH_RADIUS + MARKER_SURFACE_OFFSET;
+        const dMarker = Math.max(distance - markerRadius, 0.001);
+        // Camera pivots around the globe center (lookAt 0,0,0), so a camera
+        // shift of `s` moves the marker by `s * markerRadius / distance`.
+        // Solve for the camera shift that lifts the marker by `liftPx` px.
+        const worldShift =
+          (liftPx *
+            2 *
+            dMarker *
+            Math.tan(fovRad / 2) *
+            distance) /
+          (markerRadius * size.height);
+        const upWorld = new THREE.Vector3(0, 1, 0).sub(
+          direction.clone().multiplyScalar(direction.y),
+        );
+        if (upWorld.lengthSq() > 1e-4) {
+          upWorld.normalize();
+          target.add(upWorld.multiplyScalar(-worldShift));
+        }
+      }
+    }
+
+    focusTargetRef.current = target;
+  }, [camera, focusCircuit, cardTopPx, size.width, size.height]);
 
   useFrame(() => {
     if (focusTargetRef.current) {
@@ -714,6 +765,7 @@ export default function GlobeEarth({
         enableDamping
         makeDefault
         onStart={() => {
+          userInteractedRef.current = true;
           focusTargetRef.current = null;
         }}
       />

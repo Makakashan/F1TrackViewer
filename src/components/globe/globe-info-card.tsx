@@ -1,12 +1,14 @@
 "use client";
 
 import { ExternalLink, Map, Mountain, Route, Trees } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import type { GlobeCircuit } from "./globe-marker";
 
 interface GlobeInfoCardProps {
   circuit: GlobeCircuit | null;
   onOpen: (circuit: GlobeCircuit) => void;
+  onRectChange?: (rect: { top: number; height: number }) => void;
 }
 
 function formatType(type: string) {
@@ -59,11 +61,38 @@ function InfoRow({
 export default function GlobeInfoCard({
   circuit,
   onOpen,
+  onRectChange,
 }: GlobeInfoCardProps) {
+  const ref = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || !onRectChange) return;
+    const update = () => {
+      const rect = node.getBoundingClientRect();
+      onRectChange({ top: rect.top, height: rect.height });
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    window.addEventListener("orientationchange", update);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("orientationchange", update);
+    };
+  }, [circuit, onRectChange]);
+
   if (!circuit) return null;
 
   return (
-    <aside className="pointer-events-auto fixed inset-x-3 bottom-3 z-20 md:inset-x-auto md:bottom-auto md:right-6 md:top-24 md:w-[360px]">
+    <aside
+      ref={ref}
+      className="pointer-events-auto fixed inset-x-3 bottom-3 z-20 md:inset-x-auto md:bottom-auto md:right-6 md:top-24 md:w-[360px]"
+    >
       <div className="space-y-3 rounded-2xl border border-white/10 bg-black/58 p-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_50px_rgba(0,0,0,0.18)]">
           <div className="space-y-1">

@@ -46,7 +46,7 @@ function Stat({
 }) {
   return (
     <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
-      <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+      <div className="flex items-center gap-1.5 whitespace-nowrap text-[10px] uppercase tracking-wider text-muted-foreground">
         {icon}
         {label}
       </div>
