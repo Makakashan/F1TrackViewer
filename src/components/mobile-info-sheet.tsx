@@ -29,6 +29,7 @@ interface MobileInfoSheetProps {
 	maxWidthMeters?: number | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
+	showTrigger?: boolean;
 }
 
 export default function MobileInfoSheet({
@@ -47,6 +48,7 @@ export default function MobileInfoSheet({
 	maxWidthMeters,
 	open,
 	onOpenChange,
+	showTrigger = true,
 }: MobileInfoSheetProps) {
 	const { t } = useAppPref();
 
@@ -54,15 +56,17 @@ export default function MobileInfoSheet({
 
 	return (
 		<Sheet open={open} onOpenChange={onOpenChange}>
-			<SheetTrigger asChild>
-				<Button
-					variant="secondary"
-					size="sm"
-					className="absolute bottom-4 right-4 z-10 md:hidden"
-				>
-					{t.circuit}
-				</Button>
-			</SheetTrigger>
+			{showTrigger && (
+				<SheetTrigger asChild>
+					<Button
+						variant="secondary"
+						size="sm"
+						className="absolute bottom-4 right-4 z-10 md:hidden"
+					>
+						{t.circuit}
+					</Button>
+				</SheetTrigger>
+			)}
 			<SheetContent
 				side="right"
 				className="w-[320px] p-0 bg-sidebar overflow-y-auto"

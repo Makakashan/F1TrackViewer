@@ -44,13 +44,19 @@ export default function TrackSidePanel({
 
   return (
     <Tabs defaultValue="info" className="h-full min-h-0 gap-0">
-      <div className="border-b border-border p-3">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="info">
+      <div className="border-b border-white/10 bg-black/20 p-3 backdrop-blur-xl">
+        <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl border border-white/10 bg-white/[0.045] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+          <TabsTrigger
+            value="info"
+            className="rounded-lg text-xs data-[state=active]:border-white/10 data-[state=active]:bg-white/10 data-[state=active]:shadow-[0_0_20px_rgba(255,255,255,0.06)]"
+          >
             <Info className="h-3.5 w-3.5" />
             {t.info}
           </TabsTrigger>
-          <TabsTrigger value="settings">
+          <TabsTrigger
+            value="settings"
+            className="rounded-lg text-xs data-[state=active]:border-primary/20 data-[state=active]:bg-primary/15 data-[state=active]:text-foreground data-[state=active]:shadow-[0_0_24px_rgba(225,6,0,0.16)]"
+          >
             <SlidersHorizontal className="h-3.5 w-3.5" />
             {t.settings}
           </TabsTrigger>
