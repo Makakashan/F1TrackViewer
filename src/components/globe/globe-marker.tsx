@@ -54,8 +54,12 @@ export default function GlobeMarker({
 }: GlobeMarkerProps) {
   const active = selected || hovered;
   const groupRef = useRef<THREE.Group>(null);
-  const dotMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
-  const outlineMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const centerMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const redRingMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const whiteRingMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const haloMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const pulseMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const pulseRef = useRef<THREE.Mesh>(null);
   const hitRef = useRef<THREE.Mesh>(null);
   const worldPositionRef = useRef(new THREE.Vector3());
   const cameraDirectionRef = useRef(new THREE.Vector3());
@@ -91,8 +95,12 @@ export default function GlobeMarker({
   useFrame(({ clock }) => {
     if (
       !groupRef.current ||
-      !dotMaterialRef.current ||
-      !outlineMaterialRef.current ||
+      !centerMaterialRef.current ||
+      !redRingMaterialRef.current ||
+      !whiteRingMaterialRef.current ||
+      !haloMaterialRef.current ||
+      !pulseMaterialRef.current ||
+      !pulseRef.current ||
       !hitRef.current
     ) {
       return;
@@ -114,13 +122,42 @@ export default function GlobeMarker({
     const selectedPulse = selected
       ? 1 + Math.sin(clock.elapsedTime * 5.2) * 0.06
       : 1;
+    const pulseProgress = (Math.sin(clock.elapsedTime * 3.6) + 1) / 2;
     groupRef.current.scale.setScalar(selectedPulse);
-    dotMaterialRef.current.opacity = active ? opacity * 0.96 : opacity * 0.78;
-    outlineMaterialRef.current.opacity = active ? opacity * 0.92 : opacity * 0.82;
+    pulseRef.current.scale.setScalar(active ? 1.04 + pulseProgress * 0.38 : 1);
+    centerMaterialRef.current.opacity = active ? opacity : opacity * 0.92;
+    redRingMaterialRef.current.opacity = active ? opacity : opacity * 0.9;
+    whiteRingMaterialRef.current.opacity = active ? opacity : opacity * 0.72;
+    haloMaterialRef.current.opacity = active ? opacity * 0.36 : opacity * 0.1;
+    pulseMaterialRef.current.opacity = active
+      ? opacity * (0.28 - pulseProgress * 0.2)
+      : 0;
   });
 
   return (
     <group ref={groupRef} position={position} quaternion={orientation}>
+      <mesh position={[0, 0, 0.0004]}>
+        <circleGeometry args={[active ? 0.058 : 0.041, 56]} />
+        <meshBasicMaterial
+          ref={haloMaterialRef}
+          color={active ? "#ff3b32" : "#ffffff"}
+          transparent
+          opacity={0.12}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      <mesh ref={pulseRef} position={[0, 0, 0.0006]}>
+        <ringGeometry args={[0.035, 0.041, 64]} />
+        <meshBasicMaterial
+          ref={pulseMaterialRef}
+          color="#ffffff"
+          transparent
+          opacity={0}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
       <mesh
         onPointerOver={(event) => {
           event.stopPropagation();
@@ -136,12 +173,42 @@ export default function GlobeMarker({
         }}
         position={[0, 0, 0.0008]}
       >
-        <circleGeometry args={[active ? 0.022 : 0.017, 32]} />
+        <circleGeometry args={[active ? 0.031 : 0.024, 56]} />
         <meshBasicMaterial
-          ref={outlineMaterialRef}
+          ref={whiteRingMaterialRef}
           color="#ffffff"
           transparent
-          opacity={0.82}
+          opacity={0.86}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh
+        onPointerOver={(event) => {
+          event.stopPropagation();
+          onHover(circuit);
+        }}
+        onPointerOut={(event) => {
+          event.stopPropagation();
+          onBlur();
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelect(circuit);
+        }}
+        position={[0, 0, 0.001]}
+      >
+        <ringGeometry
+          args={[
+            active ? 0.015 : 0.011,
+            active ? 0.024 : 0.018,
+            56,
+          ]}
+        />
+        <meshBasicMaterial
+          ref={redRingMaterialRef}
+          color="#f10800"
+          transparent
+          opacity={0.92}
           depthWrite={false}
         />
       </mesh>
@@ -160,12 +227,12 @@ export default function GlobeMarker({
         }}
         position={[0, 0, 0.0012]}
       >
-        <circleGeometry args={[active ? 0.0175 : 0.0135, 32]} />
+        <circleGeometry args={[active ? 0.008 : 0.0062, 40]} />
         <meshBasicMaterial
-          ref={dotMaterialRef}
-          color={selected ? "#ff1f18" : hovered ? "#ff2f28" : "#d90f0a"}
+          ref={centerMaterialRef}
+          color="#f10800"
           transparent
-          opacity={0.78}
+          opacity={0.95}
           depthWrite={false}
         />
       </mesh>
