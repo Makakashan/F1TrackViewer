@@ -83,19 +83,25 @@ export default function F1TrackApp({
   const [startFinishPlacement, setStartFinishPlacement] =
     useState<StartFinishPlacement | null>(null);
   const [footerExpanded, setFooterExpanded] = useState(false);
-  const [footerDismissed, setFooterDismissed] = useState(() => {
-    if (typeof window === "undefined") return true;
-    try {
-      return localStorage.getItem(DISCLAIMER_DISMISSED_STORAGE_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
+  const [footerDismissed, setFooterDismissed] = useState(true);
   const [markers, setMarkers] = useState<TrackMarkers | null>(null);
   // Environment diorama. ?environment=1 opts in; null means
   // "no bundle for this circuit", undefined means "still checking".
   const [environmentBundle, setEnvironmentBundle] =
     useState<EnvironmentBundle | null | undefined>(undefined);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        setFooterDismissed(
+          localStorage.getItem(DISCLAIMER_DISMISSED_STORAGE_KEY) === "1",
+        );
+      } catch {
+        setFooterDismissed(false);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   // ─── Hydrate URL state on mount ──────────────────────────────────
   const didHydrate = useRef(false);
@@ -157,7 +163,7 @@ export default function F1TrackApp({
   // ─── Load environment bundle for the selected circuit ────────────
   useEffect(() => {
     if (!selectedId) {
-      const timer = window.setTimeout(() => setEnvironmentBundle(null), 0);
+      const timer = window.setTimeout(() => setEnvironmentBundle(undefined), 0);
       return () => window.clearTimeout(timer);
     }
     let cancelled = false;
@@ -190,11 +196,11 @@ export default function F1TrackApp({
 
   // ─── Auto-disable environment when the selected circuit has no bundle ─
   useEffect(() => {
-    if (environmentBundle === null && environmentEnabled) {
+    if (selectedId && environmentBundle === null && environmentEnabled) {
       const timer = window.setTimeout(() => setUrlEnvironmentEnabled(false), 0);
       return () => window.clearTimeout(timer);
     }
-  }, [environmentBundle, environmentEnabled, setUrlEnvironmentEnabled]);
+  }, [environmentBundle, environmentEnabled, selectedId, setUrlEnvironmentEnabled]);
 
   // ─── Reset view mode when markers confirm no sectors ─────────────
   const prevMarkersRef = useRef<TrackMarkers | null>(null);

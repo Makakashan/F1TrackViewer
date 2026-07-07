@@ -65,16 +65,15 @@ const LAYER_Y_FLAT = {
 const LAYER_Y_DRAPE = {
   landuse: 0.3,
   water: 0.6,
-  roads: 0.55,
+  roads: 2.4,
   buildings: 1.2,
 } as const;
 
 const MIN_WATER_AREA_SQ_M = 2_500;
 const ROAD_RIBBON_WIDTH_M = 1.2;
-const TERRAIN_SKIRT_BOTTOM_Y = -2;
 const TERRAIN_BASE_SLAB_DEPTH = 10;
-const TERRAIN_TRACK_CARVE_RADIUS_M = 24;
-const TERRAIN_TRACK_CARVE_DEPTH_M = 1.5;
+const TERRAIN_TRACK_CARVE_RADIUS_M = 56;
+const TERRAIN_TRACK_CARVE_DEPTH_M = 6;
 const BROADCAST_VIEW_PADDING_M = 360;
 const MAX_BROADCAST_BUILDINGS = 420;
 
@@ -83,19 +82,15 @@ const THEME_COLORS = {
     base: "#EEF1F5",
     grid: "#CCD3DE",
     terrain: "#E5EAF1",
-    terrainSlab: "#D5DCE6",
-    sideTop: "#C9D1DC",
-    sideBottom: "#AEB8C6",
+    terrainSlab: "#252C36",
     building: "#FFFFFF",
     road: "#AAB4C2",
   },
   dark: {
-    base: "#05070B",
-    grid: "#1A202A",
-    terrain: "#090D13",
-    terrainSlab: "#05070B",
-    sideTop: "#101722",
-    sideBottom: "#030406",
+    base: "#0B1017",
+    grid: "#141A22",
+    terrain: "#111720",
+    terrainSlab: "#090D13",
     building: "#6F7887",
     road: "#6F7784",
   },
@@ -328,6 +323,13 @@ export default function EnvironmentLayer({
         bbox={broadcastBBox}
         resolvedTheme={resolvedTheme}
       />
+      <EnvironmentEdgeFade
+        bbox={broadcastBBox}
+        originLon={originLon}
+        originLat={originLat}
+        baseY={baseY}
+        hasTerrain={hasTerrain}
+      />
     </group>
   );
 }
@@ -416,32 +418,102 @@ function DioramaBase({
     />
   );
 
-  if (hasTerrain) {
-    return (
-      <mesh
-        position={[
-          center.x,
-          yPos - TERRAIN_BASE_SLAB_DEPTH / 2,
-          center.z,
-        ]}
-        receiveShadow
-      >
-        <boxGeometry
-          args={[halfW * 2, TERRAIN_BASE_SLAB_DEPTH, halfH * 2, 1, 1, 1]}
-        />
-        {material}
-      </mesh>
-    );
-  }
-
   return (
     <mesh
       rotation={[-Math.PI / 2, 0, 0]}
-      position={[center.x, yPos, center.z]}
+      position={[center.x, hasTerrain ? yPos - TERRAIN_BASE_SLAB_DEPTH : yPos, center.z]}
       receiveShadow
     >
       <planeGeometry args={[halfW * 2, halfH * 2, 1, 1]} />
       {material}
+    </mesh>
+  );
+}
+
+function EnvironmentEdgeFade({
+  bbox,
+  originLon,
+  originLat,
+  baseY,
+  hasTerrain,
+}: {
+  bbox: BBox;
+  originLon: number;
+  originLat: number;
+  baseY: number;
+  hasTerrain: boolean;
+}) {
+  const centerLonLat = bboxCenter(bbox);
+  const center = lonLatToXZ(centerLonLat.lon, centerLonLat.lat, originLon, originLat);
+  const width =
+    (bbox.maxLon - bbox.minLon) *
+    111_320 *
+    Math.cos((centerLonLat.lat * Math.PI) / 180);
+  const height = (bbox.maxLat - bbox.minLat) * 111_320;
+
+  const fadeTexture = useMemo(() => {
+    const size = 512;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.clearRect(0, 0, size, size);
+
+    const edge = size * 0.3;
+    const stops: [number, string][] = [
+      [0, "rgba(0, 0, 0, 0.26)"],
+      [0.56, "rgba(0, 0, 0, 0.08)"],
+      [1, "rgba(0, 0, 0, 0)"],
+    ];
+
+    const left = ctx.createLinearGradient(0, 0, edge, 0);
+    const right = ctx.createLinearGradient(size, 0, size - edge, 0);
+    const top = ctx.createLinearGradient(0, 0, 0, edge);
+    const bottom = ctx.createLinearGradient(0, size, 0, size - edge);
+    for (const [offset, color] of stops) {
+      left.addColorStop(offset, color);
+      right.addColorStop(offset, color);
+      top.addColorStop(offset, color);
+      bottom.addColorStop(offset, color);
+    }
+
+    ctx.fillStyle = left;
+    ctx.fillRect(0, 0, edge, size);
+    ctx.fillStyle = right;
+    ctx.fillRect(size - edge, 0, edge, size);
+    ctx.fillStyle = top;
+    ctx.fillRect(0, 0, size, edge);
+    ctx.fillStyle = bottom;
+    ctx.fillRect(0, size - edge, size, edge);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.anisotropy = 4;
+    return texture;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      fadeTexture?.dispose();
+    };
+  }, [fadeTexture]);
+
+  return (
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[center.x, baseY + (hasTerrain ? 120 : 0.7), center.z]}
+      renderOrder={80}
+    >
+      <planeGeometry args={[width * 1.01, height * 1.01, 1, 1]} />
+      <meshBasicMaterial
+        map={fadeTexture}
+        transparent
+        opacity={hasTerrain ? 0.32 : 0.42}
+        depthTest={false}
+        depthWrite={false}
+        toneMapped={false}
+      />
     </mesh>
   );
 }
@@ -509,6 +581,9 @@ function TerrainMesh({
 
     const themeColors = THEME_COLORS[resolvedTheme];
     const terrainTop = new THREE.Color(themeColors.terrain);
+    const terrainEdge = new THREE.Color(
+      resolvedTheme === "dark" ? "#020304" : "#4D535D",
+    );
     const waterMasks = waterPolygons
       .map((poly) =>
         poly.points.map(([lon, lat]) =>
@@ -565,7 +640,12 @@ function TerrainMesh({
           rows === 1 ? 0 : (row - rowStart) / (rows - 1),
         );
 
-        colors.push(terrainTop.r, terrainTop.g, terrainTop.b);
+        const u = cols === 1 ? 0.5 : (col - colStart) / (cols - 1);
+        const v = rows === 1 ? 0.5 : (row - rowStart) / (rows - 1);
+        const edgeDistance = Math.min(u, v, 1 - u, 1 - v);
+        const edgeFade = THREE.MathUtils.clamp((0.26 - edgeDistance) / 0.26, 0, 1);
+        const color = terrainTop.clone().lerp(terrainEdge, edgeFade * 0.5);
+        colors.push(color.r, color.g, color.b);
       }
     }
 
@@ -578,59 +658,6 @@ function TerrainMesh({
         indices.push(a, c, b);
         indices.push(b, c, d);
       }
-    }
-
-    const sideTop = new THREE.Color(themeColors.sideTop);
-    const sideBottom = new THREE.Color(themeColors.sideBottom);
-
-    function appendSkirtSegment(a: number, b: number) {
-      const base = positions.length / 3;
-      const ax = positions[a * 3];
-      const ay = positions[a * 3 + 1];
-      const az = positions[a * 3 + 2];
-      const bx = positions[b * 3];
-      const by = positions[b * 3 + 1];
-      const bz = positions[b * 3 + 2];
-
-      positions.push(
-        ax,
-        ay,
-        az,
-        bx,
-        by,
-        bz,
-        ax,
-        TERRAIN_SKIRT_BOTTOM_Y,
-        az,
-        bx,
-        TERRAIN_SKIRT_BOTTOM_Y,
-        bz,
-      );
-      uvs.push(0, 0, 1, 0, 0, 1, 1, 1);
-      colors.push(
-        sideTop.r,
-        sideTop.g,
-        sideTop.b,
-        sideTop.r,
-        sideTop.g,
-        sideTop.b,
-        sideBottom.r,
-        sideBottom.g,
-        sideBottom.b,
-        sideBottom.r,
-        sideBottom.g,
-        sideBottom.b,
-      );
-      indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
-    }
-
-    for (let col = 0; col < cols - 1; col++) {
-      appendSkirtSegment(col, col + 1);
-      appendSkirtSegment((rows - 1) * cols + col + 1, (rows - 1) * cols + col);
-    }
-    for (let row = 0; row < rows - 1; row++) {
-      appendSkirtSegment((row + 1) * cols, row * cols);
-      appendSkirtSegment(row * cols + cols - 1, (row + 1) * cols + cols - 1);
     }
 
     const geo = new THREE.BufferGeometry();
@@ -668,6 +695,8 @@ function TerrainMesh({
         metalness={0}
         flatShading
         side={THREE.DoubleSide}
+        transparent={resolvedTheme === "dark"}
+        opacity={resolvedTheme === "dark" ? 0.88 : 1}
       />
     </mesh>
   );

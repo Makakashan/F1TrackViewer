@@ -117,7 +117,7 @@ export default function TrackViewer({
             }}
             gl={{
               antialias: true,
-              alpha: false,
+              alpha: true,
               logarithmicDepthBuffer: true,
               powerPreference: "high-performance",
             }}
@@ -125,26 +125,32 @@ export default function TrackViewer({
               gl.toneMapping = THREE.ACESFilmicToneMapping;
               gl.toneMappingExposure = 1.05;
               gl.outputColorSpace = THREE.SRGBColorSpace;
+              gl.setClearColor(sceneBackgroundColor, 0);
             }}
             style={{ background: bgGradient, touchAction: "none" }}
           >
-            <color attach="background" args={[sceneBackgroundColor]} />
-            <ambientLight intensity={resolvedTheme === "dark" ? 0.5 : 0.7} />
+            <fog attach="fog" args={[sceneBackgroundColor, 1800, 9000]} />
+            <ambientLight intensity={resolvedTheme === "dark" ? 0.42 : 0.55} />
             <hemisphereLight
               args={
                 resolvedTheme === "dark"
-                  ? ["#9bb4ff", "#1a1a1f", 0.5]
-                  : ["#b4c4ff", "#3a3a3f", 0.6]
+                  ? ["#AFC2FF", "#07080C", 0.58]
+                  : ["#B4C4FF", "#16181D", 0.48]
               }
             />
             <directionalLight
               position={[500, 800, 400]}
-              intensity={resolvedTheme === "dark" ? 1.6 : 1.2}
+              intensity={resolvedTheme === "dark" ? 1.45 : 1.05}
             />
             <directionalLight
               position={[-400, 300, -500]}
-              intensity={0.4}
-              color="#6b8cff"
+              intensity={0.5}
+              color="#7D9BFF"
+            />
+            <directionalLight
+              position={[0, 260, -900]}
+              intensity={0.55}
+              color="#E10600"
             />
 
             <Suspense fallback={<SceneSpinner />}>
