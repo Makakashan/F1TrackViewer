@@ -68,9 +68,9 @@ export function getSceneBackground(resolvedTheme: "light" | "dark") {
   return {
     bgGradient:
       resolvedTheme === "dark"
-        ? "linear-gradient(180deg, #0e0e12 0%, #050507 100%)"
-        : "linear-gradient(180deg, #f7f8fb 0%, #e7eaf0 100%)",
+        ? "radial-gradient(circle at 50% 42%, rgba(44, 49, 62, 0.55) 0%, rgba(13, 15, 21, 0.92) 34%, #030407 74%, #010103 100%)"
+        : "radial-gradient(circle at 50% 42%, rgba(52, 58, 70, 0.38) 0%, rgba(13, 15, 21, 0.96) 48%, #030407 100%)",
     sceneBackgroundColor:
-      resolvedTheme === "dark" ? "#020204" : "#f4f6fa",
+      resolvedTheme === "dark" ? "#030407" : "#05070B",
   };
 }

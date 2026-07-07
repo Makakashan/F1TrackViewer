@@ -31,6 +31,7 @@ import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
 import { buildTerrainSampler } from "@/lib/terrain-sampler";
 import EnvironmentLayer from "@/components/environment-layer";
+import StudioStage from "@/components/three/studio-stage";
 import type { CameraPreset } from "@/components/track-viewer";
 import {
   TRACK_SURFACE_RAISE,
@@ -175,6 +176,7 @@ export default function TrackMesh({
     () => (hasEnvironment ? minY - 1 : -peakY - trackWidth * 2 - 1),
     [hasEnvironment, minY, peakY, trackWidth],
   );
+  const stageFloorY = hasEnvironment ? groundY - 14 : groundY - 0.5;
 
   const samples = useMemo(() => {
     const length = feature.properties.length;
@@ -370,6 +372,13 @@ export default function TrackMesh({
 
   return (
     <group>
+      <StudioStage
+        radius={radius}
+        floorY={stageFloorY}
+        hasEnvironment={hasEnvironment}
+        resolvedTheme={resolvedTheme}
+      />
+
       {hasEnvironment && (
         <EnvironmentLayer
           bundle={environmentBundle!}
@@ -503,38 +512,6 @@ export default function TrackMesh({
         />
       </mesh>
 
-      {!hasEnvironment && (
-        <mesh
-          rotation={[-Math.PI / 2, 0, 0]}
-          position={[0, groundY - 0.5, 0]}
-        >
-          <circleGeometry args={[radius * 4, 64]} />
-          <meshStandardMaterial
-            color={colors.groundColor}
-            roughness={1}
-            metalness={0}
-          />
-        </mesh>
-      )}
-
-      {!hasEnvironment && (
-        <>
-          <mesh
-            rotation={[-Math.PI / 2, 0, 0]}
-            position={[0, groundY + 0.1, 0]}
-          >
-            <ringGeometry args={[radius * 1.6, radius * 1.62, 96]} />
-            <meshBasicMaterial color={colors.ringColor1} />
-          </mesh>
-          <mesh
-            rotation={[-Math.PI / 2, 0, 0]}
-            position={[0, groundY + 0.2, 0]}
-          >
-            <ringGeometry args={[radius * 2.4, radius * 2.42, 96]} />
-            <meshBasicMaterial color={colors.ringColor2} />
-          </mesh>
-        </>
-      )}
     </group>
   );
 }
