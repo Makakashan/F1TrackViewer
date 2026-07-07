@@ -2,13 +2,13 @@
  * Shared constants, helpers, and theme colors for the Three.js track scene.
  */
 
-export const TRACK_SURFACE_RAISE = 0.5;
+export const TRACK_SURFACE_RAISE = 1.1;
 export const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.18;
 export const TRACK_RENDER_ORDER = 100;
 export const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
-export const TERRAIN_TRACK_OFFSET = 2;
-export const TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M = 14;
-export const TERRAIN_TRACK_WALL_DEPTH = 3.2;
+export const TERRAIN_TRACK_OFFSET = 6;
+export const TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M = 46;
+export const TERRAIN_TRACK_WALL_DEPTH = TERRAIN_TRACK_OFFSET + TRACK_SURFACE_RAISE;
 export const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
 
 export function disposeGeometry(value: unknown) {
