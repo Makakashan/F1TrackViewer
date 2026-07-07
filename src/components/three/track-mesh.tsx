@@ -406,6 +406,9 @@ export default function TrackMesh({
                 side={THREE.DoubleSide}
                 depthTest
                 depthWrite
+                polygonOffset
+                polygonOffsetFactor={-2}
+                polygonOffsetUnits={-2}
               />
             </mesh>
           ))}
@@ -448,6 +451,9 @@ export default function TrackMesh({
               side={THREE.DoubleSide}
               depthTest
               depthWrite
+              polygonOffset
+              polygonOffsetFactor={-2}
+              polygonOffsetUnits={-2}
             />
           </mesh>
         </>

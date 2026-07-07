@@ -65,7 +65,7 @@ const LAYER_Y_FLAT = {
 const LAYER_Y_DRAPE = {
   landuse: 0.3,
   water: 0.6,
-  roads: 0.55,
+  roads: 2.4,
   buildings: 1.2,
 } as const;
 
@@ -73,8 +73,8 @@ const MIN_WATER_AREA_SQ_M = 2_500;
 const ROAD_RIBBON_WIDTH_M = 1.2;
 const TERRAIN_SKIRT_BOTTOM_Y = -2;
 const TERRAIN_BASE_SLAB_DEPTH = 10;
-const TERRAIN_TRACK_CARVE_RADIUS_M = 24;
-const TERRAIN_TRACK_CARVE_DEPTH_M = 1.5;
+const TERRAIN_TRACK_CARVE_RADIUS_M = 56;
+const TERRAIN_TRACK_CARVE_DEPTH_M = 6;
 const BROADCAST_VIEW_PADDING_M = 360;
 const MAX_BROADCAST_BUILDINGS = 420;
 
