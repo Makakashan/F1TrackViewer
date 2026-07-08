@@ -51,10 +51,10 @@ export interface SceneColors {
 
 export function getSceneColors(isDark: boolean): SceneColors {
   return {
-    trackColor: "#c10500",
-    trackEmissive: "#c10500",
-    trackEmissiveIntensity: 0.12,
-    outlineColor: isDark ? "#0a0a0d" : "#161a21",
+    trackColor: "#e10600",
+    trackEmissive: "#e10600",
+    trackEmissiveIntensity: isDark ? 0.12 : 0.3,
+    outlineColor: isDark ? "#0a0a0d" : "#1a1a1a",
     groundColor: isDark ? "#0a0a0d" : "#fbfcfe",
     ringColor1: isDark ? "#1f1f24" : "#eef1f6",
     ringColor2: isDark ? "#16161a" : "#f5f7fb",
@@ -72,7 +72,7 @@ export function getSceneBackground(resolvedTheme: "light" | "dark") {
     };
   }
   return {
-    bgGradient: "#D5DCE5",
-    sceneBackgroundColor: "#D5DCE5",
+    bgGradient: "#D0D0CC",
+    sceneBackgroundColor: "#D0D0CC",
   };
 }

@@ -461,20 +461,17 @@ export default function TrackMesh({
               onCalibrateStartFinish?.(nearestS);
             }}
           >
-            <meshStandardMaterial
+            <meshBasicMaterial
               key={realWidthActive ? "real-width-colors" : "solid-track"}
               vertexColors={realWidthActive}
               color={realWidthActive ? "#ffffff" : colors.trackColor}
-              emissive={realWidthActive ? "#000000" : colors.trackEmissive}
-              emissiveIntensity={realWidthActive ? 0 : colors.trackEmissiveIntensity}
-              roughness={0.5}
-              metalness={0.05}
               side={THREE.DoubleSide}
               depthTest
               depthWrite
               polygonOffset
               polygonOffsetFactor={-2}
               polygonOffsetUnits={-2}
+              toneMapped={false}
             />
           </mesh>
         </>
