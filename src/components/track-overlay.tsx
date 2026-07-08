@@ -32,7 +32,7 @@ export default function TrackOverlay({
     <>
       {/* Track name overlay — compact mobile bottom card */}
       <div className="pointer-events-auto absolute bottom-3 left-3 right-3 z-20 md:hidden">
-        <div className="rounded-2xl border border-white/10 bg-background/82 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.42),inset_0_1px_0_rgba(255,255,255,0.06)] backdrop-blur-xl">
+        <div className="rounded-2xl border border-border bg-background/82 p-3 shadow-[0_18px_60px_rgba(0,0,0,0.42)] backdrop-blur-xl">
           <div className="flex items-end justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] text-primary/80">
@@ -52,7 +52,7 @@ export default function TrackOverlay({
               <button
                 type="button"
                 onClick={onOpenCircuit}
-                className="shrink-0 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-medium text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-colors hover:bg-white/15 active:bg-white/20"
+                className="shrink-0 rounded-xl border border-border bg-muted/50 px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted/70 active:bg-muted/80"
               >
                 {t.circuit}
               </button>
