@@ -6,8 +6,8 @@ export const TRACK_SURFACE_RAISE = 1.1;
 export const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.18;
 export const TRACK_RENDER_ORDER = 100;
 export const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
-export const TERRAIN_TRACK_OFFSET = 6;
-export const TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M = 46;
+export const TERRAIN_TRACK_OFFSET = 4.5;
+export const TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M = 25;
 export const TERRAIN_TRACK_WALL_DEPTH = TERRAIN_TRACK_OFFSET + TRACK_SURFACE_RAISE;
 export const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
 
@@ -65,12 +65,14 @@ export function getSceneColors(isDark: boolean): SceneColors {
 }
 
 export function getSceneBackground(resolvedTheme: "light" | "dark") {
+  if (resolvedTheme === "dark") {
+    return {
+      bgGradient: "#030407",
+      sceneBackgroundColor: "#030407",
+    };
+  }
   return {
-    bgGradient:
-      resolvedTheme === "dark"
-        ? "radial-gradient(circle at 50% 42%, rgba(44, 49, 62, 0.55) 0%, rgba(13, 15, 21, 0.92) 34%, #030407 74%, #010103 100%)"
-        : "radial-gradient(circle at 50% 42%, rgba(52, 58, 70, 0.38) 0%, rgba(13, 15, 21, 0.96) 48%, #030407 100%)",
-    sceneBackgroundColor:
-      resolvedTheme === "dark" ? "#030407" : "#05070B",
+    bgGradient: "#D5DCE5",
+    sceneBackgroundColor: "#D5DCE5",
   };
 }
