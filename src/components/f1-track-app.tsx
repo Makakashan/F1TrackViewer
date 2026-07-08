@@ -363,7 +363,7 @@ export default function F1TrackApp({
           />
         </main>
 
-        <aside className="hidden min-h-0 border-l border-white/10 bg-sidebar/70 shadow-[-24px_0_80px_rgba(0,0,0,0.22)] backdrop-blur-xl md:block">
+        <aside className="hidden min-h-0 border-l border-border bg-sidebar/70 shadow-[-24px_0_80px_rgba(0,0,0,0.22)] backdrop-blur-xl md:block">
           <TrackSidePanel
             properties={properties}
             loading={loadingTrack}

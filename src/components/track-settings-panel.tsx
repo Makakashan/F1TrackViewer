@@ -232,7 +232,7 @@ export default function TrackSettingsPanel({
                 key={preset}
                 type="button"
                 onClick={() => onCameraPreset(preset)}
-                className="rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {preset === "top"
                   ? t.cameraTop

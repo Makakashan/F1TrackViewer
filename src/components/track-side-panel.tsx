@@ -44,8 +44,8 @@ export default function TrackSidePanel({
 
   return (
     <Tabs defaultValue="info" className="h-full min-h-0 gap-0">
-      <div className="border-b border-white/10 bg-black/20 p-3 backdrop-blur-xl">
-        <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl border border-white/10 bg-white/[0.045] p-1">
+      <div className="border-b border-border bg-muted/30 p-3 backdrop-blur-xl">
+        <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl border border-border bg-muted/50 p-1">
           <TabsTrigger
             value="info"
             className="rounded-lg text-xs data-[state=active]:border-transparent data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none dark:data-[state=active]:bg-transparent"
