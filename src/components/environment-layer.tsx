@@ -81,10 +81,10 @@ const THEME_COLORS = {
   light: {
     base: "#EEF1F5",
     grid: "#CCD3DE",
-    terrain: "#E5EAF1",
+    terrain: "#C5C8C5",
     terrainSlab: "#252C36",
-    building: "#6B7280",
-    road: "#889099",
+    building: "#BCC0C4",
+    road: "#9AA2AA",
   },
   dark: {
     base: "#0B1017",
