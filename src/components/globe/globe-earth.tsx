@@ -351,7 +351,7 @@ function buildMarkerOffsets(circuits: GlobeCircuit[]) {
     const sortedGroup = [...group].sort((a, b) =>
       a.id.localeCompare(b.id),
     );
-    const magnitude = Math.min(0.042, 0.022 + sortedGroup.length * 0.004);
+    const magnitude = Math.min(0.028, 0.014 + sortedGroup.length * 0.004);
     const phase = sortedGroup.reduce(
       (sum, circuit) => sum + circuit.id.charCodeAt(0),
       0,
