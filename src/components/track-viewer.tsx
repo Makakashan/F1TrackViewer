@@ -142,7 +142,7 @@ export default function TrackViewer({
               args={
                 resolvedTheme === "dark"
                   ? ["#AFC2FF", "#07080C", 0.58]
-                  : ["#B4C4FF", "#16181D", 0.48]
+                  : ["#AAB4D8", "#16181D", 0.48]
               }
             />
             <directionalLight

@@ -72,7 +72,7 @@ export function getSceneBackground(resolvedTheme: "light" | "dark") {
     };
   }
   return {
-    bgGradient: "#D0D0CC",
-    sceneBackgroundColor: "#D0D0CC",
+    bgGradient: "#D0D0D2",
+    sceneBackgroundColor: "#D0D0D2",
   };
 }
