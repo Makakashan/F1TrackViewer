@@ -42,6 +42,43 @@ export function latLonToVector3(lat: number, lon: number, radius: number) {
   return new THREE.Vector3(x, y, z);
 }
 
+const HIT_RADIUS = 0.12;
+const COLOR_RED = 0xe10600;
+const COLOR_WHITE = 0xffffff;
+
+// One shared radial-gradient texture → smooth single falloff, no "double halo".
+// White center fading to transparent edge. Material .color tints the glow.
+let glowTextureCache: THREE.Texture | null = null;
+function getGlowTexture(): THREE.Texture {
+  if (glowTextureCache) return glowTextureCache;
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (ctx) {
+    const g = ctx.createRadialGradient(
+      size / 2, size / 2, 0,
+      size / 2, size / 2, size / 2,
+    );
+    // Dim center (hidden behind the dot) → peak just outside the dot edge →
+    // smooth fade to transparent. Avoids a bright "white border" at the dot
+    // edge that a center-peaked gradient would produce.
+    g.addColorStop(0.0, "rgba(255,255,255,0.06)");
+    g.addColorStop(0.28, "rgba(255,255,255,0.1)");
+    g.addColorStop(0.42, "rgba(255,255,255,0.42)");
+    g.addColorStop(0.6, "rgba(255,255,255,0.16)");
+    g.addColorStop(0.85, "rgba(255,255,255,0.03)");
+    g.addColorStop(1.0, "rgba(255,255,255,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, size, size);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  glowTextureCache = tex;
+  return tex;
+}
+
 export default function GlobeMarker({
   circuit,
   radius,
@@ -54,16 +91,18 @@ export default function GlobeMarker({
 }: GlobeMarkerProps) {
   const active = selected || hovered;
   const groupRef = useRef<THREE.Group>(null);
-  const centerMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
-  const redRingMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
-  const whiteRingMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
-  const haloMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
-  const pulseMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  const glowMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const outlineMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const coreMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const pulseRef = useRef<THREE.Mesh>(null);
+  const pulseMatRef = useRef<THREE.MeshBasicMaterial>(null);
   const hitRef = useRef<THREE.Mesh>(null);
-  const worldPositionRef = useRef(new THREE.Vector3());
-  const cameraDirectionRef = useRef(new THREE.Vector3());
+  const worldPosRef = useRef(new THREE.Vector3());
+  const camDirRef = useRef(new THREE.Vector3());
   const { camera } = useThree();
+
+  const glowTexture = useMemo(() => getGlowTexture(), []);
+
   const position = useMemo(() => {
     const basePosition = latLonToVector3(circuit.lat, circuit.lon, radius);
     if (!visualOffset || visualOffset.magnitude <= 0) return basePosition;
@@ -83,11 +122,13 @@ export default function GlobeMarker({
 
     return basePosition.add(tangentOffset).normalize().multiplyScalar(radius);
   }, [circuit.lat, circuit.lon, radius, visualOffset]);
+
   const normal = useMemo(() => position.clone().normalize(), [position]);
+
   const orientation = useMemo(() => {
-    const quaternion = new THREE.Quaternion();
-    quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-    return quaternion;
+    const q = new THREE.Quaternion();
+    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+    return q;
   }, [normal]);
 
   useCursor(active);
@@ -95,164 +136,154 @@ export default function GlobeMarker({
   useFrame(({ clock }) => {
     if (
       !groupRef.current ||
-      !centerMaterialRef.current ||
-      !redRingMaterialRef.current ||
-      !whiteRingMaterialRef.current ||
-      !haloMaterialRef.current ||
-      !pulseMaterialRef.current ||
+      !glowMatRef.current ||
+      !outlineMatRef.current ||
+      !coreMatRef.current ||
       !pulseRef.current ||
+      !pulseMatRef.current ||
       !hitRef.current
-    ) {
+    )
       return;
-    }
 
-    const surfaceNormal =
-      groupRef.current.getWorldPosition(worldPositionRef.current).normalize();
-    const cameraDirection = cameraDirectionRef.current
-      .copy(camera.position)
+    const surfNormal = groupRef.current
+      .getWorldPosition(worldPosRef.current)
       .normalize();
-    const facing = surfaceNormal.dot(cameraDirection);
-    const horizonFade = THREE.MathUtils.smoothstep(facing, -0.06, 0.22);
+    const camDir = camDirRef.current.copy(camera.position).normalize();
+    const facing = surfNormal.dot(camDir);
+    const horizonFade = THREE.MathUtils.smoothstep(facing, -0.08, 0.25);
     const opacity = active
-      ? THREE.MathUtils.clamp(horizonFade, 0.2, 1)
+      ? THREE.MathUtils.clamp(horizonFade, 0.35, 1)
       : horizonFade;
 
-    groupRef.current.visible = opacity > 0.035;
+    groupRef.current.visible = opacity > 0.03;
     hitRef.current.visible = facing > -0.02;
-    const selectedPulse = selected
-      ? 1 + Math.sin(clock.elapsedTime * 5.2) * 0.06
-      : 1;
-    const pulseProgress = (Math.sin(clock.elapsedTime * 3.6) + 1) / 2;
-    groupRef.current.scale.setScalar(selectedPulse);
-    pulseRef.current.scale.setScalar(active ? 1.04 + pulseProgress * 0.38 : 1);
-    centerMaterialRef.current.opacity = active ? opacity : opacity * 0.92;
-    redRingMaterialRef.current.opacity = active ? opacity : opacity * 0.9;
-    whiteRingMaterialRef.current.opacity = active ? opacity : opacity * 0.72;
-    haloMaterialRef.current.opacity = active ? opacity * 0.36 : opacity * 0.1;
-    pulseMaterialRef.current.opacity = active
-      ? opacity * (0.28 - pulseProgress * 0.2)
-      : 0;
+
+    const t = clock.elapsedTime;
+
+    // Pulse ring — expanding radar wave, only for active markers
+    if (active) {
+      const cycle = (t * 1.3) % 1;
+      const pulseScale = 1 + cycle * 2.2;
+      const pulseOpacity = (1 - cycle) * (1 - cycle) * 0.6 * opacity;
+      pulseRef.current.scale.setScalar(pulseScale);
+      pulseMatRef.current.opacity = pulseOpacity;
+      pulseRef.current.visible = pulseOpacity > 0.01;
+    } else {
+      pulseRef.current.visible = false;
+    }
+
+    if (selected) {
+      const breathe = 1 + Math.sin(t * 2.4) * 0.1;
+      groupRef.current.scale.setScalar(1.55 * breathe);
+
+      // Red core + white outline — always. Active = much bigger + strong glow + pulse.
+      coreMatRef.current.opacity = opacity;
+      coreMatRef.current.color.setHex(COLOR_RED);
+
+      outlineMatRef.current.opacity = opacity;
+      outlineMatRef.current.color.setHex(COLOR_WHITE);
+
+      glowMatRef.current.opacity = opacity * 1.6;
+      glowMatRef.current.color.setHex(COLOR_RED);
+
+      pulseMatRef.current.color.setHex(COLOR_WHITE);
+    } else if (hovered) {
+      groupRef.current.scale.setScalar(1.45);
+
+      coreMatRef.current.opacity = opacity;
+      coreMatRef.current.color.setHex(COLOR_RED);
+
+      outlineMatRef.current.opacity = opacity;
+      outlineMatRef.current.color.setHex(COLOR_WHITE);
+
+      glowMatRef.current.opacity = opacity * 1.4;
+      glowMatRef.current.color.setHex(COLOR_RED);
+
+      pulseMatRef.current.color.setHex(COLOR_WHITE);
+    } else {
+      groupRef.current.scale.setScalar(1);
+
+      // Default: red dot + white outline + soft red glow
+      coreMatRef.current.opacity = opacity;
+      coreMatRef.current.color.setHex(COLOR_RED);
+
+      outlineMatRef.current.opacity = opacity * 0.9;
+      outlineMatRef.current.color.setHex(COLOR_WHITE);
+
+      glowMatRef.current.opacity = opacity * 0.7;
+      glowMatRef.current.color.setHex(COLOR_RED);
+
+      pulseMatRef.current.color.setHex(COLOR_WHITE);
+    }
   });
 
   return (
     <group ref={groupRef} position={position} quaternion={orientation}>
-      <mesh position={[0, 0, 0.0004]}>
-        <circleGeometry args={[active ? 0.058 : 0.041, 56]} />
+      {/* Invisible hit sphere for raycasting / interaction */}
+      <mesh
+        ref={hitRef}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          onHover(circuit);
+        }}
+        onPointerOut={(e) => {
+          e.stopPropagation();
+          onBlur();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onSelect(circuit);
+        }}
+      >
+        <sphereGeometry args={[HIT_RADIUS, 10, 10]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+
+      {/* Single soft glow — radial-gradient texture, smooth falloff.
+          Tiny z-offset keeps it glued to the surface (no floating at oblique angles). */}
+      <mesh position={[0, 0, 0.0008]}>
+        <planeGeometry args={[0.08, 0.08]} />
         <meshBasicMaterial
-          ref={haloMaterialRef}
-          color={active ? "#ff3b32" : "#ffffff"}
+          ref={glowMatRef}
+          map={glowTexture}
           transparent
-          opacity={0.12}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
       </mesh>
-      <mesh ref={pulseRef} position={[0, 0, 0.0006]}>
-        <ringGeometry args={[0.035, 0.041, 64]} />
+
+      {/* White outline — thin ring just outside the dot edge for contrast
+          against any terrain color. Sits below the dot so only the rim shows. */}
+      <mesh position={[0, 0, 0.0014]}>
+        <ringGeometry args={[0.015, 0.0185, 32]} />
         <meshBasicMaterial
-          ref={pulseMaterialRef}
-          color="#ffffff"
+          ref={outlineMatRef}
+          transparent
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Core dot — the precise location point */}
+      <mesh position={[0, 0, 0.0018]}>
+        <circleGeometry args={[0.015, 32]} />
+        <meshBasicMaterial
+          ref={coreMatRef}
+          transparent
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Pulse ring — animated expanding wave (active only) */}
+      <mesh ref={pulseRef} position={[0, 0, 0.0012]}>
+        <ringGeometry args={[0.022, 0.026, 48]} />
+        <meshBasicMaterial
+          ref={pulseMatRef}
+          color={COLOR_WHITE}
           transparent
           opacity={0}
           depthWrite={false}
           blending={THREE.AdditiveBlending}
         />
-      </mesh>
-      <mesh
-        onPointerOver={(event) => {
-          event.stopPropagation();
-          onHover(circuit);
-        }}
-        onPointerOut={(event) => {
-          event.stopPropagation();
-          onBlur();
-        }}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelect(circuit);
-        }}
-        position={[0, 0, 0.0008]}
-      >
-        <circleGeometry args={[active ? 0.031 : 0.024, 56]} />
-        <meshBasicMaterial
-          ref={whiteRingMaterialRef}
-          color="#ffffff"
-          transparent
-          opacity={0.86}
-          depthWrite={false}
-        />
-      </mesh>
-      <mesh
-        onPointerOver={(event) => {
-          event.stopPropagation();
-          onHover(circuit);
-        }}
-        onPointerOut={(event) => {
-          event.stopPropagation();
-          onBlur();
-        }}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelect(circuit);
-        }}
-        position={[0, 0, 0.001]}
-      >
-        <ringGeometry
-          args={[
-            active ? 0.015 : 0.011,
-            active ? 0.024 : 0.018,
-            56,
-          ]}
-        />
-        <meshBasicMaterial
-          ref={redRingMaterialRef}
-          color="#f10800"
-          transparent
-          opacity={0.92}
-          depthWrite={false}
-        />
-      </mesh>
-      <mesh
-        onPointerOver={(event) => {
-          event.stopPropagation();
-          onHover(circuit);
-        }}
-        onPointerOut={(event) => {
-          event.stopPropagation();
-          onBlur();
-        }}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelect(circuit);
-        }}
-        position={[0, 0, 0.0012]}
-      >
-        <circleGeometry args={[active ? 0.008 : 0.0062, 40]} />
-        <meshBasicMaterial
-          ref={centerMaterialRef}
-          color="#f10800"
-          transparent
-          opacity={0.95}
-          depthWrite={false}
-        />
-      </mesh>
-      <mesh
-        ref={hitRef}
-        onPointerOver={(event) => {
-          event.stopPropagation();
-          onHover(circuit);
-        }}
-        onPointerOut={(event) => {
-          event.stopPropagation();
-          onBlur();
-        }}
-        onClick={(event) => {
-          event.stopPropagation();
-          onSelect(circuit);
-        }}
-      >
-        <sphereGeometry args={[0.095, 10, 10]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
     </group>
   );
