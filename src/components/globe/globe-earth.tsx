@@ -26,7 +26,7 @@ interface GlobeEarthProps {
 }
 
 const EARTH_RADIUS = 2;
-const MARKER_SURFACE_OFFSET = 0.026;
+const MARKER_SURFACE_OFFSET = 0.002;
 const GLOBE_ROTATION_Y = -0.35;
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const EARTH_DAY_TEXTURE = `${PUBLIC_BASE_PATH}/textures/earth/earth-day.jpg`;
