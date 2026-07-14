@@ -108,7 +108,11 @@ export default function TrackMesh({
     return buildTerrainSampler(environmentBundle.terrain, environmentBundle.manifest);
   }, [environmentBundle, environmentTerrain]);
 
-  const maxTerrainHeightNear = useCallback(
+  // Sample the max terrain height in a small neighbourhood so the track
+  // ribbon never dips under a nearby terrain peak (flat-shaded triangles
+  // can sit above the bilinear value).  Radius is kept small (12 m) to
+  // avoid the floating look that the old 46 m radius caused.
+  const terrainHeightNear = useCallback(
     (lon: number, lat: number): number => {
       if (!terrainSampler) return 0;
       const metersPerDegLat = 111_320;
@@ -138,7 +142,7 @@ export default function TrackMesh({
       let min = Infinity;
       let max = -Infinity;
       const c = buildTrackCurveWithY(coords, bounds, (lon, lat) => {
-        const y = maxTerrainHeightNear(lon, lat) + TERRAIN_TRACK_OFFSET;
+        const y = terrainHeightNear(lon, lat) + TERRAIN_TRACK_OFFSET;
         if (y < min) min = y;
         if (y > max) max = y;
         return y;
@@ -170,13 +174,19 @@ export default function TrackMesh({
       minCurveY = min - mean;
     }
     return { curve: c, peakY: peak, minY: minCurveY };
-  }, [bounds, coords, elevations, hasEnvironment, maxTerrainHeightNear, terrainSampler]);
+  }, [bounds, coords, elevations, hasEnvironment, terrainHeightNear, terrainSampler]);
 
   const groundY = useMemo(
     () => (hasEnvironment ? minY - 1 : -peakY - trackWidth * 2 - 1),
     [hasEnvironment, minY, peakY, trackWidth],
   );
-  const stageFloorY = hasEnvironment ? groundY - 14 : groundY - 0.5;
+  // In terrain mode the terrain bottom sits at baseY=0; place the stage floor
+  // just below it to eliminate the visible gap between platform and scene.
+  const stageFloorY = hasEnvironment
+    ? terrainSampler
+      ? -1
+      : groundY - 2
+    : groundY - 0.5;
 
   const samples = useMemo(() => {
     const length = feature.properties.length;
@@ -372,12 +382,14 @@ export default function TrackMesh({
 
   return (
     <group>
-      <StudioStage
-        radius={radius}
-        floorY={stageFloorY}
-        hasEnvironment={hasEnvironment}
-        resolvedTheme={resolvedTheme}
-      />
+      {!hasEnvironment && (
+        <StudioStage
+          radius={radius}
+          floorY={stageFloorY}
+          hasEnvironment={hasEnvironment}
+          resolvedTheme={resolvedTheme}
+        />
+      )}
 
       {hasEnvironment && (
         <EnvironmentLayer
@@ -449,20 +461,17 @@ export default function TrackMesh({
               onCalibrateStartFinish?.(nearestS);
             }}
           >
-            <meshStandardMaterial
+            <meshBasicMaterial
               key={realWidthActive ? "real-width-colors" : "solid-track"}
               vertexColors={realWidthActive}
               color={realWidthActive ? "#ffffff" : colors.trackColor}
-              emissive={realWidthActive ? "#000000" : colors.trackEmissive}
-              emissiveIntensity={realWidthActive ? 0 : colors.trackEmissiveIntensity}
-              roughness={0.5}
-              metalness={0.05}
               side={THREE.DoubleSide}
               depthTest
               depthWrite
               polygonOffset
               polygonOffsetFactor={-2}
               polygonOffsetUnits={-2}
+              toneMapped={false}
             />
           </mesh>
         </>

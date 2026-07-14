@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -14,6 +14,7 @@ import TrackMesh from "@/components/three/track-mesh";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useStartFinishCalibration } from "@/hooks/use-start-finish-calibration";
 import { canCreateWebGLContext, getSceneBackground } from "@/lib/scene-config";
+import { computeBounds, sceneRadiusFromBounds } from "@/lib/geo-utils";
 import CalibrationPanel from "@/components/three/calibration-panel";
 
 export type CameraPreset = "top" | "iso" | "side" | "reset";
@@ -77,6 +78,13 @@ export default function TrackViewer({
 
   const { bgGradient, sceneBackgroundColor } = getSceneBackground(resolvedTheme);
 
+  // Compute scene radius for dynamic camera limits (must match TrackMesh).
+  const sceneRadius = useMemo(() => {
+    const coords = geojson.features[0]?.geometry.coordinates;
+    if (!coords) return 1000;
+    return sceneRadiusFromBounds(computeBounds(coords));
+  }, [geojson]);
+
   return (
     <PointerCaptureBoundary>
       <div ref={setCanvasEventSource} className="relative h-full w-full">
@@ -129,13 +137,12 @@ export default function TrackViewer({
             }}
             style={{ background: bgGradient, touchAction: "none" }}
           >
-            <fog attach="fog" args={[sceneBackgroundColor, 1800, 9000]} />
             <ambientLight intensity={resolvedTheme === "dark" ? 0.42 : 0.55} />
             <hemisphereLight
               args={
                 resolvedTheme === "dark"
                   ? ["#AFC2FF", "#07080C", 0.58]
-                  : ["#B4C4FF", "#16181D", 0.48]
+                  : ["#AAB4D8", "#16181D", 0.48]
               }
             />
             <directionalLight
@@ -180,9 +187,10 @@ export default function TrackViewer({
               dampingFactor={0.08}
               autoRotate={autoRotate}
               autoRotateSpeed={0.5}
-              minDistance={20}
-              maxDistance={50000}
-              maxPolarAngle={Math.PI / 2.05}
+              minDistance={sceneRadius * 0.4}
+              maxDistance={sceneRadius * 4}
+              minPolarAngle={Math.PI / 12}
+              maxPolarAngle={Math.PI / 2.8}
             />
           </Canvas>
         ) : null}

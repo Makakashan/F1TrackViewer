@@ -63,17 +63,17 @@ const LAYER_Y_FLAT = {
 } as const;
 
 const LAYER_Y_DRAPE = {
-  landuse: 0.3,
-  water: 0.6,
-  roads: 2.4,
-  buildings: 1.2,
+  landuse: 0.1,
+  water: 0.08,
+  roads: 0.3,
+  buildings: 0.15,
 } as const;
 
 const MIN_WATER_AREA_SQ_M = 2_500;
 const ROAD_RIBBON_WIDTH_M = 1.2;
-const TERRAIN_BASE_SLAB_DEPTH = 10;
-const TERRAIN_TRACK_CARVE_RADIUS_M = 56;
-const TERRAIN_TRACK_CARVE_DEPTH_M = 6;
+const TERRAIN_BASE_SLAB_DEPTH = 0;
+const TERRAIN_TRACK_CARVE_RADIUS_M = 30;
+const TERRAIN_TRACK_CARVE_DEPTH_M = 4;
 const BROADCAST_VIEW_PADDING_M = 360;
 const MAX_BROADCAST_BUILDINGS = 420;
 
@@ -81,10 +81,10 @@ const THEME_COLORS = {
   light: {
     base: "#EEF1F5",
     grid: "#CCD3DE",
-    terrain: "#E5EAF1",
+    terrain: "#C8C8CA",
     terrainSlab: "#252C36",
-    building: "#FFFFFF",
-    road: "#AAB4C2",
+    building: "#BCC0C4",
+    road: "#9AA2AA",
   },
   dark: {
     base: "#0B1017",
@@ -279,14 +279,16 @@ export default function EnvironmentLayer({
 
   return (
     <group>
-      <DioramaBase
-        bbox={broadcastBBox}
-        originLon={originLon}
-        originLat={originLat}
-        baseY={baseY}
-        hasTerrain={hasTerrain}
-        resolvedTheme={resolvedTheme}
-      />
+      {!hasTerrain && (
+        <DioramaBase
+          bbox={broadcastBBox}
+          originLon={originLon}
+          originLat={originLat}
+          baseY={baseY}
+          hasTerrain={hasTerrain}
+          resolvedTheme={resolvedTheme}
+        />
+      )}
       {hasTerrain && (
         <TerrainMesh
           terrain={bundle.terrain}
@@ -322,13 +324,6 @@ export default function EnvironmentLayer({
         flatY={LAYER_Y_FLAT.buildings}
         bbox={broadcastBBox}
         resolvedTheme={resolvedTheme}
-      />
-      <EnvironmentEdgeFade
-        bbox={broadcastBBox}
-        originLon={originLon}
-        originLat={originLat}
-        baseY={baseY}
-        hasTerrain={hasTerrain}
       />
     </group>
   );
@@ -401,9 +396,9 @@ function DioramaBase({
     };
   }, [gridTexture]);
 
-  // When terrain is on, lower the base plane so the terrain mesh sits above
-  // it and forms the "ground" of the diorama.
-  const yPos = baseY + (hasTerrain ? -2 : 0);
+  // Place the base at terrain-bottom level (baseY=0 in terrain mode) so
+  // there is no vertical gap between the platform and the 3-D scene.
+  const yPos = baseY;
 
   const material = (
     <meshStandardMaterial
@@ -411,7 +406,7 @@ function DioramaBase({
       color={hasTerrain ? colors.terrainSlab : colors.base}
       roughness={1}
       metalness={0}
-      side={THREE.DoubleSide}
+      side={THREE.FrontSide}
       polygonOffset
       polygonOffsetFactor={3}
       polygonOffsetUnits={3}
@@ -436,13 +431,16 @@ function EnvironmentEdgeFade({
   originLat,
   baseY,
   hasTerrain,
+  resolvedTheme,
 }: {
   bbox: BBox;
   originLon: number;
   originLat: number;
   baseY: number;
   hasTerrain: boolean;
+  resolvedTheme: EnvironmentTheme;
 }) {
+  const isDark = resolvedTheme === "dark";
   const centerLonLat = bboxCenter(bbox);
   const center = lonLatToXZ(centerLonLat.lon, centerLonLat.lat, originLon, originLat);
   const width =
@@ -460,11 +458,13 @@ function EnvironmentEdgeFade({
     if (!ctx) return null;
     ctx.clearRect(0, 0, size, size);
 
-    const edge = size * 0.3;
+    // Fade colour matches the scene background so edges dissolve seamlessly.
+    const fadeColor = isDark ? "0, 0, 0" : "213, 220, 229";
+    const edge = size * 0.35;
     const stops: [number, string][] = [
-      [0, "rgba(0, 0, 0, 0.26)"],
-      [0.56, "rgba(0, 0, 0, 0.08)"],
-      [1, "rgba(0, 0, 0, 0)"],
+      [0, `rgba(${fadeColor}, 0.7)`],
+      [0.5, `rgba(${fadeColor}, 0.3)`],
+      [1, `rgba(${fadeColor}, 0)`],
     ];
 
     const left = ctx.createLinearGradient(0, 0, edge, 0);
@@ -491,7 +491,7 @@ function EnvironmentEdgeFade({
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.anisotropy = 4;
     return texture;
-  }, []);
+  }, [isDark]);
 
   useEffect(() => {
     return () => {
@@ -505,11 +505,11 @@ function EnvironmentEdgeFade({
       position={[center.x, baseY + (hasTerrain ? 120 : 0.7), center.z]}
       renderOrder={80}
     >
-      <planeGeometry args={[width * 1.01, height * 1.01, 1, 1]} />
+      <planeGeometry args={[width * 1.05, height * 1.05, 1, 1]} />
       <meshBasicMaterial
         map={fadeTexture}
         transparent
-        opacity={hasTerrain ? 0.32 : 0.42}
+        opacity={hasTerrain ? (isDark ? 0.6 : 0.75) : isDark ? 0.7 : 0.85}
         depthTest={false}
         depthWrite={false}
         toneMapped={false}
@@ -582,7 +582,7 @@ function TerrainMesh({
     const themeColors = THEME_COLORS[resolvedTheme];
     const terrainTop = new THREE.Color(themeColors.terrain);
     const terrainEdge = new THREE.Color(
-      resolvedTheme === "dark" ? "#020304" : "#4D535D",
+      resolvedTheme === "dark" ? "#020304" : "#C8D0DB",
     );
     const waterMasks = waterPolygons
       .map((poly) =>
@@ -640,12 +640,8 @@ function TerrainMesh({
           rows === 1 ? 0 : (row - rowStart) / (rows - 1),
         );
 
-        const u = cols === 1 ? 0.5 : (col - colStart) / (cols - 1);
-        const v = rows === 1 ? 0.5 : (row - rowStart) / (rows - 1);
-        const edgeDistance = Math.min(u, v, 1 - u, 1 - v);
-        const edgeFade = THREE.MathUtils.clamp((0.26 - edgeDistance) / 0.26, 0, 1);
-        const color = terrainTop.clone().lerp(terrainEdge, edgeFade * 0.5);
-        colors.push(color.r, color.g, color.b);
+        // Solid terrain color — no edge fade gradient.
+        colors.push(terrainTop.r, terrainTop.g, terrainTop.b);
       }
     }
 
@@ -659,6 +655,55 @@ function TerrainMesh({
         indices.push(b, c, d);
       }
     }
+
+    // ── Skirt: vertical walls around the terrain perimeter ──
+    // Prevents the "box" effect by adding solid dark faces that extend
+    // below the terrain surface, blending into the scene background.
+    const skirtY = -25;
+    const baseVertexCount = cols * rows;
+    let skirtIdx = 0;
+
+    function addSkirtEdge(edgeVertIndices: number[]) {
+      for (let i = 0; i < edgeVertIndices.length - 1; i++) {
+        const topA = edgeVertIndices[i];
+        const topB = edgeVertIndices[i + 1];
+        const skirtA = baseVertexCount + skirtIdx++;
+        const skirtB = baseVertexCount + skirtIdx++;
+
+        const ax = positions[topA * 3];
+        const az = positions[topA * 3 + 2];
+        const bx = positions[topB * 3];
+        const bz = positions[topB * 3 + 2];
+
+        positions.push(ax, skirtY, az, bx, skirtY, bz);
+        uvs.push(0, 0, 0, 0);
+        colors.push(
+          terrainEdge.r, terrainEdge.g, terrainEdge.b,
+          terrainEdge.r, terrainEdge.g, terrainEdge.b,
+        );
+
+        indices.push(topA, skirtA, topB);
+        indices.push(topB, skirtA, skirtB);
+      }
+    }
+
+    // Collect edge vertex indices for all four sides
+    const topEdge: number[] = [];
+    const bottomEdge: number[] = [];
+    const leftEdge: number[] = [];
+    const rightEdge: number[] = [];
+    for (let col = 0; col < cols; col++) {
+      topEdge.push(col);
+      bottomEdge.push((rows - 1) * cols + col);
+    }
+    for (let row = 0; row < rows; row++) {
+      leftEdge.push(row * cols);
+      rightEdge.push(row * cols + (cols - 1));
+    }
+    addSkirtEdge(topEdge);
+    addSkirtEdge([...bottomEdge].reverse());
+    addSkirtEdge(leftEdge);
+    addSkirtEdge([...rightEdge].reverse());
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -689,14 +734,10 @@ function TerrainMesh({
 
   return (
     <mesh geometry={geometry} position={[0, baseY, 0]} receiveShadow>
-      <meshStandardMaterial
+      <meshBasicMaterial
         vertexColors
-        roughness={0.92}
-        metalness={0}
-        flatShading
         side={THREE.DoubleSide}
-        transparent={resolvedTheme === "dark"}
-        opacity={resolvedTheme === "dark" ? 0.88 : 1}
+        toneMapped={false}
       />
     </mesh>
   );

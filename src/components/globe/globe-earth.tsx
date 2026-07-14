@@ -26,7 +26,7 @@ interface GlobeEarthProps {
 }
 
 const EARTH_RADIUS = 2;
-const MARKER_SURFACE_OFFSET = 0.026;
+const MARKER_SURFACE_OFFSET = 0.002;
 const GLOBE_ROTATION_Y = -0.35;
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const EARTH_DAY_TEXTURE = `${PUBLIC_BASE_PATH}/textures/earth/earth-day.jpg`;
@@ -351,7 +351,7 @@ function buildMarkerOffsets(circuits: GlobeCircuit[]) {
     const sortedGroup = [...group].sort((a, b) =>
       a.id.localeCompare(b.id),
     );
-    const magnitude = Math.min(0.042, 0.022 + sortedGroup.length * 0.004);
+    const magnitude = Math.min(0.028, 0.014 + sortedGroup.length * 0.004);
     const phase = sortedGroup.reduce(
       (sum, circuit) => sum + circuit.id.charCodeAt(0),
       0,
@@ -580,6 +580,13 @@ export default function GlobeEarth({
   const { camera, size } = useThree();
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const focusTargetRef = useRef<THREE.Vector3 | null>(null);
+  const focusStartRef = useRef<THREE.Vector3 | null>(null);
+  const focusProgressRef = useRef(0);
+  const focusDistanceRef = useRef(5);
+  const focusFovRef = useRef(42);
+  const focusStartFovRef = useRef(42);
+  const fovProgressRef = useRef(0);
+  const fovAnimatingRef = useRef(false);
   const lastFocusCircuitIdRef = useRef<string | null>(null);
   const userInteractedRef = useRef(false);
   const projectedMarkerRef = useRef(new THREE.Vector3());
@@ -597,6 +604,11 @@ export default function GlobeEarth({
   useEffect(() => {
     if (!focusCircuit) {
       focusTargetRef.current = null;
+      focusStartRef.current = null;
+      focusStartFovRef.current = (camera as THREE.PerspectiveCamera).fov;
+      focusFovRef.current = 42;
+      fovProgressRef.current = 0;
+      fovAnimatingRef.current = true;
       lastFocusCircuitIdRef.current = null;
       userInteractedRef.current = false;
       return;
@@ -604,13 +616,19 @@ export default function GlobeEarth({
     if (lastFocusCircuitIdRef.current !== focusCircuit.id) {
       userInteractedRef.current = false;
       lastFocusCircuitIdRef.current = focusCircuit.id;
+      focusStartRef.current = camera.position.clone().normalize();
+      focusStartFovRef.current = (camera as THREE.PerspectiveCamera).fov;
+      focusProgressRef.current = 0;
+      focusFovRef.current = 30;
+      fovProgressRef.current = 0;
+      fovAnimatingRef.current = true;
     }
     if (userInteractedRef.current) return;
 
     const direction = latLonToVector3(focusCircuit.lat, focusCircuit.lon, 1)
       .applyAxisAngle(new THREE.Vector3(0, 1, 0), GLOBE_ROTATION_Y)
       .normalize();
-    const distance = THREE.MathUtils.clamp(camera.position.length(), 3.7, 5.2);
+    const distance = THREE.MathUtils.clamp(camera.position.length(), 3.7, 6.5);
     const target = direction.clone().multiplyScalar(distance);
 
     const isMobileViewport = size.width < 768;
@@ -650,18 +668,52 @@ export default function GlobeEarth({
       }
     }
 
+    focusDistanceRef.current = distance;
     focusTargetRef.current = target;
   }, [camera, focusCircuit, cardTopPx, size.width, size.height]);
 
   useFrame(() => {
-    if (focusTargetRef.current) {
-      camera.position.lerp(focusTargetRef.current, 0.08);
+    if (focusTargetRef.current && focusStartRef.current) {
+      focusProgressRef.current = Math.min(focusProgressRef.current + 0.03, 1);
+      const t = focusProgressRef.current;
+
+      const startDir = focusStartRef.current;
+      const endDir = focusTargetRef.current.clone().normalize();
+
+      const axis = new THREE.Vector3().crossVectors(startDir, endDir);
+      const sinAngle = axis.length();
+      const cosAngle = startDir.dot(endDir);
+
+      let currentDir: THREE.Vector3;
+      if (sinAngle < 0.001) {
+        currentDir = startDir.clone().lerp(endDir, t).normalize();
+      } else {
+        axis.normalize();
+        const angle = Math.atan2(sinAngle, cosAngle);
+        const q = new THREE.Quaternion().setFromAxisAngle(axis, angle * t);
+        currentDir = startDir.clone().applyQuaternion(q).normalize();
+      }
+
+      camera.position.copy(currentDir.multiplyScalar(focusDistanceRef.current));
       camera.lookAt(0, 0, 0);
       controlsRef.current?.target.set(0, 0, 0);
       controlsRef.current?.update();
 
-      if (camera.position.distanceTo(focusTargetRef.current) < 0.03) {
+      if (focusProgressRef.current >= 1) {
         focusTargetRef.current = null;
+        focusStartRef.current = null;
+      }
+    }
+
+    if (fovAnimatingRef.current) {
+      fovProgressRef.current = Math.min(fovProgressRef.current + 0.03, 1);
+      const t = fovProgressRef.current;
+      const persp = camera as THREE.PerspectiveCamera;
+      persp.fov = focusStartFovRef.current + (focusFovRef.current - focusStartFovRef.current) * t;
+      persp.updateProjectionMatrix();
+
+      if (fovProgressRef.current >= 1) {
+        fovAnimatingRef.current = false;
       }
     }
 
