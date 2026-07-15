@@ -203,7 +203,6 @@ export default function F1TrackApp({
   }, [environmentBundle, environmentEnabled, selectedId, setUrlEnvironmentEnabled]);
 
   // ─── Reset view mode when markers confirm no sectors ─────────────
-  const prevMarkersRef = useRef<TrackMarkers | null>(null);
   useEffect(() => {
     if (
       viewMode === "sectors" &&
@@ -213,7 +212,6 @@ export default function F1TrackApp({
       const timer = window.setTimeout(() => setUrlViewMode("normal"), 0);
       return () => window.clearTimeout(timer);
     }
-    prevMarkersRef.current = markers;
   }, [markers, viewMode, setUrlViewMode]);
 
   // ─── Mutual exclusion: sectors ↔ real width ──────────────────────
