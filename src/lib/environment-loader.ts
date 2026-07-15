@@ -41,10 +41,6 @@ async function fetchEnvironmentCircuitIds(): Promise<Set<string>> {
   return environmentIndexPromise;
 }
 
-export function hasEnvironmentBundle(circuitId: string): boolean {
-  return FALLBACK_ENVIRONMENT_CIRCUIT_IDS.has(circuitId);
-}
-
 function environmentBaseUrl(circuitId: string): string {
   return `${PUBLIC_BASE_PATH}/environments/${encodeURIComponent(circuitId)}`;
 }
