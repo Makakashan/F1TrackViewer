@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect, useCallback } from "react";
+import { useMemo, useEffect, useCallback, useRef } from "react";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
@@ -340,24 +340,46 @@ export default function TrackMesh({
   const colors = getSceneColors(isDark);
   const { camera, controls } = useThree();
 
+  const cameraFraming = useCallback(
+    (currentPeakY: number) => {
+      const envMultiplier = hasEnvironment ? 2.6 : 2.4;
+      return {
+        baseDistance: radius * envMultiplier,
+        yOffset: Math.max(radius * 0.3, currentPeakY * 1.2),
+      };
+    },
+    [radius, hasEnvironment],
+  );
+
+  // Deliberately excludes `peakY` from the deps: peakY is recomputed whenever
+  // the terrain toggle flips (same circuit, different elevation source), and
+  // resetting the camera on that toggle would discard the user's orbit. It
+  // only needs to reset when the circuit itself changes (tracked via radius
+  // and hasEnvironment), reading the latest peakY via ref at that point.
+  const peakYRef = useRef(peakY);
   useEffect(() => {
-    const verticalFudge = 1 + Math.min(1, peakY / Math.max(radius, 1));
-    const envMultiplier = hasEnvironment ? 2.6 : 2.4;
-    const distance = radius * envMultiplier * verticalFudge;
-    const yOffset = Math.max(radius * 0.3, peakY * 1.2);
+    peakYRef.current = peakY;
+  });
+  useEffect(() => {
+    const currentPeakY = peakYRef.current;
+    const verticalFudge = 1 + Math.min(1, currentPeakY / Math.max(radius, 1));
+    const { baseDistance, yOffset } = cameraFraming(currentPeakY);
+    const distance = baseDistance * verticalFudge;
     camera.position.set(distance, distance * 0.6 + yOffset, distance);
     camera.lookAt(0, 0, 0);
     if (controls && "target" in controls) {
       (controls as any).target.set(0, 0, 0);
       (controls as any).update?.();
     }
-  }, [camera, controls, radius, peakY, hasEnvironment]);
+  }, [camera, controls, radius, cameraFraming]);
 
+  // Excludes `peakY` from the deps for the same reason as above: cameraPreset
+  // persists (it's URL state, not a one-shot trigger), so reacting to peakY
+  // here would re-snap the camera on every terrain toggle once any preset had
+  // ever been clicked.
   useEffect(() => {
     if (!cameraPreset) return;
-    const envMultiplier = hasEnvironment ? 2.6 : 2.4;
-    const distance = radius * envMultiplier;
-    const yOffset = Math.max(radius * 0.3, peakY * 1.2);
+    const { baseDistance: distance, yOffset } = cameraFraming(peakYRef.current);
 
     switch (cameraPreset) {
       case "top":
@@ -378,7 +400,7 @@ export default function TrackMesh({
       (controls as any).target.set(0, 0, 0);
       (controls as any).update?.();
     }
-  }, [cameraPreset, camera, controls, radius, peakY]);
+  }, [cameraPreset, camera, controls, cameraFraming]);
 
   return (
     <group>
