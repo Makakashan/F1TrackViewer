@@ -9,6 +9,12 @@ export const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
 export const TERRAIN_TRACK_OFFSET = 4.5;
 export const TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M = 25;
 export const TERRAIN_TRACK_WALL_DEPTH = TERRAIN_TRACK_OFFSET + TRACK_SURFACE_RAISE;
+// Long straights in real circuit GeoJSON can span 400m+ between two points.
+// The terrain-mode curve only samples elevation at each point, so segments
+// longer than this get subdivided before curve construction — otherwise a
+// hill between two sparse points doesn't get "seen" and the track dips
+// below the terrain mesh (see tr-2005 Istanbul Park's back straight).
+export const TERRAIN_TRACK_MAX_SEGMENT_M = 40;
 export const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
 
 export function disposeGeometry(value: unknown) {

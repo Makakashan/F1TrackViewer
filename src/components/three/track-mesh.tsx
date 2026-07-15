@@ -7,6 +7,7 @@ import {
   buildTrackCurveWithY,
   buildTrackCurve,
   computeBounds,
+  densifyCoords,
   sceneRadiusFromBounds,
   REAL_ELEVATION_SCALE,
 } from "@/lib/geo-utils";
@@ -40,6 +41,7 @@ import {
   TRACK_OVERLAY_RENDER_ORDER,
   TERRAIN_TRACK_OFFSET,
   TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M,
+  TERRAIN_TRACK_MAX_SEGMENT_M,
   TERRAIN_TRACK_WALL_DEPTH,
   disposeGeometry,
   getSceneColors,
@@ -144,7 +146,8 @@ export default function TrackMesh({
     if (terrainSampler) {
       let min = Infinity;
       let max = -Infinity;
-      const c = buildTrackCurveWithY(coords, bounds, (lon, lat) => {
+      const denseCoords = densifyCoords(coords, TERRAIN_TRACK_MAX_SEGMENT_M);
+      const c = buildTrackCurveWithY(denseCoords, bounds, (lon, lat) => {
         const y = terrainHeightNear(lon, lat) + TERRAIN_TRACK_OFFSET;
         if (y < min) min = y;
         if (y > max) max = y;
