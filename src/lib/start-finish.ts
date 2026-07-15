@@ -171,8 +171,8 @@ export function estimateStartFinishS(
 
 export function resolveStartFinishPlacement(
   circuitId: string,
-  _curve: THREE.CatmullRomCurve3,
-  _samples: number,
+  curve: THREE.CatmullRomCurve3,
+  samples: number,
   calibratedOverride?: number | null,
 ): StartFinishPlacement {
   if (calibratedOverride != null) {
@@ -195,10 +195,10 @@ export function resolveStartFinishPlacement(
   }
 
   return {
-    s: 0,
+    s: estimateStartFinishS(curve, samples),
     source: "estimated",
     verified: false,
-    note: "GeoJSON starts at fallback position",
+    note: "estimated from longest straight",
   };
 }
 
