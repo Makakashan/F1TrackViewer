@@ -178,6 +178,7 @@ export default function TrackViewer({
                 environmentTerrain={environmentTerrain}
                 widthProfile={widthProfile}
                 realWidthEnabled={realWidthEnabled}
+                lowDetail={isMobile}
               />
             </Suspense>
 

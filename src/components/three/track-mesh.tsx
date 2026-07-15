@@ -62,6 +62,8 @@ export interface TrackMeshProps {
   environmentTerrain?: boolean;
   widthProfile?: TrackWidthProfile | null;
   realWidthEnabled?: boolean;
+  /** Reduces environment diorama detail (building count) for weaker devices. */
+  lowDetail?: boolean;
 }
 
 export default function TrackMesh({
@@ -81,6 +83,7 @@ export default function TrackMesh({
   environmentTerrain,
   widthProfile,
   realWidthEnabled,
+  lowDetail,
 }: TrackMeshProps) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -422,6 +425,7 @@ export default function TrackMesh({
           baseY={terrainSampler ? 0 : groundY}
           showTerrain={environmentTerrain}
           resolvedTheme={resolvedTheme}
+          lowDetail={lowDetail}
         />
       )}
 
