@@ -30,7 +30,7 @@ import {
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
-import { buildTerrainSampler } from "@/lib/terrain-sampler";
+import { buildTerrainSampler, terrainHeightNear } from "@/lib/terrain-sampler";
 import EnvironmentLayer from "@/components/environment-layer";
 import StudioStage from "@/components/three/studio-stage";
 import type { CameraPreset } from "@/components/track-viewer";
@@ -117,27 +117,15 @@ export default function TrackMesh({
   // ribbon never dips under a nearby terrain peak (flat-shaded triangles
   // can sit above the bilinear value).  Radius is kept small (12 m) to
   // avoid the floating look that the old 46 m radius caused.
-  const terrainHeightNear = useCallback(
+  const trackTerrainHeightNear = useCallback(
     (lon: number, lat: number): number => {
       if (!terrainSampler) return 0;
-      const metersPerDegLat = 111_320;
-      const metersPerDegLon = 111_320 * Math.cos((lat * Math.PI) / 180);
-      const dLat = TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M / metersPerDegLat;
-      const dLon = TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M / metersPerDegLon;
-      let max = terrainSampler.heightAt(lon, lat);
-      for (const [ox, oy] of [
-        [dLon, 0],
-        [-dLon, 0],
-        [0, dLat],
-        [0, -dLat],
-        [dLon, dLat],
-        [dLon, -dLat],
-        [-dLon, dLat],
-        [-dLon, -dLat],
-      ] as const) {
-        max = Math.max(max, terrainSampler.heightAt(lon + ox, lat + oy));
-      }
-      return max;
+      return terrainHeightNear(
+        terrainSampler,
+        lon,
+        lat,
+        TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M,
+      );
     },
     [terrainSampler],
   );
@@ -148,7 +136,7 @@ export default function TrackMesh({
       let max = -Infinity;
       const denseCoords = densifyCoords(coords, TERRAIN_TRACK_MAX_SEGMENT_M);
       const c = buildTrackCurveWithY(denseCoords, bounds, (lon, lat) => {
-        const y = terrainHeightNear(lon, lat) + TERRAIN_TRACK_OFFSET;
+        const y = trackTerrainHeightNear(lon, lat) + TERRAIN_TRACK_OFFSET;
         if (y < min) min = y;
         if (y > max) max = y;
         return y;
@@ -180,7 +168,7 @@ export default function TrackMesh({
       minCurveY = min - mean;
     }
     return { curve: c, peakY: peak, minY: minCurveY };
-  }, [bounds, coords, elevations, hasEnvironment, terrainHeightNear, terrainSampler]);
+  }, [bounds, coords, elevations, hasEnvironment, trackTerrainHeightNear, terrainSampler]);
 
   const groundY = useMemo(
     () => (hasEnvironment ? minY - 1 : -peakY - trackWidth * 2 - 1),
