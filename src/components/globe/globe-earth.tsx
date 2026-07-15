@@ -16,6 +16,9 @@ interface GlobeEarthProps {
   selectedCircuit: GlobeCircuit | null;
   hoveredCircuit: GlobeCircuit | null;
   focusCircuit: GlobeCircuit | null;
+  /** Rotates the globe to face this point without changing zoom/FOV — used
+   * for the continent filter chips, as opposed to focusCircuit's tight zoom. */
+  focusRegion?: { lat: number; lon: number } | null;
   cardTopPx?: number;
   onHoverCircuit: (circuit: GlobeCircuit) => void;
   onSelectCircuit: (circuit: GlobeCircuit | null) => void;
@@ -547,6 +550,7 @@ export default function GlobeEarth({
   selectedCircuit,
   hoveredCircuit,
   focusCircuit,
+  focusRegion,
   cardTopPx,
   onHoverCircuit,
   onSelectCircuit,
@@ -565,6 +569,7 @@ export default function GlobeEarth({
   const fovProgressRef = useRef(0);
   const fovAnimatingRef = useRef(false);
   const lastFocusCircuitIdRef = useRef<string | null>(null);
+  const lastFocusRegionKeyRef = useRef<string | null>(null);
   const userInteractedRef = useRef(false);
   const projectedMarkerRef = useRef(new THREE.Vector3());
   const lastScreenPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -648,6 +653,23 @@ export default function GlobeEarth({
     focusDistanceRef.current = distance;
     focusTargetRef.current = target;
   }, [camera, focusCircuit, cardTopPx, size.width, size.height]);
+
+  useEffect(() => {
+    if (!focusRegion) return;
+    const key = `${focusRegion.lat.toFixed(2)},${focusRegion.lon.toFixed(2)}`;
+    if (lastFocusRegionKeyRef.current === key) return;
+    lastFocusRegionKeyRef.current = key;
+
+    const direction = latLonToVector3(focusRegion.lat, focusRegion.lon, 1)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), GLOBE_ROTATION_Y)
+      .normalize();
+    const distance = camera.position.length();
+
+    focusStartRef.current = camera.position.clone().normalize();
+    focusDistanceRef.current = distance;
+    focusTargetRef.current = direction.clone().multiplyScalar(distance);
+    focusProgressRef.current = 0;
+  }, [camera, focusRegion]);
 
   useFrame(() => {
     if (focusTargetRef.current && focusStartRef.current) {
