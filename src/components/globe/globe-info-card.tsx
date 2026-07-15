@@ -30,7 +30,7 @@ function StatusChip({
       className={`rounded-full border px-2 py-1 text-[10px] font-medium leading-none ${
         active
           ? "border-red-500/40 bg-red-500/15 text-red-300 shadow-[0_0_18px_rgba(225,6,0,0.12)]"
-          : "border-white/10 bg-white/[0.04] text-white/42"
+          : "border-white/10 bg-white/4 text-white/42"
       }`}
     >
       {children}
@@ -91,7 +91,7 @@ export default function GlobeInfoCard({
   return (
     <aside
       ref={ref}
-      className="pointer-events-auto fixed inset-x-3 bottom-3 z-20 md:inset-x-auto md:bottom-auto md:right-6 md:top-24 md:w-[360px]"
+      className="pointer-events-auto fixed inset-x-3 bottom-3 z-20 md:inset-x-auto md:bottom-auto md:right-6 md:top-24 md:w-90"
     >
       <div className="space-y-3 rounded-2xl border border-white/10 bg-black/58 p-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
         <div className="rounded-2xl border border-white/10 bg-black/20 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_50px_rgba(0,0,0,0.18)]">

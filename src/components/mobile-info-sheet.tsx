@@ -69,7 +69,7 @@ export default function MobileInfoSheet({
 			)}
 			<SheetContent
 				side="right"
-				className="w-[320px] p-0 bg-sidebar overflow-y-auto"
+				className="w-80 p-0 bg-sidebar overflow-y-auto"
 			>
 				<SheetHeader className="px-4 pt-4 pb-2">
 					<SheetTitle className="text-sm uppercase tracking-wider text-muted-foreground">
