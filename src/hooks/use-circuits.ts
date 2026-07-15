@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { fetchCircuitIndex, type CircuitLocation } from "@/lib/f1-circuits";
 import { useAppPref } from "@/components/app-pref-provider";
 
 export function useCircuits(setError: (msg: string | null) => void) {
 	const { t } = useAppPref();
+	const tRef = useRef(t);
+	useEffect(() => {
+		tRef.current = t;
+	});
 	const [circuits, setCircuits] = useState<CircuitLocation[]>([]);
 	const [selectedId, setSelectedId] = useState<string | null>(null);
 	const [loadingIndex, setLoadingIndex] = useState(true);
@@ -31,7 +35,7 @@ export function useCircuits(setError: (msg: string | null) => void) {
 				if (initial) setSelectedId(initial.id);
 			})
 			.catch((e) => {
-				if (!canceled) setError(`${t.errLoadCircuits}: ${String(e)}`);
+				if (!canceled) setError(`${tRef.current.errLoadCircuits}: ${String(e)}`);
 			})
 			.finally(() => !canceled && setLoadingIndex(false));
 		return () => {
