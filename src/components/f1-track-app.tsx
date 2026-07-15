@@ -18,7 +18,7 @@ import type { StartFinishPlacement } from "@/lib/start-finish";
 import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import { fetchTrackMarkers } from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
-import { fetchEnvironmentBundle } from "@/lib/environment-loader";
+import { fetchEnvironmentBundle, hasEnvironment } from "@/lib/environment-loader";
 import type { TrackWidthProfile } from "@/lib/track-width";
 import { fetchTrackWidthProfile } from "@/lib/track-width";
 import { useUrlState } from "@/lib/url-state";
@@ -89,6 +89,11 @@ export default function F1TrackApp({
   // "no bundle for this circuit", undefined means "still checking".
   const [environmentBundle, setEnvironmentBundle] =
     useState<EnvironmentBundle | null | undefined>(undefined);
+  // Cheap manifest-only check (~1KB) so the toggle can be gated and the URL
+  // can persist environment=0 without downloading the full multi-MB bundle
+  // (buildings/roads/landuse) for circuits the user never opts into.
+  const [environmentAvailable, setEnvironmentAvailable] =
+    useState<boolean | undefined>(undefined);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -115,7 +120,7 @@ export default function F1TrackApp({
   useEffect(() => {
     if (!hydrated || !selectedId) return;
     syncUrl({
-      environmentBundleAvailable: !!environmentBundle,
+      environmentBundleAvailable: !!environmentAvailable,
       widthProfileAvailable: !!widthProfile,
     });
   }, [
@@ -128,7 +133,7 @@ export default function F1TrackApp({
     environmentEnabled,
     environmentTerrain,
     realWidthEnabled,
-    environmentBundle,
+    environmentAvailable,
     widthProfile,
     syncUrl,
   ]);
@@ -160,9 +165,30 @@ export default function F1TrackApp({
     };
   }, [selectedId]);
 
-  // ─── Load environment bundle for the selected circuit ────────────
+  // ─── Check environment availability for the selected circuit ────
+  // Cheap manifest-only check — runs regardless of the toggle so the UI
+  // knows whether to offer 3D mode at all.
   useEffect(() => {
     if (!selectedId) {
+      const timer = window.setTimeout(() => setEnvironmentAvailable(undefined), 0);
+      return () => window.clearTimeout(timer);
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => setEnvironmentAvailable(undefined), 0);
+    hasEnvironment(selectedId).then((available) => {
+      if (!cancelled) setEnvironmentAvailable(available);
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [selectedId]);
+
+  // ─── Load the full environment bundle — only once the user opts in ─
+  // Buildings/roads/landuse can be several MB per circuit, so this stays
+  // lazy: it never downloads unless environmentEnabled is actually true.
+  useEffect(() => {
+    if (!selectedId || !environmentEnabled) {
       const timer = window.setTimeout(() => setEnvironmentBundle(undefined), 0);
       return () => window.clearTimeout(timer);
     }
@@ -175,7 +201,7 @@ export default function F1TrackApp({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [selectedId]);
+  }, [selectedId, environmentEnabled]);
 
   // ─── Load the real-width profile (TUMFTM) ────────────────────────
   useEffect(() => {
@@ -196,11 +222,11 @@ export default function F1TrackApp({
 
   // ─── Auto-disable environment when the selected circuit has no bundle ─
   useEffect(() => {
-    if (selectedId && environmentBundle === null && environmentEnabled) {
+    if (selectedId && environmentAvailable === false && environmentEnabled) {
       const timer = window.setTimeout(() => setUrlEnvironmentEnabled(false), 0);
       return () => window.clearTimeout(timer);
     }
-  }, [environmentBundle, environmentEnabled, selectedId, setUrlEnvironmentEnabled]);
+  }, [environmentAvailable, environmentEnabled, selectedId, setUrlEnvironmentEnabled]);
 
   // ─── Reset view mode when markers confirm no sectors ─────────────
   useEffect(() => {
@@ -327,7 +353,7 @@ export default function F1TrackApp({
               viewMode={viewMode}
               setViewMode={handleViewModeChange}
               sectorsAvailable={sectorsAvailable}
-              environmentAvailable={!!environmentBundle}
+              environmentAvailable={!!environmentAvailable}
               environmentEnabled={environmentEnabled}
               setEnvironmentEnabled={setUrlEnvironmentEnabled}
               environmentTerrain={environmentTerrain}
@@ -378,7 +404,7 @@ export default function F1TrackApp({
             onCameraPreset={setUrlCameraPreset}
             setViewMode={handleViewModeChange}
             sectorsAvailable={sectorsAvailable}
-            environmentAvailable={!!environmentBundle}
+            environmentAvailable={!!environmentAvailable}
             environmentEnabled={environmentEnabled}
             setEnvironmentEnabled={setUrlEnvironmentEnabled}
             environmentTerrain={environmentTerrain}
