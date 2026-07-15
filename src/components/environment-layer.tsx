@@ -12,8 +12,10 @@ import type {
   SurfaceFile,
 } from "@/lib/environment-types";
 import { DIORAMA_COLORS } from "@/lib/diorama-palette";
+import { densifyCoords } from "@/lib/geo-utils";
 import {
   buildTerrainSampler,
+  terrainHeightNear,
   terrainLocalHeight,
   terrainReferenceElevation,
   type TerrainSampler,
@@ -65,12 +67,21 @@ const LAYER_Y_FLAT = {
 const LAYER_Y_DRAPE = {
   landuse: 0.1,
   water: 0.08,
-  roads: 0.3,
+  // Extra margin over the neighbourhood-max terrain sample (see
+  // terrainHeightNear) so residual interpolation error on a densified but
+  // still-straight ribbon segment never dips below the rendered surface.
+  roads: 1.5,
   buildings: 0.15,
 } as const;
 
 const MIN_WATER_AREA_SQ_M = 2_500;
 const ROAD_RIBBON_WIDTH_M = 1.2;
+// OSM road ways can have points several hundred meters apart on long straight
+// roads. Each ribbon segment only samples terrain height at its two
+// endpoints, so a hill between sparse points doesn't get "seen" and the road
+// dips below the terrain mesh — same failure mode as the track curve.
+const ROAD_MAX_SEGMENT_M = 25;
+const ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M = 15;
 const TERRAIN_BASE_SLAB_DEPTH = 0;
 const TERRAIN_TRACK_CARVE_RADIUS_M = 30;
 const TERRAIN_TRACK_CARVE_DEPTH_M = 4;
@@ -687,9 +698,12 @@ function RoadLinesMesh({
     const indices: number[] = [];
     for (const road of roads) {
       if (road.points.length < 2) continue;
-      for (let i = 0; i < road.points.length - 1; i++) {
-        let [aLon, aLat] = road.points[i];
-        let [bLon, bLat] = road.points[i + 1];
+      const points = terrainSampler
+        ? densifyCoords(road.points, ROAD_MAX_SEGMENT_M)
+        : road.points;
+      for (let i = 0; i < points.length - 1; i++) {
+        let [aLon, aLat] = points[i];
+        let [bLon, bLat] = points[i + 1];
         if (bbox) {
           const clipped = clipSegmentToBBox([aLon, aLat], [bLon, bLat], bbox);
           if (!clipped) continue;
@@ -698,10 +712,14 @@ function RoadLinesMesh({
         const a = lonLatToXZ(aLon, aLat, originLon, originLat);
         const b = lonLatToXZ(bLon, bLat, originLon, originLat);
         const aY = terrainSampler
-          ? baseY + terrainSampler.heightAt(aLon, aLat) + drapeY
+          ? baseY +
+            terrainHeightNear(terrainSampler, aLon, aLat, ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M) +
+            drapeY
           : baseY + flatY;
         const bY = terrainSampler
-          ? baseY + terrainSampler.heightAt(bLon, bLat) + drapeY
+          ? baseY +
+            terrainHeightNear(terrainSampler, bLon, bLat, ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M) +
+            drapeY
           : baseY + flatY;
 
         const dx = b.x - a.x;
