@@ -116,7 +116,7 @@ export default function TrackViewer({
           <Canvas
             eventSource={canvasEventSource}
             shadows={false}
-            dpr={isMobile ? 2 : [1, 1.5]}
+            dpr={[1, 1.5]}
             camera={{
               fov: 50,
               near: isMobile ? 8 : 2,
