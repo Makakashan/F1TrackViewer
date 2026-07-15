@@ -42,6 +42,30 @@ export function latLonToVector3(lat: number, lon: number, radius: number) {
   return new THREE.Vector3(x, y, z);
 }
 
+export function markerPositionForCircuit(
+  circuit: Pick<GlobeCircuit, "lat" | "lon">,
+  radius: number,
+  visualOffset?: { angle: number; magnitude: number },
+) {
+  const basePosition = latLonToVector3(circuit.lat, circuit.lon, radius);
+  if (!visualOffset || visualOffset.magnitude <= 0) return basePosition;
+
+  const surfaceNormal = basePosition.clone().normalize();
+  const east = new THREE.Vector3(0, 1, 0).cross(surfaceNormal);
+  if (east.lengthSq() < 0.0001) east.set(1, 0, 0);
+  east.normalize();
+  const north = surfaceNormal.clone().cross(east).normalize();
+  const tangentOffset = east
+    .multiplyScalar(Math.cos(visualOffset.angle) * visualOffset.magnitude)
+    .add(
+      north.multiplyScalar(
+        Math.sin(visualOffset.angle) * visualOffset.magnitude,
+      ),
+    );
+
+  return basePosition.add(tangentOffset).normalize().multiplyScalar(radius);
+}
+
 const HIT_RADIUS = 0.12;
 const COLOR_RED = 0xe10600;
 const COLOR_WHITE = 0xffffff;
@@ -103,25 +127,10 @@ export default function GlobeMarker({
 
   const glowTexture = useMemo(() => getGlowTexture(), []);
 
-  const position = useMemo(() => {
-    const basePosition = latLonToVector3(circuit.lat, circuit.lon, radius);
-    if (!visualOffset || visualOffset.magnitude <= 0) return basePosition;
-
-    const surfaceNormal = basePosition.clone().normalize();
-    const east = new THREE.Vector3(0, 1, 0).cross(surfaceNormal);
-    if (east.lengthSq() < 0.0001) east.set(1, 0, 0);
-    east.normalize();
-    const north = surfaceNormal.clone().cross(east).normalize();
-    const tangentOffset = east
-      .multiplyScalar(Math.cos(visualOffset.angle) * visualOffset.magnitude)
-      .add(
-        north.multiplyScalar(
-          Math.sin(visualOffset.angle) * visualOffset.magnitude,
-        ),
-      );
-
-    return basePosition.add(tangentOffset).normalize().multiplyScalar(radius);
-  }, [circuit.lat, circuit.lon, radius, visualOffset]);
+  const position = useMemo(
+    () => markerPositionForCircuit(circuit, radius, visualOffset),
+    [circuit, radius, visualOffset],
+  );
 
   const normal = useMemo(() => position.clone().normalize(), [position]);
 

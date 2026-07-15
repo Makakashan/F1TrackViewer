@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import GlobeMarker, {
   latLonToVector3,
+  markerPositionForCircuit,
   type GlobeCircuit,
 } from "./globe-marker";
 
@@ -284,30 +285,6 @@ function angularDistanceRadians(a: GlobeCircuit, b: GlobeCircuit) {
   const h =
     sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon;
   return 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
-}
-
-function markerPositionForCircuit(
-  circuit: GlobeCircuit,
-  radius: number,
-  visualOffset?: { angle: number; magnitude: number },
-) {
-  const basePosition = latLonToVector3(circuit.lat, circuit.lon, radius);
-  if (!visualOffset || visualOffset.magnitude <= 0) return basePosition;
-
-  const surfaceNormal = basePosition.clone().normalize();
-  const east = new THREE.Vector3(0, 1, 0).cross(surfaceNormal);
-  if (east.lengthSq() < 0.0001) east.set(1, 0, 0);
-  east.normalize();
-  const north = surfaceNormal.clone().cross(east).normalize();
-  const tangentOffset = east
-    .multiplyScalar(Math.cos(visualOffset.angle) * visualOffset.magnitude)
-    .add(
-      north.multiplyScalar(
-        Math.sin(visualOffset.angle) * visualOffset.magnitude,
-      ),
-    );
-
-  return basePosition.add(tangentOffset).normalize().multiplyScalar(radius);
 }
 
 function buildMarkerOffsets(circuits: GlobeCircuit[]) {
