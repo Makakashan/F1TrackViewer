@@ -37,6 +37,8 @@ export default function TrackSidePanel({
   meanWidthMeters,
   minWidthMeters,
   maxWidthMeters,
+  qualityMode,
+  setQualityMode,
 }: TrackSidePanelProps) {
   const { t } = useAppPref();
   const terrainModeActive =
@@ -110,6 +112,8 @@ export default function TrackSidePanel({
           meanWidthMeters={meanWidthMeters}
           minWidthMeters={minWidthMeters}
           maxWidthMeters={maxWidthMeters}
+          qualityMode={qualityMode}
+          setQualityMode={setQualityMode}
         />
       </TabsContent>
     </Tabs>

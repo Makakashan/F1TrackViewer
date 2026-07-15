@@ -2,6 +2,7 @@
 
 import {
   Camera,
+  Gauge,
   Layers,
   Map,
   Mountain,
@@ -15,6 +16,7 @@ import { useAppPref } from "@/components/app-pref-provider";
 import { cn } from "@/lib/utils";
 import type { CameraPreset } from "@/components/track-viewer";
 import type { TrackViewMode } from "@/lib/track-markers";
+import type { QualityMode } from "@/lib/url-state";
 
 export interface TrackSettingsPanelProps {
   autoRotate: boolean;
@@ -38,6 +40,8 @@ export interface TrackSettingsPanelProps {
   meanWidthMeters: number | null;
   minWidthMeters: number | null;
   maxWidthMeters: number | null;
+  qualityMode: QualityMode;
+  setQualityMode: (v: QualityMode) => void;
 }
 
 function SettingRow({
@@ -106,6 +110,8 @@ export default function TrackSettingsPanel({
   meanWidthMeters,
   minWidthMeters,
   maxWidthMeters,
+  qualityMode,
+  setQualityMode,
 }: TrackSettingsPanelProps) {
   const { t } = useAppPref();
   const realWidthActive = realWidthAvailable && realWidthEnabled;
@@ -153,6 +159,41 @@ export default function TrackSettingsPanel({
         {terrainModeActive && (
           <div className="rounded-md border border-border bg-card/40 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
             {t.elevationTerrainModeHint}
+          </div>
+        )}
+
+        {environmentAvailable && (
+          <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Gauge className="h-3.5 w-3.5" />
+              {t.quality}
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-1 rounded-md border border-border bg-background/30 p-1">
+              {(["auto", "performance", "quality"] as QualityMode[]).map(
+                (mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setQualityMode(mode)}
+                    className={cn(
+                      "rounded-md px-2 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      qualityMode === mode
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                    )}
+                  >
+                    {mode === "auto"
+                      ? t.qualityAuto
+                      : mode === "performance"
+                        ? t.qualityPerformance
+                        : t.qualityHigh}
+                  </button>
+                ),
+              )}
+            </div>
+            <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+              {t.qualityHint}
+            </p>
           </div>
         )}
       </SettingsSection>

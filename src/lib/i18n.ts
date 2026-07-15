@@ -50,6 +50,11 @@ const en = {
   diorama: "Diorama",
   terrain: "3D mode",
   layers: "Layers",
+  quality: "Detail",
+  qualityAuto: "Auto",
+  qualityPerformance: "Performance",
+  qualityHigh: "Quality",
+  qualityHint: "Auto matches your device. Performance lowers building detail; Quality shows more.",
   autoRotate: "Auto-rotate",
   elevations: "Real elevation",
   elevationTerrainModeHint:
@@ -156,6 +161,11 @@ const ru: Dict = {
   diorama: "Диорама",
   terrain: "3D режим",
   layers: "Слои",
+  quality: "Детализация",
+  qualityAuto: "Авто",
+  qualityPerformance: "Производительность",
+  qualityHigh: "Качество",
+  qualityHint: "Авто подстраивается под устройство. Производительность снижает детализацию зданий; Качество показывает больше.",
   autoRotate: "Авто-вращение",
   elevations: "Реальный рельеф",
   elevationTerrainModeHint:

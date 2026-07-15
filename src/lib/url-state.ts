@@ -2,8 +2,14 @@ import { create } from "zustand";
 import type { CameraPreset } from "@/components/track-viewer";
 import type { TrackViewMode } from "@/lib/track-markers";
 
+export type QualityMode = "auto" | "performance" | "quality";
+
 function isCameraPreset(value: string | null): value is CameraPreset {
   return value === "top" || value === "iso" || value === "side";
+}
+
+function isQualityMode(value: string | null): value is QualityMode {
+  return value === "auto" || value === "performance" || value === "quality";
 }
 
 function parseWidthParam(value: string | null): number | null {
@@ -25,6 +31,7 @@ function readUrlParams() {
     environment: p.get("environment"),
     terrain: p.get("terrain"),
     realwidth: p.get("realwidth"),
+    quality: p.get("quality"),
   };
 }
 
@@ -37,6 +44,7 @@ interface UrlState {
   environmentEnabled: boolean;
   environmentTerrain: boolean;
   realWidthEnabled: boolean;
+  qualityMode: QualityMode;
   hydrated: boolean;
 
   setTrack: (id: string) => void;
@@ -47,6 +55,7 @@ interface UrlState {
   setEnvironmentEnabled: (v: boolean) => void;
   setEnvironmentTerrain: (v: boolean) => void;
   setRealWidthEnabled: (v: boolean) => void;
+  setQualityMode: (m: QualityMode) => void;
   hydrate: (circuits: { id: string }[]) => void;
   /** Write the current state to the URL (replaceState). */
   syncUrl: (opts: {
@@ -64,6 +73,7 @@ export const useUrlState = create<UrlState>((set, get) => ({
   environmentEnabled: false,
   environmentTerrain: true,
   realWidthEnabled: false,
+  qualityMode: "auto",
   hydrated: false,
 
   setTrack: (id) => set({ track: id }),
@@ -74,6 +84,7 @@ export const useUrlState = create<UrlState>((set, get) => ({
   setEnvironmentEnabled: (v) => set({ environmentEnabled: v }),
   setEnvironmentTerrain: (v) => set({ environmentTerrain: v }),
   setRealWidthEnabled: (v) => set({ realWidthEnabled: v }),
+  setQualityMode: (m) => set({ qualityMode: m }),
 
   hydrate: (circuits) => {
     const s = get();
@@ -129,6 +140,11 @@ export const useUrlState = create<UrlState>((set, get) => ({
       patch.realWidthEnabled = url.realwidth === "1";
     }
 
+    // Quality
+    if (isQualityMode(url.quality)) {
+      patch.qualityMode = url.quality;
+    }
+
     set(patch);
   },
 
@@ -166,6 +182,12 @@ export const useUrlState = create<UrlState>((set, get) => ({
       params.set("realwidth", s.realWidthEnabled ? "1" : "0");
     } else {
       params.delete("realwidth");
+    }
+
+    if (s.qualityMode !== "auto") {
+      params.set("quality", s.qualityMode);
+    } else {
+      params.delete("quality");
     }
 
     const nextSearch = `?${params.toString()}`;
