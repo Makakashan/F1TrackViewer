@@ -57,6 +57,7 @@ export default function F1TrackApp({
     environmentEnabled,
     environmentTerrain,
     realWidthEnabled,
+    qualityMode,
     hydrated,
     setTrack: setUrlTrack,
     setTrackWidth: setUrlTrackWidth,
@@ -66,6 +67,7 @@ export default function F1TrackApp({
     setEnvironmentEnabled: setUrlEnvironmentEnabled,
     setEnvironmentTerrain: setUrlEnvironmentTerrain,
     setRealWidthEnabled: setUrlRealWidthEnabled,
+    setQualityMode: setUrlQualityMode,
     hydrate,
     syncUrl,
   } = useUrlState();
@@ -133,6 +135,7 @@ export default function F1TrackApp({
     environmentEnabled,
     environmentTerrain,
     realWidthEnabled,
+    qualityMode,
     environmentAvailable,
     widthProfile,
     syncUrl,
@@ -323,6 +326,7 @@ export default function F1TrackApp({
               environmentTerrain={environmentTerrain}
               widthProfile={widthProfile ?? null}
               realWidthEnabled={realWidthEnabled}
+              qualityMode={qualityMode}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -364,6 +368,8 @@ export default function F1TrackApp({
               meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
               minWidthMeters={widthProfile?.minWidthMeters ?? null}
               maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
+              qualityMode={qualityMode}
+              setQualityMode={setUrlQualityMode}
             />
           )}
 
@@ -415,6 +421,8 @@ export default function F1TrackApp({
             meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
             minWidthMeters={widthProfile?.minWidthMeters ?? null}
             maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
+            qualityMode={qualityMode}
+            setQualityMode={setUrlQualityMode}
           />
         </aside>
       </div>

@@ -9,6 +9,7 @@ import type { StartFinishPlacement } from "@/lib/start-finish";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
+import type { QualityMode } from "@/lib/url-state";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 import TrackMesh from "@/components/three/track-mesh";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -34,6 +35,7 @@ export interface TrackViewerProps {
   environmentTerrain?: boolean;
   widthProfile?: TrackWidthProfile | null;
   realWidthEnabled?: boolean;
+  qualityMode?: QualityMode;
 }
 
 function SceneSpinner() {
@@ -60,10 +62,13 @@ export default function TrackViewer({
   environmentTerrain = true,
   widthProfile,
   realWidthEnabled = true,
+  qualityMode = "auto",
 }: TrackViewerProps) {
   const [canvasEventSource, setCanvasEventSource] =
     useState<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
+  const lowDetail =
+    qualityMode === "performance" ? true : qualityMode === "quality" ? false : isMobile;
   const [webglAvailable] = useState(() =>
     typeof document === "undefined" ? true : canCreateWebGLContext(),
   );
@@ -178,7 +183,7 @@ export default function TrackViewer({
                 environmentTerrain={environmentTerrain}
                 widthProfile={widthProfile}
                 realWidthEnabled={realWidthEnabled}
-                lowDetail={isMobile}
+                lowDetail={lowDetail}
               />
             </Suspense>
 
