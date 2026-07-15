@@ -42,6 +42,30 @@ export function latLonToVector3(lat: number, lon: number, radius: number) {
   return new THREE.Vector3(x, y, z);
 }
 
+export function markerPositionForCircuit(
+  circuit: Pick<GlobeCircuit, "lat" | "lon">,
+  radius: number,
+  visualOffset?: { angle: number; magnitude: number },
+) {
+  const basePosition = latLonToVector3(circuit.lat, circuit.lon, radius);
+  if (!visualOffset || visualOffset.magnitude <= 0) return basePosition;
+
+  const surfaceNormal = basePosition.clone().normalize();
+  const east = new THREE.Vector3(0, 1, 0).cross(surfaceNormal);
+  if (east.lengthSq() < 0.0001) east.set(1, 0, 0);
+  east.normalize();
+  const north = surfaceNormal.clone().cross(east).normalize();
+  const tangentOffset = east
+    .multiplyScalar(Math.cos(visualOffset.angle) * visualOffset.magnitude)
+    .add(
+      north.multiplyScalar(
+        Math.sin(visualOffset.angle) * visualOffset.magnitude,
+      ),
+    );
+
+  return basePosition.add(tangentOffset).normalize().multiplyScalar(radius);
+}
+
 const HIT_RADIUS = 0.12;
 const COLOR_RED = 0xe10600;
 const COLOR_WHITE = 0xffffff;
@@ -103,25 +127,10 @@ export default function GlobeMarker({
 
   const glowTexture = useMemo(() => getGlowTexture(), []);
 
-  const position = useMemo(() => {
-    const basePosition = latLonToVector3(circuit.lat, circuit.lon, radius);
-    if (!visualOffset || visualOffset.magnitude <= 0) return basePosition;
-
-    const surfaceNormal = basePosition.clone().normalize();
-    const east = new THREE.Vector3(0, 1, 0).cross(surfaceNormal);
-    if (east.lengthSq() < 0.0001) east.set(1, 0, 0);
-    east.normalize();
-    const north = surfaceNormal.clone().cross(east).normalize();
-    const tangentOffset = east
-      .multiplyScalar(Math.cos(visualOffset.angle) * visualOffset.magnitude)
-      .add(
-        north.multiplyScalar(
-          Math.sin(visualOffset.angle) * visualOffset.magnitude,
-        ),
-      );
-
-    return basePosition.add(tangentOffset).normalize().multiplyScalar(radius);
-  }, [circuit.lat, circuit.lon, radius, visualOffset]);
+  const position = useMemo(
+    () => markerPositionForCircuit(circuit, radius, visualOffset),
+    [circuit, radius, visualOffset],
+  );
 
   const normal = useMemo(() => position.clone().normalize(), [position]);
 
@@ -218,8 +227,13 @@ export default function GlobeMarker({
   });
 
   return (
-    <group ref={groupRef} position={position} quaternion={orientation}>
-      {/* Invisible hit sphere for raycasting / interaction */}
+    <group position={position} quaternion={orientation}>
+      {/* Invisible hit sphere for raycasting / interaction. Kept in its own
+          unscaled group — sibling to the animated visuals below, not a child
+          of them — so a selected/hovered marker's bigger glow doesn't also
+          bulge its hit-test sphere toward the camera and steal raycasts from
+          a close neighboring marker (this was preventing selection of
+          adjacent circuits). */}
       <mesh
         ref={hitRef}
         onPointerOver={(e) => {
@@ -239,52 +253,54 @@ export default function GlobeMarker({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
-      {/* Single soft glow — radial-gradient texture, smooth falloff.
-          Tiny z-offset keeps it glued to the surface (no floating at oblique angles). */}
-      <mesh position={[0, 0, 0.0008]}>
-        <planeGeometry args={[0.08, 0.08]} />
-        <meshBasicMaterial
-          ref={glowMatRef}
-          map={glowTexture}
-          transparent
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
+      <group ref={groupRef}>
+        {/* Single soft glow — radial-gradient texture, smooth falloff.
+            Tiny z-offset keeps it glued to the surface (no floating at oblique angles). */}
+        <mesh position={[0, 0, 0.0008]}>
+          <planeGeometry args={[0.08, 0.08]} />
+          <meshBasicMaterial
+            ref={glowMatRef}
+            map={glowTexture}
+            transparent
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
 
-      {/* White outline — thin ring just outside the dot edge for contrast
-          against any terrain color. Sits below the dot so only the rim shows. */}
-      <mesh position={[0, 0, 0.0014]}>
-        <ringGeometry args={[0.015, 0.0185, 32]} />
-        <meshBasicMaterial
-          ref={outlineMatRef}
-          transparent
-          depthWrite={false}
-        />
-      </mesh>
+        {/* White outline — thin ring just outside the dot edge for contrast
+            against any terrain color. Sits below the dot so only the rim shows. */}
+        <mesh position={[0, 0, 0.0014]}>
+          <ringGeometry args={[0.015, 0.0185, 32]} />
+          <meshBasicMaterial
+            ref={outlineMatRef}
+            transparent
+            depthWrite={false}
+          />
+        </mesh>
 
-      {/* Core dot — the precise location point */}
-      <mesh position={[0, 0, 0.0018]}>
-        <circleGeometry args={[0.015, 32]} />
-        <meshBasicMaterial
-          ref={coreMatRef}
-          transparent
-          depthWrite={false}
-        />
-      </mesh>
+        {/* Core dot — the precise location point */}
+        <mesh position={[0, 0, 0.0018]}>
+          <circleGeometry args={[0.015, 32]} />
+          <meshBasicMaterial
+            ref={coreMatRef}
+            transparent
+            depthWrite={false}
+          />
+        </mesh>
 
-      {/* Pulse ring — animated expanding wave (active only) */}
-      <mesh ref={pulseRef} position={[0, 0, 0.0012]}>
-        <ringGeometry args={[0.022, 0.026, 48]} />
-        <meshBasicMaterial
-          ref={pulseMatRef}
-          color={COLOR_WHITE}
-          transparent
-          opacity={0}
-          depthWrite={false}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
+        {/* Pulse ring — animated expanding wave (active only) */}
+        <mesh ref={pulseRef} position={[0, 0, 0.0012]}>
+          <ringGeometry args={[0.022, 0.026, 48]} />
+          <meshBasicMaterial
+            ref={pulseMatRef}
+            color={COLOR_WHITE}
+            transparent
+            opacity={0}
+            depthWrite={false}
+            blending={THREE.AdditiveBlending}
+          />
+        </mesh>
+      </group>
     </group>
   );
 }

@@ -84,3 +84,36 @@ export function buildTerrainSampler(
     maxHeight: maxLocalHeight,
   };
 }
+
+/**
+ * Max terrain height in a small neighbourhood around a point, instead of the
+ * raw bilinear sample at that exact point. The rendered terrain mesh is
+ * flat-shaded — a triangle can bulge above the bilinear plane near a ridge —
+ * so anything draped on top (track ribbon, roads) needs this margin to avoid
+ * dipping below the actual rendered surface.
+ */
+export function terrainHeightNear(
+  sampler: TerrainSampler,
+  lon: number,
+  lat: number,
+  radiusMeters: number,
+): number {
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = 111_320 * Math.cos((lat * Math.PI) / 180);
+  const dLat = radiusMeters / metersPerDegLat;
+  const dLon = radiusMeters / metersPerDegLon;
+  let max = sampler.heightAt(lon, lat);
+  for (const [ox, oy] of [
+    [dLon, 0],
+    [-dLon, 0],
+    [0, dLat],
+    [0, -dLat],
+    [dLon, dLat],
+    [dLon, -dLat],
+    [-dLon, dLat],
+    [-dLon, -dLat],
+  ] as const) {
+    max = Math.max(max, sampler.heightAt(lon + ox, lat + oy));
+  }
+  return max;
+}

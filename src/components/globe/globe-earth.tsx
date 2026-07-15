@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import GlobeMarker, {
   latLonToVector3,
+  markerPositionForCircuit,
   type GlobeCircuit,
 } from "./globe-marker";
 
@@ -15,6 +16,9 @@ interface GlobeEarthProps {
   selectedCircuit: GlobeCircuit | null;
   hoveredCircuit: GlobeCircuit | null;
   focusCircuit: GlobeCircuit | null;
+  /** Rotates the globe to face this point without changing zoom/FOV — used
+   * for the continent filter chips, as opposed to focusCircuit's tight zoom. */
+  focusRegion?: { lat: number; lon: number } | null;
   cardTopPx?: number;
   onHoverCircuit: (circuit: GlobeCircuit) => void;
   onSelectCircuit: (circuit: GlobeCircuit | null) => void;
@@ -286,30 +290,6 @@ function angularDistanceRadians(a: GlobeCircuit, b: GlobeCircuit) {
   return 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
 }
 
-function markerPositionForCircuit(
-  circuit: GlobeCircuit,
-  radius: number,
-  visualOffset?: { angle: number; magnitude: number },
-) {
-  const basePosition = latLonToVector3(circuit.lat, circuit.lon, radius);
-  if (!visualOffset || visualOffset.magnitude <= 0) return basePosition;
-
-  const surfaceNormal = basePosition.clone().normalize();
-  const east = new THREE.Vector3(0, 1, 0).cross(surfaceNormal);
-  if (east.lengthSq() < 0.0001) east.set(1, 0, 0);
-  east.normalize();
-  const north = surfaceNormal.clone().cross(east).normalize();
-  const tangentOffset = east
-    .multiplyScalar(Math.cos(visualOffset.angle) * visualOffset.magnitude)
-    .add(
-      north.multiplyScalar(
-        Math.sin(visualOffset.angle) * visualOffset.magnitude,
-      ),
-    );
-
-  return basePosition.add(tangentOffset).normalize().multiplyScalar(radius);
-}
-
 function buildMarkerOffsets(circuits: GlobeCircuit[]) {
   const parents = new Map(circuits.map((circuit) => [circuit.id, circuit.id]));
 
@@ -570,6 +550,7 @@ export default function GlobeEarth({
   selectedCircuit,
   hoveredCircuit,
   focusCircuit,
+  focusRegion,
   cardTopPx,
   onHoverCircuit,
   onSelectCircuit,
@@ -588,6 +569,7 @@ export default function GlobeEarth({
   const fovProgressRef = useRef(0);
   const fovAnimatingRef = useRef(false);
   const lastFocusCircuitIdRef = useRef<string | null>(null);
+  const lastFocusRegionKeyRef = useRef<string | null>(null);
   const userInteractedRef = useRef(false);
   const projectedMarkerRef = useRef(new THREE.Vector3());
   const lastScreenPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -672,6 +654,23 @@ export default function GlobeEarth({
     focusTargetRef.current = target;
   }, [camera, focusCircuit, cardTopPx, size.width, size.height]);
 
+  useEffect(() => {
+    if (!focusRegion) return;
+    const key = `${focusRegion.lat.toFixed(2)},${focusRegion.lon.toFixed(2)}`;
+    if (lastFocusRegionKeyRef.current === key) return;
+    lastFocusRegionKeyRef.current = key;
+
+    const direction = latLonToVector3(focusRegion.lat, focusRegion.lon, 1)
+      .applyAxisAngle(new THREE.Vector3(0, 1, 0), GLOBE_ROTATION_Y)
+      .normalize();
+    const distance = camera.position.length();
+
+    focusStartRef.current = camera.position.clone().normalize();
+    focusDistanceRef.current = distance;
+    focusTargetRef.current = direction.clone().multiplyScalar(distance);
+    focusProgressRef.current = 0;
+  }, [camera, focusRegion]);
+
   useFrame(() => {
     if (focusTargetRef.current && focusStartRef.current) {
       focusProgressRef.current = Math.min(focusProgressRef.current + 0.03, 1);
@@ -709,7 +708,10 @@ export default function GlobeEarth({
       fovProgressRef.current = Math.min(fovProgressRef.current + 0.03, 1);
       const t = fovProgressRef.current;
       const persp = camera as THREE.PerspectiveCamera;
-      persp.fov = focusStartFovRef.current + (focusFovRef.current - focusStartFovRef.current) * t;
+      const fov =
+        focusStartFovRef.current +
+        (focusFovRef.current - focusStartFovRef.current) * t;
+      Object.assign(persp, { fov });
       persp.updateProjectionMatrix();
 
       if (fovProgressRef.current >= 1) {

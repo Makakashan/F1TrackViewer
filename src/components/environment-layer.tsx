@@ -12,8 +12,10 @@ import type {
   SurfaceFile,
 } from "@/lib/environment-types";
 import { DIORAMA_COLORS } from "@/lib/diorama-palette";
+import { densifyCoords } from "@/lib/geo-utils";
 import {
   buildTerrainSampler,
+  terrainHeightNear,
   terrainLocalHeight,
   terrainReferenceElevation,
   type TerrainSampler,
@@ -65,17 +67,31 @@ const LAYER_Y_FLAT = {
 const LAYER_Y_DRAPE = {
   landuse: 0.1,
   water: 0.08,
-  roads: 0.3,
+  // Extra margin over the neighbourhood-max terrain sample (see
+  // terrainHeightNear) so residual interpolation error on a densified but
+  // still-straight ribbon segment never dips below the rendered surface.
+  roads: 1.5,
   buildings: 0.15,
 } as const;
 
 const MIN_WATER_AREA_SQ_M = 2_500;
 const ROAD_RIBBON_WIDTH_M = 1.2;
+// OSM road ways can have points several hundred meters apart on long straight
+// roads. Each ribbon segment only samples terrain height at its two
+// endpoints, so a hill between sparse points doesn't get "seen" and the road
+// dips below the terrain mesh — same failure mode as the track curve.
+const ROAD_MAX_SEGMENT_M = 25;
+const ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M = 15;
 const TERRAIN_BASE_SLAB_DEPTH = 0;
 const TERRAIN_TRACK_CARVE_RADIUS_M = 30;
 const TERRAIN_TRACK_CARVE_DEPTH_M = 4;
 const BROADCAST_VIEW_PADDING_M = 360;
 const MAX_BROADCAST_BUILDINGS = 420;
+// Building extrusion runs ExtrudeGeometry synchronously per building on the
+// main thread (~1-1.5ms each on a mid-tier mobile CPU) — profiled at ~500ms+
+// of blocked main thread when enabling 3D mode on a dense city circuit. This
+// cap keeps that rebuild well under a frame budget on weaker devices.
+const LOW_DETAIL_MAX_BUILDINGS = 150;
 
 const THEME_COLORS = {
   light: {
@@ -247,6 +263,8 @@ export interface EnvironmentLayerProps {
   baseY?: number;
   showTerrain?: boolean;
   resolvedTheme?: EnvironmentTheme;
+  /** Reduces building count for weaker devices. */
+  lowDetail?: boolean;
 }
 
 export default function EnvironmentLayer({
@@ -257,6 +275,7 @@ export default function EnvironmentLayer({
   baseY = 0,
   showTerrain = true,
   resolvedTheme = "dark",
+  lowDetail = false,
 }: EnvironmentLayerProps) {
   const { manifest } = bundle;
   const hasTerrain = showTerrain && bundle.terrain.gridSize > 0;
@@ -324,6 +343,7 @@ export default function EnvironmentLayer({
         flatY={LAYER_Y_FLAT.buildings}
         bbox={broadcastBBox}
         resolvedTheme={resolvedTheme}
+        maxBuildings={lowDetail ? LOW_DETAIL_MAX_BUILDINGS : MAX_BROADCAST_BUILDINGS}
       />
     </group>
   );
@@ -421,99 +441,6 @@ function DioramaBase({
     >
       <planeGeometry args={[halfW * 2, halfH * 2, 1, 1]} />
       {material}
-    </mesh>
-  );
-}
-
-function EnvironmentEdgeFade({
-  bbox,
-  originLon,
-  originLat,
-  baseY,
-  hasTerrain,
-  resolvedTheme,
-}: {
-  bbox: BBox;
-  originLon: number;
-  originLat: number;
-  baseY: number;
-  hasTerrain: boolean;
-  resolvedTheme: EnvironmentTheme;
-}) {
-  const isDark = resolvedTheme === "dark";
-  const centerLonLat = bboxCenter(bbox);
-  const center = lonLatToXZ(centerLonLat.lon, centerLonLat.lat, originLon, originLat);
-  const width =
-    (bbox.maxLon - bbox.minLon) *
-    111_320 *
-    Math.cos((centerLonLat.lat * Math.PI) / 180);
-  const height = (bbox.maxLat - bbox.minLat) * 111_320;
-
-  const fadeTexture = useMemo(() => {
-    const size = 512;
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.clearRect(0, 0, size, size);
-
-    // Fade colour matches the scene background so edges dissolve seamlessly.
-    const fadeColor = isDark ? "0, 0, 0" : "213, 220, 229";
-    const edge = size * 0.35;
-    const stops: [number, string][] = [
-      [0, `rgba(${fadeColor}, 0.7)`],
-      [0.5, `rgba(${fadeColor}, 0.3)`],
-      [1, `rgba(${fadeColor}, 0)`],
-    ];
-
-    const left = ctx.createLinearGradient(0, 0, edge, 0);
-    const right = ctx.createLinearGradient(size, 0, size - edge, 0);
-    const top = ctx.createLinearGradient(0, 0, 0, edge);
-    const bottom = ctx.createLinearGradient(0, size, 0, size - edge);
-    for (const [offset, color] of stops) {
-      left.addColorStop(offset, color);
-      right.addColorStop(offset, color);
-      top.addColorStop(offset, color);
-      bottom.addColorStop(offset, color);
-    }
-
-    ctx.fillStyle = left;
-    ctx.fillRect(0, 0, edge, size);
-    ctx.fillStyle = right;
-    ctx.fillRect(size - edge, 0, edge, size);
-    ctx.fillStyle = top;
-    ctx.fillRect(0, 0, size, edge);
-    ctx.fillStyle = bottom;
-    ctx.fillRect(0, size - edge, size, edge);
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 4;
-    return texture;
-  }, [isDark]);
-
-  useEffect(() => {
-    return () => {
-      fadeTexture?.dispose();
-    };
-  }, [fadeTexture]);
-
-  return (
-    <mesh
-      rotation={[-Math.PI / 2, 0, 0]}
-      position={[center.x, baseY + (hasTerrain ? 120 : 0.7), center.z]}
-      renderOrder={80}
-    >
-      <planeGeometry args={[width * 1.05, height * 1.05, 1, 1]} />
-      <meshBasicMaterial
-        map={fadeTexture}
-        transparent
-        opacity={hasTerrain ? (isDark ? 0.6 : 0.75) : isDark ? 0.7 : 0.85}
-        depthTest={false}
-        depthWrite={false}
-        toneMapped={false}
-      />
     </mesh>
   );
 }
@@ -771,9 +698,12 @@ function RoadLinesMesh({
     const indices: number[] = [];
     for (const road of roads) {
       if (road.points.length < 2) continue;
-      for (let i = 0; i < road.points.length - 1; i++) {
-        let [aLon, aLat] = road.points[i];
-        let [bLon, bLat] = road.points[i + 1];
+      const points = terrainSampler
+        ? densifyCoords(road.points, ROAD_MAX_SEGMENT_M)
+        : road.points;
+      for (let i = 0; i < points.length - 1; i++) {
+        let [aLon, aLat] = points[i];
+        let [bLon, bLat] = points[i + 1];
         if (bbox) {
           const clipped = clipSegmentToBBox([aLon, aLat], [bLon, bLat], bbox);
           if (!clipped) continue;
@@ -782,10 +712,14 @@ function RoadLinesMesh({
         const a = lonLatToXZ(aLon, aLat, originLon, originLat);
         const b = lonLatToXZ(bLon, bLat, originLon, originLat);
         const aY = terrainSampler
-          ? baseY + terrainSampler.heightAt(aLon, aLat) + drapeY
+          ? baseY +
+            terrainHeightNear(terrainSampler, aLon, aLat, ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M) +
+            drapeY
           : baseY + flatY;
         const bY = terrainSampler
-          ? baseY + terrainSampler.heightAt(bLon, bLat) + drapeY
+          ? baseY +
+            terrainHeightNear(terrainSampler, bLon, bLat, ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M) +
+            drapeY
           : baseY + flatY;
 
         const dx = b.x - a.x;
@@ -858,6 +792,7 @@ function BuildingExtrusions({
   flatY,
   bbox,
   resolvedTheme,
+  maxBuildings = MAX_BROADCAST_BUILDINGS,
 }: {
   buildings: BuildingFeature[];
   originLon: number;
@@ -868,6 +803,7 @@ function BuildingExtrusions({
   flatY: number;
   bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
   resolvedTheme: EnvironmentTheme;
+  maxBuildings?: number;
 }) {
   const capped = useMemo(() => {
     let filtered = buildings;
@@ -880,8 +816,8 @@ function BuildingExtrusions({
         return true;
       });
     }
-    return filtered.slice(0, MAX_BROADCAST_BUILDINGS);
-  }, [buildings, bbox]);
+    return filtered.slice(0, maxBuildings);
+  }, [buildings, bbox, maxBuildings]);
 
   const geometry = useMemo(() => {
     const geos: THREE.BufferGeometry[] = [];

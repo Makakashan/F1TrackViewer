@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useEffect, useCallback } from "react";
+import { useMemo, useEffect, useCallback, useRef } from "react";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
   buildTrackCurveWithY,
   buildTrackCurve,
   computeBounds,
+  densifyCoords,
   sceneRadiusFromBounds,
   REAL_ELEVATION_SCALE,
 } from "@/lib/geo-utils";
@@ -29,7 +30,7 @@ import {
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
-import { buildTerrainSampler } from "@/lib/terrain-sampler";
+import { buildTerrainSampler, terrainHeightNear } from "@/lib/terrain-sampler";
 import EnvironmentLayer from "@/components/environment-layer";
 import StudioStage from "@/components/three/studio-stage";
 import type { CameraPreset } from "@/components/track-viewer";
@@ -40,6 +41,7 @@ import {
   TRACK_OVERLAY_RENDER_ORDER,
   TERRAIN_TRACK_OFFSET,
   TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M,
+  TERRAIN_TRACK_MAX_SEGMENT_M,
   TERRAIN_TRACK_WALL_DEPTH,
   disposeGeometry,
   getSceneColors,
@@ -62,6 +64,8 @@ export interface TrackMeshProps {
   environmentTerrain?: boolean;
   widthProfile?: TrackWidthProfile | null;
   realWidthEnabled?: boolean;
+  /** Reduces environment diorama detail (building count) for weaker devices. */
+  lowDetail?: boolean;
 }
 
 export default function TrackMesh({
@@ -81,6 +85,7 @@ export default function TrackMesh({
   environmentTerrain,
   widthProfile,
   realWidthEnabled,
+  lowDetail,
 }: TrackMeshProps) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -112,27 +117,15 @@ export default function TrackMesh({
   // ribbon never dips under a nearby terrain peak (flat-shaded triangles
   // can sit above the bilinear value).  Radius is kept small (12 m) to
   // avoid the floating look that the old 46 m radius caused.
-  const terrainHeightNear = useCallback(
+  const trackTerrainHeightNear = useCallback(
     (lon: number, lat: number): number => {
       if (!terrainSampler) return 0;
-      const metersPerDegLat = 111_320;
-      const metersPerDegLon = 111_320 * Math.cos((lat * Math.PI) / 180);
-      const dLat = TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M / metersPerDegLat;
-      const dLon = TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M / metersPerDegLon;
-      let max = terrainSampler.heightAt(lon, lat);
-      for (const [ox, oy] of [
-        [dLon, 0],
-        [-dLon, 0],
-        [0, dLat],
-        [0, -dLat],
-        [dLon, dLat],
-        [dLon, -dLat],
-        [-dLon, dLat],
-        [-dLon, -dLat],
-      ] as const) {
-        max = Math.max(max, terrainSampler.heightAt(lon + ox, lat + oy));
-      }
-      return max;
+      return terrainHeightNear(
+        terrainSampler,
+        lon,
+        lat,
+        TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M,
+      );
     },
     [terrainSampler],
   );
@@ -141,8 +134,9 @@ export default function TrackMesh({
     if (terrainSampler) {
       let min = Infinity;
       let max = -Infinity;
-      const c = buildTrackCurveWithY(coords, bounds, (lon, lat) => {
-        const y = terrainHeightNear(lon, lat) + TERRAIN_TRACK_OFFSET;
+      const denseCoords = densifyCoords(coords, TERRAIN_TRACK_MAX_SEGMENT_M);
+      const c = buildTrackCurveWithY(denseCoords, bounds, (lon, lat) => {
+        const y = trackTerrainHeightNear(lon, lat) + TERRAIN_TRACK_OFFSET;
         if (y < min) min = y;
         if (y > max) max = y;
         return y;
@@ -174,7 +168,7 @@ export default function TrackMesh({
       minCurveY = min - mean;
     }
     return { curve: c, peakY: peak, minY: minCurveY };
-  }, [bounds, coords, elevations, hasEnvironment, terrainHeightNear, terrainSampler]);
+  }, [bounds, coords, elevations, hasEnvironment, trackTerrainHeightNear, terrainSampler]);
 
   const groundY = useMemo(
     () => (hasEnvironment ? minY - 1 : -peakY - trackWidth * 2 - 1),
@@ -340,24 +334,46 @@ export default function TrackMesh({
   const colors = getSceneColors(isDark);
   const { camera, controls } = useThree();
 
+  const cameraFraming = useCallback(
+    (currentPeakY: number) => {
+      const envMultiplier = hasEnvironment ? 2.6 : 2.4;
+      return {
+        baseDistance: radius * envMultiplier,
+        yOffset: Math.max(radius * 0.3, currentPeakY * 1.2),
+      };
+    },
+    [radius, hasEnvironment],
+  );
+
+  // Deliberately excludes `peakY` from the deps: peakY is recomputed whenever
+  // the terrain toggle flips (same circuit, different elevation source), and
+  // resetting the camera on that toggle would discard the user's orbit. It
+  // only needs to reset when the circuit itself changes (tracked via radius
+  // and hasEnvironment), reading the latest peakY via ref at that point.
+  const peakYRef = useRef(peakY);
   useEffect(() => {
-    const verticalFudge = 1 + Math.min(1, peakY / Math.max(radius, 1));
-    const envMultiplier = hasEnvironment ? 2.6 : 2.4;
-    const distance = radius * envMultiplier * verticalFudge;
-    const yOffset = Math.max(radius * 0.3, peakY * 1.2);
+    peakYRef.current = peakY;
+  });
+  useEffect(() => {
+    const currentPeakY = peakYRef.current;
+    const verticalFudge = 1 + Math.min(1, currentPeakY / Math.max(radius, 1));
+    const { baseDistance, yOffset } = cameraFraming(currentPeakY);
+    const distance = baseDistance * verticalFudge;
     camera.position.set(distance, distance * 0.6 + yOffset, distance);
     camera.lookAt(0, 0, 0);
     if (controls && "target" in controls) {
       (controls as any).target.set(0, 0, 0);
       (controls as any).update?.();
     }
-  }, [camera, controls, radius, peakY, hasEnvironment]);
+  }, [camera, controls, radius, cameraFraming]);
 
+  // Excludes `peakY` from the deps for the same reason as above: cameraPreset
+  // persists (it's URL state, not a one-shot trigger), so reacting to peakY
+  // here would re-snap the camera on every terrain toggle once any preset had
+  // ever been clicked.
   useEffect(() => {
     if (!cameraPreset) return;
-    const envMultiplier = hasEnvironment ? 2.6 : 2.4;
-    const distance = radius * envMultiplier;
-    const yOffset = Math.max(radius * 0.3, peakY * 1.2);
+    const { baseDistance: distance, yOffset } = cameraFraming(peakYRef.current);
 
     switch (cameraPreset) {
       case "top":
@@ -378,7 +394,7 @@ export default function TrackMesh({
       (controls as any).target.set(0, 0, 0);
       (controls as any).update?.();
     }
-  }, [cameraPreset, camera, controls, radius, peakY]);
+  }, [cameraPreset, camera, controls, cameraFraming]);
 
   return (
     <group>
@@ -400,6 +416,7 @@ export default function TrackMesh({
           baseY={terrainSampler ? 0 : groundY}
           showTerrain={environmentTerrain}
           resolvedTheme={resolvedTheme}
+          lowDetail={lowDetail}
         />
       )}
 

@@ -67,6 +67,35 @@ export function distanceMeters(a: [number, number], b: [number, number]): number
   return Math.hypot(dx, dz);
 }
 
+/**
+ * Insert evenly-spaced intermediate points into long segments so no gap
+ * exceeds `maxSegmentMeters`. Real circuit GeoJSON can have straights spanning
+ * several hundred meters between two points — a Catmull-Rom curve only
+ * samples terrain height at the original vertices, so a smooth interpolation
+ * across a long, sparse segment can miss a hill in between and dip the track
+ * below the terrain mesh. Densifying first gives the curve enough elevation
+ * samples to track the real profile.
+ */
+export function densifyCoords(
+  coords: [number, number][],
+  maxSegmentMeters: number,
+): [number, number][] {
+  if (coords.length < 2 || maxSegmentMeters <= 0) return coords;
+  const result: [number, number][] = [];
+  for (let i = 0; i < coords.length - 1; i++) {
+    const a = coords[i];
+    const b = coords[i + 1];
+    result.push(a);
+    const steps = Math.floor(distanceMeters(a, b) / maxSegmentMeters);
+    for (let s = 1; s <= steps; s++) {
+      const t = s / (steps + 1);
+      result.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    }
+  }
+  result.push(coords[coords.length - 1]);
+  return result;
+}
+
 /** Build a closed CatmullRomCurve3 from [lon, lat] coords. Strips closing duplicate, uses centripetal parametrization. */
 export function buildTrackCurve(
   coords: [number, number][],
