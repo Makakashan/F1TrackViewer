@@ -708,7 +708,10 @@ export default function GlobeEarth({
       fovProgressRef.current = Math.min(fovProgressRef.current + 0.03, 1);
       const t = fovProgressRef.current;
       const persp = camera as THREE.PerspectiveCamera;
-      persp.fov = focusStartFovRef.current + (focusFovRef.current - focusStartFovRef.current) * t;
+      const fov =
+        focusStartFovRef.current +
+        (focusFovRef.current - focusStartFovRef.current) * t;
+      Object.assign(persp, { fov });
       persp.updateProjectionMatrix();
 
       if (fovProgressRef.current >= 1) {
