@@ -76,6 +76,11 @@ const TERRAIN_TRACK_CARVE_RADIUS_M = 30;
 const TERRAIN_TRACK_CARVE_DEPTH_M = 4;
 const BROADCAST_VIEW_PADDING_M = 360;
 const MAX_BROADCAST_BUILDINGS = 420;
+// Building extrusion runs ExtrudeGeometry synchronously per building on the
+// main thread (~1-1.5ms each on a mid-tier mobile CPU) — profiled at ~500ms+
+// of blocked main thread when enabling 3D mode on a dense city circuit. This
+// cap keeps that rebuild well under a frame budget on weaker devices.
+const LOW_DETAIL_MAX_BUILDINGS = 150;
 
 const THEME_COLORS = {
   light: {
@@ -247,6 +252,8 @@ export interface EnvironmentLayerProps {
   baseY?: number;
   showTerrain?: boolean;
   resolvedTheme?: EnvironmentTheme;
+  /** Reduces building count for weaker devices. */
+  lowDetail?: boolean;
 }
 
 export default function EnvironmentLayer({
@@ -257,6 +264,7 @@ export default function EnvironmentLayer({
   baseY = 0,
   showTerrain = true,
   resolvedTheme = "dark",
+  lowDetail = false,
 }: EnvironmentLayerProps) {
   const { manifest } = bundle;
   const hasTerrain = showTerrain && bundle.terrain.gridSize > 0;
@@ -324,6 +332,7 @@ export default function EnvironmentLayer({
         flatY={LAYER_Y_FLAT.buildings}
         bbox={broadcastBBox}
         resolvedTheme={resolvedTheme}
+        maxBuildings={lowDetail ? LOW_DETAIL_MAX_BUILDINGS : MAX_BROADCAST_BUILDINGS}
       />
     </group>
   );
@@ -765,6 +774,7 @@ function BuildingExtrusions({
   flatY,
   bbox,
   resolvedTheme,
+  maxBuildings = MAX_BROADCAST_BUILDINGS,
 }: {
   buildings: BuildingFeature[];
   originLon: number;
@@ -775,6 +785,7 @@ function BuildingExtrusions({
   flatY: number;
   bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
   resolvedTheme: EnvironmentTheme;
+  maxBuildings?: number;
 }) {
   const capped = useMemo(() => {
     let filtered = buildings;
@@ -787,8 +798,8 @@ function BuildingExtrusions({
         return true;
       });
     }
-    return filtered.slice(0, MAX_BROADCAST_BUILDINGS);
-  }, [buildings, bbox]);
+    return filtered.slice(0, maxBuildings);
+  }, [buildings, bbox, maxBuildings]);
 
   const geometry = useMemo(() => {
     const geos: THREE.BufferGeometry[] = [];
