@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { AppPrefProvider } from "@/components/app-pref-provider";
+import IntroGate from "@/components/intro-gate";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const faviconUrl = `${basePath}/favicon.svg`;
@@ -30,7 +31,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" suppressHydrationWarning>
       <body className="antialiased bg-background text-foreground">
-        <AppPrefProvider>{children}</AppPrefProvider>
+        <AppPrefProvider>
+          <IntroGate>{children}</IntroGate>
+        </AppPrefProvider>
         <Toaster />
       </body>
     </html>
