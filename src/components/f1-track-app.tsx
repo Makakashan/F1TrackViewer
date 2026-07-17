@@ -22,6 +22,7 @@ import { fetchEnvironmentBundle, hasEnvironment } from "@/lib/environment-loader
 import type { TrackWidthProfile } from "@/lib/track-width";
 import { fetchTrackWidthProfile } from "@/lib/track-width";
 import { useUrlState } from "@/lib/url-state";
+import { readPref, writePref } from "@/lib/local-pref";
 
 // Three.js scene must be client-only — no SSR for WebGL.
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
@@ -41,6 +42,7 @@ interface F1TrackAppProps {
 }
 
 const DISCLAIMER_DISMISSED_STORAGE_KEY = "f1tv-disclaimer-dismissed";
+const AUTO_ROTATE_STORAGE_KEY = "f1tv:autoRotate";
 
 export default function F1TrackApp({
   startFinishCalibration = false,
@@ -76,7 +78,11 @@ export default function F1TrackApp({
     selectedId,
     setError,
   );
-  const [autoRotate, setAutoRotate] = useState(true);
+  const [autoRotate, setAutoRotateState] = useState(true);
+  const setAutoRotate = useCallback((v: boolean) => {
+    setAutoRotateState(v);
+    writePref(AUTO_ROTATE_STORAGE_KEY, v);
+  }, []);
   // Real per-point track width (TUMFTM). null = no profile for this circuit,
   // undefined = still loading.
   const [widthProfile, setWidthProfile] =
@@ -106,6 +112,7 @@ export default function F1TrackApp({
       } catch {
         setFooterDismissed(false);
       }
+      setAutoRotateState(readPref(AUTO_ROTATE_STORAGE_KEY, true));
     }, 0);
     return () => window.clearTimeout(timer);
   }, []);

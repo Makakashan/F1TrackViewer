@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import GlobeEarth from "./globe-earth";
 import GlobeInfoCard from "./globe-info-card";
 import type { GlobeCircuit } from "./globe-marker";
+import { useAppPref } from "@/components/app-pref-provider";
 import { countryFlag, countryFromId } from "@/lib/f1-circuits";
 import {
 	continentCentroid,
@@ -68,6 +69,7 @@ function openCircuitSearch(circuit: GlobeCircuit) {
 }
 
 export default function GlobeLanding() {
+	const { resolvedTheme } = useAppPref();
 	const [circuits, setCircuits] = useState<GlobeCircuit[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [earthReady, setEarthReady] = useState(false);
@@ -179,7 +181,7 @@ export default function GlobeLanding() {
 	}, []);
 
 	return (
-		<main className="relative h-screen w-screen overflow-hidden bg-[#03050a] text-white">
+		<main className="relative h-screen w-screen overflow-hidden bg-background text-foreground">
 			<div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_50%_45%,transparent_0%,rgba(3,5,10,0.08)_45%,rgba(3,5,10,0.72)_100%)]" />
 			<header className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4 py-4 md:px-6">
 				<div className="flex items-center gap-3">
@@ -190,12 +192,12 @@ export default function GlobeLanding() {
 						<div className="text-sm font-bold tracking-tight">
 							F1 Track Studio
 						</div>
-						<div className="hidden text-[10px] uppercase tracking-[0.22em] text-white/45 sm:block">
+						<div className="hidden text-[10px] uppercase tracking-[0.22em] text-foreground/45 sm:block">
 							Globe Circuit Selector
 						</div>
 					</div>
 				</div>
-				<div className="hidden rounded-md border border-white/10 bg-white/4 px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-white/50 backdrop-blur md:block">
+				<div className="hidden rounded-md border border-foreground/10 bg-foreground/4 px-3 py-2 text-[11px] uppercase tracking-[0.18em] text-foreground/50 backdrop-blur md:block">
 					Drag to rotate
 				</div>
 			</header>
@@ -216,6 +218,7 @@ export default function GlobeLanding() {
 					focusCircuit={selectedCircuit}
 					focusRegion={focusRegion}
 					cardTopPx={effectiveCardTop}
+					theme={resolvedTheme}
 					onHoverCircuit={setHoveredCircuit}
 					onSelectCircuit={handleSelectCircuit}
 					onClearHover={() => setHoveredCircuit(null)}
@@ -224,28 +227,28 @@ export default function GlobeLanding() {
 			</Canvas>
 
 			{sidebarOpen ? (
-				<aside className="absolute bottom-4 left-4 top-24 z-20 hidden w-75 flex-col overflow-hidden rounded-md border border-white/10 bg-black/58 shadow-2xl shadow-black/40 backdrop-blur-xl md:flex">
-					<div className="flex items-center justify-between border-b border-white/10 px-3 py-3">
-						<div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/62">
+				<aside className="absolute bottom-4 left-4 top-24 z-20 hidden w-75 flex-col overflow-hidden rounded-md border border-foreground/10 bg-background/58 shadow-2xl shadow-black/40 backdrop-blur-xl md:flex">
+					<div className="flex items-center justify-between border-b border-foreground/10 px-3 py-3">
+						<div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-foreground/62">
 							<List className="h-3.5 w-3.5 text-red-300" />
 							Circuits
 						</div>
 						<button
-							className="flex h-8 w-8 items-center justify-center rounded-md text-white/52 hover:bg-white/10 hover:text-white"
+							className="flex h-8 w-8 items-center justify-center rounded-md text-foreground/52 hover:bg-foreground/10 hover:text-foreground"
 							onClick={() => setSidebarOpen(false)}
 							aria-label="Hide circuit menu"
 						>
 							<EyeOff className="h-4 w-4" />
 						</button>
 					</div>
-					<div className="space-y-2 border-b border-white/10 p-3">
+					<div className="space-y-2 border-b border-foreground/10 p-3">
 						<div className="relative">
-							<Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/34" />
+							<Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground/34" />
 							<input
 								value={query}
 								onChange={(event) => setQuery(event.target.value)}
 								placeholder="Search circuit"
-								className="h-9 w-full rounded-md border border-white/10 bg-white/4 pl-9 pr-3 text-sm text-white outline-none placeholder:text-white/32 focus:border-red-400/60"
+								className="h-9 w-full rounded-md border border-foreground/10 bg-foreground/4 pl-9 pr-3 text-sm text-foreground outline-none placeholder:text-foreground/32 focus:border-red-400/60"
 							/>
 						</div>
 						<div className="flex flex-wrap items-center gap-1">
@@ -257,7 +260,7 @@ export default function GlobeLanding() {
 										className={`rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition ${
 											filterChip === chip.id
 												? "border-red-500/50 bg-red-950/50 text-white"
-												: "border-white/12 text-white/52 hover:border-white/25 hover:text-white"
+												: "border-foreground/12 text-foreground/52 hover:border-foreground/25 hover:text-foreground"
 										}`}
 									>
 										{chip.label}
@@ -271,21 +274,21 @@ export default function GlobeLanding() {
 								className={`rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide transition ${
 									filterChip === "classic"
 										? "border-amber-400/50 bg-amber-950/40 text-amber-200"
-										: "border-white/12 text-white/52 hover:border-amber-400/30 hover:text-amber-200/80"
+										: "border-foreground/12 text-foreground/52 hover:border-amber-400/30 hover:text-amber-200/80"
 								}`}
 							>
 								Classic
 							</button>
 						</div>
-						<div className="grid grid-cols-3 gap-1 rounded-md border border-white/10 bg-white/3 p-1">
+						<div className="grid grid-cols-3 gap-1 rounded-md border border-foreground/10 bg-foreground/3 p-1">
 							{SORT_MODES.map((mode) => (
 								<button
 									key={mode.id}
 									onClick={() => setSortMode(mode.id)}
 									className={`rounded px-1.5 py-1 text-[10px] font-medium transition ${
 										sortMode === mode.id
-											? "bg-white/12 text-white"
-											: "text-white/48 hover:text-white/80"
+											? "bg-foreground/12 text-foreground"
+											: "text-foreground/48 hover:text-foreground/80"
 									}`}
 								>
 									{mode.label}
@@ -305,16 +308,16 @@ export default function GlobeLanding() {
 							return (
 								<div key={circuit.id}>
 									{showContinentHeader && (
-										<div className="mb-1 mt-3 flex items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-white/38 first:mt-1">
+										<div className="mb-1 mt-3 flex items-center gap-2 px-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/38 first:mt-1">
 											{continent ? CONTINENT_LABELS[continent] : "Other"}
-											<span className="h-px flex-1 bg-white/10" />
+											<span className="h-px flex-1 bg-foreground/10" />
 										</div>
 									)}
 									<button
 										className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition ${
 											selected
 												? "border border-red-500/45 bg-red-950/42 text-white"
-												: "border border-transparent text-white/72 hover:bg-white/6 hover:text-white"
+												: "border border-transparent text-foreground/72 hover:bg-foreground/6 hover:text-foreground"
 										}`}
 										onClick={() => handleSelectCircuit(circuit)}
 										onMouseEnter={() => setHoveredCircuit(circuit)}
@@ -329,12 +332,12 @@ export default function GlobeLanding() {
 													{circuit.shortName}
 												</span>
 												{classic && (
-													<span className="shrink-0 rounded-sm border border-amber-400/30 bg-amber-400/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-300/80">
+													<span className="shrink-0 rounded-sm border border-amber-400/30 bg-amber-400/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300/80">
 														Classic
 													</span>
 												)}
 											</span>
-											<span className="block truncate text-xs text-white/42">
+											<span className="block truncate text-xs text-foreground/42">
 												{circuit.name}
 											</span>
 										</span>
@@ -346,7 +349,7 @@ export default function GlobeLanding() {
 				</aside>
 			) : (
 				<button
-					className="absolute left-4 top-24 z-20 hidden h-10 items-center gap-2 rounded-md border border-white/10 bg-black/58 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-white/62 backdrop-blur-xl hover:bg-white/10 hover:text-white md:flex"
+					className="absolute left-4 top-24 z-20 hidden h-10 items-center gap-2 rounded-md border border-foreground/10 bg-background/58 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/62 backdrop-blur-xl hover:bg-foreground/10 hover:text-foreground md:flex"
 					onClick={() => setSidebarOpen(true)}
 				>
 					<Eye className="h-4 w-4" />
@@ -355,7 +358,7 @@ export default function GlobeLanding() {
 			)}
 
 			<button
-				className="absolute left-4 top-24 z-20 flex h-10 items-center gap-2 rounded-md border border-white/10 bg-black/58 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-white/68 backdrop-blur-xl active:bg-white/10 md:hidden"
+				className="absolute left-4 top-24 z-20 flex h-10 items-center gap-2 rounded-md border border-foreground/10 bg-background/58 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/68 backdrop-blur-xl active:bg-foreground/10 md:hidden"
 				onClick={() => setMobileMenuOpen(true)}
 			>
 				<List className="h-4 w-4 text-red-300" />
@@ -363,28 +366,28 @@ export default function GlobeLanding() {
 			</button>
 
 			{mobileMenuOpen && (
-				<div className="absolute inset-x-3 bottom-3 top-20 z-40 flex flex-col overflow-hidden rounded-md border border-white/12 bg-black/82 shadow-2xl shadow-black/50 backdrop-blur-xl md:hidden">
-					<div className="flex items-center justify-between border-b border-white/10 px-3 py-3">
-						<div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/68">
+				<div className="absolute inset-x-3 bottom-3 top-20 z-40 flex flex-col overflow-hidden rounded-md border border-foreground/12 bg-background/82 shadow-2xl shadow-black/50 backdrop-blur-xl md:hidden">
+					<div className="flex items-center justify-between border-b border-foreground/10 px-3 py-3">
+						<div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-foreground/68">
 							<List className="h-3.5 w-3.5 text-red-300" />
 							Circuits
 						</div>
 						<button
-							className="flex h-9 w-9 items-center justify-center rounded-md text-white/58 active:bg-white/10 active:text-white"
+							className="flex h-9 w-9 items-center justify-center rounded-md text-foreground/58 active:bg-foreground/10 active:text-foreground"
 							onClick={() => setMobileMenuOpen(false)}
 							aria-label="Close circuit menu"
 						>
 							<X className="h-4 w-4" />
 						</button>
 					</div>
-					<div className="space-y-2 border-b border-white/10 p-3">
+					<div className="space-y-2 border-b border-foreground/10 p-3">
 						<div className="relative">
-							<Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/34" />
+							<Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-foreground/34" />
 							<input
 								value={query}
 								onChange={(event) => setQuery(event.target.value)}
 								placeholder="Search circuit"
-								className="h-11 w-full rounded-md border border-white/10 bg-white/5 pl-9 pr-3 text-base text-white outline-none placeholder:text-white/32 focus:border-red-400/60"
+								className="h-11 w-full rounded-md border border-foreground/10 bg-foreground/5 pl-9 pr-3 text-base text-foreground outline-none placeholder:text-foreground/32 focus:border-red-400/60"
 							/>
 						</div>
 						<div className="flex flex-wrap items-center gap-1">
@@ -396,14 +399,14 @@ export default function GlobeLanding() {
 										className={`rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide transition ${
 											filterChip === chip.id
 												? "border-red-500/50 bg-red-950/50 text-white"
-												: "border-white/12 text-white/52 active:border-white/25"
+												: "border-foreground/12 text-foreground/52 active:border-foreground/25"
 										}`}
 									>
 										{chip.label}
 									</button>
 								),
 							)}
-							<span className="mx-0.5 h-4 w-px shrink-0 bg-white/12" />
+							<span className="mx-0.5 h-4 w-px shrink-0 bg-foreground/12" />
 							<button
 								onClick={() =>
 									handleFilterChip(filterChip === "classic" ? "all" : "classic")
@@ -411,21 +414,21 @@ export default function GlobeLanding() {
 								className={`rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase tracking-wide transition ${
 									filterChip === "classic"
 										? "border-amber-400/50 bg-amber-950/40 text-amber-200"
-										: "border-white/12 text-white/52 active:border-amber-400/30"
+										: "border-foreground/12 text-foreground/52 active:border-amber-400/30"
 								}`}
 							>
 								Classic
 							</button>
 						</div>
-						<div className="grid grid-cols-3 gap-1 rounded-md border border-white/10 bg-white/3 p-1">
+						<div className="grid grid-cols-3 gap-1 rounded-md border border-foreground/10 bg-foreground/3 p-1">
 							{SORT_MODES.map((mode) => (
 								<button
 									key={mode.id}
 									onClick={() => setSortMode(mode.id)}
 									className={`rounded px-1.5 py-1.5 text-[11px] font-medium transition ${
 										sortMode === mode.id
-											? "bg-white/12 text-white"
-											: "text-white/48 active:text-white/80"
+											? "bg-foreground/12 text-foreground"
+											: "text-foreground/48 active:text-foreground/80"
 									}`}
 								>
 									{mode.label}
@@ -445,16 +448,16 @@ export default function GlobeLanding() {
 							return (
 								<div key={circuit.id}>
 									{showContinentHeader && (
-										<div className="mb-1 mt-3 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-white/38 first:mt-1">
+										<div className="mb-1 mt-3 flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-foreground/38 first:mt-1">
 											{continent ? CONTINENT_LABELS[continent] : "Other"}
-											<span className="h-px flex-1 bg-white/10" />
+											<span className="h-px flex-1 bg-foreground/10" />
 										</div>
 									)}
 									<button
 										className={`flex w-full items-center gap-3 rounded-md px-3 py-3 text-left transition ${
 											selected
 												? "border border-red-500/45 bg-red-950/42 text-white"
-												: "border border-transparent text-white/74 active:bg-white/8"
+												: "border border-transparent text-foreground/74 active:bg-foreground/8"
 										}`}
 										onClick={() => {
 											handleSelectCircuit(circuit);
@@ -470,12 +473,12 @@ export default function GlobeLanding() {
 													{circuit.shortName}
 												</span>
 												{classic && (
-													<span className="shrink-0 rounded-sm border border-amber-400/30 bg-amber-400/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-300/80">
+													<span className="shrink-0 rounded-sm border border-amber-400/30 bg-amber-400/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300/80">
 														Classic
 													</span>
 												)}
 											</span>
-											<span className="block truncate text-xs text-white/42">
+											<span className="block truncate text-xs text-foreground/42">
 												{circuit.name}
 											</span>
 										</span>
@@ -488,29 +491,29 @@ export default function GlobeLanding() {
 			)}
 
 			{showLoading && (
-				<div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-[#03050a]/72 text-white backdrop-blur-sm">
+				<div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/72 text-foreground backdrop-blur-sm">
 					<div className="relative flex h-48 w-48 items-center justify-center">
-						<div className="absolute inset-0 rounded-full border border-white/10 shadow-[0_0_70px_rgba(225,6,0,0.14)]" />
-						<div className="absolute inset-4 rounded-full border border-dashed border-white/14" />
+						<div className="absolute inset-0 rounded-full border border-foreground/10 shadow-[0_0_70px_rgba(225,6,0,0.14)]" />
+						<div className="absolute inset-4 rounded-full border border-dashed border-foreground/14" />
 						<div className="absolute inset-0 rounded-full border border-transparent border-b-primary/65 border-r-primary/25" />
 						<div className="absolute inset-0 animate-spin [animation-duration:1.35s]">
 							<div className="relative mx-auto h-8 w-12 -translate-y-3">
 								<div className="absolute left-1/2 top-5 h-1.5 w-10 -translate-x-1/2 rounded-full bg-primary/35 blur-sm" />
 								<div className="absolute left-1/2 top-3 h-2 w-9 -translate-x-1/2 rounded-[999px_999px_5px_5px] bg-primary shadow-[0_0_18px_rgba(225,6,0,0.75)]" />
-								<div className="absolute left-1/2 top-1 h-4 w-4 -translate-x-1/2 rounded-t-full border-t border-white/60 bg-white/20" />
-								<div className="absolute left-0 top-4 h-2 w-2 rounded-full bg-white/82 shadow-[0_0_8px_rgba(255,255,255,0.45)]" />
-								<div className="absolute right-0 top-4 h-2 w-2 rounded-full bg-white/82 shadow-[0_0_8px_rgba(255,255,255,0.45)]" />
-								<div className="absolute left-1/2 top-2 h-7 w-0.5 -translate-x-1/2 rounded-full bg-white/75" />
+								<div className="absolute left-1/2 top-1 h-4 w-4 -translate-x-1/2 rounded-t-full border-t border-foreground/60 bg-foreground/20" />
+								<div className="absolute left-0 top-4 h-2 w-2 rounded-full bg-foreground/82 shadow-[0_0_8px_rgba(255,255,255,0.45)]" />
+								<div className="absolute right-0 top-4 h-2 w-2 rounded-full bg-foreground/82 shadow-[0_0_8px_rgba(255,255,255,0.45)]" />
+								<div className="absolute left-1/2 top-2 h-7 w-0.5 -translate-x-1/2 rounded-full bg-foreground/75" />
 							</div>
 						</div>
 						<div className="text-center">
 							<div className="text-[10px] font-semibold uppercase tracking-[0.28em] text-primary">
 								F1 Track Studio
 							</div>
-							<div className="mt-2 text-sm font-semibold text-white/88">
+							<div className="mt-2 text-sm font-semibold text-foreground/88">
 								{loading ? "Loading circuits" : "Preparing globe"}
 							</div>
-							<div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-white/38">
+							<div className="mt-1 text-[10px] uppercase tracking-[0.22em] text-foreground/38">
 								telemetry map
 							</div>
 						</div>
