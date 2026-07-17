@@ -1,8 +1,30 @@
 import { create } from "zustand";
 import type { CameraPreset } from "@/components/track-viewer";
 import type { TrackViewMode } from "@/lib/track-markers";
+import { readPref, writePref } from "@/lib/local-pref";
 
 export type QualityMode = "auto" | "performance" | "quality";
+
+const TRACK_PREFS_KEY = "f1tv:trackPrefs";
+
+interface TrackPrefs {
+  trackWidth: number;
+  elevationEnabled: boolean;
+  viewMode: TrackViewMode;
+  environmentEnabled: boolean;
+  environmentTerrain: boolean;
+  realWidthEnabled: boolean;
+  qualityMode: QualityMode;
+}
+
+function readTrackPrefs(): Partial<TrackPrefs> {
+  return readPref<Partial<TrackPrefs>>(TRACK_PREFS_KEY, {});
+}
+
+function writeTrackPref<K extends keyof TrackPrefs>(key: K, value: TrackPrefs[K]) {
+  const prefs = readTrackPrefs();
+  writePref(TRACK_PREFS_KEY, { ...prefs, [key]: value });
+}
 
 function isCameraPreset(value: string | null): value is CameraPreset {
   return value === "top" || value === "iso" || value === "side";
@@ -77,26 +99,49 @@ export const useUrlState = create<UrlState>((set, get) => ({
   hydrated: false,
 
   setTrack: (id) => set({ track: id }),
-  setTrackWidth: (w) => set({ trackWidth: w }),
-  setElevationEnabled: (v) => set({ elevationEnabled: v }),
+  setTrackWidth: (w) => {
+    writeTrackPref("trackWidth", w);
+    set({ trackWidth: w });
+  },
+  setElevationEnabled: (v) => {
+    writeTrackPref("elevationEnabled", v);
+    set({ elevationEnabled: v });
+  },
   setCameraPreset: (p) => set({ cameraPreset: p }),
-  setViewMode: (m) => set({ viewMode: m }),
-  setEnvironmentEnabled: (v) => set({ environmentEnabled: v }),
-  setEnvironmentTerrain: (v) => set({ environmentTerrain: v }),
-  setRealWidthEnabled: (v) => set({ realWidthEnabled: v }),
-  setQualityMode: (m) => set({ qualityMode: m }),
+  setViewMode: (m) => {
+    writeTrackPref("viewMode", m);
+    set({ viewMode: m });
+  },
+  setEnvironmentEnabled: (v) => {
+    writeTrackPref("environmentEnabled", v);
+    set({ environmentEnabled: v });
+  },
+  setEnvironmentTerrain: (v) => {
+    writeTrackPref("environmentTerrain", v);
+    set({ environmentTerrain: v });
+  },
+  setRealWidthEnabled: (v) => {
+    writeTrackPref("realWidthEnabled", v);
+    set({ realWidthEnabled: v });
+  },
+  setQualityMode: (m) => {
+    writeTrackPref("qualityMode", m);
+    set({ qualityMode: m });
+  },
 
   hydrate: (circuits) => {
     const s = get();
     if (s.hydrated) return;
 
+    // Stored preferences become the new baseline defaults; URL params
+    // (below) still win over them so shareable links keep working.
+    const patch: Partial<UrlState> = { hydrated: true, ...readTrackPrefs() };
+
     const url = readUrlParams();
     if (!url) {
-      set({ hydrated: true });
+      set(patch);
       return;
     }
-
-    const patch: Partial<UrlState> = { hydrated: true };
 
     // Track
     if (url.track && circuits.some((c) => c.id === url.track)) {

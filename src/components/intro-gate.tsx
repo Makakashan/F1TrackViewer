@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const SESSION_KEY = "f1tv-intro-seen";
+const THEME_STORAGE_KEY = "f1tv:theme";
 const FADE_OUT_MS = 500;
 
 function subscribeToSessionStorage() {
@@ -12,6 +13,22 @@ function subscribeToSessionStorage() {
 
 function getClientIntroSeenSnapshot() {
   return sessionStorage.getItem(SESSION_KEY) === "1";
+}
+
+// Read synchronously (not via useAppPref/useEffect) so the iframe mounts
+// with the right ?theme= on its very first render — changing an iframe's
+// src after mount reloads it, which would restart the whole animation.
+function resolveIntroTheme(): "light" | "dark" {
+  if (typeof window === "undefined") return "dark";
+  try {
+    const stored = localStorage.getItem(THEME_STORAGE_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  } catch {
+    return "dark";
+  }
 }
 
 function getServerIntroSeenSnapshot() {
@@ -38,6 +55,7 @@ export default function IntroGate({ children }: IntroGateProps) {
   );
   const [dismissing, setDismissing] = useState(false);
   const [introGone, setIntroGone] = useState(false);
+  const [introTheme] = useState(resolveIntroTheme);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   const showIntro = !seen && !introGone;
@@ -64,13 +82,13 @@ export default function IntroGate({ children }: IntroGateProps) {
     <>
       {showIntro && (
         <div
-          className={`fixed inset-0 z-[9999] bg-[#0a0a0d] transition-opacity duration-500 ${
+          className={`fixed inset-0 z-[9999] bg-background transition-opacity duration-500 ${
             dismissing ? "pointer-events-none opacity-0" : "opacity-100"
           }`}
         >
           <iframe
             ref={iframeRef}
-            src={`${PUBLIC_BASE_PATH}/intro/f1-intro.html`}
+            src={`${PUBLIC_BASE_PATH}/intro/f1-intro.html?theme=${introTheme}`}
             title="F1 Track Studio intro"
             className="absolute inset-0 h-[100dvh] w-full border-0"
             allow="autoplay"
