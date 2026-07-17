@@ -20,6 +20,10 @@ interface GlobeEarthProps {
    * for the continent filter chips, as opposed to focusCircuit's tight zoom. */
   focusRegion?: { lat: number; lon: number } | null;
   cardTopPx?: number;
+  /** App light/dark theme — the void/fog/stars/grid/border colors follow it;
+   * the Earth sphere's own day-texture shading does not (a photo of Earth
+   * looks the same regardless of UI theme). */
+  theme: "light" | "dark";
   onHoverCircuit: (circuit: GlobeCircuit) => void;
   onSelectCircuit: (circuit: GlobeCircuit | null) => void;
   onClearHover: () => void;
@@ -29,8 +33,35 @@ interface GlobeEarthProps {
   ) => void;
 }
 
+const SPACE_PALETTE = {
+  dark: {
+    void: "#03050a",
+    grid: "#d9f6ff",
+    gridOpacity: 0.16,
+    dot: "#ffffff",
+    dotOpacity: 0.38,
+    blending: THREE.AdditiveBlending,
+  },
+  light: {
+    void: "#eef3f8",
+    grid: "#3a4d5f",
+    gridOpacity: 0.24,
+    dot: "#3a4d5f",
+    dotOpacity: 0.4,
+    blending: THREE.NormalBlending,
+  },
+} as const;
+
+// Borders trace the photographic Earth surface (not the theme-colored void),
+// so — like the sphere's own shading — they stay one fixed color regardless
+// of app theme: white reads over every day-texture region (ocean, land,
+// desert), where a theme-dark variant washed out badly over bright sand.
+const BORDER_COLOR = "#ffffff";
+const BORDER_OPACITY = 0.26;
+
 const EARTH_RADIUS = 2;
 const MARKER_SURFACE_OFFSET = 0.002;
+const BORDER_SURFACE_OFFSET = 0.0015;
 const GLOBE_ROTATION_Y = -0.35;
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const EARTH_DAY_TEXTURE = `${PUBLIC_BASE_PATH}/textures/earth/earth-day.jpg`;
@@ -351,9 +382,11 @@ function buildMarkerOffsets(circuits: GlobeCircuit[]) {
 function EarthSphere({
   textures,
   cloudTexture,
+  theme,
 }: {
   textures: EarthTextureSet;
   cloudTexture: THREE.Texture | null;
+  theme: "light" | "dark";
 }) {
   const material = useMemo(() => {
     return new THREE.ShaderMaterial({
@@ -429,7 +462,8 @@ function EarthSphere({
         <sphereGeometry args={[EARTH_RADIUS, 192, 112]} />
         <primitive object={material} attach="material" />
       </mesh>
-      <GlobeGrid radius={EARTH_RADIUS * 1.006} />
+      <GlobeGrid radius={EARTH_RADIUS * 1.006} theme={theme} />
+      <GlobeBorders radius={EARTH_RADIUS + BORDER_SURFACE_OFFSET} />
       <CloudLayer texture={cloudTexture ?? textures.generatedClouds} />
       <mesh>
         <sphereGeometry args={[EARTH_RADIUS * 1.05, 128, 64]} />
@@ -457,7 +491,14 @@ function EarthSphere({
   );
 }
 
-function GlobeGrid({ radius }: { radius: number }) {
+function GlobeGrid({
+  radius,
+  theme,
+}: {
+  radius: number;
+  theme: "light" | "dark";
+}) {
+  const palette = SPACE_PALETTE[theme];
   const { lineGeometry, dotGeometry } = useMemo(() => {
     const vertices: number[] = [];
     const dots: number[] = [];
@@ -524,24 +565,110 @@ function GlobeGrid({ radius }: { radius: number }) {
     <>
       <lineSegments geometry={lineGeometry}>
         <lineBasicMaterial
-          color="#d9f6ff"
+          color={palette.grid}
           transparent
-          opacity={0.16}
+          opacity={palette.gridOpacity}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={palette.blending}
         />
       </lineSegments>
       <points geometry={dotGeometry}>
         <pointsMaterial
-          color="#ffffff"
+          color={palette.dot}
           size={0.014}
           transparent
-          opacity={0.38}
+          opacity={palette.dotOpacity}
           depthWrite={false}
-          blending={THREE.AdditiveBlending}
+          blending={palette.blending}
         />
       </points>
     </>
+  );
+}
+
+const COUNTRY_BORDERS_URL = `${PUBLIC_BASE_PATH}/data/country-borders.json`;
+
+/** [lon, lat] point */
+type BorderPoint = [number, number];
+/** rings -> points */
+type BorderPolygon = BorderPoint[][];
+interface BorderFeature {
+  n: string;
+  /** polygons -> rings -> points */
+  p: BorderPolygon[];
+}
+
+function useCountryBorders() {
+  const [features, setFeatures] = useState<BorderFeature[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(COUNTRY_BORDERS_URL)
+      .then((res) => (res.ok ? (res.json() as Promise<BorderFeature[]>) : null))
+      .then((data) => {
+        if (!cancelled && data) setFeatures(data);
+      })
+      .catch(() => {
+        // Decorative overlay — fail silently, the globe still works without it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return features;
+}
+
+function pushSpherePoint(
+  vertices: number[],
+  lat: number,
+  lon: number,
+  radius: number,
+) {
+  const phi = THREE.MathUtils.degToRad(90 - lat);
+  const theta = THREE.MathUtils.degToRad(lon + 180);
+  vertices.push(
+    -radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta),
+  );
+}
+
+function GlobeBorders({ radius }: { radius: number }) {
+  const features = useCountryBorders();
+
+  const geometry = useMemo(() => {
+    if (!features) return null;
+    const vertices: number[] = [];
+    for (const feature of features) {
+      for (const polygon of feature.p) {
+        for (const ring of polygon) {
+          for (let i = 0; i < ring.length; i++) {
+            const [lonA, latA] = ring[i];
+            const [lonB, latB] = ring[(i + 1) % ring.length];
+            pushSpherePoint(vertices, latA, lonA, radius);
+            pushSpherePoint(vertices, latB, lonB, radius);
+          }
+        }
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    return geo;
+  }, [features, radius]);
+
+  if (!geometry) return null;
+
+  return (
+    <lineSegments geometry={geometry}>
+      <lineBasicMaterial
+        color={BORDER_COLOR}
+        transparent
+        opacity={BORDER_OPACITY}
+        depthWrite={false}
+        blending={THREE.NormalBlending}
+      />
+    </lineSegments>
   );
 }
 
@@ -552,12 +679,14 @@ export default function GlobeEarth({
   focusCircuit,
   focusRegion,
   cardTopPx,
+  theme,
   onHoverCircuit,
   onSelectCircuit,
   onClearHover,
   onEarthReady,
   onActiveMarkerScreenPosition,
 }: GlobeEarthProps) {
+  const palette = SPACE_PALETTE[theme];
   const { camera, size } = useThree();
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const focusTargetRef = useRef<THREE.Vector3 | null>(null);
@@ -763,8 +892,8 @@ export default function GlobeEarth({
 
   return (
     <>
-      <color attach="background" args={["#03050a"]} />
-      <fog attach="fog" args={["#03050a", 8, 13]} />
+      <color attach="background" args={[palette.void]} />
+      <fog attach="fog" args={[palette.void, 8, 13]} />
       <ambientLight intensity={0.1} />
       <directionalLight
         position={[5.5, 3.2, 6.2]}
@@ -777,19 +906,25 @@ export default function GlobeEarth({
         color="#4bbcff"
       />
       <pointLight position={[-4, -2, -3]} intensity={0.35} color="#e10600" />
-      <Stars
-        radius={80}
-        depth={35}
-        count={1900}
-        factor={2.6}
-        saturation={0}
-        fade
-        speed={0.22}
-      />
+      {theme === "dark" && (
+        <Stars
+          radius={80}
+          depth={35}
+          count={1900}
+          factor={2.6}
+          saturation={0}
+          fade
+          speed={0.22}
+        />
+      )}
       <group rotation={[0, GLOBE_ROTATION_Y, 0]}>
         {earthTextures && (
           <>
-            <EarthSphere textures={earthTextures} cloudTexture={cloudTexture} />
+            <EarthSphere
+              textures={earthTextures}
+              cloudTexture={cloudTexture}
+              theme={theme}
+            />
             {circuits.map((circuit) => (
               <GlobeMarker
                 key={circuit.id}

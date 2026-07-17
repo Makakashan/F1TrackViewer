@@ -81,3 +81,7 @@ images/
 public/*
 !public/environments/
 !public/environments/**
+
+
+.agents/
+skills-lock.json
