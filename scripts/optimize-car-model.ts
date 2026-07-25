@@ -32,7 +32,7 @@
  * can be compared side by side in the admin model lab.
  */
 
-import { NodeIO } from "@gltf-transform/core";
+import { NodeIO, type Document, type Texture } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import {
   dedup,
@@ -46,6 +46,86 @@ import { MeshoptSimplifier } from "meshoptimizer";
 import sharp from "sharp";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { gzipSync } from "node:zlib";
+
+/** sRGB -> linear. glTF factors are linear; texture pixels are not. */
+function srgbToLinear(channel: number): number {
+  const c = channel / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+}
+
+/**
+ * Average colour of a texture, in linear space.
+ *
+ * Downsampled to 16x16 first: the mean of a livery is the same at that size,
+ * and it avoids decoding a full 1024x1024 per material. Averaging is done
+ * after the transfer function, not before — mixing sRGB values directly
+ * biases every result toward the light end.
+ */
+async function averageColor(
+  texture: Texture,
+): Promise<[number, number, number] | null> {
+  const image = texture.getImage();
+  if (!image) return null;
+  try {
+    const { data, info } = await sharp(Buffer.from(image))
+      .resize(16, 16, { fit: "fill" })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    const pixels = info.width * info.height;
+    for (let i = 0; i < pixels; i++) {
+      r += srgbToLinear(data[i * 3]);
+      g += srgbToLinear(data[i * 3 + 1]);
+      b += srgbToLinear(data[i * 3 + 2]);
+    }
+    return [r / pixels, g / pixels, b / pixels];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Strip every texture, keeping each material's identity as a flat colour.
+ *
+ * Wanted for two unrelated reasons at once. It removes the livery — team
+ * marks, sponsor logos, driver numbers — which is the part of a marketplace
+ * car that carries somebody else's trademarks. And it deletes the entire
+ * texture budget, which on this asset is most of the file and all of the
+ * texture VRAM.
+ *
+ * Materials keep the average colour of the map they lose, so tyres stay black,
+ * carbon stays dark and paint keeps its hue. Without that every material falls
+ * back to its baseColorFactor, which for a texture-driven material is white —
+ * a single white blob with no readable parts.
+ */
+async function stripCosmetics(document: Document): Promise<number> {
+  let recoloured = 0;
+
+  for (const material of document.getRoot().listMaterials()) {
+    const base = material.getBaseColorTexture();
+    if (base) {
+      const average = await averageColor(base);
+      if (average) {
+        const alpha = material.getBaseColorFactor()[3] ?? 1;
+        material.setBaseColorFactor([...average, alpha]);
+        recoloured++;
+      }
+      material.setBaseColorTexture(null);
+    }
+    material.setNormalTexture(null);
+    material.setMetallicRoughnessTexture(null);
+    material.setEmissiveTexture(null);
+    material.setOcclusionTexture(null);
+  }
+
+  // Orphaned textures and their images are cleared by the prune that follows.
+  return recoloured;
+}
 
 interface Options {
   input: string;
@@ -54,15 +134,26 @@ interface Options {
   ratio: number;
   /** Largest allowed deviation during simplification, as a fraction of scene size. */
   error: number;
+  /** Drop all textures, collapsing each material to a flat colour. */
+  stripTextures: boolean;
+  /** Also write a .glb.gz next to the output. */
+  gzip: boolean;
 }
 
 function parseArgs(argv: string[]): Options | null {
   const positional: string[] = [];
   const flags = new Map<string, string>();
+  // Boolean flags take no value; treating them like the rest would swallow the
+  // next argument.
+  const booleans = new Set(["strip-textures", "gzip"]);
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg.startsWith("--")) flags.set(arg.slice(2), argv[++i] ?? "");
-    else positional.push(arg);
+    if (!arg.startsWith("--")) {
+      positional.push(arg);
+      continue;
+    }
+    const name = arg.slice(2);
+    flags.set(name, booleans.has(name) ? "true" : (argv[++i] ?? ""));
   }
   if (positional.length === 0) return null;
   return {
@@ -70,6 +161,8 @@ function parseArgs(argv: string[]): Options | null {
     textureSize: Number(flags.get("texture-size") ?? 512),
     ratio: Number(flags.get("ratio") ?? 1),
     error: Number(flags.get("error") ?? 0.001),
+    stripTextures: flags.has("strip-textures"),
+    gzip: flags.has("gzip"),
   };
 }
 
@@ -105,6 +198,11 @@ async function main() {
   const trianglesBefore = countTriangles();
   const texturesBefore = document.getRoot().listTextures().length;
 
+  let recoloured = 0;
+  if (options.stripTextures) {
+    recoloured = await stripCosmetics(document);
+  }
+
   const transforms = [
     dedup(),
     // keepAttributes: false is what removes TEXCOORD_1..5 and unreferenced
@@ -123,12 +221,17 @@ async function main() {
     );
   }
 
+  if (!options.stripTextures) {
+    transforms.push(
+      textureCompress({
+        encoder: sharp,
+        targetFormat: "webp",
+        resize: [options.textureSize, options.textureSize],
+      }),
+    );
+  }
+
   transforms.push(
-    textureCompress({
-      encoder: sharp,
-      targetFormat: "webp",
-      resize: [options.textureSize, options.textureSize],
-    }),
     quantize({
       quantizePosition: 14,
       quantizeNormal: 10,
@@ -148,16 +251,33 @@ async function main() {
   );
   await writeFile(output, await io.writeBinary(document));
 
-  const after = (await readFile(output)).byteLength;
+  const bytes = await readFile(output);
+  const after = bytes.byteLength;
   const trianglesAfter = countTriangles();
+  const texturesAfter = document.getRoot().listTextures().length;
+
+  // Report the gzipped size whether or not a .gz is written: that is what
+  // actually crosses the wire, since both Next's dev/standalone server and
+  // GitHub Pages compress responses. Textured GLBs barely move — WebP and PNG
+  // are already compressed — but a stripped model is quantized integers and
+  // vertex data, which gzip does very well on.
+  const gzipped = gzipSync(bytes, { level: 9 });
+
+  if (options.gzip) {
+    await writeFile(`${output}.gz`, gzipped);
+  }
 
   console.log(`in    ${options.input}`);
   console.log(`out   ${output}`);
   console.log(
     `size  ${mb(before)} -> ${mb(after)}  (${(
-      (1 - after / before) *
-      100
+      (1 - after / before) * 100
     ).toFixed(1)}% smaller)`,
+  );
+  console.log(
+    `gzip  ${mb(gzipped.byteLength)} over the wire  (${(
+      (1 - gzipped.byteLength / before) * 100
+    ).toFixed(1)}% off the original)${options.gzip ? ` -> ${output}.gz` : ""}`,
   );
   console.log(
     `tris  ${Math.round(trianglesBefore).toLocaleString()} -> ${Math.round(
@@ -165,7 +285,9 @@ async function main() {
     ).toLocaleString()}`,
   );
   console.log(
-    `tex   ${texturesBefore} -> ${document.getRoot().listTextures().length}, capped at ${options.textureSize}px, webp`,
+    options.stripTextures
+      ? `tex   ${texturesBefore} -> ${texturesAfter} (stripped; ${recoloured} materials recoloured from their maps)`
+      : `tex   ${texturesBefore} -> ${texturesAfter}, capped at ${options.textureSize}px, webp`,
   );
 }
 

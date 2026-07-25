@@ -15,8 +15,16 @@
  *   bun scripts/generate-car-manifest.ts
  */
 
-import { mkdir, copyFile, readdir, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  copyFile,
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { basename, extname, join } from "node:path";
+import { gzipSync } from "node:zlib";
 
 const REPO_ROOT = new URL("..", import.meta.url).pathname;
 const SOURCE_DIR = join(REPO_ROOT, "cars");
@@ -34,6 +42,14 @@ export interface CarModelEntry {
   /** Human-readable name derived from the filename. */
   name: string;
   bytes: number;
+  /**
+   * Size after gzip — what actually crosses the wire, since both Next's server
+   * and GitHub Pages compress responses. For a textured model this barely
+   * differs from `bytes` (WebP and PNG are already compressed); for one whose
+   * textures have been stripped it is roughly half, which is a large enough
+   * gap that showing only the on-disk size would misreport the real cost.
+   */
+  gzipBytes: number;
   modifiedAt: string;
 }
 
@@ -78,15 +94,18 @@ async function main() {
     const source = join(SOURCE_DIR, file);
     const info = await stat(source);
     await copyFile(source, join(OUTPUT_DIR, file));
+    const gzipBytes = gzipSync(await readFile(source), { level: 9 }).byteLength;
     entries.push({
       id: basename(file, extname(file)),
       file,
       name: titleFromFilename(file),
       bytes: info.size,
+      gzipBytes,
       modifiedAt: info.mtime.toISOString(),
     });
     console.log(
-      `published ${file} (${(info.size / 1024 / 1024).toFixed(1)} MB)`,
+      `published ${file} (${(info.size / 1024 / 1024).toFixed(1)} MB, ` +
+        `${(gzipBytes / 1024 / 1024).toFixed(1)} MB gzipped)`,
     );
   }
 

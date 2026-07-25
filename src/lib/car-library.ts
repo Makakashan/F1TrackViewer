@@ -16,6 +16,8 @@ export interface CarModelEntry {
   file: string;
   name: string;
   bytes: number;
+  /** Size after gzip — the real transfer cost, since hosts compress responses. */
+  gzipBytes: number;
   modifiedAt: string;
 }
 

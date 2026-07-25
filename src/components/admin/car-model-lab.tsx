@@ -171,15 +171,17 @@ function StatsPanel({
           Payload
         </SectionHeading>
         <div className="grid grid-cols-2 gap-2">
+          {/* Judged on the gzipped size, not the file on disk: that is what a
+              visitor actually downloads. */}
           <Metric
-            label="File size"
-            value={formatBytes(entry.bytes)}
-            accent={entry.bytes > 8 * 1024 * 1024}
-            hint={
-              entry.bytes > 8 * 1024 * 1024
-                ? "Heavy for the web"
-                : "Web-friendly"
-            }
+            label="Over the wire"
+            value={formatBytes(entry.gzipBytes || entry.bytes)}
+            accent={(entry.gzipBytes || entry.bytes) > 6 * 1024 * 1024}
+            hint={`${formatBytes(entry.bytes)} on disk${
+              (entry.gzipBytes || entry.bytes) > 6 * 1024 * 1024
+                ? " · heavy"
+                : ""
+            }`}
           />
           <Metric
             label="Texture VRAM"
@@ -383,7 +385,11 @@ export default function CarModelLab() {
   const stats = measured?.id === selectedId ? measured.stats : null;
 
   const totalBytes = useMemo(
-    () => (models ?? []).reduce((sum, model) => sum + model.bytes, 0),
+    () =>
+      (models ?? []).reduce(
+        (sum, model) => sum + (model.gzipBytes || model.bytes),
+        0,
+      ),
     [models],
   );
 
@@ -452,7 +458,8 @@ export default function CarModelLab() {
                       </span>
                     </span>
                     <span className="mt-1 block pl-5.5 font-mono text-[10px] tabular-nums text-muted-foreground">
-                      {formatBytes(model.bytes)} · {model.file}
+                      {formatBytes(model.gzipBytes || model.bytes)} gz ·{" "}
+                      {formatBytes(model.bytes)}
                     </span>
                   </button>
                 </li>
