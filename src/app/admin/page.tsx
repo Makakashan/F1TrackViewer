@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useState, useSyncExternalStore } from "react";
+import { FormEvent, useCallback, useState, useSyncExternalStore } from "react";
 import { Flag, Lock, LogIn, ShieldCheck, User } from "lucide-react";
-import F1TrackApp from "@/components/f1-track-app";
+import AdminShell from "@/components/admin/admin-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,8 +12,22 @@ const ADMIN_USERNAME = process.env.NEXT_PUBLIC_ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
 const ADMIN_ENABLED = Boolean(ADMIN_USERNAME && ADMIN_PASSWORD);
 
-function subscribeToSessionStorage() {
-  return () => {};
+// sessionStorage fires no event in the tab that wrote it, so the store keeps
+// its own listener set. Without this the snapshot would never be re-read and
+// signing out could not take effect.
+const sessionListeners = new Set<() => void>();
+
+function subscribeToSessionStorage(onChange: () => void) {
+  sessionListeners.add(onChange);
+  return () => {
+    sessionListeners.delete(onChange);
+  };
+}
+
+function setAdminSession(active: boolean) {
+  if (active) window.sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
+  else window.sessionStorage.removeItem(ADMIN_SESSION_KEY);
+  for (const listener of sessionListeners) listener();
 }
 
 function getClientSessionSnapshot() {
@@ -39,7 +53,7 @@ export default function AdminPage() {
     event.preventDefault();
 
     if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-      window.sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
+      setAdminSession(true);
       setAuthenticated(true);
       setError(null);
       return;
@@ -48,12 +62,19 @@ export default function AdminPage() {
     setError("Invalid admin credentials");
   }
 
+  const handleSignOut = useCallback(() => {
+    setAdminSession(false);
+    setAuthenticated(false);
+    setUsername("");
+    setPassword("");
+  }, []);
+
   if (!ADMIN_ENABLED) {
     return <main className="min-h-screen bg-background" />;
   }
 
   if (authenticated || sessionAuthenticated) {
-    return <F1TrackApp startFinishCalibration />;
+    return <AdminShell onSignOut={handleSignOut} />;
   }
 
   return (
@@ -68,10 +89,10 @@ export default function AdminPage() {
           </div>
           <div>
             <h1 className="text-base font-semibold leading-none">
-              Admin calibration
+              Admin panel
             </h1>
             <p className="mt-1 text-xs text-muted-foreground">
-              Start/finish marker editor
+              Car model inspector · start/finish calibration
             </p>
           </div>
         </div>
@@ -115,7 +136,7 @@ export default function AdminPage() {
 
         <Button type="submit" className="mt-5 w-full gap-2">
           <LogIn className="h-4 w-4" />
-          Open calibration
+          Open admin panel
         </Button>
 
         <div className="mt-4 flex items-start gap-2 text-[11px] leading-relaxed text-muted-foreground">

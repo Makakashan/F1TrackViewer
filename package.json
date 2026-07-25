@@ -3,14 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 4000",
     "build": "next build",
     "build:pages": "GITHUB_PAGES=true next build",
+    "cars:generate": "bun scripts/generate-car-manifest.ts",
+    "dev": "next dev -p 4000",
     "elevations:generate": "bun scripts/generate-elevations.ts",
     "environment:generate": "bun scripts/generate-environment.ts",
-    "widths:generate": "bun scripts/generate-track-widths.ts",
+    "lint": "eslint .",
     "start": "next start -p 4000",
-    "lint": "eslint ."
+    "widths:generate": "bun scripts/generate-track-widths.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.14",

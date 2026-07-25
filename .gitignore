@@ -85,3 +85,6 @@ public/*
 
 .agents/
 skills-lock.json
+
+# raw car model drop folder (processed copies live in public/cars/)
+/cars/
