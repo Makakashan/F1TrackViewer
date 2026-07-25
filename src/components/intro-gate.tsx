@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
@@ -48,6 +49,7 @@ interface IntroGateProps {
 // own "Enter Studio" button fires — a brief overlap instead of the full
 // intro duration.
 export default function IntroGate({ children }: IntroGateProps) {
+  const pathname = usePathname();
   const seen = useSyncExternalStore(
     subscribeToSessionStorage,
     getClientIntroSeenSnapshot,
@@ -58,8 +60,13 @@ export default function IntroGate({ children }: IntroGateProps) {
   const [introTheme] = useState(resolveIntroTheme);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  const showIntro = !seen && !introGone;
-  const showApp = seen || dismissing || introGone;
+  // The splash sells the product to a first-time visitor. /admin is a tool its
+  // operator opens repeatedly, often to check one number, so making them sit
+  // through a title card first is only friction.
+  const isTool = pathname?.startsWith("/admin") ?? false;
+
+  const showIntro = !isTool && !seen && !introGone;
+  const showApp = isTool || seen || dismissing || introGone;
 
   useEffect(() => {
     if (seen || introGone) return;
