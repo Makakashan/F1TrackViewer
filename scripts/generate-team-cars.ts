@@ -13,7 +13,7 @@
  *
  * Usage:
  *   bun scripts/generate-team-cars.ts cars/apx_gp.glb
- *   bun scripts/generate-team-cars.ts cars/apx_gp.glb --ratio 0.3
+ *   bun scripts/generate-team-cars.ts cars/apx_gp.glb --ratio 0.15 --error 0.05
  */
 
 import { join } from "node:path";
@@ -31,6 +31,10 @@ async function main() {
   const positional = argv.filter((arg) => !arg.startsWith("--"));
   const ratioIndex = argv.indexOf("--ratio");
   const ratio = ratioIndex >= 0 ? Number(argv[ratioIndex + 1]) : 1;
+  const errorIndex = argv.indexOf("--error");
+  // The default is tight enough that simplification barely bites on this model
+  // (76 meshes, boundaries everywhere); LOD runs want a looser tolerance.
+  const error = errorIndex >= 0 ? Number(argv[errorIndex + 1]) : 0.001;
   const suffix = ratio < 1 ? "_lod" : "";
 
   const input = positional[0];
@@ -52,7 +56,7 @@ async function main() {
       output,
       textureSize: 512,
       ratio,
-      error: 0.001,
+      error,
       stripTextures: false,
       paint: true,
       livery: team.livery,

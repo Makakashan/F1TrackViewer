@@ -89,6 +89,12 @@ export default function FleetLab() {
           // Prefer a painted team car: the runtime overrides bodywork and rims
           // only, so everything else keeps whatever the base model was built
           // with. An unpainted base would give twenty cars with white floors.
+          // Among those, prefer the simplified LOD — this tab exists to preview
+          // a full grid, and the full-detail base at grid size is what hangs
+          // weaker GPUs.
+          library.models.find(
+            (model) => model.id.startsWith("f1_") && model.id.endsWith("_lod"),
+          )?.id ??
           library.models.find((model) => model.id.startsWith("f1_"))?.id ??
           library.models[0]?.id ??
           null,
