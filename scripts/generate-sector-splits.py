@@ -320,9 +320,16 @@ CIRCUITS = {
     },  # Autodromo Enzo e Dino Ferrari (Imola)
     "mc-1929": {
         "year": 2024, "gp": "Monaco", "session_name": "Q", "driver": "VER",
-        "start_finish_s": 0.74108, "direction_sign": -1, "lap_length_meters": 3337,
+        "start_finish_s": 0.74108, "direction_sign": 1, "lap_length_meters": 3337,
         "start_finish_verified": True, "direction_verified": True,
-    },  # Circuit de Monaco (Monaco) — VERIFIED direction_sign
+    },  # Circuit de Monaco (Monaco) — VERIFIED direction_sign.
+        # Was -1, which ran the lap backwards. Two independent checks agree on +1:
+        # walking the centreline from the start/finish line, elevation fell to sea
+        # level within the first fifth of the lap and peaked at 47 m near the end —
+        # i.e. descending Beau Rivage and climbing out of the tunnel, the reverse of
+        # the real circuit. Correlating the FastF1 speed trace against centreline
+        # curvature gives r=-0.80 for +1 against r=-0.01 for -1: with the correct
+        # sign the car is slow exactly where the track is tight.
     "ca-1978": {
         "year": 2024, "gp": "Canada", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 4361,
@@ -431,10 +438,14 @@ CIRCUITS = {
         "start_finish_verified": False, "direction_verified": False,
     },  # Autódromo Internacional do Algarve (Portimão) — Portuguese GP 2020-2021
     "ru-2014": {
-        "year": 2021, "gp": "Russia", "session_name": "Q", "driver": "VER",
+        "year": 2020, "gp": "Russia", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5848,
         "start_finish_verified": False, "direction_verified": False,
-    },  # Sochi Autodrom (Sochi) — Russian GP 2018-2021
+    },  # Sochi Autodrom (Sochi) — Russian GP 2018-2021.
+        # 2020, not 2021: qualifying in 2021 was wet and VER took a grid penalty,
+        # so he set no representative lap and the session yielded no usable splits.
+        # The entry silently fell back to synthetic equal thirds (1949 m each) that
+        # were still labelled fastf1-telemetry-derived. 2020 Q gives a real lap.
     "tr-2005": {
         "year": 2021, "gp": "Turkey", "session_name": "Q", "driver": "VER",
         "start_finish_s": 0, "direction_sign": 1, "lap_length_meters": 5338,

@@ -11,7 +11,12 @@
     "s": 0.74108,
     "verified": true
   },
-  "directionSign": -1,
+  "directionSign": 1,
+  "verification": {
+    "startFinish": true,
+    "direction": true,
+    "sectors": true
+  },
   "sectors": [
     {
       "id": 1,
