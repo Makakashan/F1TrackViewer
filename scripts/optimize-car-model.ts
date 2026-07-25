@@ -47,6 +47,7 @@ import sharp from "sharp";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
+import { LIVERY_SLOT_PATTERNS, type Livery } from "../src/lib/f1-teams";
 
 /** sRGB -> linear. glTF factors are linear; texture pixels are not. */
 function srgbToLinear(channel: number): number {
@@ -107,22 +108,6 @@ function hexToLinear(hex: string): [number, number, number] {
   ];
 }
 
-/**
- * The two colours a livery varies; everything else is fixed hardware.
- *
- * Deliberately not three. An earlier version also drove the `detail` material,
- * which turned out to be the model's catch-all for small furniture — winglets,
- * brackets, stalks, eighteen instances scattered over the whole car. Painting
- * that in a team colour did not read as a secondary livery colour, it read as
- * a rash. Small parts stay dark; the team shows in the bodywork and the rims.
- */
-export interface Livery {
-  /** Bodywork — the colour that actually identifies the car. */
-  body: string;
-  /** Wheel rims, and the only place a second team colour appears. */
-  accent: string;
-}
-
 interface PaintRule {
   pattern: RegExp;
   /** Fixed colour, or a slot filled from the livery. */
@@ -149,7 +134,7 @@ const PAINT_RULES: PaintRule[] = [
   // Rubber first — "TYRE_SIDES" must not fall through to a generic rule.
   { pattern: /tyre.*(thread|tread)/i, color: "#141519", metalness: 0, roughness: 0.95 },
   { pattern: /tyre/i, color: "#17181c", metalness: 0, roughness: 0.88 },
-  { pattern: /rim|wheel_hub/i, slot: "accent", metalness: 0.85, roughness: 0.3 },
+  { pattern: LIVERY_SLOT_PATTERNS.accent, slot: "accent", metalness: 0.85, roughness: 0.3 },
   { pattern: /disc|brake|caliper/i, color: "#2b2b2e", metalness: 0.2, roughness: 0.62 },
   { pattern: /mirror/i, color: "#cfd6e0", metalness: 1, roughness: 0.06 },
   { pattern: /rear_light|light/i, color: "#c8102e", metalness: 0, roughness: 0.35 },
@@ -160,7 +145,7 @@ const PAINT_RULES: PaintRule[] = [
   { pattern: /generic/i, color: "#4a4f58", metalness: 0.2, roughness: 0.6 },
   // Bodywork last: "paint" is the broadest term and would otherwise swallow
   // anything named e.g. "sw_paint".
-  { pattern: /paint|body|livery/i, slot: "body", metalness: 0.25, roughness: 0.32 },
+  { pattern: LIVERY_SLOT_PATTERNS.body, slot: "body", metalness: 0.25, roughness: 0.32 },
 ];
 
 /**

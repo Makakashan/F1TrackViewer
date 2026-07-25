@@ -1,12 +1,13 @@
 "use client";
 
-import { Car, Flag, LogOut, ShieldCheck } from "lucide-react";
+import { Car, Flag, LogOut, ShieldCheck, Users } from "lucide-react";
 import { useState } from "react";
 import F1TrackApp from "@/components/f1-track-app";
 import CarModelLab from "@/components/admin/car-model-lab";
+import FleetLab from "@/components/admin/fleet-lab";
 import { cn } from "@/lib/utils";
 
-export type AdminSection = "models" | "calibration";
+export type AdminSection = "models" | "fleet" | "calibration";
 
 const SECTIONS: {
   id: AdminSection;
@@ -19,6 +20,12 @@ const SECTIONS: {
     label: "Car models",
     hint: "Inspect published .glb assets",
     icon: <Car className="h-3.5 w-3.5" />,
+  },
+  {
+    id: "fleet",
+    label: "Fleet",
+    hint: "Twenty cars, instanced from one model",
+    icon: <Users className="h-3.5 w-3.5" />,
   },
   {
     id: "calibration",
@@ -80,6 +87,10 @@ export default function AdminShell({ onSignOut }: { onSignOut: () => void }) {
       {section === "models" ? (
         <div className="min-h-0 flex-1">
           <CarModelLab />
+        </div>
+      ) : section === "fleet" ? (
+        <div className="min-h-0 flex-1">
+          <FleetLab />
         </div>
       ) : (
         // F1TrackApp sizes itself to the viewport (h-screen) because it owns
