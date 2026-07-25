@@ -43,11 +43,12 @@ export interface CarModelEntry {
   name: string;
   bytes: number;
   /**
-   * Size after gzip — what actually crosses the wire, since both Next's server
-   * and GitHub Pages compress responses. For a textured model this barely
-   * differs from `bytes` (WebP and PNG are already compressed); for one whose
-   * textures have been stripped it is roughly half, which is a large enough
-   * gap that showing only the on-disk size would misreport the real cost.
+   * Size after gzip. What crosses the wire on a host that compresses binary
+   * responses; GitHub Pages does not compress .glb, so there `bytes` is the
+   * real transfer and this is the lower bound a smarter host would reach. For
+   * a textured model the two barely differ (WebP and PNG are already
+   * compressed); for a stripped one gzip is roughly half, a large enough gap
+   * to be worth showing both.
    */
   gzipBytes: number;
   modifiedAt: string;
