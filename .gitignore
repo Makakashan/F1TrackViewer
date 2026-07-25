@@ -87,4 +87,7 @@ public/*
 skills-lock.json
 
 # raw car model drop folder (processed copies live in public/cars/)
-/cars/
+# The base model is tracked: it is the one non-regenerable asset — every team
+# car and LOD is derived from it in CI at deploy time.
+/cars/*
+!/cars/apx_gp.glb
