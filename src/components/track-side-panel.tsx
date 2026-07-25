@@ -37,6 +37,8 @@ export default function TrackSidePanel({
   meanWidthMeters,
   minWidthMeters,
   maxWidthMeters,
+  qualityMode,
+  setQualityMode,
 }: TrackSidePanelProps) {
   const { t } = useAppPref();
   const terrainModeActive =
@@ -44,13 +46,19 @@ export default function TrackSidePanel({
 
   return (
     <Tabs defaultValue="info" className="h-full min-h-0 gap-0">
-      <div className="border-b border-border p-3">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="info">
+      <div className="border-b border-border bg-muted/30 p-3 backdrop-blur-xl">
+        <TabsList className="grid h-10 w-full grid-cols-2 rounded-xl border border-border bg-muted/50 p-1">
+          <TabsTrigger
+            value="info"
+            className="rounded-lg text-xs data-[state=active]:border-transparent data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none dark:data-[state=active]:bg-transparent"
+          >
             <Info className="h-3.5 w-3.5" />
             {t.info}
           </TabsTrigger>
-          <TabsTrigger value="settings">
+          <TabsTrigger
+            value="settings"
+            className="rounded-lg text-xs data-[state=active]:border-transparent data-[state=active]:bg-transparent data-[state=active]:text-foreground data-[state=active]:shadow-none dark:data-[state=active]:bg-transparent"
+          >
             <SlidersHorizontal className="h-3.5 w-3.5" />
             {t.settings}
           </TabsTrigger>
@@ -104,6 +112,8 @@ export default function TrackSidePanel({
           meanWidthMeters={meanWidthMeters}
           minWidthMeters={minWidthMeters}
           maxWidthMeters={maxWidthMeters}
+          qualityMode={qualityMode}
+          setQualityMode={setQualityMode}
         />
       </TabsContent>
     </Tabs>

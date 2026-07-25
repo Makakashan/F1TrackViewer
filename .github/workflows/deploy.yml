@@ -29,6 +29,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # The repo tracks only the base model (cars/apx_gp.glb); every team car,
+      # its LOD and the manifest are derived here so ~70 MB of generated .glb
+      # never lives in git history.
+      - name: Generate car fleet
+        run: |
+          bun run cars:teams
+          bun run cars:lods
+          bun run cars:generate
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
 

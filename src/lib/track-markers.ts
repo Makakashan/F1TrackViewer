@@ -38,26 +38,6 @@ export interface TrackMarkers {
 export type TrackViewMode = "normal" | "sectors";
 
 /**
- * Layouts that only had synthetic 33/33/33 sector splits. They are excluded
- * from the viewer until real telemetry/manual split distances are available.
- */
-export const FALLBACK_SECTOR_CIRCUIT_IDS = new Set([
-  "ar-1952",
-  "br-1977",
-  "es-2026",
-  "fr-1960",
-  "my-1999",
-  "pt-1972",
-  "us-1909",
-  "us-1956",
-  "za-1961",
-]);
-
-export function hasOnlyFallbackSectors(circuitId: string): boolean {
-  return FALLBACK_SECTOR_CIRCUIT_IDS.has(circuitId);
-}
-
-/**
  * Sector colors used when painting the track in sector mode.
  */
 export const SECTOR_COLORS = {
@@ -125,38 +105,6 @@ function wrap01(value: number): number {
 }
 
 /**
- * Sample points along a sector of the curve between fromS and toS.
- * Handles wrap-around when fromS > toS (counter-clockwise direction).
- */
-export function sampleSectorPoints(
-  curve: THREE.CatmullRomCurve3,
-  fromS: number,
-  toS: number,
-  directionSign: 1 | -1,
-  steps = 120,
-): THREE.Vector3[] {
-  const points: THREE.Vector3[] = [];
-
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-
-    let s: number;
-
-    if (directionSign === 1) {
-      const span = wrap01(toS - fromS);
-      s = wrap01(fromS + span * t);
-    } else {
-      const span = wrap01(fromS - toS);
-      s = wrap01(fromS - span * t);
-    }
-
-    points.push(curve.getPointAt(s));
-  }
-
-  return points;
-}
-
-/**
  * Compute the "arc length" fraction of a sector in curve-space.
  * Returns the fraction of the full curve that this sector spans.
  */
@@ -171,6 +119,3 @@ export function sectorArcFraction(
     return wrap01(fromS - toS);
   }
 }
-
-// We need THREE import for sampleSectorPoints
-import * as THREE from "three";

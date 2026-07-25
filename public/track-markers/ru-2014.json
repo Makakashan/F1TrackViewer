@@ -1,32 +1,38 @@
 {
   "circuitId": "ru-2014",
   "source": "fastf1-telemetry-derived",
-  "year": 2021,
+  "year": 2020,
   "event": "Russia",
   "session": "Q",
   "driver": "VER",
+  "lapNumber": 20,
   "lapLengthMeters": 5848,
   "startFinish": {
     "s": 0,
     "verified": false
   },
   "directionSign": 1,
+  "verification": {
+    "startFinish": false,
+    "direction": false,
+    "sectors": true
+  },
   "sectors": [
     {
       "id": 1,
       "fromDistance": 0,
-      "toDistance": 1949,
+      "toDistance": 2414.12,
       "color": "#00A3FF"
     },
     {
       "id": 2,
-      "fromDistance": 1949,
-      "toDistance": 3899,
+      "fromDistance": 2414.12,
+      "toDistance": 4519.84,
       "color": "#B66DFF"
     },
     {
       "id": 3,
-      "fromDistance": 3899,
+      "fromDistance": 4519.84,
       "toDistance": 5848,
       "color": "#00D084"
     }

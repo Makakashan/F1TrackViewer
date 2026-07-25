@@ -2,6 +2,7 @@
 
 import {
   Camera,
+  Gauge,
   Layers,
   Map,
   Mountain,
@@ -12,8 +13,10 @@ import {
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAppPref } from "@/components/app-pref-provider";
+import { cn } from "@/lib/utils";
 import type { CameraPreset } from "@/components/track-viewer";
 import type { TrackViewMode } from "@/lib/track-markers";
+import type { QualityMode } from "@/lib/url-state";
 
 export interface TrackSettingsPanelProps {
   autoRotate: boolean;
@@ -37,25 +40,51 @@ export interface TrackSettingsPanelProps {
   meanWidthMeters: number | null;
   minWidthMeters: number | null;
   maxWidthMeters: number | null;
+  qualityMode: QualityMode;
+  setQualityMode: (v: QualityMode) => void;
 }
 
 function SettingRow({
   icon,
   label,
   children,
+  muted = false,
 }: {
   icon: React.ReactNode;
   label: string;
   children: React.ReactNode;
+  muted?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card/40 px-3 py-2.5">
+    <div
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-md border border-border bg-card/40 px-3 py-2.5",
+        muted && "opacity-60",
+      )}
+    >
       <Label className="flex items-center gap-2 text-xs text-muted-foreground">
         {icon}
         {label}
       </Label>
       {children}
     </div>
+  );
+}
+
+function SettingsSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="space-y-2">
+      <div className="text-xs font-medium text-muted-foreground">
+        {title}
+      </div>
+      <div className="space-y-2">{children}</div>
+    </section>
   );
 }
 
@@ -81,6 +110,8 @@ export default function TrackSettingsPanel({
   meanWidthMeters,
   minWidthMeters,
   maxWidthMeters,
+  qualityMode,
+  setQualityMode,
 }: TrackSettingsPanelProps) {
   const { t } = useAppPref();
   const realWidthActive = realWidthAvailable && realWidthEnabled;
@@ -89,22 +120,11 @@ export default function TrackSettingsPanel({
 
   return (
     <div className="f1tv-scroll flex h-full flex-col gap-4 overflow-y-auto p-4">
-      <div className="space-y-1">
-        <div className="text-[10px] uppercase tracking-wider text-primary/80">
-          {t.trackSettings}
-        </div>
-        <h2 className="text-lg font-bold leading-tight text-foreground">
-          {t.displaySettings}
-        </h2>
-      </div>
-
-      <section className="space-y-2">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          {t.layers}
-        </div>
+      <SettingsSection title={t.layers}>
         <SettingRow
           icon={<Layers className="h-3.5 w-3.5" />}
           label={t.viewModeSectors}
+          muted={!sectorsAvailable}
         >
           <Switch
             checked={viewMode === "sectors"}
@@ -125,7 +145,11 @@ export default function TrackSettingsPanel({
           </SettingRow>
         )}
 
-        <SettingRow icon={<Mountain className="h-3.5 w-3.5" />} label={t.elevations}>
+        <SettingRow
+          icon={<Mountain className="h-3.5 w-3.5" />}
+          label={t.elevations}
+          muted={terrainModeActive}
+        >
           <Switch
             checked={!terrainModeActive && elevationEnabled}
             disabled={terrainModeActive}
@@ -133,20 +157,52 @@ export default function TrackSettingsPanel({
           />
         </SettingRow>
         {terrainModeActive && (
-          <p className="px-1 text-[10px] leading-snug text-muted-foreground">
+          <div className="rounded-md border border-border bg-card/40 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
             {t.elevationTerrainModeHint}
-          </p>
+          </div>
         )}
-      </section>
 
-      <section className="space-y-2">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          {t.track}
-        </div>
+        {environmentAvailable && (
+          <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Gauge className="h-3.5 w-3.5" />
+              {t.quality}
+            </div>
+            <div className="mt-2 grid grid-cols-3 gap-1 rounded-md border border-border bg-background/30 p-1">
+              {(["auto", "performance", "quality"] as QualityMode[]).map(
+                (mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setQualityMode(mode)}
+                    className={cn(
+                      "rounded-md px-2 py-1.5 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      qualityMode === mode
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                    )}
+                  >
+                    {mode === "auto"
+                      ? t.qualityAuto
+                      : mode === "performance"
+                        ? t.qualityPerformance
+                        : t.qualityHigh}
+                  </button>
+                ),
+              )}
+            </div>
+            <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+              {t.qualityHint}
+            </p>
+          </div>
+        )}
+      </SettingsSection>
 
+      <SettingsSection title={t.track}>
         <SettingRow
           icon={<Spline className="h-3.5 w-3.5" />}
           label={t.realWidth}
+          muted={!realWidthAvailable}
         >
           <Switch
             checked={realWidthActive}
@@ -156,9 +212,9 @@ export default function TrackSettingsPanel({
         </SettingRow>
 
         {!realWidthAvailable && (
-          <p className="px-1 text-[10px] leading-snug text-muted-foreground">
+          <div className="rounded-md border border-border bg-card/40 px-3 py-2 text-[11px] leading-snug text-muted-foreground">
             {t.widthUnavailable}
-          </p>
+          </div>
         )}
 
         <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
@@ -185,11 +241,10 @@ export default function TrackSettingsPanel({
             value={trackWidth}
             disabled={realWidthActive}
             onChange={(event) => setTrackWidth(Number(event.target.value))}
-            className="mt-3 h-1 w-full cursor-pointer accent-[#e10600] disabled:cursor-not-allowed disabled:opacity-40"
+            className="mt-4 h-1 w-full cursor-pointer accent-[#e10600] disabled:cursor-not-allowed disabled:opacity-40"
           />
           {realWidthActive && (
             <div className="mt-3 space-y-1.5">
-              <div className="h-1.5 rounded-full bg-gradient-to-r from-amber-500 to-cyan-400" />
               <div className="flex justify-between text-[10px] text-muted-foreground tabular-nums">
                 <span>
                   {t.widthNarrow}: {minWidthMeters?.toFixed(1)}{t.unitM}
@@ -204,24 +259,21 @@ export default function TrackSettingsPanel({
             </div>
           )}
         </div>
-      </section>
+      </SettingsSection>
 
-      <section className="space-y-2">
-        <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-          {t.camera}
-        </div>
+      <SettingsSection title={t.camera}>
         <div className="rounded-md border border-border bg-card/40 px-3 py-2.5">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Camera className="h-3.5 w-3.5" />
             {t.camera}
           </div>
-          <div className="mt-2 grid grid-cols-3 gap-1">
+          <div className="mt-2 grid grid-cols-3 gap-1 rounded-md border border-border bg-background/30 p-1">
             {(["top", "iso", "side"] as CameraPreset[]).map((preset) => (
               <button
                 key={preset}
                 type="button"
                 onClick={() => onCameraPreset(preset)}
-                className="rounded-md border border-border bg-background/40 px-2 py-1.5 text-xs text-foreground/80 hover:bg-accent hover:text-foreground"
+                className="rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {preset === "top"
                   ? t.cameraTop
@@ -234,9 +286,14 @@ export default function TrackSettingsPanel({
         </div>
 
         <SettingRow icon={<RotateCw className="h-3.5 w-3.5" />} label={t.autoRotate}>
-          <Switch checked={autoRotate} onCheckedChange={setAutoRotate} />
+          <Switch
+            checked={autoRotate}
+            onCheckedChange={setAutoRotate}
+          />
         </SettingRow>
-      </section>
+      </SettingsSection>
+
+      <div className="mt-auto h-6" />
     </div>
   );
 }

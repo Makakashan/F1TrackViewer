@@ -12,8 +12,10 @@ import type {
   SurfaceFile,
 } from "@/lib/environment-types";
 import { DIORAMA_COLORS } from "@/lib/diorama-palette";
+import { densifyCoords } from "@/lib/geo-utils";
 import {
   buildTerrainSampler,
+  terrainHeightNear,
   terrainLocalHeight,
   terrainReferenceElevation,
   type TerrainSampler,
@@ -63,39 +65,48 @@ const LAYER_Y_FLAT = {
 } as const;
 
 const LAYER_Y_DRAPE = {
-  landuse: 0.3,
-  water: 0.6,
-  roads: 0.55,
-  buildings: 1.2,
+  landuse: 0.1,
+  water: 0.08,
+  // Extra margin over the neighbourhood-max terrain sample (see
+  // terrainHeightNear) so residual interpolation error on a densified but
+  // still-straight ribbon segment never dips below the rendered surface.
+  roads: 1.5,
+  buildings: 0.15,
 } as const;
 
 const MIN_WATER_AREA_SQ_M = 2_500;
 const ROAD_RIBBON_WIDTH_M = 1.2;
-const TERRAIN_SKIRT_BOTTOM_Y = -2;
-const TERRAIN_BASE_SLAB_DEPTH = 10;
-const TERRAIN_TRACK_CARVE_RADIUS_M = 24;
-const TERRAIN_TRACK_CARVE_DEPTH_M = 1.5;
+// OSM road ways can have points several hundred meters apart on long straight
+// roads. Each ribbon segment only samples terrain height at its two
+// endpoints, so a hill between sparse points doesn't get "seen" and the road
+// dips below the terrain mesh — same failure mode as the track curve.
+const ROAD_MAX_SEGMENT_M = 25;
+const ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M = 15;
+const TERRAIN_BASE_SLAB_DEPTH = 0;
+const TERRAIN_TRACK_CARVE_RADIUS_M = 30;
+const TERRAIN_TRACK_CARVE_DEPTH_M = 4;
 const BROADCAST_VIEW_PADDING_M = 360;
 const MAX_BROADCAST_BUILDINGS = 420;
+// Building extrusion runs ExtrudeGeometry synchronously per building on the
+// main thread (~1-1.5ms each on a mid-tier mobile CPU) — profiled at ~500ms+
+// of blocked main thread when enabling 3D mode on a dense city circuit. This
+// cap keeps that rebuild well under a frame budget on weaker devices.
+const LOW_DETAIL_MAX_BUILDINGS = 150;
 
 const THEME_COLORS = {
   light: {
     base: "#EEF1F5",
     grid: "#CCD3DE",
-    terrain: "#E5EAF1",
-    terrainSlab: "#D5DCE6",
-    sideTop: "#C9D1DC",
-    sideBottom: "#AEB8C6",
-    building: "#FFFFFF",
-    road: "#AAB4C2",
+    terrain: "#C8C8CA",
+    terrainSlab: "#252C36",
+    building: "#BCC0C4",
+    road: "#9AA2AA",
   },
   dark: {
-    base: "#05070B",
-    grid: "#1A202A",
-    terrain: "#090D13",
-    terrainSlab: "#05070B",
-    sideTop: "#101722",
-    sideBottom: "#030406",
+    base: "#0B1017",
+    grid: "#141A22",
+    terrain: "#111720",
+    terrainSlab: "#090D13",
     building: "#6F7887",
     road: "#6F7784",
   },
@@ -252,6 +263,8 @@ export interface EnvironmentLayerProps {
   baseY?: number;
   showTerrain?: boolean;
   resolvedTheme?: EnvironmentTheme;
+  /** Reduces building count for weaker devices. */
+  lowDetail?: boolean;
 }
 
 export default function EnvironmentLayer({
@@ -262,6 +275,7 @@ export default function EnvironmentLayer({
   baseY = 0,
   showTerrain = true,
   resolvedTheme = "dark",
+  lowDetail = false,
 }: EnvironmentLayerProps) {
   const { manifest } = bundle;
   const hasTerrain = showTerrain && bundle.terrain.gridSize > 0;
@@ -284,14 +298,16 @@ export default function EnvironmentLayer({
 
   return (
     <group>
-      <DioramaBase
-        bbox={broadcastBBox}
-        originLon={originLon}
-        originLat={originLat}
-        baseY={baseY}
-        hasTerrain={hasTerrain}
-        resolvedTheme={resolvedTheme}
-      />
+      {!hasTerrain && (
+        <DioramaBase
+          bbox={broadcastBBox}
+          originLon={originLon}
+          originLat={originLat}
+          baseY={baseY}
+          hasTerrain={hasTerrain}
+          resolvedTheme={resolvedTheme}
+        />
+      )}
       {hasTerrain && (
         <TerrainMesh
           terrain={bundle.terrain}
@@ -327,6 +343,7 @@ export default function EnvironmentLayer({
         flatY={LAYER_Y_FLAT.buildings}
         bbox={broadcastBBox}
         resolvedTheme={resolvedTheme}
+        maxBuildings={lowDetail ? LOW_DETAIL_MAX_BUILDINGS : MAX_BROADCAST_BUILDINGS}
       />
     </group>
   );
@@ -399,9 +416,9 @@ function DioramaBase({
     };
   }, [gridTexture]);
 
-  // When terrain is on, lower the base plane so the terrain mesh sits above
-  // it and forms the "ground" of the diorama.
-  const yPos = baseY + (hasTerrain ? -2 : 0);
+  // Place the base at terrain-bottom level (baseY=0 in terrain mode) so
+  // there is no vertical gap between the platform and the 3-D scene.
+  const yPos = baseY;
 
   const material = (
     <meshStandardMaterial
@@ -409,35 +426,17 @@ function DioramaBase({
       color={hasTerrain ? colors.terrainSlab : colors.base}
       roughness={1}
       metalness={0}
-      side={THREE.DoubleSide}
+      side={THREE.FrontSide}
       polygonOffset
       polygonOffsetFactor={3}
       polygonOffsetUnits={3}
     />
   );
 
-  if (hasTerrain) {
-    return (
-      <mesh
-        position={[
-          center.x,
-          yPos - TERRAIN_BASE_SLAB_DEPTH / 2,
-          center.z,
-        ]}
-        receiveShadow
-      >
-        <boxGeometry
-          args={[halfW * 2, TERRAIN_BASE_SLAB_DEPTH, halfH * 2, 1, 1, 1]}
-        />
-        {material}
-      </mesh>
-    );
-  }
-
   return (
     <mesh
       rotation={[-Math.PI / 2, 0, 0]}
-      position={[center.x, yPos, center.z]}
+      position={[center.x, hasTerrain ? yPos - TERRAIN_BASE_SLAB_DEPTH : yPos, center.z]}
       receiveShadow
     >
       <planeGeometry args={[halfW * 2, halfH * 2, 1, 1]} />
@@ -509,6 +508,9 @@ function TerrainMesh({
 
     const themeColors = THEME_COLORS[resolvedTheme];
     const terrainTop = new THREE.Color(themeColors.terrain);
+    const terrainEdge = new THREE.Color(
+      resolvedTheme === "dark" ? "#020304" : "#C8D0DB",
+    );
     const waterMasks = waterPolygons
       .map((poly) =>
         poly.points.map(([lon, lat]) =>
@@ -565,6 +567,7 @@ function TerrainMesh({
           rows === 1 ? 0 : (row - rowStart) / (rows - 1),
         );
 
+        // Solid terrain color — no edge fade gradient.
         colors.push(terrainTop.r, terrainTop.g, terrainTop.b);
       }
     }
@@ -580,58 +583,54 @@ function TerrainMesh({
       }
     }
 
-    const sideTop = new THREE.Color(themeColors.sideTop);
-    const sideBottom = new THREE.Color(themeColors.sideBottom);
+    // ── Skirt: vertical walls around the terrain perimeter ──
+    // Prevents the "box" effect by adding solid dark faces that extend
+    // below the terrain surface, blending into the scene background.
+    const skirtY = -25;
+    const baseVertexCount = cols * rows;
+    let skirtIdx = 0;
 
-    function appendSkirtSegment(a: number, b: number) {
-      const base = positions.length / 3;
-      const ax = positions[a * 3];
-      const ay = positions[a * 3 + 1];
-      const az = positions[a * 3 + 2];
-      const bx = positions[b * 3];
-      const by = positions[b * 3 + 1];
-      const bz = positions[b * 3 + 2];
+    function addSkirtEdge(edgeVertIndices: number[]) {
+      for (let i = 0; i < edgeVertIndices.length - 1; i++) {
+        const topA = edgeVertIndices[i];
+        const topB = edgeVertIndices[i + 1];
+        const skirtA = baseVertexCount + skirtIdx++;
+        const skirtB = baseVertexCount + skirtIdx++;
 
-      positions.push(
-        ax,
-        ay,
-        az,
-        bx,
-        by,
-        bz,
-        ax,
-        TERRAIN_SKIRT_BOTTOM_Y,
-        az,
-        bx,
-        TERRAIN_SKIRT_BOTTOM_Y,
-        bz,
-      );
-      uvs.push(0, 0, 1, 0, 0, 1, 1, 1);
-      colors.push(
-        sideTop.r,
-        sideTop.g,
-        sideTop.b,
-        sideTop.r,
-        sideTop.g,
-        sideTop.b,
-        sideBottom.r,
-        sideBottom.g,
-        sideBottom.b,
-        sideBottom.r,
-        sideBottom.g,
-        sideBottom.b,
-      );
-      indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+        const ax = positions[topA * 3];
+        const az = positions[topA * 3 + 2];
+        const bx = positions[topB * 3];
+        const bz = positions[topB * 3 + 2];
+
+        positions.push(ax, skirtY, az, bx, skirtY, bz);
+        uvs.push(0, 0, 0, 0);
+        colors.push(
+          terrainEdge.r, terrainEdge.g, terrainEdge.b,
+          terrainEdge.r, terrainEdge.g, terrainEdge.b,
+        );
+
+        indices.push(topA, skirtA, topB);
+        indices.push(topB, skirtA, skirtB);
+      }
     }
 
-    for (let col = 0; col < cols - 1; col++) {
-      appendSkirtSegment(col, col + 1);
-      appendSkirtSegment((rows - 1) * cols + col + 1, (rows - 1) * cols + col);
+    // Collect edge vertex indices for all four sides
+    const topEdge: number[] = [];
+    const bottomEdge: number[] = [];
+    const leftEdge: number[] = [];
+    const rightEdge: number[] = [];
+    for (let col = 0; col < cols; col++) {
+      topEdge.push(col);
+      bottomEdge.push((rows - 1) * cols + col);
     }
-    for (let row = 0; row < rows - 1; row++) {
-      appendSkirtSegment((row + 1) * cols, row * cols);
-      appendSkirtSegment(row * cols + cols - 1, (row + 1) * cols + cols - 1);
+    for (let row = 0; row < rows; row++) {
+      leftEdge.push(row * cols);
+      rightEdge.push(row * cols + (cols - 1));
     }
+    addSkirtEdge(topEdge);
+    addSkirtEdge([...bottomEdge].reverse());
+    addSkirtEdge(leftEdge);
+    addSkirtEdge([...rightEdge].reverse());
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -662,12 +661,10 @@ function TerrainMesh({
 
   return (
     <mesh geometry={geometry} position={[0, baseY, 0]} receiveShadow>
-      <meshStandardMaterial
+      <meshBasicMaterial
         vertexColors
-        roughness={0.92}
-        metalness={0}
-        flatShading
         side={THREE.DoubleSide}
+        toneMapped={false}
       />
     </mesh>
   );
@@ -701,9 +698,12 @@ function RoadLinesMesh({
     const indices: number[] = [];
     for (const road of roads) {
       if (road.points.length < 2) continue;
-      for (let i = 0; i < road.points.length - 1; i++) {
-        let [aLon, aLat] = road.points[i];
-        let [bLon, bLat] = road.points[i + 1];
+      const points = terrainSampler
+        ? densifyCoords(road.points, ROAD_MAX_SEGMENT_M)
+        : road.points;
+      for (let i = 0; i < points.length - 1; i++) {
+        let [aLon, aLat] = points[i];
+        let [bLon, bLat] = points[i + 1];
         if (bbox) {
           const clipped = clipSegmentToBBox([aLon, aLat], [bLon, bLat], bbox);
           if (!clipped) continue;
@@ -712,10 +712,14 @@ function RoadLinesMesh({
         const a = lonLatToXZ(aLon, aLat, originLon, originLat);
         const b = lonLatToXZ(bLon, bLat, originLon, originLat);
         const aY = terrainSampler
-          ? baseY + terrainSampler.heightAt(aLon, aLat) + drapeY
+          ? baseY +
+            terrainHeightNear(terrainSampler, aLon, aLat, ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M) +
+            drapeY
           : baseY + flatY;
         const bY = terrainSampler
-          ? baseY + terrainSampler.heightAt(bLon, bLat) + drapeY
+          ? baseY +
+            terrainHeightNear(terrainSampler, bLon, bLat, ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M) +
+            drapeY
           : baseY + flatY;
 
         const dx = b.x - a.x;
@@ -788,6 +792,7 @@ function BuildingExtrusions({
   flatY,
   bbox,
   resolvedTheme,
+  maxBuildings = MAX_BROADCAST_BUILDINGS,
 }: {
   buildings: BuildingFeature[];
   originLon: number;
@@ -798,6 +803,7 @@ function BuildingExtrusions({
   flatY: number;
   bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
   resolvedTheme: EnvironmentTheme;
+  maxBuildings?: number;
 }) {
   const capped = useMemo(() => {
     let filtered = buildings;
@@ -810,8 +816,8 @@ function BuildingExtrusions({
         return true;
       });
     }
-    return filtered.slice(0, MAX_BROADCAST_BUILDINGS);
-  }, [buildings, bbox]);
+    return filtered.slice(0, maxBuildings);
+  }, [buildings, bbox, maxBuildings]);
 
   const geometry = useMemo(() => {
     const geos: THREE.BufferGeometry[] = [];

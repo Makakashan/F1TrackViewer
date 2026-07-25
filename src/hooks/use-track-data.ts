@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { CircuitGeoJSON, fetchCircuitGeoJson } from "@/lib/f1-circuits";
 import { fetchElevations } from "@/lib/elevation-api";
 import { useAppPref } from "@/components/app-pref-provider";
@@ -10,6 +10,10 @@ export function useTrackData(
 	setError: (msg: string | null) => void,
 ) {
 	const { t } = useAppPref();
+	const tRef = useRef(t);
+	useEffect(() => {
+		tRef.current = t;
+	});
 	const [loadingTrack, setLoadingTrack] = useState(false);
 	const [elevations, setElevations] = useState<number[] | null>(null);
 	const [loadingElevations, setLoadingElevations] = useState(false);
@@ -59,7 +63,7 @@ export function useTrackData(
 			})
 			.catch((e) => {
 				if (!cancelled) {
-					setError(`${t.errLoadTrack} ${selectedId}: ${String(e)}`);
+					setError(`${tRef.current.errLoadTrack} ${selectedId}: ${String(e)}`);
 					setLoadingElevations(false);
 				}
 			})
