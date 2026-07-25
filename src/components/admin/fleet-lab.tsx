@@ -31,8 +31,12 @@ const FleetViewport = dynamic(() => import("./fleet-viewport"), {
  * Roughly a million triangles: comfortable on a discrete GPU, already heavy on
  * integrated graphics, and the point at which the base model needs simplifying
  * rather than the renderer needing tuning.
+ *
+ * This is a hard cap on the slider, not a warning. A warning was tried first;
+ * an advisory label does nothing when the full-detail base at grid size can
+ * hang a GPU outright — on Linux that takes the whole desktop session with it.
  */
-const TRIANGLE_WARNING = 1_000_000;
+const TRIANGLE_BUDGET = 1_000_000;
 
 function Metric({
   label,
@@ -113,10 +117,26 @@ export default function FleetLab() {
   const handleStats = useCallback((next: CarFleetStats) => setStats(next), []);
   const handleFps = useCallback((next: number) => setFps(next), []);
 
-  const totalTriangles = stats ? stats.trianglesPerCar * count : 0;
+  // How many of this model fit in the budget. Until the model is measured the
+  // cap stays at the small default — better to briefly under-offer than to let
+  // a heavy model render at twenty for a frame.
+  const maxCars = stats
+    ? Math.max(
+        1,
+        Math.min(
+          GRID_SIZE,
+          Math.floor(TRIANGLE_BUDGET / stats.trianglesPerCar),
+        ),
+      )
+    : 4;
+  // The slider keeps its raw value across model switches; the fleet renders
+  // the clamped count so selecting a heavier base immediately sheds cars.
+  const shownCount = Math.min(count, maxCars);
+
+  const totalTriangles = stats ? stats.trianglesPerCar * shownCount : 0;
   // What the same fleet would cost drawn as individual scene graphs — the
   // number this whole approach exists to avoid.
-  const naiveDrawCalls = stats ? stats.drawCalls * count : 0;
+  const naiveDrawCalls = stats ? stats.drawCalls * shownCount : 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col lg:flex-row">
@@ -168,22 +188,23 @@ export default function FleetLab() {
           >
             <span>Cars</span>
             <span className="text-[13px] font-semibold tabular-nums text-foreground">
-              {count}
+              {shownCount}
             </span>
           </label>
           <input
             id="fleet-count"
             type="range"
             min={1}
-            max={GRID_SIZE}
-            value={count}
+            max={maxCars}
+            value={shownCount}
             onChange={(event) => setCount(Number(event.target.value))}
             className="mt-2 w-full accent-[var(--primary)]"
           />
-          {totalTriangles > TRIANGLE_WARNING && (
+          {maxCars < GRID_SIZE && (
             <p className="mt-2 rounded border border-primary/40 bg-primary/5 px-2 py-1.5 text-[10.5px] leading-tight text-foreground">
-              {formatCount(totalTriangles)} triangles. This base model is
-              full-detail; a grid this size needs a simplified one.
+              Capped at {maxCars}: this base model is{" "}
+              {formatCount(stats?.trianglesPerCar ?? 0)} triangles per car. A
+              full grid needs a simplified (_lod) base.
             </p>
           )}
         </div>
@@ -194,14 +215,14 @@ export default function FleetLab() {
           <>
             <FleetViewport
               url={carModelUrl(selected)}
-              count={count}
+              count={shownCount}
               onStats={handleStats}
               onFps={handleFps}
             />
             <div className="pointer-events-none absolute left-3 top-3 rounded-md border border-white/10 bg-black/45 px-3 py-1.5 backdrop-blur-sm">
               <div className="text-[12.5px] font-semibold leading-none text-white">
-                {count} car{count === 1 ? "" : "s"} · {stats?.drawCalls ?? "—"}{" "}
-                draw calls
+                {shownCount} car{shownCount === 1 ? "" : "s"} ·{" "}
+                {stats?.drawCalls ?? "—"} draw calls
               </div>
               <div className="mt-1 font-mono text-[9.5px] uppercase tracking-[0.14em] text-white/50">
                 {selected.name}
@@ -239,7 +260,7 @@ export default function FleetLab() {
               <Metric
                 label="Frame rate"
                 value={fps ? `${fps} fps` : "—"}
-                hint={`${count} cars`}
+                hint={`${shownCount} cars`}
               />
               <Metric
                 label="Triangles"
