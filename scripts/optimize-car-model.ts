@@ -107,9 +107,27 @@ function hexToLinear(hex: string): [number, number, number] {
   ];
 }
 
+/**
+ * The two colours a livery varies; everything else is fixed hardware.
+ *
+ * Deliberately not three. An earlier version also drove the `detail` material,
+ * which turned out to be the model's catch-all for small furniture — winglets,
+ * brackets, stalks, eighteen instances scattered over the whole car. Painting
+ * that in a team colour did not read as a secondary livery colour, it read as
+ * a rash. Small parts stay dark; the team shows in the bodywork and the rims.
+ */
+export interface Livery {
+  /** Bodywork — the colour that actually identifies the car. */
+  body: string;
+  /** Wheel rims, and the only place a second team colour appears. */
+  accent: string;
+}
+
 interface PaintRule {
   pattern: RegExp;
-  color: string;
+  /** Fixed colour, or a slot filled from the livery. */
+  color?: string;
+  slot?: keyof Livery;
   metalness: number;
   roughness: number;
 }
@@ -131,18 +149,18 @@ const PAINT_RULES: PaintRule[] = [
   // Rubber first — "TYRE_SIDES" must not fall through to a generic rule.
   { pattern: /tyre.*(thread|tread)/i, color: "#141519", metalness: 0, roughness: 0.95 },
   { pattern: /tyre/i, color: "#17181c", metalness: 0, roughness: 0.88 },
-  { pattern: /rim|wheel_hub/i, color: "#8b9099", metalness: 0.85, roughness: 0.3 },
+  { pattern: /rim|wheel_hub/i, slot: "accent", metalness: 0.85, roughness: 0.3 },
   { pattern: /disc|brake|caliper/i, color: "#2b2b2e", metalness: 0.2, roughness: 0.62 },
   { pattern: /mirror/i, color: "#cfd6e0", metalness: 1, roughness: 0.06 },
   { pattern: /rear_light|light/i, color: "#c8102e", metalness: 0, roughness: 0.35 },
   { pattern: /led|lcd|screen/i, color: "#dfe6f2", metalness: 0, roughness: 0.25 },
   { pattern: /steeringwheel|sw_handle/i, color: "#202329", metalness: 0.1, roughness: 0.7 },
   { pattern: /carbon/i, color: "#1a1c21", metalness: 0.3, roughness: 0.45 },
-  { pattern: /detail/i, color: "#2a2e35", metalness: 0.35, roughness: 0.5 },
+  { pattern: /detail/i, color: "#23262c", metalness: 0.35, roughness: 0.5 },
   { pattern: /generic/i, color: "#4a4f58", metalness: 0.2, roughness: 0.6 },
   // Bodywork last: "paint" is the broadest term and would otherwise swallow
   // anything named e.g. "sw_paint".
-  { pattern: /paint|body|livery/i, color: "", metalness: 0.25, roughness: 0.32 },
+  { pattern: /paint|body|livery/i, slot: "body", metalness: 0.25, roughness: 0.32 },
 ];
 
 /**
@@ -181,10 +199,9 @@ function dropDecals(document: Document): string[] {
 }
 
 /**
- * Paint materials by name. `bodyColor` fills in for the bodywork rule, which
- * is the one colour worth choosing per car rather than fixing in the table.
+ * Paint materials by name, filling the livery slots from `livery`.
  */
-function paintByName(document: Document, bodyColor: string) {
+function paintByName(document: Document, livery: Livery) {
   const painted: string[] = [];
   const skipped: string[] = [];
 
@@ -204,10 +221,8 @@ function paintByName(document: Document, bodyColor: string) {
       continue;
     }
     const alpha = material.getBaseColorFactor()[3] ?? 1;
-    material.setBaseColorFactor([
-      ...hexToLinear(rule.color || bodyColor),
-      alpha,
-    ]);
+    const hex = rule.slot ? livery[rule.slot] : (rule.color ?? "#808080");
+    material.setBaseColorFactor([...hexToLinear(hex), alpha]);
     material.setMetallicFactor(rule.metalness);
     material.setRoughnessFactor(rule.roughness);
     painted.push(name);
@@ -254,8 +269,15 @@ async function stripCosmetics(document: Document): Promise<number> {
   return recoloured;
 }
 
-interface Options {
+export const DEFAULT_LIVERY: Livery = {
+  body: "#e10600",
+  accent: "#8b9099",
+};
+
+export interface Options {
   input: string;
+  /** Where to write; defaults to <input>.opt.glb. */
+  output?: string;
   textureSize: number;
   /** Target fraction of the original triangle count; 1 disables simplification. */
   ratio: number;
@@ -263,13 +285,15 @@ interface Options {
   error: number;
   /** Drop all textures, collapsing each material to a flat colour. */
   stripTextures: boolean;
-  /** Apply the name-keyed palette; empty string disables painting. */
-  bodyColor: string;
+  /** Apply the name-keyed palette. */
   paint: boolean;
+  livery: Livery;
   /** Keep logo shells instead of deleting them. */
   keepDecals: boolean;
   /** Also write a .glb.gz next to the output. */
   gzip: boolean;
+  /** Suppress the per-step report; batch callers print their own summary. */
+  quiet?: boolean;
 }
 
 function parseArgs(argv: string[]): Options | null {
@@ -295,14 +319,18 @@ function parseArgs(argv: string[]): Options | null {
   if (positional.length === 0) return null;
   return {
     input: positional[0],
+    output: flags.get("output") || undefined,
     textureSize: Number(flags.get("texture-size") ?? 512),
     ratio: Number(flags.get("ratio") ?? 1),
     error: Number(flags.get("error") ?? 0.001),
     stripTextures: flags.has("strip-textures"),
     // --body implies --paint: asking for a colour and getting a white car
     // would be a surprising way to spend a build.
-    paint: flags.has("paint") || flags.has("body"),
-    bodyColor: flags.get("body") || "#e10600",
+    paint: flags.has("paint") || flags.has("body") || flags.has("accent"),
+    livery: {
+      body: flags.get("body") || DEFAULT_LIVERY.body,
+      accent: flags.get("accent") || DEFAULT_LIVERY.accent,
+    },
     keepDecals: flags.has("keep-decals"),
     gzip: flags.has("gzip"),
   };
@@ -312,15 +340,19 @@ function mb(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
 }
 
-async function main() {
-  const options = parseArgs(process.argv.slice(2));
-  if (!options) {
-    console.log(
-      "usage: bun scripts/optimize-car-model.ts <model.glb> [--texture-size 512] [--ratio 1] [--error 0.001]",
-    );
-    process.exit(2);
-  }
+export interface OptimizeResult {
+  output: string;
+  bytesBefore: number;
+  bytesAfter: number;
+  gzipBytes: number;
+  trianglesBefore: number;
+  trianglesAfter: number;
+}
 
+export async function optimizeModel(
+  options: Options,
+): Promise<OptimizeResult> {
+  const log = options.quiet ? () => {} : console.log;
   const before = (await stat(options.input)).size;
   const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
   const document = await io.read(options.input);
@@ -353,7 +385,7 @@ async function main() {
   if (options.paint) {
     // After stripCosmetics, so an explicit palette wins over colours averaged
     // out of the maps it removed.
-    paintReport = paintByName(document, options.bodyColor);
+    paintReport = paintByName(document, options.livery);
   }
 
   const transforms = [
@@ -398,10 +430,12 @@ async function main() {
 
   await document.transform(...transforms);
 
-  const output = join(
-    dirname(options.input),
-    `${basename(options.input).replace(/\.glb$/i, "")}.opt.glb`,
-  );
+  const output =
+    options.output ??
+    join(
+      dirname(options.input),
+      `${basename(options.input).replace(/\.glb$/i, "")}.opt.glb`,
+    );
   await writeFile(output, await io.writeBinary(document));
 
   const bytes = await readFile(output);
@@ -420,24 +454,24 @@ async function main() {
     await writeFile(`${output}.gz`, gzipped);
   }
 
-  console.log(`in    ${options.input}`);
-  console.log(`out   ${output}`);
-  console.log(
+  log(`in    ${options.input}`);
+  log(`out   ${output}`);
+  log(
     `size  ${mb(before)} -> ${mb(after)}  (${(
       (1 - after / before) * 100
     ).toFixed(1)}% smaller)`,
   );
-  console.log(
+  log(
     `gzip  ${mb(gzipped.byteLength)} over the wire  (${(
       (1 - gzipped.byteLength / before) * 100
     ).toFixed(1)}% off the original)${options.gzip ? ` -> ${output}.gz` : ""}`,
   );
-  console.log(
+  log(
     `tris  ${Math.round(trianglesBefore).toLocaleString()} -> ${Math.round(
       trianglesAfter,
     ).toLocaleString()}`,
   );
-  console.log(
+  log(
     options.stripTextures
       ? `tex   ${texturesBefore} -> ${texturesAfter} (stripped; ${recoloured} materials recoloured from their maps)`
       : `tex   ${texturesBefore} -> ${texturesAfter}${
@@ -445,18 +479,38 @@ async function main() {
         }`,
   );
   if (droppedDecals.length) {
-    console.log(`decal removed logo geometry: ${droppedDecals.join(", ")}`);
+    log(`decal removed logo geometry: ${droppedDecals.join(", ")}`);
   }
   if (paintReport) {
-    console.log(
-      `paint ${paintReport.painted.length} materials, body ${options.bodyColor}`,
+    log(
+      `paint ${paintReport.painted.length} materials, body ${options.livery.body}`,
     );
     if (paintReport.skipped.length) {
-      console.log(
-        `      unmatched, left as-is: ${paintReport.skipped.join(", ")}`,
-      );
+      log(`      unmatched, left as-is: ${paintReport.skipped.join(", ")}`);
     }
   }
+
+  return {
+    output,
+    bytesBefore: before,
+    bytesAfter: after,
+    gzipBytes: gzipped.byteLength,
+    trianglesBefore: Math.round(trianglesBefore),
+    trianglesAfter: Math.round(trianglesAfter),
+  };
 }
 
-main();
+async function main() {
+  const options = parseArgs(process.argv.slice(2));
+  if (!options) {
+    console.log(
+      "usage: bun scripts/optimize-car-model.ts <model.glb> [--body '#e10600'] [--accent '#ffffff'] [--rim '#8b9099'] [--ratio 1] [--strip-textures] [--keep-decals] [--gzip]",
+    );
+    process.exit(2);
+  }
+  await optimizeModel(options);
+}
+
+// Only run as a CLI; importing this module for optimizeModel must not execute
+// a build.
+if (import.meta.main) main();

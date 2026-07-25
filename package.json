@@ -6,6 +6,7 @@
     "build": "next build",
     "build:pages": "GITHUB_PAGES=true next build",
     "cars:generate": "bun scripts/generate-car-manifest.ts",
+    "cars:teams": "bun scripts/generate-team-cars.ts",
     "dev": "next dev -p 4000",
     "elevations:generate": "bun scripts/generate-elevations.ts",
     "environment:generate": "bun scripts/generate-environment.ts",
