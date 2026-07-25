@@ -89,6 +89,91 @@ async function averageColor(
   }
 }
 
+/** "#e10600" -> linear [r, g, b], the space glTF factors live in. */
+function hexToLinear(hex: string): [number, number, number] {
+  const value = hex.replace("#", "");
+  const full =
+    value.length === 3
+      ? value
+          .split("")
+          .map((c) => c + c)
+          .join("")
+      : value;
+  const int = parseInt(full, 16);
+  return [
+    srgbToLinear((int >> 16) & 255),
+    srgbToLinear((int >> 8) & 255),
+    srgbToLinear(int & 255),
+  ];
+}
+
+interface PaintRule {
+  pattern: RegExp;
+  color: string;
+  metalness: number;
+  roughness: number;
+}
+
+/**
+ * Flat-colour scheme applied by material name.
+ *
+ * An untextured car exports as uniform white: every material carries a
+ * baseColorFactor of 1,1,1 and there is nothing else to tell the parts apart.
+ * The geometry does distinguish them — models of this kind name their materials
+ * after the part — so a name-keyed palette restores the read without any maps,
+ * and survives re-exporting the model because it is applied at build time
+ * rather than baked in.
+ *
+ * Order matters: the first pattern that matches wins, so the narrow rules
+ * (steering-wheel carbon, tyre sidewalls) sit above the broad ones.
+ */
+const PAINT_RULES: PaintRule[] = [
+  // Rubber first — "TYRE_SIDES" must not fall through to a generic rule.
+  { pattern: /tyre.*(thread|tread)/i, color: "#141519", metalness: 0, roughness: 0.95 },
+  { pattern: /tyre/i, color: "#17181c", metalness: 0, roughness: 0.88 },
+  { pattern: /rim|wheel_hub/i, color: "#8b9099", metalness: 0.85, roughness: 0.3 },
+  { pattern: /disc|brake|caliper/i, color: "#2b2b2e", metalness: 0.2, roughness: 0.62 },
+  { pattern: /mirror/i, color: "#cfd6e0", metalness: 1, roughness: 0.06 },
+  { pattern: /rear_light|light/i, color: "#c8102e", metalness: 0, roughness: 0.35 },
+  { pattern: /led|lcd|screen/i, color: "#dfe6f2", metalness: 0, roughness: 0.25 },
+  { pattern: /steeringwheel|sw_handle/i, color: "#202329", metalness: 0.1, roughness: 0.7 },
+  { pattern: /carbon/i, color: "#1a1c21", metalness: 0.3, roughness: 0.45 },
+  { pattern: /decal|number/i, color: "#e8ecf2", metalness: 0, roughness: 0.4 },
+  { pattern: /detail/i, color: "#2a2e35", metalness: 0.35, roughness: 0.5 },
+  { pattern: /generic/i, color: "#4a4f58", metalness: 0.2, roughness: 0.6 },
+  // Bodywork last: "paint" is the broadest term and would otherwise swallow
+  // anything named e.g. "sw_paint".
+  { pattern: /paint|body|livery/i, color: "", metalness: 0.25, roughness: 0.32 },
+];
+
+/**
+ * Paint materials by name. `bodyColor` fills in for the bodywork rule, which
+ * is the one colour worth choosing per car rather than fixing in the table.
+ */
+function paintByName(document: Document, bodyColor: string) {
+  const painted: string[] = [];
+  const skipped: string[] = [];
+
+  for (const material of document.getRoot().listMaterials()) {
+    const name = material.getName() || "";
+    const rule = PAINT_RULES.find((candidate) => candidate.pattern.test(name));
+    if (!rule) {
+      skipped.push(name || "(unnamed)");
+      continue;
+    }
+    const alpha = material.getBaseColorFactor()[3] ?? 1;
+    material.setBaseColorFactor([
+      ...hexToLinear(rule.color || bodyColor),
+      alpha,
+    ]);
+    material.setMetallicFactor(rule.metalness);
+    material.setRoughnessFactor(rule.roughness);
+    painted.push(name);
+  }
+
+  return { painted, skipped };
+}
+
 /**
  * Strip every texture, keeping each material's identity as a flat colour.
  *
@@ -136,6 +221,9 @@ interface Options {
   error: number;
   /** Drop all textures, collapsing each material to a flat colour. */
   stripTextures: boolean;
+  /** Apply the name-keyed palette; empty string disables painting. */
+  bodyColor: string;
+  paint: boolean;
   /** Also write a .glb.gz next to the output. */
   gzip: boolean;
 }
@@ -145,7 +233,7 @@ function parseArgs(argv: string[]): Options | null {
   const flags = new Map<string, string>();
   // Boolean flags take no value; treating them like the rest would swallow the
   // next argument.
-  const booleans = new Set(["strip-textures", "gzip"]);
+  const booleans = new Set(["strip-textures", "gzip", "paint"]);
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg.startsWith("--")) {
@@ -162,6 +250,10 @@ function parseArgs(argv: string[]): Options | null {
     ratio: Number(flags.get("ratio") ?? 1),
     error: Number(flags.get("error") ?? 0.001),
     stripTextures: flags.has("strip-textures"),
+    // --body implies --paint: asking for a colour and getting a white car
+    // would be a surprising way to spend a build.
+    paint: flags.has("paint") || flags.has("body"),
+    bodyColor: flags.get("body") || "#e10600",
     gzip: flags.has("gzip"),
   };
 }
@@ -201,6 +293,13 @@ async function main() {
   let recoloured = 0;
   if (options.stripTextures) {
     recoloured = await stripCosmetics(document);
+  }
+
+  let paintReport: { painted: string[]; skipped: string[] } | null = null;
+  if (options.paint) {
+    // After stripCosmetics, so an explicit palette wins over colours averaged
+    // out of the maps it removed.
+    paintReport = paintByName(document, options.bodyColor);
   }
 
   const transforms = [
@@ -287,8 +386,20 @@ async function main() {
   console.log(
     options.stripTextures
       ? `tex   ${texturesBefore} -> ${texturesAfter} (stripped; ${recoloured} materials recoloured from their maps)`
-      : `tex   ${texturesBefore} -> ${texturesAfter}, capped at ${options.textureSize}px, webp`,
+      : `tex   ${texturesBefore} -> ${texturesAfter}${
+          texturesAfter ? `, capped at ${options.textureSize}px, webp` : ""
+        }`,
   );
+  if (paintReport) {
+    console.log(
+      `paint ${paintReport.painted.length} materials, body ${options.bodyColor}`,
+    );
+    if (paintReport.skipped.length) {
+      console.log(
+        `      unmatched, left as-is: ${paintReport.skipped.join(", ")}`,
+      );
+    }
+  }
 }
 
 main();
