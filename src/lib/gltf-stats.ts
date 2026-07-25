@@ -49,6 +49,16 @@ export interface GltfStats {
   /** Bounding box size on the raw axes, in the file's own units. */
   size: { x: number; y: number; z: number };
   /**
+   * Bounding box centre and floor, in the file's own units.
+   *
+   * Recorded here because this is the one place the scene is measured while
+   * still detached. Box3.setFromObject walks world matrices, so re-measuring
+   * after the object has been parented into a scaled group returns world-space
+   * bounds and silently multiplies any offset derived from them.
+   */
+  center: { x: number; y: number; z: number };
+  minY: number;
+  /**
    * Bounding box resolved into car terms. Models arrive facing +X or +Z with
    * no way to tell from the file which it is, so length is simply the longer
    * horizontal extent — reporting raw x/y/z as L/W/H mislabels half of them.
@@ -148,9 +158,11 @@ export function computeGltfStats(
   });
 
   const box = new THREE.Box3().setFromObject(scene);
-  const size = box.isEmpty()
+  const empty = box.isEmpty();
+  const size = empty ? new THREE.Vector3() : box.getSize(new THREE.Vector3());
+  const center = empty
     ? new THREE.Vector3()
-    : box.getSize(new THREE.Vector3());
+    : box.getCenter(new THREE.Vector3());
   const longestAxis = Math.max(size.x, size.z);
 
   const textureList = [...textures.values()].sort((a, b) => b.bytes - a.bytes);
@@ -169,6 +181,8 @@ export function computeGltfStats(
       duration: clip.duration,
     })),
     size: { x: size.x, y: size.y, z: size.z },
+    center: { x: center.x, y: center.y, z: center.z },
+    minY: empty ? 0 : box.min.y,
     footprint: {
       length: longestAxis,
       width: Math.min(size.x, size.z),

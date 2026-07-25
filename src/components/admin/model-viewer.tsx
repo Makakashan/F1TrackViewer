@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useStore } from "@react-three/fiber";
 import { Grid, OrbitControls, useGLTF, useProgress } from "@react-three/drei";
 import { Suspense, useEffect, useMemo } from "react";
 import * as THREE from "three";
@@ -35,6 +35,56 @@ function StudioLights() {
       <directionalLight position={[0, 3, -9]} intensity={1} color="#ff6a5e" />
     </>
   );
+}
+
+/**
+ * Pull the camera back far enough to hold the whole model, once.
+ *
+ * A fixed starting position cannot serve an inspector: models arrive authored
+ * in metres, centimetres or arbitrary units, and with the scale toggle off a
+ * hardcoded distance frames one model perfectly and puts the next one either
+ * inside the near plane or in the far distance. Deriving it from the bounds and
+ * the field of view makes the opening shot the same for every asset.
+ *
+ * Camera and controls are read from the store rather than useThree() values:
+ * mutating a hook's return value is what the immutability lint rule exists to
+ * catch, and this genuinely has to write to the live camera.
+ */
+function FrameCamera({ length, height }: { length: number; height: number }) {
+  const store = useStore();
+
+  useEffect(() => {
+    if (!(length > 0)) return;
+    const { camera, controls } = store.getState();
+    const perspective = camera as THREE.PerspectiveCamera;
+
+    const radius = Math.max(length, height) * 0.5;
+    const fov = (perspective.fov * Math.PI) / 180;
+    // Enough headroom that a three-quarter view of a long, low car never
+    // clips at the corners, without leaving the subject stranded in the middle
+    // of an empty grid.
+    const distance = (radius / Math.tan(fov / 2)) * 1.25;
+
+    perspective.position.set(
+      distance * 0.6,
+      distance * 0.42,
+      distance * 0.68,
+    );
+    perspective.near = Math.max(distance / 500, 0.0001);
+    perspective.far = distance * 100;
+    perspective.updateProjectionMatrix();
+
+    const orbit = controls as unknown as {
+      target?: THREE.Vector3;
+      update?: () => void;
+    } | null;
+    // Aim a little below the midpoint: a car's visual mass sits low, and
+    // centring the bounding box leaves it sinking out of the bottom of frame.
+    orbit?.target?.set(0, height * 0.45, 0);
+    orbit?.update?.();
+  }, [length, height, store]);
+
+  return null;
 }
 
 function Model({
@@ -85,23 +135,33 @@ function Model({
 
   // Sit the model on the grid and centre it horizontally, so switching models
   // does not also move the subject out of frame.
+  //
+  // The bounds come from stats, which measured the scene before it was
+  // parented. Re-measuring here would read through this very group's scale —
+  // Box3.setFromObject works in world space — and the offset would compound
+  // every time the scale toggle re-ran the calculation.
   const { scale, offset } = useMemo(() => {
     const factor = normalize ? stats.scaleToReference : 1;
-    const box = new THREE.Box3().setFromObject(scene);
-    if (box.isEmpty()) return { scale: 1, offset: new THREE.Vector3() };
-    const centre = box.getCenter(new THREE.Vector3());
     return {
       scale: factor,
-      offset: new THREE.Vector3(-centre.x, -box.min.y, -centre.z).multiplyScalar(
-        factor,
-      ),
+      offset: new THREE.Vector3(
+        -stats.center.x,
+        -stats.minY,
+        -stats.center.z,
+      ).multiplyScalar(factor),
     };
-  }, [scene, normalize, stats.scaleToReference]);
+  }, [normalize, stats.scaleToReference, stats.center, stats.minY]);
 
   return (
-    <group position={offset} scale={scale}>
-      <primitive object={scene} />
-    </group>
+    <>
+      <FrameCamera
+        length={stats.footprint.length * scale}
+        height={stats.footprint.height * scale}
+      />
+      <group position={offset} scale={scale}>
+        <primitive object={scene} />
+      </group>
+    </>
   );
 }
 
