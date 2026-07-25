@@ -138,13 +138,47 @@ const PAINT_RULES: PaintRule[] = [
   { pattern: /led|lcd|screen/i, color: "#dfe6f2", metalness: 0, roughness: 0.25 },
   { pattern: /steeringwheel|sw_handle/i, color: "#202329", metalness: 0.1, roughness: 0.7 },
   { pattern: /carbon/i, color: "#1a1c21", metalness: 0.3, roughness: 0.45 },
-  { pattern: /decal|number/i, color: "#e8ecf2", metalness: 0, roughness: 0.4 },
   { pattern: /detail/i, color: "#2a2e35", metalness: 0.35, roughness: 0.5 },
   { pattern: /generic/i, color: "#4a4f58", metalness: 0.2, roughness: 0.6 },
   // Bodywork last: "paint" is the broadest term and would otherwise swallow
   // anything named e.g. "sw_paint".
   { pattern: /paint|body|livery/i, color: "", metalness: 0.25, roughness: 0.32 },
 ];
+
+/**
+ * Materials whose geometry exists only to carry a logo.
+ *
+ * Liveries are not painted onto the bodywork; they are separate shells laid a
+ * fraction of a millimetre above it, cut to the outline of each sponsor mark
+ * and textured with it. Strip the textures and those shells do not go away —
+ * they become flat patches in the shape of the logos they used to hold, which
+ * is why colouring them produced white blobs scattered over the car.
+ *
+ * Deleting the geometry is the fix, and it pays three ways at once: the car
+ * reads as painted bodywork, the file loses the decal meshes, and the last
+ * trace of anyone else's trademarks goes with them.
+ */
+const DECAL_PATTERNS = [/decal/i, /number/i, /logo/i, /sponsor/i, /badge/i];
+
+function dropDecals(document: Document): string[] {
+  const dropped = new Set<string>();
+
+  for (const mesh of document.getRoot().listMeshes()) {
+    for (const primitive of mesh.listPrimitives()) {
+      const name = primitive.getMaterial()?.getName() ?? "";
+      if (!DECAL_PATTERNS.some((pattern) => pattern.test(name))) continue;
+      dropped.add(name);
+      mesh.removePrimitive(primitive);
+      primitive.dispose();
+    }
+    // A mesh emptied of primitives is invalid glTF, not merely useless.
+    if (mesh.listPrimitives().length === 0) mesh.dispose();
+  }
+
+  // Materials, accessors and now-childless nodes are cleared by the prune that
+  // follows in the transform chain.
+  return [...dropped];
+}
 
 /**
  * Paint materials by name. `bodyColor` fills in for the bodywork rule, which
@@ -155,6 +189,14 @@ function paintByName(document: Document, bodyColor: string) {
   const skipped: string[] = [];
 
   for (const material of document.getRoot().listMaterials()) {
+    // Dropping the decal shells leaves their materials orphaned until the next
+    // prune. Reporting those as "unmatched, left as-is" would read as if they
+    // were still on the car.
+    const inUse = material
+      .listParents()
+      .some((parent) => parent.propertyType === "Primitive");
+    if (!inUse) continue;
+
     const name = material.getName() || "";
     const rule = PAINT_RULES.find((candidate) => candidate.pattern.test(name));
     if (!rule) {
@@ -224,6 +266,8 @@ interface Options {
   /** Apply the name-keyed palette; empty string disables painting. */
   bodyColor: string;
   paint: boolean;
+  /** Keep logo shells instead of deleting them. */
+  keepDecals: boolean;
   /** Also write a .glb.gz next to the output. */
   gzip: boolean;
 }
@@ -233,7 +277,12 @@ function parseArgs(argv: string[]): Options | null {
   const flags = new Map<string, string>();
   // Boolean flags take no value; treating them like the rest would swallow the
   // next argument.
-  const booleans = new Set(["strip-textures", "gzip", "paint"]);
+  const booleans = new Set([
+    "strip-textures",
+    "gzip",
+    "paint",
+    "keep-decals",
+  ]);
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg.startsWith("--")) {
@@ -254,6 +303,7 @@ function parseArgs(argv: string[]): Options | null {
     // would be a surprising way to spend a build.
     paint: flags.has("paint") || flags.has("body"),
     bodyColor: flags.get("body") || "#e10600",
+    keepDecals: flags.has("keep-decals"),
     gzip: flags.has("gzip"),
   };
 }
@@ -294,6 +344,10 @@ async function main() {
   if (options.stripTextures) {
     recoloured = await stripCosmetics(document);
   }
+
+  // Before painting: there is no point colouring geometry about to be deleted,
+  // and dropping it first keeps it out of the "unmatched" report.
+  const droppedDecals = options.keepDecals ? [] : dropDecals(document);
 
   let paintReport: { painted: string[]; skipped: string[] } | null = null;
   if (options.paint) {
@@ -390,6 +444,9 @@ async function main() {
           texturesAfter ? `, capped at ${options.textureSize}px, webp` : ""
         }`,
   );
+  if (droppedDecals.length) {
+    console.log(`decal removed logo geometry: ${droppedDecals.join(", ")}`);
+  }
   if (paintReport) {
     console.log(
       `paint ${paintReport.painted.length} materials, body ${options.bodyColor}`,
