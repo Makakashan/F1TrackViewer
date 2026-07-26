@@ -50,6 +50,7 @@ function readUrlParams() {
     elevation: p.get("elevation"),
     camera: p.get("camera"),
     sectors: p.get("sectors"),
+    race: p.get("race"),
     environment: p.get("environment"),
     terrain: p.get("terrain"),
     realwidth: p.get("realwidth"),
@@ -163,8 +164,11 @@ export const useUrlState = create<UrlState>((set, get) => ({
       patch.cameraPreset = url.camera;
     }
 
-    // View mode — sectors default unless realwidth=1 or sectors=0
-    if (url.realwidth === "1" || url.sectors === "0") {
+    // View mode — sectors default unless realwidth=1 or sectors=0.
+    // `race` wins over both: it is the only mode with its own param.
+    if (url.race === "1") {
+      patch.viewMode = "realistic";
+    } else if (url.realwidth === "1" || url.sectors === "0") {
       patch.viewMode = "normal";
     } else if (url.sectors === "1") {
       patch.viewMode = "sectors";
@@ -210,6 +214,11 @@ export const useUrlState = create<UrlState>((set, get) => ({
     }
 
     params.set("sectors", s.viewMode === "sectors" ? "1" : "0");
+    if (s.viewMode === "realistic") {
+      params.set("race", "1");
+    } else {
+      params.delete("race");
+    }
 
     if (environmentBundleAvailable) {
       params.set("environment", s.environmentEnabled ? "1" : "0");

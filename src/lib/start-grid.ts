@@ -26,6 +26,66 @@ function wrap01(value: number): number {
   return ((value % 1) + 1) % 1;
 }
 
+export interface GridSlot {
+  /** Center of the painted box, on the track surface. */
+  position: THREE.Vector3;
+  /** Unit vector along the direction of travel. */
+  forward: THREE.Vector3;
+  /** Unit vector across the track, to the left of `forward`. */
+  across: THREE.Vector3;
+  /** 1 for pole, 2 for second, and so on. */
+  place: number;
+}
+
+/**
+ * Where each car stands on the grid.
+ *
+ * Shared by the painted boxes and by whatever is placed in them, so a change
+ * to the layout can't leave the cars sitting beside their markings.
+ */
+export function startGridSlots(
+  curve: THREE.CatmullRomCurve3,
+  startFinishS: number,
+  halfWidth: number,
+  directionSign: 1 | -1 = 1,
+  slots: number = GRID_SLOTS,
+): GridSlot[] {
+  const totalLength = curve.getLength();
+  if (!(totalLength > 0)) return [];
+
+  const up = new THREE.Vector3(0, 1, 0);
+  const result: GridSlot[] = [];
+
+  for (let slot = 0; slot < slots; slot++) {
+    const distanceBehind = FIRST_SLOT_SETBACK_M + slot * SLOT_PITCH_M;
+    // Behind the line means against the direction of travel.
+    const s = wrap01(
+      startFinishS - (directionSign * distanceBehind) / totalLength,
+    );
+
+    const center = curve.getPointAt(s);
+    const forward = curve
+      .getTangentAt(s)
+      .normalize()
+      .multiplyScalar(directionSign);
+    const across = new THREE.Vector3().crossVectors(forward, up);
+    if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
+    across.normalize();
+
+    const sideSign = slot % 2 === 0 ? 1 : -1;
+    result.push({
+      position: center
+        .clone()
+        .addScaledVector(across, sideSign * halfWidth * LATERAL_FRACTION),
+      forward,
+      across,
+      place: slot + 1,
+    });
+  }
+
+  return result;
+}
+
 /**
  * Build the grid boxes as flat white quads.
  *
@@ -50,9 +110,6 @@ export function buildStartGridGeometry(
 
   const positions: number[] = [];
   const indices: number[] = [];
-
-  const up = new THREE.Vector3(0, 1, 0);
-  const across = new THREE.Vector3();
   const point = new THREE.Vector3();
 
   /**
@@ -89,43 +146,25 @@ export function buildStartGridGeometry(
     indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
   }
 
-  for (let slot = 0; slot < GRID_SLOTS; slot++) {
-    const distanceBehind = FIRST_SLOT_SETBACK_M + slot * SLOT_PITCH_M;
-    // Behind the line means against the direction of travel.
-    const s = wrap01(
-      startFinishS - (directionSign * distanceBehind) / totalLength,
-    );
-
-    const center = curve.getPointAt(s);
-    const forward = curve.getTangentAt(s).normalize().multiplyScalar(directionSign);
-    across.crossVectors(forward, up);
-    if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
-    across.normalize();
-
-    const sideSign = slot % 2 === 0 ? 1 : -1;
-    const lateralCenter = sideSign * halfWidth * LATERAL_FRACTION;
-    const y = center.y + topRaise + 0.3;
+  for (const { position, forward, across } of startGridSlots(
+    curve,
+    startFinishS,
+    halfWidth,
+    directionSign,
+  )) {
+    const y = position.y + topRaise + 0.3;
 
     // Front transverse line plus the two longitudinal sides: the open-backed
     // box the cars are lined up in, as painted.
-    pushRect(
-      center,
-      forward,
-      across,
-      y,
-      BOX_LENGTH_M / 2,
-      lateralCenter,
-      LINE_M,
-      BOX_WIDTH_M,
-    );
+    pushRect(position, forward, across, y, BOX_LENGTH_M / 2, 0, LINE_M, BOX_WIDTH_M);
     for (const edge of [-1, 1]) {
       pushRect(
-        center,
+        position,
         forward,
         across,
         y,
         0,
-        lateralCenter + (edge * BOX_WIDTH_M) / 2,
+        (edge * BOX_WIDTH_M) / 2,
         BOX_LENGTH_M,
         LINE_M,
       );

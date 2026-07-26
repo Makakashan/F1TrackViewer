@@ -13,6 +13,17 @@ function halfWidthAt(halfWidth: HalfWidth, s: number): number {
   return typeof halfWidth === "function" ? halfWidth(s) : halfWidth;
 }
 
+/**
+ * How much darker the ribbon's side walls are than its driving surface.
+ *
+ * The walls drop all the way to the stage floor, so under a perspective camera
+ * anything away from screen center shows its wall face — a wide skirt in the
+ * same color as the road. That made the surface markings look like they sat in
+ * the middle of the tarmac rather than along its edge. Shading the walls
+ * separates the two without changing the silhouette.
+ */
+const WALL_SHADE = 0.42;
+
 /** Extruded track mesh — top surface + side walls down to groundY. Flat-shaded quads. */
 export function buildExtrudedTrack(
   curve: THREE.CatmullRomCurve3,
@@ -54,10 +65,15 @@ export function buildExtrudedTrack(
     nx: number,
     ny: number,
     nz: number,
+    shade = 1,
   ) {
     positions.push(x, y, z);
     normals.push(nx, ny, nz);
-    if (colorAt) colors.push(vertexColor.r, vertexColor.g, vertexColor.b);
+    colors.push(
+      vertexColor.r * shade,
+      vertexColor.g * shade,
+      vertexColor.b * shade,
+    );
   }
 
   function pushQuad(i1: number, i2: number, i3: number, i4: number) {
@@ -86,10 +102,10 @@ export function buildExtrudedTrack(
 
     pushV(lx, topY, lz, 0, 0, 0);
     pushV(rx, topY, rz, 0, 0, 0);
-    pushV(lx, wallTopY, lz, 0, 0, 0);
-    pushV(rx, wallTopY, rz, 0, 0, 0);
-    pushV(lx, bottomY, lz, 0, 0, 0);
-    pushV(rx, bottomY, rz, 0, 0, 0);
+    pushV(lx, wallTopY, lz, 0, 0, 0, WALL_SHADE);
+    pushV(rx, wallTopY, rz, 0, 0, 0, WALL_SHADE);
+    pushV(lx, bottomY, lz, 0, 0, 0, WALL_SHADE);
+    pushV(rx, bottomY, rz, 0, 0, 0, WALL_SHADE);
   }
 
   const stride = 6;
@@ -142,9 +158,9 @@ export function buildExtrudedTrack(
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  if (colors.length) {
-    geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
-  }
+  // Always present: even without a colorAt the walls carry their own shade, so
+  // the material renders with vertexColors on in every mode.
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geo.setIndex(indices);
   return geo;
 }
@@ -275,6 +291,7 @@ export function buildSectorMesh(
 
   const positions: number[] = [];
   const normals: number[] = [];
+  const colors: number[] = [];
   const indices: number[] = [];
 
   const a = new THREE.Vector3();
@@ -291,9 +308,11 @@ export function buildSectorMesh(
     nx: number,
     ny: number,
     nz: number,
+    shade = 1,
   ) {
     positions.push(x, y, z);
     normals.push(nx, ny, nz);
+    colors.push(shade, shade, shade);
   }
 
   function pushQuad(i1: number, i2: number, i3: number, i4: number) {
@@ -320,10 +339,10 @@ export function buildSectorMesh(
 
     pushV(lx, topY, lz, 0, 0, 0);
     pushV(rx, topY, rz, 0, 0, 0);
-    pushV(lx, wallTopY, lz, 0, 0, 0);
-    pushV(rx, wallTopY, rz, 0, 0, 0);
-    pushV(lx, bottomY, lz, 0, 0, 0);
-    pushV(rx, bottomY, rz, 0, 0, 0);
+    pushV(lx, wallTopY, lz, 0, 0, 0, WALL_SHADE);
+    pushV(rx, wallTopY, rz, 0, 0, 0, WALL_SHADE);
+    pushV(lx, bottomY, lz, 0, 0, 0, WALL_SHADE);
+    pushV(rx, bottomY, rz, 0, 0, 0, WALL_SHADE);
   }
 
   const stride = 6;
@@ -376,6 +395,9 @@ export function buildSectorMesh(
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+  // Grayscale shade multiplied onto the sector's own color by the material,
+  // darkening the side walls the same way the plain ribbon does.
+  geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geo.setIndex(indices);
   return geo;
 }

@@ -97,6 +97,31 @@ export function densifyCoords(
 }
 
 /**
+ * Rebuild a curve's arc-length table at roughly one division per meter.
+ *
+ * `getPointAt` / `getTangentAt` map distance to curve parameter through a
+ * lookup table with linear interpolation between entries, and three.js
+ * defaults to 200 entries no matter how long the curve is — 16 m per entry on
+ * a Monaco-sized lap. Anything that steps along the curve by real distance
+ * then lands unevenly: asking for 4.16 m steps returns spacings between
+ * 0.59 m and 9.91 m, which is why evenly sized markings came out ragged.
+ * The table has to be finer than the steps taken through it: at one division
+ * per meter, meter-long kerb blocks still came out between 0.49 m and 1.52 m.
+ * Four divisions per meter holds them inside a few percent, and building the
+ * table costs one cheap curve evaluation per division, once per circuit.
+ */
+export function refineArcLengths(curve: THREE.CatmullRomCurve3): void {
+  const divisions = THREE.MathUtils.clamp(
+    Math.round(curve.getLength() * 4),
+    200,
+    60_000,
+  );
+  if (divisions <= curve.arcLengthDivisions) return;
+  curve.arcLengthDivisions = divisions;
+  curve.updateArcLengths();
+}
+
+/**
  * Drop the repeated final point of a closed ring. A CatmullRomCurve3 built
  * with `closed: true` adds the wrap segment itself, and callers that compute a
  * per-vertex profile need their arrays index-aligned with the same points.
@@ -139,7 +164,9 @@ export function buildTrackCurve(
     return v;
   });
 
-  return new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
+  const curve = new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
+  refineArcLengths(curve);
+  return curve;
 }
 
 export function buildTrackCurveWithY(
@@ -155,7 +182,9 @@ export function buildTrackCurveWithY(
     return v;
   });
 
-  return new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
+  const curve = new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
+  refineArcLengths(curve);
+  return curve;
 }
 
 /**

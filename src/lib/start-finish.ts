@@ -295,62 +295,6 @@ export function buildStartFinishGeometry(
   return geometry;
 }
 
-export function buildDirectionArrowGeometry(
-  curve: THREE.CatmullRomCurve3,
-  startFinishS: number,
-  halfWidth: number,
-  topRaise: number,
-): THREE.BufferGeometry {
-  const arrowS = wrap01(startFinishS - 0.012);
-  const center = curve.getPointAt(arrowS);
-  const tangent = curve.getTangentAt(arrowS).normalize();
-  const up = new THREE.Vector3(0, 1, 0);
-  const across = new THREE.Vector3().crossVectors(tangent, up);
-  if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
-  across.normalize();
-
-  const length = Math.max(6, halfWidth * 1.35);
-  const width = Math.max(5, halfWidth * 1.1);
-  const y = center.y + topRaise + 0.45;
-
-  const tip = center
-    .clone()
-    .addScaledVector(tangent, length / 2)
-    .setY(y);
-  const left = center
-    .clone()
-    .addScaledVector(tangent, -length / 2)
-    .addScaledVector(across, width / 2)
-    .setY(y);
-  const right = center
-    .clone()
-    .addScaledVector(tangent, -length / 2)
-    .addScaledVector(across, -width / 2)
-    .setY(y);
-
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(
-      [
-        tip.x,
-        tip.y,
-        tip.z,
-        left.x,
-        left.y,
-        left.z,
-        right.x,
-        right.y,
-        right.z,
-      ],
-      3,
-    ),
-  );
-  geometry.setIndex([0, 1, 2]);
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
 export interface StartFinishGantryGeometries {
   posts: THREE.BufferGeometry;
   beam: THREE.BufferGeometry;

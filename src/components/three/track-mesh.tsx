@@ -21,10 +21,13 @@ import {
   type HalfWidth,
 } from "@/lib/track-geometry";
 import { sampleWidthAt, type TrackWidthProfile } from "@/lib/track-width";
-import { buildKerbGeometry } from "@/lib/track-kerbs";
-import { buildStartGridGeometry } from "@/lib/start-grid";
 import {
-  buildDirectionArrowGeometry,
+  buildKerbGeometry,
+  buildTrackEdgeLineGeometry,
+} from "@/lib/track-kerbs";
+import { buildStartGridGeometry } from "@/lib/start-grid";
+import StartGridCars from "@/components/three/start-grid-cars";
+import {
   buildStartFinishGantryGeometry,
   buildStartFinishGeometry,
   findNearestCurveS,
@@ -55,6 +58,9 @@ import {
   disposeGeometry,
   getSceneColors,
 } from "@/lib/scene-config";
+
+/** Asphalt in race view. Warm-neutral rather than pure grey, which reads blue. */
+const ASPHALT_COLOR = "#3a3a3d";
 
 export interface TrackMeshProps {
   geojson: CircuitGeoJSON;
@@ -100,7 +106,12 @@ export default function TrackMesh({
   const coords = feature.geometry.coordinates;
   const hasEnvironment = !!environmentBundle;
 
-  const realWidthActive = !!realWidthEnabled && !!widthProfile;
+  // Race view is the "what it actually looks like" mode: asphalt instead of
+  // the stylised red ribbon, the circuit's real width wherever the dataset
+  // has it, and a car in every grid box.
+  const raceView = viewMode === "realistic";
+
+  const realWidthActive = (raceView || !!realWidthEnabled) && !!widthProfile;
   const halfWidth = useMemo<HalfWidth>(() => {
     if (realWidthActive && widthProfile) {
       return (s: number) => sampleWidthAt(widthProfile, s) / 2;
@@ -207,8 +218,10 @@ export default function TrackMesh({
     return Math.max(400, Math.min(2000, Math.round(length / 4)));
   }, [feature.properties.length]);
 
+  // The narrow/wide gradient is a diagnostic overlay, not part of the scene —
+  // race view wants plain asphalt even though it uses the same real widths.
   const widthColorAt = useMemo(() => {
-    if (!realWidthActive || !widthProfile) return undefined;
+    if (raceView || !realWidthActive || !widthProfile) return undefined;
     const narrow = new THREE.Color("#F59E0B");
     const wide = new THREE.Color("#22D3EE");
     const span = Math.max(
@@ -223,7 +236,7 @@ export default function TrackMesh({
       );
       target.copy(narrow).lerp(wide, normalized);
     };
-  }, [realWidthActive, widthProfile]);
+  }, [raceView, realWidthActive, widthProfile]);
 
   const trackGeometry = useMemo(
     () =>
@@ -258,6 +271,17 @@ export default function TrackMesh({
     [curve, halfWidth, samples],
   );
 
+  const edgeLineGeometry = useMemo(
+    () =>
+      buildTrackEdgeLineGeometry(
+        curve,
+        halfWidth,
+        TRACK_SURFACE_RAISE + 0.02,
+        samples,
+      ),
+    [curve, halfWidth, samples],
+  );
+
   const startFinishPlacement = useMemo(
     () =>
       resolveStartFinishPlacement(
@@ -277,17 +301,6 @@ export default function TrackMesh({
   const startFinishGeometry = useMemo(
     () =>
       buildStartFinishGeometry(
-        curve,
-        startFinishPlacement.s,
-        markerHalfWidth,
-        TRACK_OVERLAY_RAISE,
-      ),
-    [curve, startFinishPlacement.s, markerHalfWidth],
-  );
-
-  const directionArrowGeometry = useMemo(
-    () =>
-      buildDirectionArrowGeometry(
         curve,
         startFinishPlacement.s,
         markerHalfWidth,
@@ -357,9 +370,9 @@ export default function TrackMesh({
       trackGeometry.dispose();
       outlineGeometry.dispose();
       kerbGeometry?.dispose();
+      edgeLineGeometry.dispose();
       startFinishGeometry.dispose();
       startGridGeometry?.dispose();
-      directionArrowGeometry.dispose();
       disposeGeometry(startFinishGantryGeometry.posts);
       disposeGeometry(startFinishGantryGeometry.beam);
     };
@@ -367,9 +380,9 @@ export default function TrackMesh({
     trackGeometry,
     outlineGeometry,
     kerbGeometry,
+    edgeLineGeometry,
     startFinishGeometry,
     startGridGeometry,
-    directionArrowGeometry,
     startFinishGantryGeometry,
   ]);
 
@@ -486,6 +499,7 @@ export default function TrackMesh({
               }}
             >
               <meshStandardMaterial
+                vertexColors
                 color={sector.color}
                 emissive={sector.color}
                 emissiveIntensity={colors.sectorEmissiveIntensity}
@@ -529,9 +543,15 @@ export default function TrackMesh({
             }}
           >
             <meshBasicMaterial
-              key={realWidthActive ? "real-width-colors" : "solid-track"}
-              vertexColors={realWidthActive}
-              color={realWidthActive ? "#ffffff" : colors.trackColor}
+              key={widthColorAt ? "real-width-colors" : "solid-track"}
+              vertexColors
+              color={
+                widthColorAt
+                  ? "#ffffff"
+                  : raceView
+                    ? ASPHALT_COLOR
+                    : colors.trackColor
+              }
               side={THREE.DoubleSide}
               depthTest
               depthWrite
@@ -543,6 +563,19 @@ export default function TrackMesh({
           </mesh>
         </>
       )}
+
+      <mesh geometry={edgeLineGeometry} renderOrder={TRACK_RENDER_ORDER}>
+        <meshBasicMaterial
+          color="#f2f4f7"
+          side={THREE.DoubleSide}
+          depthTest
+          depthWrite
+          toneMapped={false}
+          polygonOffset
+          polygonOffsetFactor={-3}
+          polygonOffsetUnits={-3}
+        />
+      </mesh>
 
       {kerbGeometry && (
         <mesh geometry={kerbGeometry} renderOrder={TRACK_RENDER_ORDER}>
@@ -592,14 +625,15 @@ export default function TrackMesh({
         </mesh>
       )}
 
-      <mesh geometry={directionArrowGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
-        <meshBasicMaterial
-          color={colors.markerColor}
-          side={THREE.DoubleSide}
-          depthTest
-          depthWrite={false}
+      {raceView && (
+        <StartGridCars
+          curve={curve}
+          startFinishS={startFinishPlacement.s}
+          halfWidth={markerHalfWidth}
+          directionSign={markers?.directionSign ?? 1}
+          surfaceRaise={TRACK_SURFACE_RAISE}
         />
-      </mesh>
+      )}
 
       <mesh geometry={startFinishGantryGeometry.posts}>
         <meshStandardMaterial
