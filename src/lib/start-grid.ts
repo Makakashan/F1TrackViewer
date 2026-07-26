@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import type { HalfWidth } from "./track-geometry";
 
 /**
  * Starting grid markings — the staggered boxes the cars line up in behind the
@@ -26,6 +27,10 @@ function wrap01(value: number): number {
   return ((value % 1) + 1) % 1;
 }
 
+function halfWidthAt(halfWidth: HalfWidth, s: number): number {
+  return typeof halfWidth === "function" ? halfWidth(s) : halfWidth;
+}
+
 export interface GridSlot {
   /** Center of the painted box, on the track surface. */
   position: THREE.Vector3;
@@ -33,6 +38,10 @@ export interface GridSlot {
   forward: THREE.Vector3;
   /** Unit vector across the track, to the left of `forward`. */
   across: THREE.Vector3;
+  /** Normalized curve position of the box center. */
+  s: number;
+  /** Which side of the centerline the box sits on, along `across`. */
+  side: 1 | -1;
   /** 1 for pole, 2 for second, and so on. */
   place: number;
 }
@@ -42,11 +51,16 @@ export interface GridSlot {
  *
  * Shared by the painted boxes and by whatever is placed in them, so a change
  * to the layout can't leave the cars sitting beside their markings.
+ *
+ * `halfWidth` is sampled per slot rather than taken as one number for the lap:
+ * the ribbon narrows and widens along the circuit, and offsetting every box by
+ * a fraction of the lap *mean* puts the outer wheels off the asphalt wherever
+ * the track is tighter than average.
  */
 export function startGridSlots(
   curve: THREE.CatmullRomCurve3,
   startFinishS: number,
-  halfWidth: number,
+  halfWidth: HalfWidth,
   directionSign: 1 | -1 = 1,
   slots: number = GRID_SLOTS,
 ): GridSlot[] {
@@ -72,13 +86,16 @@ export function startGridSlots(
     if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
     across.normalize();
 
-    const sideSign = slot % 2 === 0 ? 1 : -1;
+    const sideSign: 1 | -1 = slot % 2 === 0 ? 1 : -1;
+    const localHalfWidth = halfWidthAt(halfWidth, s);
     result.push({
       position: center
         .clone()
-        .addScaledVector(across, sideSign * halfWidth * LATERAL_FRACTION),
+        .addScaledVector(across, sideSign * localHalfWidth * LATERAL_FRACTION),
       forward,
       across,
+      s,
+      side: sideSign,
       place: slot + 1,
     });
   }
@@ -96,7 +113,7 @@ export function startGridSlots(
 export function buildStartGridGeometry(
   curve: THREE.CatmullRomCurve3,
   startFinishS: number,
-  halfWidth: number,
+  halfWidth: HalfWidth,
   topRaise: number,
   directionSign: 1 | -1 = 1,
 ): THREE.BufferGeometry | null {
@@ -152,7 +169,10 @@ export function buildStartGridGeometry(
     halfWidth,
     directionSign,
   )) {
-    const y = position.y + topRaise + 0.3;
+    // Paint sits on the asphalt. Any physical lift here is invisible from a
+    // map camera and reads as levitating markings from inside the car; the
+    // material's polygon offset is what keeps it out of the surface.
+    const y = position.y + topRaise;
 
     // Front transverse line plus the two longitudinal sides: the open-backed
     // box the cars are lined up in, as painted.
