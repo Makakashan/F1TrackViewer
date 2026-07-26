@@ -15,6 +15,11 @@ export const TERRAIN_TRACK_WALL_DEPTH = TERRAIN_TRACK_OFFSET + TRACK_SURFACE_RAI
 // hill between two sparse points doesn't get "seen" and the track dips
 // below the terrain mesh (see tr-2005 Istanbul Park's back straight).
 export const TERRAIN_TRACK_MAX_SEGMENT_M = 40;
+// Arc-length radius of the smoothing window applied to the terrain-sampled
+// track profile. Two densified segments either side: wide enough to erase DEM
+// cell steps, short enough to keep real features (Eau Rouge, Monaco's climb
+// out of Sainte-Dévote) at their true gradient.
+export const TERRAIN_TRACK_SMOOTH_RADIUS_M = 80;
 export const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
 
 export function disposeGeometry(value: unknown) {

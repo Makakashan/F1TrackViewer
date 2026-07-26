@@ -96,6 +96,23 @@ export function densifyCoords(
   return result;
 }
 
+/**
+ * Drop the repeated final point of a closed ring. A CatmullRomCurve3 built
+ * with `closed: true` adds the wrap segment itself, and callers that compute a
+ * per-vertex profile need their arrays index-aligned with the same points.
+ */
+export function stripClosingDuplicate(
+  coords: [number, number][],
+): [number, number][] {
+  if (coords.length < 2) return coords;
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  if (first[0] === last[0] && first[1] === last[1]) {
+    return coords.slice(0, -1);
+  }
+  return coords;
+}
+
 /** Build a closed CatmullRomCurve3 from [lon, lat] coords. Strips closing duplicate, uses centripetal parametrization. */
 export function buildTrackCurve(
   coords: [number, number][],
@@ -104,14 +121,7 @@ export function buildTrackCurve(
   elevationScale: number = REAL_ELEVATION_SCALE,
   elevationOffset: number = 0,
 ): THREE.CatmullRomCurve3 {
-  let pts = coords;
-  if (pts.length > 1) {
-    const first = pts[0];
-    const last = pts[pts.length - 1];
-    if (first[0] === last[0] && first[1] === last[1]) {
-      pts = pts.slice(0, -1);
-    }
-  }
+  const pts = stripClosingDuplicate(coords);
 
   let meanElevation = 0;
   if (elevations && elevations.length > 0) {
@@ -137,14 +147,7 @@ export function buildTrackCurveWithY(
   bounds: GeoBounds,
   getY: (lon: number, lat: number, index: number) => number,
 ): THREE.CatmullRomCurve3 {
-  let pts = coords;
-  if (pts.length > 1) {
-    const first = pts[0];
-    const last = pts[pts.length - 1];
-    if (first[0] === last[0] && first[1] === last[1]) {
-      pts = pts.slice(0, -1);
-    }
-  }
+  const pts = stripClosingDuplicate(coords);
 
   const points = pts.map(([lon, lat], i) => {
     const v = lonLatToXZ(lon, lat, bounds.centerLon, bounds.centerLat);

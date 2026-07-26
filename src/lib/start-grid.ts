@@ -1,0 +1,143 @@
+import * as THREE from "three";
+
+/**
+ * Starting grid markings — the staggered boxes the cars line up in behind the
+ * start/finish line.
+ *
+ * Laid out from the resolved start/finish position rather than from data:
+ * every circuit uses the same FIA geometry (8 m between staggered boxes,
+ * alternating sides of the centerline), so the only per-circuit inputs are
+ * where the line is, which way the cars face, and how wide the track is.
+ */
+
+const GRID_SLOTS = 20;
+/** Longitudinal gap between consecutive (staggered) boxes. Same-side rows end up 16 m apart. */
+const SLOT_PITCH_M = 8;
+/** Gap between the start line and the front of the pole box. */
+const FIRST_SLOT_SETBACK_M = 6;
+const BOX_LENGTH_M = 5;
+const BOX_WIDTH_M = 2.4;
+/** Painted line thickness. */
+const LINE_M = 0.14;
+/** Box center offset from the centerline, as a fraction of the half-width. */
+const LATERAL_FRACTION = 0.45;
+
+function wrap01(value: number): number {
+  return ((value % 1) + 1) % 1;
+}
+
+/**
+ * Build the grid boxes as flat white quads.
+ *
+ * `directionSign` is the same convention as TrackMarkers: +1 when lap distance
+ * increases with s. The grid always sits behind the line, so it is laid out
+ * against that direction.
+ */
+export function buildStartGridGeometry(
+  curve: THREE.CatmullRomCurve3,
+  startFinishS: number,
+  halfWidth: number,
+  topRaise: number,
+  directionSign: 1 | -1 = 1,
+): THREE.BufferGeometry | null {
+  const totalLength = curve.getLength();
+  if (!(totalLength > 0)) return null;
+
+  // Grid needs ~170 m of track behind the line; on a circuit shorter than the
+  // grid itself the boxes would wrap past the line and overlap the front row.
+  const gridLength = FIRST_SLOT_SETBACK_M + GRID_SLOTS * SLOT_PITCH_M;
+  if (totalLength < gridLength * 1.5) return null;
+
+  const positions: number[] = [];
+  const indices: number[] = [];
+
+  const up = new THREE.Vector3(0, 1, 0);
+  const across = new THREE.Vector3();
+  const point = new THREE.Vector3();
+
+  /**
+   * One painted rectangle, positioned in the local frame of the box center:
+   * `along` runs with the direction of travel, `lateral` across the track.
+   */
+  function pushRect(
+    center: THREE.Vector3,
+    forward: THREE.Vector3,
+    sideVec: THREE.Vector3,
+    y: number,
+    alongCenter: number,
+    lateralCenter: number,
+    alongSize: number,
+    lateralSize: number,
+  ) {
+    const base = positions.length / 3;
+    const halfAlong = alongSize / 2;
+    const halfLateral = lateralSize / 2;
+
+    for (const [da, dl] of [
+      [-halfAlong, -halfLateral],
+      [halfAlong, -halfLateral],
+      [-halfAlong, halfLateral],
+      [halfAlong, halfLateral],
+    ]) {
+      point
+        .copy(center)
+        .addScaledVector(forward, alongCenter + da)
+        .addScaledVector(sideVec, lateralCenter + dl);
+      positions.push(point.x, y, point.z);
+    }
+
+    indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+  }
+
+  for (let slot = 0; slot < GRID_SLOTS; slot++) {
+    const distanceBehind = FIRST_SLOT_SETBACK_M + slot * SLOT_PITCH_M;
+    // Behind the line means against the direction of travel.
+    const s = wrap01(
+      startFinishS - (directionSign * distanceBehind) / totalLength,
+    );
+
+    const center = curve.getPointAt(s);
+    const forward = curve.getTangentAt(s).normalize().multiplyScalar(directionSign);
+    across.crossVectors(forward, up);
+    if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
+    across.normalize();
+
+    const sideSign = slot % 2 === 0 ? 1 : -1;
+    const lateralCenter = sideSign * halfWidth * LATERAL_FRACTION;
+    const y = center.y + topRaise + 0.3;
+
+    // Front transverse line plus the two longitudinal sides: the open-backed
+    // box the cars are lined up in, as painted.
+    pushRect(
+      center,
+      forward,
+      across,
+      y,
+      BOX_LENGTH_M / 2,
+      lateralCenter,
+      LINE_M,
+      BOX_WIDTH_M,
+    );
+    for (const edge of [-1, 1]) {
+      pushRect(
+        center,
+        forward,
+        across,
+        y,
+        0,
+        lateralCenter + (edge * BOX_WIDTH_M) / 2,
+        BOX_LENGTH_M,
+        LINE_M,
+      );
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
+  );
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}

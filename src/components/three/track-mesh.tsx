@@ -9,8 +9,10 @@ import {
   computeBounds,
   densifyCoords,
   sceneRadiusFromBounds,
+  stripClosingDuplicate,
   REAL_ELEVATION_SCALE,
 } from "@/lib/geo-utils";
+import { smoothTerrainTrackProfile } from "@/lib/elevation";
 import {
   buildExtrudedTrack,
   buildTrackOutline,
@@ -19,6 +21,8 @@ import {
   type HalfWidth,
 } from "@/lib/track-geometry";
 import { sampleWidthAt, type TrackWidthProfile } from "@/lib/track-width";
+import { buildKerbGeometry } from "@/lib/track-kerbs";
+import { buildStartGridGeometry } from "@/lib/start-grid";
 import {
   buildDirectionArrowGeometry,
   buildStartFinishGantryGeometry,
@@ -28,7 +32,11 @@ import {
   type StartFinishPlacement,
 } from "@/lib/start-finish";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
-import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
+import {
+  MARKER_COLORS,
+  type TrackMarkers,
+  type TrackViewMode,
+} from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
 import { buildTerrainSampler, terrainHeightNear } from "@/lib/terrain-sampler";
 import EnvironmentLayer from "@/components/environment-layer";
@@ -42,6 +50,7 @@ import {
   TERRAIN_TRACK_OFFSET,
   TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M,
   TERRAIN_TRACK_MAX_SEGMENT_M,
+  TERRAIN_TRACK_SMOOTH_RADIUS_M,
   TERRAIN_TRACK_WALL_DEPTH,
   disposeGeometry,
   getSceneColors,
@@ -135,8 +144,19 @@ export default function TrackMesh({
       let min = Infinity;
       let max = -Infinity;
       const denseCoords = densifyCoords(coords, TERRAIN_TRACK_MAX_SEGMENT_M);
-      const c = buildTrackCurveWithY(denseCoords, bounds, (lon, lat) => {
-        const y = trackTerrainHeightNear(lon, lat) + TERRAIN_TRACK_OFFSET;
+      // Smooth the raw per-vertex terrain heights before they become curve Y:
+      // sampled straight off the DEM the ribbon ripples with every grid cell.
+      const profileCoords = stripClosingDuplicate(denseCoords);
+      const rawY = profileCoords.map(([lon, lat]) =>
+        trackTerrainHeightNear(lon, lat),
+      );
+      const smoothedY = smoothTerrainTrackProfile(
+        rawY,
+        profileCoords,
+        TERRAIN_TRACK_SMOOTH_RADIUS_M,
+      );
+      const c = buildTrackCurveWithY(denseCoords, bounds, (_lon, _lat, i) => {
+        const y = smoothedY[i] + TERRAIN_TRACK_OFFSET;
         if (y < min) min = y;
         if (y > max) max = y;
         return y;
@@ -224,6 +244,20 @@ export default function TrackMesh({
     [curve, halfWidth, samples],
   );
 
+  // Kerbs sit a couple of centimeters above the surface and take a deeper
+  // polygon offset than it, so they never z-fight with the ribbon they border;
+  // overlay markers still draw on top via TRACK_OVERLAY_RENDER_ORDER.
+  const kerbGeometry = useMemo(
+    () =>
+      buildKerbGeometry(
+        curve,
+        halfWidth,
+        TRACK_SURFACE_RAISE + 0.02,
+        samples,
+      ),
+    [curve, halfWidth, samples],
+  );
+
   const startFinishPlacement = useMemo(
     () =>
       resolveStartFinishPlacement(
@@ -260,6 +294,18 @@ export default function TrackMesh({
         TRACK_OVERLAY_RAISE,
       ),
     [curve, startFinishPlacement.s, markerHalfWidth],
+  );
+
+  const startGridGeometry = useMemo(
+    () =>
+      buildStartGridGeometry(
+        curve,
+        startFinishPlacement.s,
+        markerHalfWidth,
+        TRACK_OVERLAY_RAISE,
+        markers?.directionSign ?? 1,
+      ),
+    [curve, startFinishPlacement.s, markerHalfWidth, markers?.directionSign],
   );
 
   const startFinishGantryGeometry = useMemo(
@@ -310,7 +356,9 @@ export default function TrackMesh({
     return () => {
       trackGeometry.dispose();
       outlineGeometry.dispose();
+      kerbGeometry?.dispose();
       startFinishGeometry.dispose();
+      startGridGeometry?.dispose();
       directionArrowGeometry.dispose();
       disposeGeometry(startFinishGantryGeometry.posts);
       disposeGeometry(startFinishGantryGeometry.beam);
@@ -318,7 +366,9 @@ export default function TrackMesh({
   }, [
     trackGeometry,
     outlineGeometry,
+    kerbGeometry,
     startFinishGeometry,
+    startGridGeometry,
     directionArrowGeometry,
     startFinishGantryGeometry,
   ]);
@@ -494,6 +544,21 @@ export default function TrackMesh({
         </>
       )}
 
+      {kerbGeometry && (
+        <mesh geometry={kerbGeometry} renderOrder={TRACK_RENDER_ORDER}>
+          <meshBasicMaterial
+            vertexColors
+            side={THREE.DoubleSide}
+            depthTest
+            depthWrite
+            toneMapped={false}
+            polygonOffset
+            polygonOffsetFactor={-3}
+            polygonOffsetUnits={-3}
+          />
+        </mesh>
+      )}
+
       <lineSegments geometry={outlineGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
         <lineBasicMaterial
           color={colors.outlineColor}
@@ -511,6 +576,21 @@ export default function TrackMesh({
           depthWrite={false}
         />
       </mesh>
+
+      {startGridGeometry && (
+        <mesh
+          geometry={startGridGeometry}
+          renderOrder={TRACK_OVERLAY_RENDER_ORDER}
+        >
+          <meshBasicMaterial
+            color={MARKER_COLORS.startFinish}
+            side={THREE.DoubleSide}
+            depthTest
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+      )}
 
       <mesh geometry={directionArrowGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
         <meshBasicMaterial
