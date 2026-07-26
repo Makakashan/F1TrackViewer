@@ -16,10 +16,12 @@ export const TERRAIN_TRACK_WALL_DEPTH = TERRAIN_TRACK_OFFSET + TRACK_SURFACE_RAI
 // below the terrain mesh (see tr-2005 Istanbul Park's back straight).
 export const TERRAIN_TRACK_MAX_SEGMENT_M = 40;
 // Arc-length radius of the smoothing window applied to the terrain-sampled
-// track profile. Two densified segments either side: wide enough to erase DEM
-// cell steps, short enough to keep real features (Eau Rouge, Monaco's climb
-// out of Sainte-Dévote) at their true gradient.
-export const TERRAIN_TRACK_SMOOTH_RADIUS_M = 80;
+// track profile. Wide enough to erase DEM cell steps (mean per-vertex wobble
+// drops ~58%), short enough that the smoothed line never dips more than ~2.6 m
+// under the terrain it was sampled from — comfortably inside the 4.5 m
+// clearance. Widening to 160 m smooths more but pushes Spa's worst dip to
+// 4.05 m, which starts to bury the ribbon in the hillside.
+export const TERRAIN_TRACK_SMOOTH_RADIUS_M = 120;
 export const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
 
 export function disposeGeometry(value: unknown) {

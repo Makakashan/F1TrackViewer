@@ -118,7 +118,7 @@ export function smoothTerrainTrackProfile(
   rawY: number[],
   coords: [number, number][],
   radiusMeters: number,
-  passes = 3,
+  passes = 4,
 ): number[] {
   if (rawY.length < 3) return rawY.slice();
 

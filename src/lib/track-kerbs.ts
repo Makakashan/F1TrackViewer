@@ -11,9 +11,13 @@ import type { HalfWidth } from "./track-geometry";
  * scale, and works for all 31 circuits without a per-track table.
  */
 
-/** FIA kerb red and white, muted slightly so they don't bloom under emissive lighting. */
-const KERB_RED = new THREE.Color("#d8302a");
-const KERB_WHITE = new THREE.Color("#eceff3");
+/**
+ * Kerb red and white. The red is much deeper than the FIA original because the
+ * track surface itself is rendered in F1 red (#e10600) — at kerb red the
+ * stripes vanish into it and only the white blocks read.
+ */
+const KERB_RED = new THREE.Color("#7d0f0c");
+const KERB_WHITE = new THREE.Color("#f2f4f7");
 
 export interface KerbOptions {
   /** A sample is "in a corner" when its radius drops below this. */
@@ -31,11 +35,13 @@ export interface KerbOptions {
 }
 
 const DEFAULTS = {
-  maxCornerRadiusMeters: 260,
+  // 260 m was loose enough to catch the gentle bends along a "straight" and
+  // scatter two-block kerb fragments down them; a real corner is far tighter.
+  maxCornerRadiusMeters: 170,
   widthMeters: 1.6,
-  stripeMeters: 1.8,
+  stripeMeters: 1.5,
   runPaddingMeters: 10,
-  minRunMeters: 18,
+  minRunMeters: 25,
   liftMeters: 0.09,
 } satisfies Required<KerbOptions>;
 
