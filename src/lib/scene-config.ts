@@ -4,6 +4,15 @@
 
 export const TRACK_SURFACE_RAISE = 1.1;
 export const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.18;
+/**
+ * Painted markings — grid boxes, the start line — sit on the asphalt.
+ *
+ * They used to be lifted a third of a meter onto the overlay plane, which is
+ * invisible from a camera that frames the whole circuit and reads as floating
+ * paint from one standing beside a car. The clearance here is only enough to
+ * beat depth precision; polygon offset on the material does the rest.
+ */
+export const TRACK_PAINT_RAISE = TRACK_SURFACE_RAISE + 0.02;
 export const TRACK_RENDER_ORDER = 100;
 export const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
 export const TERRAIN_TRACK_OFFSET = 4.5;
