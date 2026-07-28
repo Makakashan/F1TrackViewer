@@ -25,15 +25,20 @@ import {
   buildKerbGeometry,
   buildTrackEdgeLineGeometry,
 } from "@/lib/track-kerbs";
-import { buildStartGridGeometry } from "@/lib/start-grid";
+import { buildStartGridGeometry, startGridSlots } from "@/lib/start-grid";
 import StartGridCars from "@/components/three/start-grid-cars";
+import RaceCameraRig from "@/components/three/race-camera-rig";
+import type { GridEntry } from "@/lib/f1-teams";
+import { START_LIGHT_ROWS } from "@/lib/start-lights";
 import {
   buildStartFinishGantryGeometry,
   buildStartFinishGeometry,
+  buildStartLineGeometry,
   findNearestCurveS,
   resolveStartFinishPlacement,
   type StartFinishPlacement,
 } from "@/lib/start-finish";
+import { buildStartLightsGeometry } from "@/lib/start-lights";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import {
   MARKER_COLORS,
@@ -47,6 +52,7 @@ import StudioStage from "@/components/three/studio-stage";
 import type { CameraPreset } from "@/components/track-viewer";
 import {
   TRACK_SURFACE_RAISE,
+  TRACK_PAINT_RAISE,
   TRACK_OVERLAY_RAISE,
   TRACK_RENDER_ORDER,
   TRACK_OVERLAY_RENDER_ORDER,
@@ -61,6 +67,11 @@ import {
 
 /** Asphalt in race view. Warm-neutral rather than pure grey, which reads blue. */
 const ASPHALT_COLOR = "#3a3a3d";
+
+/** An unlit start lamp — a dark lens against the black panel, not a hole in it. */
+const LAMP_OFF_COLOR = "#4a1c20";
+/** Lit: brighter than any red in the scene, so it reads as a light source. */
+const LAMP_ON_COLOR = "#ff2318";
 
 export interface TrackMeshProps {
   geojson: CircuitGeoJSON;
@@ -81,6 +92,12 @@ export interface TrackMeshProps {
   realWidthEnabled?: boolean;
   /** Reduces environment diorama detail (building count) for weaker devices. */
   lowDetail?: boolean;
+  /** Race view only: which grid slot the camera sits on. */
+  focusIndex?: number;
+  /** Race view only: how many start light columns are lit, 0–5. */
+  startLightsLit?: number;
+  /** Race view only: livery per grid slot, in running order. */
+  gridEntries?: GridEntry[];
 }
 
 export default function TrackMesh({
@@ -101,6 +118,9 @@ export default function TrackMesh({
   widthProfile,
   realWidthEnabled,
   lowDetail,
+  focusIndex = 0,
+  startLightsLit = 0,
+  gridEntries,
 }: TrackMeshProps) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -298,15 +318,24 @@ export default function TrackMesh({
     onStartFinishPlacement?.(startFinishPlacement);
   }, [onStartFinishPlacement, onStartFinishResolved, startFinishPlacement]);
 
+  // Race view paints the line the way it exists on the circuit; the other
+  // modes keep the checkered map symbol.
   const startFinishGeometry = useMemo(
     () =>
-      buildStartFinishGeometry(
-        curve,
-        startFinishPlacement.s,
-        markerHalfWidth,
-        TRACK_OVERLAY_RAISE,
-      ),
-    [curve, startFinishPlacement.s, markerHalfWidth],
+      raceView
+        ? buildStartLineGeometry(
+            curve,
+            startFinishPlacement.s,
+            halfWidth,
+            TRACK_PAINT_RAISE,
+          )
+        : buildStartFinishGeometry(
+            curve,
+            startFinishPlacement.s,
+            markerHalfWidth,
+            TRACK_PAINT_RAISE,
+          ),
+    [raceView, curve, startFinishPlacement.s, halfWidth, markerHalfWidth],
   );
 
   const startGridGeometry = useMemo(
@@ -314,11 +343,45 @@ export default function TrackMesh({
       buildStartGridGeometry(
         curve,
         startFinishPlacement.s,
-        markerHalfWidth,
-        TRACK_OVERLAY_RAISE,
+        halfWidth,
+        TRACK_PAINT_RAISE,
         markers?.directionSign ?? 1,
       ),
-    [curve, startFinishPlacement.s, markerHalfWidth, markers?.directionSign],
+    [curve, startFinishPlacement.s, halfWidth, markers?.directionSign],
+  );
+
+  // One source for the cars and for the camera that follows them.
+  const gridSlots = useMemo(
+    () =>
+      raceView
+        ? startGridSlots(
+            curve,
+            startFinishPlacement.s,
+            halfWidth,
+            markers?.directionSign ?? 1,
+          )
+        : [],
+    [raceView, curve, startFinishPlacement.s, halfWidth, markers?.directionSign],
+  );
+
+  const startLights = useMemo(
+    () =>
+      raceView
+        ? buildStartLightsGeometry(
+            curve,
+            startFinishPlacement.s,
+            markerHalfWidth,
+            TRACK_OVERLAY_RAISE,
+            markers?.directionSign ?? 1,
+          )
+        : null,
+    [
+      raceView,
+      curve,
+      startFinishPlacement.s,
+      markerHalfWidth,
+      markers?.directionSign,
+    ],
   );
 
   const startFinishGantryGeometry = useMemo(
@@ -328,8 +391,9 @@ export default function TrackMesh({
         startFinishPlacement.s,
         markerHalfWidth,
         TRACK_OVERLAY_RAISE,
+        raceView ? "plain" : "checkered",
       ),
-    [curve, startFinishPlacement.s, markerHalfWidth],
+    [curve, startFinishPlacement.s, markerHalfWidth, raceView],
   );
 
   const showSectors = viewMode === "sectors" && markers?.sectors?.length;
@@ -373,6 +437,8 @@ export default function TrackMesh({
       edgeLineGeometry.dispose();
       startFinishGeometry.dispose();
       startGridGeometry?.dispose();
+      startLights?.panel.dispose();
+      startLights?.lamps.forEach((lamp) => lamp.dispose());
       disposeGeometry(startFinishGantryGeometry.posts);
       disposeGeometry(startFinishGantryGeometry.beam);
     };
@@ -383,6 +449,7 @@ export default function TrackMesh({
     edgeLineGeometry,
     startFinishGeometry,
     startGridGeometry,
+    startLights,
     startFinishGantryGeometry,
   ]);
 
@@ -392,6 +459,23 @@ export default function TrackMesh({
       splitLineGeometries.forEach((g) => g.dispose());
     };
   }, [sectorGeometries, splitLineGeometries]);
+
+  /**
+   * Undefined unless the calibration tool is open.
+   *
+   * An r3f mesh with any pointer handler joins the interaction list, and every
+   * pointer move then raycasts it — the whole track ribbon, triangle by
+   * triangle, on each event of a drag. The handler only ever does anything for
+   * the admin calibration page, so outside it the mesh should not be
+   * interactive at all rather than interactive-and-returning-early.
+   */
+  const calibrateOnPointerDown = useMemo(() => {
+    if (!calibrationEnabled) return undefined;
+    return (event: { stopPropagation: () => void; point: THREE.Vector3 }) => {
+      event.stopPropagation();
+      onCalibrateStartFinish?.(findNearestCurveS(curve, event.point, samples));
+    };
+  }, [calibrationEnabled, curve, samples, onCalibrateStartFinish]);
 
   const isDark = resolvedTheme === "dark";
   const colors = getSceneColors(isDark);
@@ -418,6 +502,10 @@ export default function TrackMesh({
     peakYRef.current = peakY;
   });
   useEffect(() => {
+    // Race view frames the grid, not the circuit — RaceCameraRig owns the
+    // camera there. Child effects run before the parent's, so without this the
+    // overview would land on top of the rig's framing on every mount.
+    if (raceView) return;
     const currentPeakY = peakYRef.current;
     const verticalFudge = 1 + Math.min(1, currentPeakY / Math.max(radius, 1));
     const { baseDistance, yOffset } = cameraFraming(currentPeakY);
@@ -428,7 +516,7 @@ export default function TrackMesh({
       (controls as any).target.set(0, 0, 0);
       (controls as any).update?.();
     }
-  }, [camera, controls, radius, cameraFraming]);
+  }, [raceView, camera, controls, radius, cameraFraming]);
 
   // Excludes `peakY` from the deps for the same reason as above: cameraPreset
   // persists (it's URL state, not a one-shot trigger), so reacting to peakY
@@ -491,12 +579,7 @@ export default function TrackMesh({
               key={`sector-${sector.id}`}
               geometry={sectorGeometries[i]}
               renderOrder={TRACK_RENDER_ORDER}
-              onPointerDown={(event) => {
-                if (!calibrationEnabled) return;
-                event.stopPropagation();
-                const nearestS = findNearestCurveS(curve, event.point, samples);
-                onCalibrateStartFinish?.(nearestS);
-              }}
+              onPointerDown={calibrateOnPointerDown}
             >
               <meshStandardMaterial
                 vertexColors
@@ -535,12 +618,7 @@ export default function TrackMesh({
           <mesh
             geometry={trackGeometry}
             renderOrder={TRACK_RENDER_ORDER}
-            onPointerDown={(event) => {
-              if (!calibrationEnabled) return;
-              event.stopPropagation();
-              const nearestS = findNearestCurveS(curve, event.point, samples);
-              onCalibrateStartFinish?.(nearestS);
-            }}
+            onPointerDown={calibrateOnPointerDown}
           >
             <meshBasicMaterial
               key={widthColorAt ? "real-width-colors" : "solid-track"}
@@ -572,8 +650,8 @@ export default function TrackMesh({
           depthWrite
           toneMapped={false}
           polygonOffset
-          polygonOffsetFactor={-3}
-          polygonOffsetUnits={-3}
+          polygonOffsetFactor={-6}
+          polygonOffsetUnits={-6}
         />
       </mesh>
 
@@ -586,27 +664,40 @@ export default function TrackMesh({
             depthWrite
             toneMapped={false}
             polygonOffset
-            polygonOffsetFactor={-3}
-            polygonOffsetUnits={-3}
+            polygonOffsetFactor={-6}
+            polygonOffsetUnits={-6}
           />
         </mesh>
       )}
 
-      <lineSegments geometry={outlineGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
-        <lineBasicMaterial
-          color={colors.outlineColor}
-          depthTest
-          depthWrite={false}
-        />
-      </lineSegments>
+      {/* A schematic outline of the map. On asphalt with kerbs it reads as a
+          stray white thread along the edge, so race view drops it. */}
+      {!raceView && (
+        <lineSegments
+          geometry={outlineGeometry}
+          renderOrder={TRACK_OVERLAY_RENDER_ORDER}
+        >
+          <lineBasicMaterial
+            color={colors.outlineColor}
+            depthTest
+            depthWrite={false}
+          />
+        </lineSegments>
+      )}
       </group>
 
       <mesh geometry={startFinishGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
         <meshBasicMaterial
-          vertexColors
+          key={raceView ? "start-line" : "start-finish-checkered"}
+          vertexColors={!raceView}
+          color={raceView ? "#f2f4f7" : "#ffffff"}
           side={THREE.DoubleSide}
           depthTest
           depthWrite={false}
+          toneMapped={false}
+          polygonOffset
+          polygonOffsetFactor={-10}
+          polygonOffsetUnits={-10}
         />
       </mesh>
 
@@ -621,18 +712,48 @@ export default function TrackMesh({
             depthTest
             depthWrite={false}
             toneMapped={false}
+            polygonOffset
+            polygonOffsetFactor={-10}
+            polygonOffsetUnits={-10}
           />
         </mesh>
       )}
 
       {raceView && (
-        <StartGridCars
-          curve={curve}
-          startFinishS={startFinishPlacement.s}
-          halfWidth={markerHalfWidth}
-          directionSign={markers?.directionSign ?? 1}
-          surfaceRaise={TRACK_SURFACE_RAISE}
-        />
+        <>
+          <StartGridCars
+            slots={gridSlots}
+            surfaceRaise={TRACK_SURFACE_RAISE}
+            entries={gridEntries}
+          />
+          <RaceCameraRig slots={gridSlots} focusIndex={focusIndex} />
+        </>
+      )}
+
+      {startLights && (
+        <>
+          <mesh geometry={startLights.panel}>
+            <meshStandardMaterial
+              color="#0a0a0c"
+              roughness={0.55}
+              metalness={0.15}
+            />
+          </mesh>
+          {startLights.lamps.map((lamp, index) => {
+            // Lamps are emitted column-major, so the first `lit` columns are
+            // the first `lit * rows` lamps.
+            const on = index < startLightsLit * START_LIGHT_ROWS;
+            return (
+              <mesh key={`start-lamp-${index}`} geometry={lamp}>
+                <meshBasicMaterial
+                  color={on ? LAMP_ON_COLOR : LAMP_OFF_COLOR}
+                  side={THREE.DoubleSide}
+                  toneMapped={false}
+                />
+              </mesh>
+            );
+          })}
+        </>
       )}
 
       <mesh geometry={startFinishGantryGeometry.posts}>
