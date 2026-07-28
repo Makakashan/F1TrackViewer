@@ -1,6 +1,7 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import CarFleet, { type CarFleetHandle } from "@/components/three/car-fleet";
 import {
@@ -8,16 +9,23 @@ import {
   fetchCarLibrary,
   type CarModelEntry,
 } from "@/lib/car-library";
-import { startGridSlots } from "@/lib/start-grid";
+import type { GridSlot } from "@/lib/start-grid";
+import type { GridEntry } from "@/lib/f1-teams";
 
 export interface StartGridCarsProps {
-  curve: THREE.CatmullRomCurve3;
-  startFinishS: number;
-  halfWidth: number;
-  directionSign: 1 | -1;
+  /**
+   * Where each car stands. Computed by the caller rather than here, because
+   * the camera rig has to look at the same positions — deriving them twice is
+   * how a camera ends up aimed next to the car it is following.
+   */
+  slots: GridSlot[];
   /** Y offset of the track surface, so the tyres sit on it rather than in it. */
   surfaceRaise: number;
-  count?: number;
+  /**
+   * Livery per grid slot. Comes from the same running order the timing tower
+   * renders, so the car on pole wears the colours of the driver listed P1.
+   */
+  entries?: GridEntry[];
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -56,12 +64,15 @@ function GridFleet({
   url,
   slots,
   surfaceRaise,
+  entries,
 }: {
   url: string;
-  slots: ReturnType<typeof startGridSlots>;
+  slots: GridSlot[];
   surfaceRaise: number;
+  entries?: GridEntry[];
 }) {
   const fleet = useRef<CarFleetHandle | null>(null);
+  const invalidate = useThree((state) => state.invalidate);
 
   useEffect(() => {
     const handle = fleet.current;
@@ -79,9 +90,15 @@ function GridFleet({
       handle.setCar(index, position, headingQuaternion(slot.forward, quaternion));
     });
     handle.commit();
-  }, [slots, surfaceRaise, url]);
+    // Placing cars writes instance matrices directly, which r3f cannot see —
+    // it only redraws on its own commits, and on demand that means a grid
+    // filled after the last frame stays invisible until something else moves.
+    invalidate();
+  }, [slots, surfaceRaise, url, invalidate]);
 
-  return <CarFleet ref={fleet} url={url} count={slots.length} />;
+  return (
+    <CarFleet ref={fleet} url={url} count={slots.length} grid={entries} />
+  );
 }
 
 /**
@@ -92,12 +109,9 @@ function GridFleet({
  * numbers in two places.
  */
 export default function StartGridCars({
-  curve,
-  startFinishS,
-  halfWidth,
-  directionSign,
+  slots,
   surfaceRaise,
-  count,
+  entries,
 }: StartGridCarsProps) {
   const [url, setUrl] = useState<string | null>(null);
 
@@ -117,16 +131,16 @@ export default function StartGridCars({
     };
   }, []);
 
-  const slots = useMemo(
-    () => startGridSlots(curve, startFinishS, halfWidth, directionSign, count),
-    [curve, startFinishS, halfWidth, directionSign, count],
-  );
-
   if (!url || slots.length === 0) return null;
 
   return (
     <Suspense fallback={null}>
-      <GridFleet url={url} slots={slots} surfaceRaise={surfaceRaise} />
+      <GridFleet
+        url={url}
+        slots={slots}
+        surfaceRaise={surfaceRaise}
+        entries={entries}
+      />
     </Suspense>
   );
 }
