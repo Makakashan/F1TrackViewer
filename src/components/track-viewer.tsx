@@ -10,6 +10,7 @@ import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
 import type { QualityMode } from "@/lib/url-state";
+import type { GridEntry } from "@/lib/f1-teams";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 import TrackMesh from "@/components/three/track-mesh";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -17,6 +18,7 @@ import { useStartFinishCalibration } from "@/hooks/use-start-finish-calibration"
 import { canCreateWebGLContext, getSceneBackground } from "@/lib/scene-config";
 import { computeBounds, sceneRadiusFromBounds } from "@/lib/geo-utils";
 import CalibrationPanel from "@/components/three/calibration-panel";
+import SceneDebugHandle from "@/components/three/scene-debug-handle";
 
 export type CameraPreset = "top" | "iso" | "side" | "reset";
 
@@ -36,6 +38,12 @@ export interface TrackViewerProps {
   widthProfile?: TrackWidthProfile | null;
   realWidthEnabled?: boolean;
   qualityMode?: QualityMode;
+  /** Race mode: which grid slot the camera follows. */
+  focusIndex?: number;
+  /** Race mode: lit start light columns, 0–5. */
+  startLightsLit?: number;
+  /** Race mode: livery per grid slot, in the order the timing tower shows. */
+  gridEntries?: GridEntry[];
 }
 
 function SceneSpinner() {
@@ -63,7 +71,11 @@ export default function TrackViewer({
   widthProfile,
   realWidthEnabled = true,
   qualityMode = "auto",
+  focusIndex = 0,
+  startLightsLit = 0,
+  gridEntries,
 }: TrackViewerProps) {
+  const raceMode = viewMode === "realistic";
   const [canvasEventSource, setCanvasEventSource] =
     useState<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
@@ -121,17 +133,38 @@ export default function TrackViewer({
           <Canvas
             eventSource={canvasEventSource}
             shadows={false}
+            // Nothing in this scene animates on its own — no useFrame outside
+            // the globe's own canvas — so a still camera over a still track was
+            // re-rendering the whole circuit every frame for an identical
+            // image. On demand it draws when something actually changes;
+            // OrbitControls invalidates while it is being dragged, and damping
+            // decays through the frames that follow. Auto-rotate is the one
+            // thing that does move by itself, so it keeps the continuous loop.
+            frameloop={autoRotate ? "always" : "demand"}
             dpr={[1, 1.5]}
             camera={{
               fov: 50,
-              near: isMobile ? 8 : 2,
+              // Race mode parks the camera a few meters from a car, so the near
+              // plane has to clear the bodywork rather than the circuit. It is
+              // not pushed lower than this: depth precision falls off with the
+              // near/far ratio, and against a far plane of 20 km every halving
+              // of `near` costs a bit of precision that the painted markings
+              // pay for in z-fighting.
+              near: raceMode ? 1 : isMobile ? 8 : 2,
               far: 20000,
               position: [400, 300, 400],
             }}
             gl={{
               antialias: true,
               alpha: true,
-              logarithmicDepthBuffer: true,
+              // Added to stop z-fighting flicker on phones, where the depth
+              // buffer is often 16-bit. It costs real performance to keep on
+              // everywhere: writing depth per fragment disables the GPU's early
+              // depth rejection, so every triangle of the grid gets shaded even
+              // where it is hidden behind another car. Desktop has a 24-bit
+              // buffer and a near/far range of 2..20000, which it resolves
+              // without help.
+              logarithmicDepthBuffer: isMobile,
               powerPreference: "high-performance",
             }}
             onCreated={({ gl }) => {
@@ -165,6 +198,8 @@ export default function TrackViewer({
               color="#E10600"
             />
 
+            {process.env.NODE_ENV === "development" && <SceneDebugHandle />}
+
             <Suspense fallback={<SceneSpinner />}>
               <TrackMesh
                 geojson={geojson}
@@ -184,19 +219,27 @@ export default function TrackViewer({
                 widthProfile={widthProfile}
                 realWidthEnabled={realWidthEnabled}
                 lowDetail={lowDetail}
+                focusIndex={focusIndex}
+                startLightsLit={startLightsLit}
+                gridEntries={gridEntries}
               />
             </Suspense>
 
+            {/* The overview limits keep the whole circuit in frame and are a
+                fraction of the scene radius — on a 3 km lap that is a floor of
+                250 m, which makes standing next to a car impossible. Race mode
+                gets limits in car lengths instead, and lets the camera drop
+                almost to the horizon for a trackside view. */}
             <OrbitControls
               makeDefault
               enableDamping
               dampingFactor={0.08}
               autoRotate={autoRotate}
               autoRotateSpeed={0.5}
-              minDistance={sceneRadius * 0.4}
-              maxDistance={sceneRadius * 4}
+              minDistance={raceMode ? 6 : sceneRadius * 0.4}
+              maxDistance={raceMode ? sceneRadius * 4 : sceneRadius * 4}
               minPolarAngle={Math.PI / 12}
-              maxPolarAngle={Math.PI / 2.8}
+              maxPolarAngle={raceMode ? Math.PI / 2.12 : Math.PI / 2.8}
             />
           </Canvas>
         ) : null}
