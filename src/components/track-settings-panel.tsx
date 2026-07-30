@@ -2,7 +2,6 @@
 
 import {
   Camera,
-  Flag,
   Gauge,
   Layers,
   Map,
@@ -125,22 +124,12 @@ export default function TrackSettingsPanel({
         <SettingRow
           icon={<Layers className="h-3.5 w-3.5" />}
           label={t.viewModeSectors}
-          muted={!sectorsAvailable || viewMode === "realistic"}
+          muted={!sectorsAvailable}
         >
           <Switch
             checked={viewMode === "sectors"}
-            disabled={!sectorsAvailable || viewMode === "realistic"}
+            disabled={!sectorsAvailable}
             onCheckedChange={(v) => setViewMode(v ? "sectors" : "normal")}
-          />
-        </SettingRow>
-
-        <SettingRow
-          icon={<Flag className="h-3.5 w-3.5" />}
-          label={t.viewModeRealistic}
-        >
-          <Switch
-            checked={viewMode === "realistic"}
-            onCheckedChange={(v) => setViewMode(v ? "realistic" : "normal")}
           />
         </SettingRow>
 
