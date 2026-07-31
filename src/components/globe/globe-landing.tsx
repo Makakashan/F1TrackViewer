@@ -5,6 +5,7 @@ import { Eye, EyeOff, Flag, List, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import GlobeEarth from "./globe-earth";
 import GlobeInfoCard from "./globe-info-card";
+import RaceModeBanner from "./race-mode-banner";
 import type { GlobeCircuit } from "./globe-marker";
 import { useAppPref } from "@/components/app-pref-provider";
 import { countryFlag, countryFromId } from "@/lib/f1-circuits";
@@ -356,6 +357,8 @@ export default function GlobeLanding() {
 					Circuits
 				</button>
 			)}
+
+			{!mobileMenuOpen && <RaceModeBanner circuits={circuits} />}
 
 			<button
 				className="absolute left-4 top-24 z-20 flex h-10 items-center gap-2 rounded-md border border-foreground/10 bg-background/58 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/68 backdrop-blur-xl active:bg-foreground/10 md:hidden"
