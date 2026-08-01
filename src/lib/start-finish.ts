@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { HalfWidth } from "./track-geometry";
+import { halfWidthAt, type HalfWidth } from "./track-geometry";
 
 export type StartFinishSource = "verified" | "calibrated" | "estimated";
 
@@ -388,10 +388,11 @@ export type GantryStyle = "checkered" | "plain";
 export function gantryFrame(
   curve: THREE.CatmullRomCurve3,
   s: number,
-  halfWidth: number,
+  halfWidthInput: HalfWidth,
   topRaise: number,
   style: GantryStyle = "checkered",
 ): GantryFrame {
+  const halfWidth = halfWidthAt(halfWidthInput, wrap01(s));
   const center = curve.getPointAt(wrap01(s));
   const tangent = curve.getTangentAt(wrap01(s)).normalize();
   const up = new THREE.Vector3(0, 1, 0);
@@ -401,17 +402,27 @@ export function gantryFrame(
 
   const postHeight = Math.max(7, halfWidth * 1.05);
   const baseY = center.y + topRaise + 0.12;
+  const postWidth =
+    style === "plain"
+      ? Math.max(0.35, halfWidth * 0.05)
+      : Math.max(0.8, halfWidth * 0.12);
   return {
     center,
     tangent,
     across,
     up,
-    span: halfWidth * 2.08,
-    postHeight,
-    postWidth:
+    // The built gantry stands its posts on the asphalt, outer face flush with
+    // the edge. Straddling the edge instead leaves a post hanging in the air
+    // wherever the ribbon floats over terrain, and the ribbon's own width is
+    // the only ground the scene has. The map symbol keeps spanning wider than
+    // the ribbon it labels — it is read from above, where a gantry inside the
+    // line looks like part of the track.
+    span:
       style === "plain"
-        ? Math.max(0.35, halfWidth * 0.05)
-        : Math.max(0.8, halfWidth * 0.12),
+        ? Math.max(halfWidth, 2 * halfWidth - postWidth)
+        : halfWidth * 2.08,
+    postHeight,
+    postWidth,
     beamHeight:
       style === "plain"
         ? Math.max(1, halfWidth * 0.16)
@@ -428,7 +439,7 @@ export function gantryFrame(
 export function buildStartFinishGantryGeometry(
   curve: THREE.CatmullRomCurve3,
   s: number,
-  halfWidth: number,
+  halfWidth: HalfWidth,
   topRaise: number,
   style: GantryStyle = "checkered",
 ): StartFinishGantryGeometries {
