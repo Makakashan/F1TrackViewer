@@ -9,7 +9,7 @@ import type { SectorDefinition, TrackMarkers } from "./track-markers";
 export type HalfWidth = number | ((s: number) => number);
 export type TrackColorAt = (s: number, target: THREE.Color) => void;
 
-function halfWidthAt(halfWidth: HalfWidth, s: number): number {
+export function halfWidthAt(halfWidth: HalfWidth, s: number): number {
   return typeof halfWidth === "function" ? halfWidth(s) : halfWidth;
 }
 
