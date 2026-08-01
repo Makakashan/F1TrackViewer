@@ -92,6 +92,29 @@ const MAX_BROADCAST_BUILDINGS = 420;
 // of blocked main thread when enabling 3D mode on a dense city circuit. This
 // cap keeps that rebuild well under a frame budget on weaker devices.
 const LOW_DETAIL_MAX_BUILDINGS = 150;
+/**
+ * Margin added to the ribbon's half width when deciding a building sits on the
+ * track.
+ *
+ * OSM maps start/finish structures, pit walls and grandstand roofs as plain
+ * `building` ways, and some are drawn over the racing surface — Silverstone
+ * has a 25 × 3 m, 9 m tall way 4.6 m off the centerline, which extrudes into a
+ * wall standing on the start straight. Nothing in the tags separates those
+ * from an ordinary building, so position is the only filter available.
+ *
+ * Keyed to the rendered half width rather than a fixed distance because that
+ * is exactly the question being asked: does this footprint overlap the ribbon
+ * the scene draws. The margin covers kerbs. Anything further out — a pit
+ * complex 26 m away — is a real building beside a real track and stays.
+ */
+const TRACK_CORRIDOR_MARGIN_M = 1;
+/**
+ * Track vertices can be hundreds of meters apart on a straight, so a building
+ * can sit squarely between two of them. Resampling the centerline at this
+ * spacing before the corridor test means any crossing structure has a sample
+ * inside it.
+ */
+const TRACK_CORRIDOR_SAMPLE_M = 20;
 
 const THEME_COLORS = {
   light: {
@@ -255,6 +278,108 @@ function distanceToSegmentSq2D(
   return dx * dx + dy * dy;
 }
 
+type XY = { x: number; y: number };
+
+/**
+ * A test for "does this footprint sit on the track".
+ *
+ * The centerline is resampled and hashed into a uniform grid once, so each
+ * building only measures against the handful of track samples near it rather
+ * than the whole lap — the naive form is 400 buildings × a few thousand
+ * samples, which is long enough to be felt when 3D mode is switched on.
+ */
+function buildTrackCorridorTest(
+  trackCoordinates: [number, number][],
+  originLon: number,
+  originLat: number,
+  clearance: number,
+): ((footprint: XY[]) => boolean) | null {
+  if (trackCoordinates.length < 2) return null;
+
+  const samples: XY[] = [];
+  let previous = lonLatToShapeXY(
+    trackCoordinates[0][0],
+    trackCoordinates[0][1],
+    originLon,
+    originLat,
+  );
+  samples.push(previous);
+  for (let i = 1; i < trackCoordinates.length; i++) {
+    const next = lonLatToShapeXY(
+      trackCoordinates[i][0],
+      trackCoordinates[i][1],
+      originLon,
+      originLat,
+    );
+    const dx = next.x - previous.x;
+    const dy = next.y - previous.y;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / TRACK_CORRIDOR_SAMPLE_M));
+    for (let step = 1; step <= steps; step++) {
+      samples.push({
+        x: previous.x + (dx * step) / steps,
+        y: previous.y + (dy * step) / steps,
+      });
+    }
+    previous = next;
+  }
+
+  const cellSize = Math.max(clearance, TRACK_CORRIDOR_SAMPLE_M) * 2;
+  const grid = new Map<string, XY[]>();
+  const key = (cx: number, cy: number) => `${cx}:${cy}`;
+  for (const sample of samples) {
+    const cx = Math.floor(sample.x / cellSize);
+    const cy = Math.floor(sample.y / cellSize);
+    const bucket = grid.get(key(cx, cy));
+    if (bucket) bucket.push(sample);
+    else grid.set(key(cx, cy), [sample]);
+  }
+
+  const clearanceSq = clearance * clearance;
+
+  return (footprint: XY[]) => {
+    if (footprint.length < 3) return false;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const point of footprint) {
+      if (point.x < minX) minX = point.x;
+      if (point.y < minY) minY = point.y;
+      if (point.x > maxX) maxX = point.x;
+      if (point.y > maxY) maxY = point.y;
+    }
+
+    const cx0 = Math.floor((minX - clearance) / cellSize);
+    const cx1 = Math.floor((maxX + clearance) / cellSize);
+    const cy0 = Math.floor((minY - clearance) / cellSize);
+    const cy1 = Math.floor((maxY + clearance) / cellSize);
+
+    for (let cx = cx0; cx <= cx1; cx++) {
+      for (let cy = cy0; cy <= cy1; cy++) {
+        const bucket = grid.get(key(cx, cy));
+        if (!bucket) continue;
+        for (const sample of bucket) {
+          if (
+            sample.x < minX - clearance ||
+            sample.x > maxX + clearance ||
+            sample.y < minY - clearance ||
+            sample.y > maxY + clearance
+          ) {
+            continue;
+          }
+          if (isPointInPolygon(sample, footprint)) return true;
+          for (let i = 0, j = footprint.length - 1; i < footprint.length; j = i++) {
+            if (distanceToSegmentSq2D(sample, footprint[j], footprint[i]) < clearanceSq) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+    return false;
+  };
+}
+
 export interface EnvironmentLayerProps {
   bundle: EnvironmentBundle;
   trackCoordinates: [number, number][];
@@ -265,6 +390,8 @@ export interface EnvironmentLayerProps {
   resolvedTheme?: EnvironmentTheme;
   /** Reduces building count for weaker devices. */
   lowDetail?: boolean;
+  /** Half width of the rendered ribbon, in meters — see TRACK_CORRIDOR_MARGIN_M. */
+  trackHalfWidthM?: number;
 }
 
 export default function EnvironmentLayer({
@@ -276,6 +403,7 @@ export default function EnvironmentLayer({
   showTerrain = true,
   resolvedTheme = "dark",
   lowDetail = false,
+  trackHalfWidthM = 7,
 }: EnvironmentLayerProps) {
   const { manifest } = bundle;
   const hasTerrain = showTerrain && bundle.terrain.gridSize > 0;
@@ -344,6 +472,8 @@ export default function EnvironmentLayer({
         bbox={broadcastBBox}
         resolvedTheme={resolvedTheme}
         maxBuildings={lowDetail ? LOW_DETAIL_MAX_BUILDINGS : MAX_BROADCAST_BUILDINGS}
+        trackCoordinates={trackCoordinates}
+        trackHalfWidthM={trackHalfWidthM}
       />
     </group>
   );
@@ -793,6 +923,8 @@ function BuildingExtrusions({
   bbox,
   resolvedTheme,
   maxBuildings = MAX_BROADCAST_BUILDINGS,
+  trackCoordinates,
+  trackHalfWidthM,
 }: {
   buildings: BuildingFeature[];
   originLon: number;
@@ -804,6 +936,8 @@ function BuildingExtrusions({
   bbox?: { minLon: number; minLat: number; maxLon: number; maxLat: number } | null;
   resolvedTheme: EnvironmentTheme;
   maxBuildings?: number;
+  trackCoordinates: [number, number][];
+  trackHalfWidthM: number;
 }) {
   const capped = useMemo(() => {
     let filtered = buildings;
@@ -816,8 +950,34 @@ function BuildingExtrusions({
         return true;
       });
     }
+
+    const onTrack = buildTrackCorridorTest(
+      trackCoordinates,
+      originLon,
+      originLat,
+      trackHalfWidthM + TRACK_CORRIDOR_MARGIN_M,
+    );
+    if (onTrack) {
+      filtered = filtered.filter(
+        (b) =>
+          !onTrack(
+            b.footprint.map(([lon, lat]) =>
+              lonLatToShapeXY(lon, lat, originLon, originLat),
+            ),
+          ),
+      );
+    }
+
     return filtered.slice(0, maxBuildings);
-  }, [buildings, bbox, maxBuildings]);
+  }, [
+    buildings,
+    bbox,
+    maxBuildings,
+    trackCoordinates,
+    originLon,
+    originLat,
+    trackHalfWidthM,
+  ]);
 
   const geometry = useMemo(() => {
     const geos: THREE.BufferGeometry[] = [];
