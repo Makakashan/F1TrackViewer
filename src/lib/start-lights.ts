@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { gantryFrame } from "./start-finish";
+import type { HalfWidth } from "./track-geometry";
 
 /**
  * The FIA start lights, hung under the start/finish gantry.
@@ -45,7 +46,7 @@ export const START_LIGHT_ROWS = ROWS;
 export function buildStartLightsGeometry(
   curve: THREE.CatmullRomCurve3,
   s: number,
-  halfWidth: number,
+  halfWidth: HalfWidth,
   topRaise: number,
   directionSign: 1 | -1 = 1,
 ): StartLights {
