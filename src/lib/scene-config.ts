@@ -15,6 +15,17 @@ export const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.18;
 export const TRACK_PAINT_RAISE = TRACK_SURFACE_RAISE + 0.02;
 export const TRACK_RENDER_ORDER = 100;
 export const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
+/**
+ * Solid things standing on the track: cars, gantry, start lights.
+ *
+ * They draw after the paint on purpose. Painted markings cheat the depth test
+ * with a large negative polygon offset so they never fight the asphalt, and
+ * that offset is measured in units of the depth buffer's resolution — from a
+ * camera far enough away, ten of those units are taller than a car, so paint
+ * drawn last bleeds straight through the bodywork. Drawing solids afterwards
+ * settles it with their own depth writes, at any distance.
+ */
+export const TRACK_PROP_RENDER_ORDER = TRACK_OVERLAY_RENDER_ORDER + 1;
 export const TERRAIN_TRACK_OFFSET = 4.5;
 export const TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M = 25;
 export const TERRAIN_TRACK_WALL_DEPTH = TERRAIN_TRACK_OFFSET + TRACK_SURFACE_RAISE;
