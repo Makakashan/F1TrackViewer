@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { sampleCurvature } from "./track-curvature";
 import type { HalfWidth } from "./track-geometry";
 
 /**
@@ -195,30 +196,9 @@ export function buildKerbGeometry(
   const ds = totalLength / n;
   if (!(ds > 0)) return null;
 
-  const tangents: THREE.Vector3[] = [];
-  for (let i = 0; i < n; i++) tangents.push(curve.getTangentAt(i / n));
-
-  // Signed curvature in the XZ plane. Positive and negative distinguish left
-  // from right turns; the sign picks which edge the kerb belongs to.
-  const rawCurvature = new Array<number>(n);
-  for (let i = 0; i < n; i++) {
-    const a = tangents[(i - 1 + n) % n];
-    const b = tangents[(i + 1) % n];
-    const cross = a.x * b.z - a.z * b.x;
-    const dot = a.x * b.x + a.z * b.z;
-    rawCurvature[i] = Math.atan2(cross, dot) / (2 * ds);
-  }
-
-  // A single noisy sample must not spawn a two-meter kerb fragment.
-  const smoothRadius = Math.max(1, Math.round(6 / ds));
-  const curvature = new Array<number>(n);
-  for (let i = 0; i < n; i++) {
-    let sum = 0;
-    for (let o = -smoothRadius; o <= smoothRadius; o++) {
-      sum += rawCurvature[(i + o + n) % n];
-    }
-    curvature[i] = sum / (2 * smoothRadius + 1);
-  }
+  const profile = sampleCurvature(curve, n);
+  if (!profile) return null;
+  const { tangents, curvature } = profile;
 
   // side = tangent × up, so a turn toward -side reads as a negative cross
   // product and the inner edge lies at sign(curvature) * halfWidth.
