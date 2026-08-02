@@ -31,6 +31,17 @@ function halfWidthAt(halfWidth: HalfWidth, s: number): number {
   return typeof halfWidth === "function" ? halfWidth(s) : halfWidth;
 }
 
+/**
+ * How far behind the start line a grid box sits, in meters.
+ *
+ * The simulation measures every car's progress from the line, not from where
+ * it happens to be parked — otherwise pole and P20 both read as "zero meters
+ * covered" and the field sorts into the wrong order on the first step.
+ */
+export function gridSetbackMeters(place: number): number {
+  return FIRST_SLOT_SETBACK_M + (place - 1) * SLOT_PITCH_M;
+}
+
 export interface GridSlot {
   /** Center of the painted box, on the track surface. */
   position: THREE.Vector3;
@@ -42,6 +53,8 @@ export interface GridSlot {
   s: number;
   /** Which side of the centerline the box sits on, along `across`. */
   side: 1 | -1;
+  /** Signed distance from the centerline along `across`, in meters. */
+  lateralOffset: number;
   /** 1 for pole, 2 for second, and so on. */
   place: number;
 }
@@ -88,14 +101,14 @@ export function startGridSlots(
 
     const sideSign: 1 | -1 = slot % 2 === 0 ? 1 : -1;
     const localHalfWidth = halfWidthAt(halfWidth, s);
+    const lateralOffset = sideSign * localHalfWidth * LATERAL_FRACTION;
     result.push({
-      position: center
-        .clone()
-        .addScaledVector(across, sideSign * localHalfWidth * LATERAL_FRACTION),
+      position: center.clone().addScaledVector(across, lateralOffset),
       forward,
       across,
       s,
       side: sideSign,
+      lateralOffset,
       place: slot + 1,
     });
   }
