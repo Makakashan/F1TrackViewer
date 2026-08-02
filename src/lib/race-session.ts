@@ -29,7 +29,7 @@ export function raceLapCount(circuitId: string, lapLengthMeters: number): number
 }
 
 /** xmur3 — string to a 32-bit seed. */
-function seedFrom(text: string): number {
+export function seedFrom(text: string): number {
   let h = 1779033703 ^ text.length;
   for (let i = 0; i < text.length; i++) {
     h = Math.imul(h ^ text.charCodeAt(i), 3432918353);
@@ -39,7 +39,7 @@ function seedFrom(text: string): number {
 }
 
 /** mulberry32 — small, fast, and identical across runs for a given seed. */
-function randomFrom(seed: number): () => number {
+export function randomFrom(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
     state = (state + 0x6d2b79f5) >>> 0;
@@ -71,4 +71,9 @@ export function raceGridOrder(
 }
 
 /** How a race progresses. The simulation will drive this; the HUD reads it. */
-export type RacePhase = "standby" | "formation" | "lights" | "racing";
+export type RacePhase =
+  | "standby"
+  | "formation"
+  | "lights"
+  | "racing"
+  | "finished";
