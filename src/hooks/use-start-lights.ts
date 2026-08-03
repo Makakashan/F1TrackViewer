@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { START_LIGHT_COLUMNS } from "@/lib/start-lights";
 import type { RacePhase } from "@/lib/race-session";
 
@@ -6,8 +6,6 @@ const COLUMN_INTERVAL_MS = 1000;
 /** The hold before the lights go out is deliberately unpredictable, as in a real start. */
 const HOLD_MIN_MS = 1200;
 const HOLD_MAX_MS = 3000;
-/** How long "lights out" stands before the sequence resets, until cars actually move. */
-const LIGHTS_OUT_HOLD_MS = 2500;
 
 export interface StartLightSequence {
   /** Columns currently lit, 0–5. */
@@ -22,9 +20,8 @@ export interface StartLightSequence {
  * The start sequence: five columns come up a second apart, hold, then all go
  * out at once.
  *
- * It exists ahead of the simulation because it is the one part of a start that
- * needs no cars — and when the cars do move, this is already the signal they
- * will wait on.
+ * It stops at "racing" and stays there: the sequence's job ends the moment the
+ * lights go out, and what happens next belongs to whoever is driving the cars.
  */
 export function useStartLightSequence(): StartLightSequence {
   const [lit, setLit] = useState(0);
@@ -63,15 +60,14 @@ export function useStartLightSequence(): StartLightSequence {
         setPhase("racing");
       }, lightsOutAt),
     );
-    timers.current.push(
-      window.setTimeout(
-        () => setPhase("standby"),
-        lightsOutAt + LIGHTS_OUT_HOLD_MS,
-      ),
-    );
   }, [clearTimers]);
 
   useEffect(() => clearTimers, [clearTimers]);
 
-  return { lit, phase, running: phase === "lights", run, reset };
+  // Memoized: callers put these callbacks in effect dependency lists, and a
+  // fresh object every render turns such an effect into a render loop.
+  return useMemo(
+    () => ({ lit, phase, running: phase === "lights", run, reset }),
+    [lit, phase, run, reset],
+  );
 }
