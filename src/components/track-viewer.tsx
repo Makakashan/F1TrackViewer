@@ -11,6 +11,7 @@ import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
 import type { QualityMode } from "@/lib/url-state";
 import type { GridEntry } from "@/lib/f1-teams";
+import type { RaceController } from "@/hooks/use-race-simulation";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 import TrackMesh from "@/components/three/track-mesh";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -44,6 +45,13 @@ export interface TrackViewerProps {
   startLightsLit?: number;
   /** Race mode: livery per grid slot, in the order the timing tower shows. */
   gridEntries?: GridEntry[];
+  /** Race view only: the running simulation. */
+  raceSim?: RaceController | null;
+  /** Race view only: seed shared with the grid order. */
+  raceSeed?: string;
+  raceLaps?: number;
+  cameraFollow?: boolean;
+  onCameraDetach?: () => void;
 }
 
 function SceneSpinner() {
@@ -74,6 +82,11 @@ export default function TrackViewer({
   focusIndex = 0,
   startLightsLit = 0,
   gridEntries,
+  raceSim,
+  raceSeed,
+  raceLaps,
+  cameraFollow,
+  onCameraDetach,
 }: TrackViewerProps) {
   const raceMode = viewMode === "realistic";
   const [canvasEventSource, setCanvasEventSource] =
@@ -140,7 +153,9 @@ export default function TrackViewer({
             // OrbitControls invalidates while it is being dragged, and damping
             // decays through the frames that follow. Auto-rotate is the one
             // thing that does move by itself, so it keeps the continuous loop.
-            frameloop={autoRotate ? "always" : "demand"}
+            // A running race is the one thing in the app that changes without
+            // React being told, so it is the one thing that needs every frame.
+            frameloop={autoRotate || raceSim?.racing ? "always" : "demand"}
             dpr={[1, 1.5]}
             camera={{
               fov: 50,
@@ -222,6 +237,11 @@ export default function TrackViewer({
                 focusIndex={focusIndex}
                 startLightsLit={startLightsLit}
                 gridEntries={gridEntries}
+                raceSim={raceSim}
+                raceSeed={raceSeed}
+                raceLaps={raceLaps}
+                cameraFollow={cameraFollow}
+                onCameraDetach={onCameraDetach}
               />
             </Suspense>
 
