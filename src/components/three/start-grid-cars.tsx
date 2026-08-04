@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import CarFleet, { type CarFleetHandle } from "@/components/three/car-fleet";
 import {
@@ -9,8 +9,22 @@ import {
   fetchCarLibrary,
   type CarModelEntry,
 } from "@/lib/car-library";
+import { TRACK_PROP_RENDER_ORDER } from "@/lib/scene-config";
 import type { GridSlot } from "@/lib/start-grid";
 import type { GridEntry } from "@/lib/f1-teams";
+import { interpolateCarPose } from "@/lib/race-sim";
+import type { RaceController } from "@/hooks/use-race-simulation";
+
+/**
+ * Places a car on the track: how far round it is, how far off the centerline.
+ * Supplied by the caller because the curve lives there.
+ */
+export type PoseAt = (
+  s: number,
+  lateral: number,
+  position: THREE.Vector3,
+  quaternion: THREE.Quaternion,
+) => void;
 
 export interface StartGridCarsProps {
   /**
@@ -26,6 +40,9 @@ export interface StartGridCarsProps {
    * renders, so the car on pole wears the colours of the driver listed P1.
    */
   entries?: GridEntry[];
+  /** The running race, if there is one. Without it the cars just stand. */
+  raceSim?: RaceController | null;
+  poseAt?: PoseAt;
 }
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -65,18 +82,32 @@ function GridFleet({
   slots,
   surfaceRaise,
   entries,
+  raceSim,
+  poseAt,
 }: {
   url: string;
   slots: GridSlot[];
   surfaceRaise: number;
   entries?: GridEntry[];
+  raceSim?: RaceController | null;
+  poseAt?: PoseAt;
 }) {
   const fleet = useRef<CarFleetHandle | null>(null);
   const invalidate = useThree((state) => state.invalidate);
+  const scratch = useRef({
+    position: new THREE.Vector3(),
+    quaternion: new THREE.Quaternion(),
+  });
 
+  const phase = raceSim?.phase;
+
+  // Standing on the grid is a state the cars return to, not just the one they
+  // start in: a reset has to put them back, and nothing else in the scene
+  // changes when it happens.
   useEffect(() => {
     const handle = fleet.current;
     if (!handle) return;
+    if (phase && phase !== "standby") return;
 
     const position = new THREE.Vector3();
     const quaternion = new THREE.Quaternion();
@@ -94,10 +125,40 @@ function GridFleet({
     // it only redraws on its own commits, and on demand that means a grid
     // filled after the last frame stays invisible until something else moves.
     invalidate();
-  }, [slots, surfaceRaise, url, invalidate]);
+  }, [slots, surfaceRaise, url, invalidate, phase]);
+
+  // The race runs from here because this is where the frame clock is. The
+  // simulation itself is stepped at a fixed rate inside `step` — this only
+  // hands it however much real time has passed.
+  useFrame((_, delta) => {
+    if (!raceSim || !poseAt) return;
+    raceSim.step(delta);
+
+    const handle = fleet.current;
+    const state = raceSim.stateRef.current;
+    if (!handle || !state) return;
+    if (raceSim.phase === "standby" || raceSim.phase === "lights") return;
+
+    const alpha = raceSim.alphaRef.current;
+    const { position, quaternion } = scratch.current;
+    for (const car of state.cars) {
+      if (car.index >= handle.count) continue;
+      const pose = interpolateCarPose(car, alpha);
+      poseAt(pose.s, pose.lateral, position, quaternion);
+      position.y += surfaceRaise;
+      handle.setCar(car.index, position, quaternion);
+    }
+    handle.commit();
+  });
 
   return (
-    <CarFleet ref={fleet} url={url} count={slots.length} grid={entries} />
+    <CarFleet
+      ref={fleet}
+      url={url}
+      count={slots.length}
+      grid={entries}
+      renderOrder={TRACK_PROP_RENDER_ORDER}
+    />
   );
 }
 
@@ -112,6 +173,8 @@ export default function StartGridCars({
   slots,
   surfaceRaise,
   entries,
+  raceSim,
+  poseAt,
 }: StartGridCarsProps) {
   const [url, setUrl] = useState<string | null>(null);
 
@@ -140,6 +203,8 @@ export default function StartGridCars({
         slots={slots}
         surfaceRaise={surfaceRaise}
         entries={entries}
+        raceSim={raceSim}
+        poseAt={poseAt}
       />
     </Suspense>
   );
