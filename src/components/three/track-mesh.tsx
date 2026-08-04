@@ -39,6 +39,10 @@ import {
   type StartFinishPlacement,
 } from "@/lib/start-finish";
 import { buildStartLightsGeometry } from "@/lib/start-lights";
+import { buildSpeedProfile } from "@/lib/speed-profile";
+import { buildRacingLine } from "@/lib/racing-line";
+import { halfWidthAt } from "@/lib/track-geometry";
+import type { RaceController } from "@/hooks/use-race-simulation";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import {
   MARKER_COLORS,
@@ -56,6 +60,7 @@ import {
   TRACK_OVERLAY_RAISE,
   TRACK_RENDER_ORDER,
   TRACK_OVERLAY_RENDER_ORDER,
+  TRACK_PROP_RENDER_ORDER,
   TERRAIN_TRACK_OFFSET,
   TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M,
   TERRAIN_TRACK_MAX_SEGMENT_M,
@@ -72,6 +77,8 @@ const ASPHALT_COLOR = "#3a3a3d";
 const LAMP_OFF_COLOR = "#4a1c20";
 /** Lit: brighter than any red in the scene, so it reads as a light source. */
 const LAMP_ON_COLOR = "#ff2318";
+
+const UP = new THREE.Vector3(0, 1, 0);
 
 export interface TrackMeshProps {
   geojson: CircuitGeoJSON;
@@ -98,6 +105,19 @@ export interface TrackMeshProps {
   startLightsLit?: number;
   /** Race view only: livery per grid slot, in running order. */
   gridEntries?: GridEntry[];
+  /** Race view only: the running simulation, if there is one. */
+  raceSim?: RaceController | null;
+  /**
+   * Seeds the race. Shares the grid order's nonce, so re-rolling the grid
+   * re-rolls the pace and reaction times with it — one shuffle, one new race.
+   */
+  raceSeed?: string;
+  /** Race view only: race distance in laps. */
+  raceLaps?: number;
+  /** Race view only: chase camera on, or free camera. */
+  cameraFollow?: boolean;
+  /** Race view only: the user took the camera. */
+  onCameraDetach?: () => void;
 }
 
 export default function TrackMesh({
@@ -121,6 +141,11 @@ export default function TrackMesh({
   focusIndex = 0,
   startLightsLit = 0,
   gridEntries,
+  raceSim,
+  raceSeed,
+  raceLaps = 1,
+  cameraFollow,
+  onCameraDetach,
 }: TrackMeshProps) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -364,13 +389,81 @@ export default function TrackMesh({
     [raceView, curve, startFinishPlacement.s, halfWidth, markers?.directionSign],
   );
 
+  // `raceEnabled` rather than the simulation object itself: the setup must not
+  // be rebuilt every time the race reports a new position, or attaching it
+  // would feed a loop of attach, re-render, attach.
+  const raceEnabled = !!raceSim;
+
+  // Hand the simulation the track it runs on. Built here because this is
+  // where the curve already exists — rebuilding it beside the HUD would mean
+  // two curves that can disagree about where the circuit is.
+  const raceSetup = useMemo(() => {
+    if (!raceView || !raceEnabled || gridSlots.length === 0) return null;
+    const speedProfile = buildSpeedProfile(curve, samples);
+    const racingLine = buildRacingLine(curve, samples, halfWidth);
+    if (!speedProfile || !racingLine) return null;
+    return {
+      slots: gridSlots,
+      speedProfile,
+      racingLine,
+      halfWidthAtS: (s: number) => halfWidthAt(halfWidth, s),
+      lapLengthMeters: curve.getLength(),
+      seed: raceSeed ?? String(feature.properties.id ?? "circuit"),
+      laps: Math.max(1, raceLaps),
+    };
+  }, [
+    raceLaps,
+    raceView,
+    raceEnabled,
+    gridSlots,
+    curve,
+    samples,
+    halfWidth,
+    feature,
+    raceSeed,
+  ]);
+
+  const attachRace = raceSim?.attach;
+  useEffect(() => {
+    attachRace?.(raceSetup);
+  }, [attachRace, raceSetup]);
+
+  /**
+   * Where a car sits and which way it points, given how far round it is and
+   * how far off the centerline.
+   *
+   * The scene asks this twenty times a frame, so it writes into vectors the
+   * caller owns rather than returning new ones.
+   */
+  const poseAt = useCallback(
+    (
+      s: number,
+      lateral: number,
+      position: THREE.Vector3,
+      quaternion: THREE.Quaternion,
+    ) => {
+      const wrapped = ((s % 1) + 1) % 1;
+      const point = curve.getPointAt(wrapped);
+      const tangent = curve
+        .getTangentAt(wrapped)
+        .normalize()
+        .multiplyScalar(markers?.directionSign ?? 1);
+      const across = new THREE.Vector3()
+        .crossVectors(tangent, UP)
+        .normalize();
+      position.copy(point).addScaledVector(across, lateral);
+      quaternion.setFromAxisAngle(UP, Math.atan2(tangent.x, tangent.z));
+    },
+    [curve, markers?.directionSign],
+  );
+
   const startLights = useMemo(
     () =>
       raceView
         ? buildStartLightsGeometry(
             curve,
             startFinishPlacement.s,
-            markerHalfWidth,
+            halfWidth,
             TRACK_OVERLAY_RAISE,
             markers?.directionSign ?? 1,
           )
@@ -379,7 +472,7 @@ export default function TrackMesh({
       raceView,
       curve,
       startFinishPlacement.s,
-      markerHalfWidth,
+      halfWidth,
       markers?.directionSign,
     ],
   );
@@ -389,11 +482,14 @@ export default function TrackMesh({
       buildStartFinishGantryGeometry(
         curve,
         startFinishPlacement.s,
-        markerHalfWidth,
+        // Race view builds the real structure, so it takes the width the
+        // asphalt actually has under it — the lap mean puts the posts off the
+        // edge wherever the start straight is narrower than average.
+        raceView ? halfWidth : markerHalfWidth,
         TRACK_OVERLAY_RAISE,
         raceView ? "plain" : "checkered",
       ),
-    [curve, startFinishPlacement.s, markerHalfWidth, raceView],
+    [curve, startFinishPlacement.s, halfWidth, markerHalfWidth, raceView],
   );
 
   const showSectors = viewMode === "sectors" && markers?.sectors?.length;
@@ -568,6 +664,7 @@ export default function TrackMesh({
           showTerrain={environmentTerrain}
           resolvedTheme={resolvedTheme}
           lowDetail={lowDetail}
+          trackHalfWidthM={markerHalfWidth}
         />
       )}
 
@@ -725,14 +822,23 @@ export default function TrackMesh({
             slots={gridSlots}
             surfaceRaise={TRACK_SURFACE_RAISE}
             entries={gridEntries}
+            raceSim={raceSim ?? null}
+            poseAt={poseAt}
           />
-          <RaceCameraRig slots={gridSlots} focusIndex={focusIndex} />
+          <RaceCameraRig
+            slots={gridSlots}
+            focusIndex={focusIndex}
+            raceSim={raceSim ?? null}
+            poseAt={poseAt}
+            follow={cameraFollow}
+            onDetach={onCameraDetach}
+          />
         </>
       )}
 
       {startLights && (
         <>
-          <mesh geometry={startLights.panel}>
+          <mesh geometry={startLights.panel} renderOrder={TRACK_PROP_RENDER_ORDER}>
             <meshStandardMaterial
               color="#0a0a0c"
               roughness={0.55}
@@ -744,7 +850,11 @@ export default function TrackMesh({
             // the first `lit * rows` lamps.
             const on = index < startLightsLit * START_LIGHT_ROWS;
             return (
-              <mesh key={`start-lamp-${index}`} geometry={lamp}>
+              <mesh
+                key={`start-lamp-${index}`}
+                geometry={lamp}
+                renderOrder={TRACK_PROP_RENDER_ORDER}
+              >
                 <meshBasicMaterial
                   color={on ? LAMP_ON_COLOR : LAMP_OFF_COLOR}
                   side={THREE.DoubleSide}
@@ -756,7 +866,10 @@ export default function TrackMesh({
         </>
       )}
 
-      <mesh geometry={startFinishGantryGeometry.posts}>
+      <mesh
+        geometry={startFinishGantryGeometry.posts}
+        renderOrder={TRACK_PROP_RENDER_ORDER}
+      >
         <meshStandardMaterial
           color="#050507"
           emissive="#000000"
@@ -765,7 +878,10 @@ export default function TrackMesh({
           metalness={0.2}
         />
       </mesh>
-      <mesh geometry={startFinishGantryGeometry.beam}>
+      <mesh
+        geometry={startFinishGantryGeometry.beam}
+        renderOrder={TRACK_PROP_RENDER_ORDER}
+      >
         <meshStandardMaterial
           vertexColors
           roughness={0.42}
