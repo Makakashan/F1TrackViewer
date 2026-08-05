@@ -10,7 +10,7 @@ import { useAppPref } from "@/components/app-pref-provider";
 import { useCircuits } from "@/hooks/use-circuits";
 import { useTrackData } from "@/hooks/use-track-data";
 import { useCircuitScene } from "@/hooks/use-circuit-scene";
-import { useStartLightSequence } from "@/hooks/use-start-lights";
+import { useRaceSimulation } from "@/hooks/use-race-simulation";
 import { raceGridOrder, raceLapCount } from "@/lib/race-session";
 import { useUrlState } from "@/lib/url-state";
 import RaceBetaNotice from "@/components/race/race-beta-notice";
@@ -18,6 +18,7 @@ import RaceCircuitPicker from "@/components/race/race-circuit-picker";
 import RaceControls from "@/components/race/race-controls";
 import RaceSceneSettings from "@/components/race/race-scene-settings";
 import RaceStatusBar from "@/components/race/race-status-bar";
+import RaceResults from "@/components/race/race-results";
 import TimingTower from "@/components/race/timing-tower";
 import MobileTimingTower from "@/components/race/mobile-timing-tower";
 
@@ -72,7 +73,16 @@ export default function RaceApp() {
 
   const [gridNonce, setGridNonce] = useState(0);
   const [selectedDriver, setSelectedDriver] = useState(0);
-  const lights = useStartLightSequence();
+  // Chase camera vs free flight. Owned here because the toggle button, the
+  // rig, and "picking a driver re-attaches" all have to agree on it.
+  const [cameraFollow, setCameraFollow] = useState(true);
+  const [showResults, setShowResults] = useState(false);
+  const detachCamera = useCallback(() => setCameraFollow(false), []);
+  const selectDriver = useCallback((index: number) => {
+    setSelectedDriver(index);
+    setCameraFollow(true);
+  }, []);
+  const race = useRaceSimulation(qualityMode === "performance");
 
   const order = useMemo(
     () => (selectedId ? raceGridOrder(selectedId, gridNonce) : []),
@@ -93,6 +103,11 @@ export default function RaceApp() {
 
   const lapLength = geojson?.features[0]?.properties.length ?? 0;
   const totalLaps = selectedId ? raceLapCount(selectedId, lapLength) : 0;
+  // The lap counter reads as the leader's, which is how a broadcast shows it.
+  const leaderLap = Math.min(
+    Math.max(1, (race.standings[0]?.laps ?? 0) + (race.complete ? 0 : 1)),
+    Math.max(totalLaps, 1),
+  );
 
   // ─── URL state, same contract as the viewer shell ────────────────
   const didHydrate = useRef(false);
@@ -146,9 +161,24 @@ export default function RaceApp() {
   ]);
 
   const exitRace = useCallback(() => {
-    lights.reset();
+    race.reset();
     setRaceMode(false);
-  }, [lights, setRaceMode]);
+  }, [race, setRaceMode]);
+
+  // Everything that changes what is being raced puts the cars back on the
+  // grid: a new circuit or a new order means the race in progress is about a
+  // scene that no longer exists.
+  const resetRace = race.reset;
+  useEffect(() => {
+    resetRace();
+  }, [resetRace, selectedId, gridNonce]);
+
+  // The classification appears when the flag falls and leaves when the race
+  // state does. Closing it early is allowed; it comes back with the next race.
+  const complete = race.complete;
+  useEffect(() => {
+    setShowResults(complete);
+  }, [complete]);
 
   // Escape leaves the mode — the reflex out of anything that fills the screen.
   // The arrows walk the order, which is how you compare two cars without
@@ -167,6 +197,7 @@ export default function RaceApp() {
       setSelectedDriver((current) =>
         order.length ? (current + step + order.length) % order.length : 0,
       );
+      setCameraFollow(true);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -253,8 +284,13 @@ export default function RaceApp() {
             realWidthEnabled={realWidthEnabled}
             qualityMode={qualityMode}
             focusIndex={selectedDriver}
-            startLightsLit={lights.lit}
+            startLightsLit={race.lit}
             gridEntries={gridEntries}
+            raceSim={race.controller}
+            raceLaps={totalLaps || 1}
+            raceSeed={`${selectedId ?? "circuit"}:${gridNonce}`}
+            cameraFollow={cameraFollow}
+            onCameraDetach={detachCamera}
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center text-muted-foreground">
@@ -267,32 +303,61 @@ export default function RaceApp() {
           <TimingTower
             className="absolute left-4 top-4 hidden md:block"
             order={order}
+            standings={race.standings}
             selectedIndex={selectedDriver}
-            onSelect={setSelectedDriver}
+            onSelect={selectDriver}
             onShuffle={() => setGridNonce((nonce) => nonce + 1)}
+            fastestLapIndex={race.fastestLap?.index ?? null}
           />
 
           <RaceStatusBar
             className="absolute left-1/2 top-4 -translate-x-1/2"
-            lap={1}
+            lap={leaderLap}
             totalLaps={totalLaps}
-            lit={lights.lit}
-            phase={lights.phase}
+            lit={race.lit}
+            phase={race.phase}
+            fastestLap={
+              race.fastestLap
+                ? {
+                    code: order[race.fastestLap.index]?.code ?? "",
+                    time: race.fastestLap.time,
+                  }
+                : null
+            }
           />
 
           <MobileTimingTower
             className="absolute bottom-6 left-4 md:hidden"
             order={order}
+            standings={race.standings}
             selectedIndex={selectedDriver}
-            onSelect={setSelectedDriver}
+            onSelect={selectDriver}
             onShuffle={() => setGridNonce((nonce) => nonce + 1)}
           />
 
+          {showResults && (
+            <RaceResults
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+              order={order}
+              standings={race.standings}
+              fastestLap={race.fastestLap}
+              onClose={() => setShowResults(false)}
+            />
+          )}
+
           <RaceControls
             className="absolute bottom-6 left-1/2 -translate-x-1/2"
-            running={lights.running}
-            onRun={lights.run}
-            onReset={lights.reset}
+            started={race.phase !== "standby"}
+            paused={race.paused}
+            speed={race.speed}
+            onStart={race.start}
+            onTogglePause={race.togglePause}
+            onReset={race.reset}
+            onSpeed={race.setSpeed}
+            canFinish={race.racing}
+            onFinish={race.finish}
+            cameraFollow={cameraFollow}
+            onToggleCamera={() => setCameraFollow((value) => !value)}
           />
         </div>
 
