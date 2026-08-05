@@ -13,9 +13,11 @@ import { cn } from "@/lib/utils";
 import { useAppPref } from "@/components/app-pref-provider";
 import TimingTower from "@/components/race/timing-tower";
 import type { DriverWithTeam } from "@/lib/f1-drivers";
+import type { RaceStanding } from "@/lib/race-sim";
 
 export interface MobileTimingTowerProps {
   order: DriverWithTeam[];
+  standings?: RaceStanding[];
   selectedIndex: number;
   onSelect: (index: number) => void;
   onShuffle: () => void;
@@ -31,6 +33,7 @@ export interface MobileTimingTowerProps {
  */
 export default function MobileTimingTower({
   order,
+  standings,
   selectedIndex,
   onSelect,
   onShuffle,
@@ -38,7 +41,8 @@ export default function MobileTimingTower({
 }: MobileTimingTowerProps) {
   const { t } = useAppPref();
   const [open, setOpen] = useState(false);
-  const leader = order[0];
+  // On track the chip shows who is actually leading, not who started there.
+  const leader = standings?.length ? order[standings[0].index] : order[0];
   if (!leader) return null;
 
   return (
@@ -78,8 +82,9 @@ export default function MobileTimingTower({
         </DrawerHeader>
         <div className="px-3 pb-6">
           <TimingTower
-            className="w-full border-0 bg-transparent shadow-none backdrop-blur-none"
+            className="w-full shadow-none"
             order={order}
+            standings={standings}
             selectedIndex={selectedIndex}
             onSelect={(index) => {
               onSelect(index);
