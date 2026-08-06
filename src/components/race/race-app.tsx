@@ -20,7 +20,6 @@ import RaceSceneSettings from "@/components/race/race-scene-settings";
 import RaceStatusBar from "@/components/race/race-status-bar";
 import RaceResults from "@/components/race/race-results";
 import TimingTower from "@/components/race/timing-tower";
-import MobileTimingTower from "@/components/race/mobile-timing-tower";
 
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
   ssr: false,
@@ -225,7 +224,7 @@ export default function RaceApp() {
               {t.appName}
             </div>
           </div>
-          <span className="rounded bg-[#e10600]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#e10600]">
+          <span className="hidden rounded bg-[#e10600]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#e10600] sm:inline">
             {t.raceBeta}
           </span>
           <RaceCircuitPicker
@@ -310,8 +309,21 @@ export default function RaceApp() {
             fastestLapIndex={race.fastestLap?.index ?? null}
           />
 
+          {/* The same tower, phone-sized: always on screen, because gaps that
+              hide behind a tap might as well not exist. */}
+          <TimingTower
+            compact
+            className="absolute left-2 top-2 md:hidden"
+            order={order}
+            standings={race.standings}
+            selectedIndex={selectedDriver}
+            onSelect={selectDriver}
+            onShuffle={() => setGridNonce((nonce) => nonce + 1)}
+            fastestLapIndex={race.fastestLap?.index ?? null}
+          />
+
           <RaceStatusBar
-            className="absolute left-1/2 top-4 -translate-x-1/2"
+            className="absolute right-2 top-2 sm:left-1/2 sm:right-auto sm:top-4 sm:-translate-x-1/2"
             lap={leaderLap}
             totalLaps={totalLaps}
             lit={race.lit}
@@ -326,15 +338,6 @@ export default function RaceApp() {
             }
           />
 
-          <MobileTimingTower
-            className="absolute bottom-6 left-4 md:hidden"
-            order={order}
-            standings={race.standings}
-            selectedIndex={selectedDriver}
-            onSelect={selectDriver}
-            onShuffle={() => setGridNonce((nonce) => nonce + 1)}
-          />
-
           {showResults && (
             <RaceResults
               className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
@@ -346,7 +349,7 @@ export default function RaceApp() {
           )}
 
           <RaceControls
-            className="absolute bottom-6 left-1/2 -translate-x-1/2"
+            className="absolute bottom-4 left-1/2 w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 sm:bottom-6"
             started={race.phase !== "standby"}
             paused={race.paused}
             speed={race.speed}
