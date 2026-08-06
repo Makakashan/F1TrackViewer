@@ -54,7 +54,7 @@ export default function RaceControls({
         className,
       )}
     >
-      <div className="flex items-center gap-2 rounded-lg border border-border bg-background/80 p-1.5 shadow-xl backdrop-blur-md">
+      <div className="flex flex-wrap items-center justify-center gap-1.5 rounded-lg border border-border bg-background/80 p-1.5 shadow-xl backdrop-blur-md sm:gap-2">
         {started ? (
           <Button size="sm" className="gap-2" onClick={onTogglePause}>
             {paused ? (
@@ -135,7 +135,9 @@ export default function RaceControls({
           <RotateCcw className="h-3.5 w-3.5" />
         </Button>
       </div>
-      <p className="rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground backdrop-blur">
+      {/* Keyboard hints on a touch screen are noise about keys that do not
+          exist. */}
+      <p className="hidden rounded bg-background/70 px-2 py-0.5 text-[10px] text-muted-foreground backdrop-blur sm:block">
         {started ? t.raceCamHint : t.raceStartHint}
       </p>
     </div>
