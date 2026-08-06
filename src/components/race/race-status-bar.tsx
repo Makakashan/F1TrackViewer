@@ -44,7 +44,11 @@ export default function RaceStatusBar({
   return (
     <div
       className={cn(
-        "pointer-events-none flex items-center gap-3 rounded-lg border border-border bg-background/80 px-3 py-2 shadow-xl backdrop-blur-md",
+        // On a phone the strip competes with the tower for one narrow row, so
+        // it keeps only what changes during a race: the lights and the lap.
+        // The phase is implied by both, and the fastest lap is already the
+        // purple mark in the tower.
+        "pointer-events-none flex items-center gap-2 rounded-lg border border-border bg-background/80 px-2 py-1.5 shadow-xl backdrop-blur-md sm:gap-3 sm:px-3 sm:py-2",
         className,
       )}
     >
@@ -61,7 +65,7 @@ export default function RaceStatusBar({
       </div>
 
       {fastestLap && (
-        <div className="leading-none">
+        <div className="hidden leading-none sm:block">
           <div className="text-[9px] uppercase tracking-[0.18em] text-[#b955ff]">
             {t.raceFastestLap}
           </div>
@@ -73,7 +77,7 @@ export default function RaceStatusBar({
 
       <div
         className={cn(
-          "rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]",
+          "hidden rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] sm:block",
           phase === "racing"
             ? "bg-[#00d084]/15 text-[#00d084]"
             : "bg-muted text-muted-foreground",
