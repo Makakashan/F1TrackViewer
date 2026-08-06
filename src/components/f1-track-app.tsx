@@ -14,13 +14,9 @@ import { useAppPref } from "@/components/app-pref-provider";
 import { type CircuitProperties } from "@/lib/f1-circuits";
 import { useCircuits } from "@/hooks/use-circuits";
 import { useTrackData } from "@/hooks/use-track-data";
+import { useCircuitScene } from "@/hooks/use-circuit-scene";
+import type { TrackViewMode } from "@/lib/track-markers";
 import type { StartFinishPlacement } from "@/lib/start-finish";
-import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
-import { fetchTrackMarkers } from "@/lib/track-markers";
-import type { EnvironmentBundle } from "@/lib/environment-types";
-import { fetchEnvironmentBundle, hasEnvironment } from "@/lib/environment-loader";
-import type { TrackWidthProfile } from "@/lib/track-width";
-import { fetchTrackWidthProfile } from "@/lib/track-width";
 import { useUrlState } from "@/lib/url-state";
 import { readPref, writePref } from "@/lib/local-pref";
 
@@ -70,6 +66,7 @@ export default function F1TrackApp({
     setEnvironmentTerrain: setUrlEnvironmentTerrain,
     setRealWidthEnabled: setUrlRealWidthEnabled,
     setQualityMode: setUrlQualityMode,
+    setRaceMode: setUrlRaceMode,
     hydrate,
     syncUrl,
   } = useUrlState();
@@ -83,25 +80,13 @@ export default function F1TrackApp({
     setAutoRotateState(v);
     writePref(AUTO_ROTATE_STORAGE_KEY, v);
   }, []);
-  // Real per-point track width (TUMFTM). null = no profile for this circuit,
-  // undefined = still loading.
-  const [widthProfile, setWidthProfile] =
-    useState<TrackWidthProfile | null | undefined>(undefined);
   const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [startFinishPlacement, setStartFinishPlacement] =
     useState<StartFinishPlacement | null>(null);
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [footerDismissed, setFooterDismissed] = useState(true);
-  const [markers, setMarkers] = useState<TrackMarkers | null>(null);
-  // Environment diorama. ?environment=1 opts in; null means
-  // "no bundle for this circuit", undefined means "still checking".
-  const [environmentBundle, setEnvironmentBundle] =
-    useState<EnvironmentBundle | null | undefined>(undefined);
-  // Cheap manifest-only check (~1KB) so the toggle can be gated and the URL
-  // can persist environment=0 without downloading the full multi-MB bundle
-  // (buildings/roads/landuse) for circuits the user never opts into.
-  const [environmentAvailable, setEnvironmentAvailable] =
-    useState<boolean | undefined>(undefined);
+  const { markers, widthProfile, environmentBundle, environmentAvailable } =
+    useCircuitScene(selectedId, environmentEnabled);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -159,76 +144,6 @@ export default function F1TrackApp({
     const timer = window.setTimeout(() => onSelect(urlTrack), 0);
     return () => window.clearTimeout(timer);
   }, [circuits, hydrated, onSelect, selectedId, urlTrack]);
-
-  // ─── Load track markers when selected track changes ──────────────
-  useEffect(() => {
-    if (!selectedId) {
-      const timer = window.setTimeout(() => setMarkers(null), 0);
-      return () => window.clearTimeout(timer);
-    }
-    let cancelled = false;
-    fetchTrackMarkers(selectedId).then((m) => {
-      if (!cancelled) setMarkers(m);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedId]);
-
-  // ─── Check environment availability for the selected circuit ────
-  // Cheap manifest-only check — runs regardless of the toggle so the UI
-  // knows whether to offer 3D mode at all.
-  useEffect(() => {
-    if (!selectedId) {
-      const timer = window.setTimeout(() => setEnvironmentAvailable(undefined), 0);
-      return () => window.clearTimeout(timer);
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(() => setEnvironmentAvailable(undefined), 0);
-    hasEnvironment(selectedId).then((available) => {
-      if (!cancelled) setEnvironmentAvailable(available);
-    });
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [selectedId]);
-
-  // ─── Load the full environment bundle — only once the user opts in ─
-  // Buildings/roads/landuse can be several MB per circuit, so this stays
-  // lazy: it never downloads unless environmentEnabled is actually true.
-  useEffect(() => {
-    if (!selectedId || !environmentEnabled) {
-      const timer = window.setTimeout(() => setEnvironmentBundle(undefined), 0);
-      return () => window.clearTimeout(timer);
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(() => setEnvironmentBundle(undefined), 0);
-    fetchEnvironmentBundle(selectedId).then((bundle) => {
-      if (!cancelled) setEnvironmentBundle(bundle);
-    });
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [selectedId, environmentEnabled]);
-
-  // ─── Load the real-width profile (TUMFTM) ────────────────────────
-  useEffect(() => {
-    if (!selectedId) {
-      const timer = window.setTimeout(() => setWidthProfile(null), 0);
-      return () => window.clearTimeout(timer);
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(() => setWidthProfile(undefined), 0);
-    fetchTrackWidthProfile(selectedId).then((profile) => {
-      if (!cancelled) setWidthProfile(profile);
-    });
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [selectedId]);
 
   // ─── Auto-disable environment when the selected circuit has no bundle ─
   useEffect(() => {
@@ -299,6 +214,14 @@ export default function F1TrackApp({
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
+          <Button
+            size="sm"
+            className="gap-2 bg-[#e10600] text-white hover:bg-[#c00500]"
+            onClick={() => setUrlRaceMode(true)}
+          >
+            <Flag className="h-4 w-4" />
+            {t.raceEnter}
+          </Button>
           <Button
             variant="outline"
             size="sm"

@@ -49,6 +49,12 @@ export interface CarFleetProps {
   count?: number;
   /** Livery assignment per slot; defaults to the 2025 grid. */
   grid?: GridEntry[];
+  /**
+   * Draw order for every part. Set by callers that put the fleet on painted
+   * asphalt, where the paint cheats the depth test and has to be drawn first.
+   * renderOrder is per object in three.js, so it cannot be set on the group.
+   */
+  renderOrder?: number;
   onStats?: (stats: CarFleetStats) => void;
 }
 
@@ -66,7 +72,7 @@ export interface CarFleetProps {
  * whether a part happens to be team-coloured.
  */
 const CarFleet = forwardRef<CarFleetHandle, CarFleetProps>(function CarFleet(
-  { url, count = GRID_SIZE, grid, onStats },
+  { url, count = GRID_SIZE, grid, renderOrder = 0, onStats },
   ref,
 ) {
   const { scene } = useGLTF(url);
@@ -204,6 +210,7 @@ const CarFleet = forwardRef<CarFleetHandle, CarFleetProps>(function CarFleet(
           key={part.name}
           ref={(mesh) => attachPart(mesh, index)}
           args={[part.geometry, materials[index], count]}
+          renderOrder={renderOrder}
           castShadow
         />
       ))}

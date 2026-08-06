@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { halfWidthAt, type HalfWidth } from "./track-geometry";
 
 export type StartFinishSource = "verified" | "calibrated" | "estimated";
 
@@ -254,7 +255,7 @@ export function buildStartFinishGeometry(
   const markerLength = halfWidth * 2.15;
   const markerDepth = Math.max(2.4, halfWidth * 0.34);
   const cells = 10;
-  const y = center.y + topRaise + 0.35;
+  const y = center.y + topRaise;
   const start = -markerLength / 2;
   const cellLength = markerLength / cells;
 
@@ -295,58 +296,58 @@ export function buildStartFinishGeometry(
   return geometry;
 }
 
-export function buildDirectionArrowGeometry(
+/** Painted width of the start line, along the direction of travel. */
+const START_LINE_DEPTH_M = 0.3;
+
+/**
+ * The start line as it is actually painted: one solid white band the exact
+ * width of the asphalt.
+ *
+ * The checkered plate `buildStartFinishGeometry` draws is a map symbol — it is
+ * wider than the track it sits on and several meters deep, which reads as a
+ * carpet once the surface is asphalt rather than a stylised ribbon. Race view
+ * uses this instead; the other view modes keep the symbol.
+ */
+export function buildStartLineGeometry(
   curve: THREE.CatmullRomCurve3,
-  startFinishS: number,
-  halfWidth: number,
+  s: number,
+  halfWidth: HalfWidth,
   topRaise: number,
 ): THREE.BufferGeometry {
-  const arrowS = wrap01(startFinishS - 0.012);
-  const center = curve.getPointAt(arrowS);
-  const tangent = curve.getTangentAt(arrowS).normalize();
+  const at = wrap01(s);
+  const center = curve.getPointAt(at);
+  const tangent = curve.getTangentAt(at).normalize();
   const up = new THREE.Vector3(0, 1, 0);
   const across = new THREE.Vector3().crossVectors(tangent, up);
   if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
   across.normalize();
 
-  const length = Math.max(6, halfWidth * 1.35);
-  const width = Math.max(5, halfWidth * 1.1);
-  const y = center.y + topRaise + 0.45;
+  const localHalfWidth =
+    typeof halfWidth === "function" ? halfWidth(at) : halfWidth;
+  const y = center.y + topRaise;
+  const halfDepth = START_LINE_DEPTH_M / 2;
 
-  const tip = center
-    .clone()
-    .addScaledVector(tangent, length / 2)
-    .setY(y);
-  const left = center
-    .clone()
-    .addScaledVector(tangent, -length / 2)
-    .addScaledVector(across, width / 2)
-    .setY(y);
-  const right = center
-    .clone()
-    .addScaledVector(tangent, -length / 2)
-    .addScaledVector(across, -width / 2)
-    .setY(y);
+  const positions: number[] = [];
+  const point = new THREE.Vector3();
+  for (const [side, depth] of [
+    [-1, -halfDepth],
+    [1, -halfDepth],
+    [-1, halfDepth],
+    [1, halfDepth],
+  ]) {
+    point
+      .copy(center)
+      .addScaledVector(across, side * localHalfWidth)
+      .addScaledVector(tangent, depth);
+    positions.push(point.x, y, point.z);
+  }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
     "position",
-    new THREE.Float32BufferAttribute(
-      [
-        tip.x,
-        tip.y,
-        tip.z,
-        left.x,
-        left.y,
-        left.z,
-        right.x,
-        right.y,
-        right.z,
-      ],
-      3,
-    ),
+    new THREE.Float32BufferAttribute(positions, 3),
   );
-  geometry.setIndex([0, 1, 2]);
+  geometry.setIndex([0, 2, 1, 1, 2, 3]);
   geometry.computeVertexNormals();
   return geometry;
 }
@@ -356,12 +357,42 @@ export interface StartFinishGantryGeometries {
   beam: THREE.BufferGeometry;
 }
 
-export function buildStartFinishGantryGeometry(
+/**
+ * The gantry's local frame and dimensions.
+ *
+ * Exported because the start lights hang off the same structure: deriving
+ * their mount point from the same numbers is what keeps the panel attached to
+ * the beam when the track width — and with it the gantry — changes.
+ */
+export interface GantryFrame {
+  center: THREE.Vector3;
+  tangent: THREE.Vector3;
+  across: THREE.Vector3;
+  up: THREE.Vector3;
+  span: number;
+  postHeight: number;
+  postWidth: number;
+  beamHeight: number;
+  beamDepth: number;
+  baseY: number;
+  beamCenterY: number;
+}
+
+/**
+ * "checkered" is the map symbol: a tall beam in start/finish squares, sized to
+ * read from the overview camera. "plain" is the structure as built — a slim
+ * dark beam that exists to carry the start lights rather than to be seen.
+ */
+export type GantryStyle = "checkered" | "plain";
+
+export function gantryFrame(
   curve: THREE.CatmullRomCurve3,
   s: number,
-  halfWidth: number,
+  halfWidthInput: HalfWidth,
   topRaise: number,
-): StartFinishGantryGeometries {
+  style: GantryStyle = "checkered",
+): GantryFrame {
+  const halfWidth = halfWidthAt(halfWidthInput, wrap01(s));
   const center = curve.getPointAt(wrap01(s));
   const tangent = curve.getTangentAt(wrap01(s)).normalize();
   const up = new THREE.Vector3(0, 1, 0);
@@ -369,13 +400,62 @@ export function buildStartFinishGantryGeometry(
   if (across.lengthSq() < 1e-6) across.set(1, 0, 0);
   across.normalize();
 
-  const span = halfWidth * 2.08;
   const postHeight = Math.max(7, halfWidth * 1.05);
-  const postWidth = Math.max(0.8, halfWidth * 0.12);
-  const beamHeight = Math.max(2.8, halfWidth * 0.42);
-  const beamDepth = Math.max(1.6, halfWidth * 0.24);
   const baseY = center.y + topRaise + 0.12;
-  const beamCenterY = baseY + postHeight;
+  const postWidth =
+    style === "plain"
+      ? Math.max(0.35, halfWidth * 0.05)
+      : Math.max(0.8, halfWidth * 0.12);
+  return {
+    center,
+    tangent,
+    across,
+    up,
+    // The built gantry stands its posts on the asphalt, outer face flush with
+    // the edge. Straddling the edge instead leaves a post hanging in the air
+    // wherever the ribbon floats over terrain, and the ribbon's own width is
+    // the only ground the scene has. The map symbol keeps spanning wider than
+    // the ribbon it labels — it is read from above, where a gantry inside the
+    // line looks like part of the track.
+    span:
+      style === "plain"
+        ? Math.max(halfWidth, 2 * halfWidth - postWidth)
+        : halfWidth * 2.08,
+    postHeight,
+    postWidth,
+    beamHeight:
+      style === "plain"
+        ? Math.max(1, halfWidth * 0.16)
+        : Math.max(2.8, halfWidth * 0.42),
+    beamDepth:
+      style === "plain"
+        ? Math.max(0.6, halfWidth * 0.1)
+        : Math.max(1.6, halfWidth * 0.24),
+    baseY,
+    beamCenterY: baseY + postHeight,
+  };
+}
+
+export function buildStartFinishGantryGeometry(
+  curve: THREE.CatmullRomCurve3,
+  s: number,
+  halfWidth: HalfWidth,
+  topRaise: number,
+  style: GantryStyle = "checkered",
+): StartFinishGantryGeometries {
+  const {
+    center,
+    tangent,
+    across,
+    up,
+    span,
+    postHeight,
+    postWidth,
+    beamHeight,
+    beamDepth,
+    baseY,
+    beamCenterY,
+  } = gantryFrame(curve, s, halfWidth, topRaise, style);
 
   function createBoxGeometry(
     boxCenter: THREE.Vector3,
@@ -470,13 +550,19 @@ export function buildStartFinishGantryGeometry(
   postsGeometry.setIndex(postIndices);
   postsGeometry.computeVertexNormals();
 
-  const beamCellCount = 14;
+  const beamCellCount = style === "plain" ? 1 : 14;
   const beamCellWidth = (span + postWidth) / beamCellCount;
   const beamGeometries: THREE.BufferGeometry[] = [];
   for (let i = 0; i < beamCellCount; i++) {
     const offset = -(span + postWidth) / 2 + beamCellWidth * (i + 0.5);
+    // Colours are always written so both styles share one material; the plain
+    // beam is simply a single dark cell.
     const color: [number, number, number] =
-      i % 2 === 0 ? [0.96, 0.96, 0.92] : [0.015, 0.015, 0.018];
+      style === "plain"
+        ? [0.05, 0.05, 0.058]
+        : i % 2 === 0
+          ? [0.96, 0.96, 0.92]
+          : [0.015, 0.015, 0.018];
     beamGeometries.push(
       createBoxGeometry(
         center.clone().addScaledVector(across, offset).setY(beamCenterY),

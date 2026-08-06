@@ -96,6 +96,48 @@ export function densifyCoords(
   return result;
 }
 
+/**
+ * Rebuild a curve's arc-length table at roughly one division per meter.
+ *
+ * `getPointAt` / `getTangentAt` map distance to curve parameter through a
+ * lookup table with linear interpolation between entries, and three.js
+ * defaults to 200 entries no matter how long the curve is — 16 m per entry on
+ * a Monaco-sized lap. Anything that steps along the curve by real distance
+ * then lands unevenly: asking for 4.16 m steps returns spacings between
+ * 0.59 m and 9.91 m, which is why evenly sized markings came out ragged.
+ * The table has to be finer than the steps taken through it: at one division
+ * per meter, meter-long kerb blocks still came out between 0.49 m and 1.52 m.
+ * Four divisions per meter holds them inside a few percent, and building the
+ * table costs one cheap curve evaluation per division, once per circuit.
+ */
+export function refineArcLengths(curve: THREE.CatmullRomCurve3): void {
+  const divisions = THREE.MathUtils.clamp(
+    Math.round(curve.getLength() * 4),
+    200,
+    60_000,
+  );
+  if (divisions <= curve.arcLengthDivisions) return;
+  curve.arcLengthDivisions = divisions;
+  curve.updateArcLengths();
+}
+
+/**
+ * Drop the repeated final point of a closed ring. A CatmullRomCurve3 built
+ * with `closed: true` adds the wrap segment itself, and callers that compute a
+ * per-vertex profile need their arrays index-aligned with the same points.
+ */
+export function stripClosingDuplicate(
+  coords: [number, number][],
+): [number, number][] {
+  if (coords.length < 2) return coords;
+  const first = coords[0];
+  const last = coords[coords.length - 1];
+  if (first[0] === last[0] && first[1] === last[1]) {
+    return coords.slice(0, -1);
+  }
+  return coords;
+}
+
 /** Build a closed CatmullRomCurve3 from [lon, lat] coords. Strips closing duplicate, uses centripetal parametrization. */
 export function buildTrackCurve(
   coords: [number, number][],
@@ -104,14 +146,7 @@ export function buildTrackCurve(
   elevationScale: number = REAL_ELEVATION_SCALE,
   elevationOffset: number = 0,
 ): THREE.CatmullRomCurve3 {
-  let pts = coords;
-  if (pts.length > 1) {
-    const first = pts[0];
-    const last = pts[pts.length - 1];
-    if (first[0] === last[0] && first[1] === last[1]) {
-      pts = pts.slice(0, -1);
-    }
-  }
+  const pts = stripClosingDuplicate(coords);
 
   let meanElevation = 0;
   if (elevations && elevations.length > 0) {
@@ -129,7 +164,9 @@ export function buildTrackCurve(
     return v;
   });
 
-  return new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
+  const curve = new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
+  refineArcLengths(curve);
+  return curve;
 }
 
 export function buildTrackCurveWithY(
@@ -137,14 +174,7 @@ export function buildTrackCurveWithY(
   bounds: GeoBounds,
   getY: (lon: number, lat: number, index: number) => number,
 ): THREE.CatmullRomCurve3 {
-  let pts = coords;
-  if (pts.length > 1) {
-    const first = pts[0];
-    const last = pts[pts.length - 1];
-    if (first[0] === last[0] && first[1] === last[1]) {
-      pts = pts.slice(0, -1);
-    }
-  }
+  const pts = stripClosingDuplicate(coords);
 
   const points = pts.map(([lon, lat], i) => {
     const v = lonLatToXZ(lon, lat, bounds.centerLon, bounds.centerLat);
@@ -152,7 +182,9 @@ export function buildTrackCurveWithY(
     return v;
   });
 
-  return new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
+  const curve = new THREE.CatmullRomCurve3(points, true, "centripetal", 0.5);
+  refineArcLengths(curve);
+  return curve;
 }
 
 /**

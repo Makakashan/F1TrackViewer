@@ -4,8 +4,28 @@
 
 export const TRACK_SURFACE_RAISE = 1.1;
 export const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.18;
+/**
+ * Painted markings — grid boxes, the start line — sit on the asphalt.
+ *
+ * They used to be lifted a third of a meter onto the overlay plane, which is
+ * invisible from a camera that frames the whole circuit and reads as floating
+ * paint from one standing beside a car. The clearance here is only enough to
+ * beat depth precision; polygon offset on the material does the rest.
+ */
+export const TRACK_PAINT_RAISE = TRACK_SURFACE_RAISE + 0.02;
 export const TRACK_RENDER_ORDER = 100;
 export const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
+/**
+ * Solid things standing on the track: cars, gantry, start lights.
+ *
+ * They draw after the paint on purpose. Painted markings cheat the depth test
+ * with a large negative polygon offset so they never fight the asphalt, and
+ * that offset is measured in units of the depth buffer's resolution — from a
+ * camera far enough away, ten of those units are taller than a car, so paint
+ * drawn last bleeds straight through the bodywork. Drawing solids afterwards
+ * settles it with their own depth writes, at any distance.
+ */
+export const TRACK_PROP_RENDER_ORDER = TRACK_OVERLAY_RENDER_ORDER + 1;
 export const TERRAIN_TRACK_OFFSET = 4.5;
 export const TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M = 25;
 export const TERRAIN_TRACK_WALL_DEPTH = TERRAIN_TRACK_OFFSET + TRACK_SURFACE_RAISE;
@@ -15,6 +35,13 @@ export const TERRAIN_TRACK_WALL_DEPTH = TERRAIN_TRACK_OFFSET + TRACK_SURFACE_RAI
 // hill between two sparse points doesn't get "seen" and the track dips
 // below the terrain mesh (see tr-2005 Istanbul Park's back straight).
 export const TERRAIN_TRACK_MAX_SEGMENT_M = 40;
+// Arc-length radius of the smoothing window applied to the terrain-sampled
+// track profile. Wide enough to erase DEM cell steps (mean per-vertex wobble
+// drops ~58%), short enough that the smoothed line never dips more than ~2.6 m
+// under the terrain it was sampled from — comfortably inside the 4.5 m
+// clearance. Widening to 160 m smooths more but pushes Spa's worst dip to
+// 4.05 m, which starts to bury the ribbon in the hillside.
+export const TERRAIN_TRACK_SMOOTH_RADIUS_M = 120;
 export const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
 
 export function disposeGeometry(value: unknown) {

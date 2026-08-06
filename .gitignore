@@ -45,6 +45,8 @@ local-*
 # local Python/FastF1 tooling artifacts
 .venv/
 .fastf1-cache/
+# geojson cache for the headless audit scripts
+/.cache/
 **/__pycache__/
 .python-version
 /main.py

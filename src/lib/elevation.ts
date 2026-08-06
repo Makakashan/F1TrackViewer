@@ -99,6 +99,44 @@ function limitTrackGrade(values: number[], segments: number[]): number[] {
   return cur;
 }
 
+/**
+ * Smooth a terrain-sampled track profile.
+ *
+ * Terrain mode reads a height per densified track vertex straight off the DEM
+ * grid, so the ribbon inherits every grid-cell step — a rippled road surface
+ * rather than a road. A plain smoothing pass fixes the ripple but sinks the
+ * track into the hillside wherever the raw profile has a real local peak, so
+ * every pass but the last is followed by an upper-envelope clamp: never end up
+ * below the terrain that was actually sampled. The final smoothing pass can
+ * still dip a few centimeters under a lone spike; TERRAIN_TRACK_OFFSET
+ * clearance absorbs that.
+ *
+ * `rawY` and `coords` must be index-aligned and share the closed-loop
+ * convention (no closing duplicate) — the smoothing window wraps.
+ */
+export function smoothTerrainTrackProfile(
+  rawY: number[],
+  coords: [number, number][],
+  radiusMeters: number,
+  passes = 4,
+): number[] {
+  if (rawY.length < 3) return rawY.slice();
+
+  const segments = segmentDistances(rawY.length, coords);
+  let cur = rawY.slice();
+
+  for (let pass = 0; pass < passes; pass++) {
+    cur = smoothByTrackDistance(cur, segments, radiusMeters, 1);
+    if (pass < passes - 1) {
+      for (let i = 0; i < cur.length; i++) {
+        cur[i] = Math.max(cur[i], rawY[i]);
+      }
+    }
+  }
+
+  return limitTrackGrade(cur, segments);
+}
+
 /** Smooth SRTM elevation data — removes spikes from grid-cell jumps on tight street circuits (Monaco etc). */
 export function normalizeElevationProfile(
   elevations: number[],

@@ -35,7 +35,11 @@ export interface TrackMarkers {
   confidence?: "high" | "medium" | "low";
 }
 
-export type TrackViewMode = "normal" | "sectors";
+/**
+ * How the circuit is drawn. "realistic" trades the stylised red ribbon for an
+ * asphalt surface with its real width and a car on every grid slot.
+ */
+export type TrackViewMode = "normal" | "sectors" | "realistic";
 
 /**
  * Sector colors used when painting the track in sector mode.
@@ -52,7 +56,6 @@ export const SECTOR_COLORS = {
 export const MARKER_COLORS = {
   sectorSplit: "#FFFFFF",
   startFinish: "#FFFFFF",
-  directionArrow: "#FFD400",
 } as const;
 
 /**

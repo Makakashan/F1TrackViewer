@@ -18,7 +18,12 @@ interface TrackPrefs {
 }
 
 function readTrackPrefs(): Partial<TrackPrefs> {
-  return readPref<Partial<TrackPrefs>>(TRACK_PREFS_KEY, {});
+  const prefs = readPref<Partial<TrackPrefs>>(TRACK_PREFS_KEY, {});
+  // "realistic" used to be a layer toggle. It is now the race mode's own
+  // rendering, entered through `race`, so a stored one would put the viewer in
+  // a mode its settings panel can no longer switch out of.
+  if (prefs.viewMode === "realistic") prefs.viewMode = "normal";
+  return prefs;
 }
 
 function writeTrackPref<K extends keyof TrackPrefs>(key: K, value: TrackPrefs[K]) {
@@ -50,6 +55,7 @@ function readUrlParams() {
     elevation: p.get("elevation"),
     camera: p.get("camera"),
     sectors: p.get("sectors"),
+    race: p.get("race"),
     environment: p.get("environment"),
     terrain: p.get("terrain"),
     realwidth: p.get("realwidth"),
@@ -63,6 +69,8 @@ interface UrlState {
   elevationEnabled: boolean;
   cameraPreset: CameraPreset | null;
   viewMode: TrackViewMode;
+  /** Race mode replaces the viewer shell entirely; `?race=1` is its switch. */
+  raceMode: boolean;
   environmentEnabled: boolean;
   environmentTerrain: boolean;
   realWidthEnabled: boolean;
@@ -74,6 +82,7 @@ interface UrlState {
   setElevationEnabled: (v: boolean) => void;
   setCameraPreset: (p: CameraPreset | null) => void;
   setViewMode: (m: TrackViewMode) => void;
+  setRaceMode: (v: boolean) => void;
   setEnvironmentEnabled: (v: boolean) => void;
   setEnvironmentTerrain: (v: boolean) => void;
   setRealWidthEnabled: (v: boolean) => void;
@@ -92,6 +101,7 @@ export const useUrlState = create<UrlState>((set, get) => ({
   elevationEnabled: true,
   cameraPreset: null,
   viewMode: "sectors",
+  raceMode: false,
   environmentEnabled: false,
   environmentTerrain: true,
   realWidthEnabled: false,
@@ -112,6 +122,9 @@ export const useUrlState = create<UrlState>((set, get) => ({
     writeTrackPref("viewMode", m);
     set({ viewMode: m });
   },
+  // Deliberately not persisted: race mode is a place you go, not a display
+  // preference, and landing back in it on the next visit would be a surprise.
+  setRaceMode: (v) => set({ raceMode: v }),
   setEnvironmentEnabled: (v) => {
     writeTrackPref("environmentEnabled", v);
     set({ environmentEnabled: v });
@@ -163,7 +176,11 @@ export const useUrlState = create<UrlState>((set, get) => ({
       patch.cameraPreset = url.camera;
     }
 
-    // View mode — sectors default unless realwidth=1 or sectors=0
+    if (url.race === "1") {
+      patch.raceMode = true;
+    }
+
+    // View mode — sectors default unless realwidth=1 or sectors=0.
     if (url.realwidth === "1" || url.sectors === "0") {
       patch.viewMode = "normal";
     } else if (url.sectors === "1") {
@@ -210,6 +227,11 @@ export const useUrlState = create<UrlState>((set, get) => ({
     }
 
     params.set("sectors", s.viewMode === "sectors" ? "1" : "0");
+    if (s.raceMode) {
+      params.set("race", "1");
+    } else {
+      params.delete("race");
+    }
 
     if (environmentBundleAvailable) {
       params.set("environment", s.environmentEnabled ? "1" : "0");
