@@ -34,7 +34,11 @@ export default function RaceCircuitPicker({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="max-w-[200px] gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="max-w-[140px] gap-2 sm:max-w-[200px]"
+        >
           <span className="truncate">{selected?.name ?? "—"}</span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
         </Button>
