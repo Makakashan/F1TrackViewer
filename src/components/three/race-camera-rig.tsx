@@ -28,15 +28,6 @@ const LATERAL_M = 5;
 /** Aim a little above the floor — the car's body, not the tarmac under it. */
 const TARGET_HEIGHT_M = 0.9;
 
-/**
- * How quickly the follow target catches the car, per second.
- *
- * The camera rides the target at a fixed user-set offset, so this is the only
- * smoothing there is: high enough that the car never escapes the frame, low
- * enough that a kerb doesn't kick the whole view.
- */
-const TARGET_RATE = 10;
-
 /** Free-camera pan, as a share of the camera-to-target distance per second. */
 const PAN_RATE = 1.4;
 const PAN_MIN_M_S = 25;
@@ -246,12 +237,12 @@ export default function RaceCameraRig({
       return;
     }
 
-    // Frame-rate independent smoothing: the same lag whether the page is
-    // running at 30 or 144.
-    s.move
-      .copy(s.target)
-      .sub(controls.target)
-      .multiplyScalar(1 - Math.exp(-TARGET_RATE * delta));
+    // No smoothing on the follow itself: any lag here is proportional to the
+    // car's speed, and at 300 km/h even a fast filter leaves the car meters
+    // away from where the camera thinks it is — visibly escaping the frame.
+    // The pose is already interpolated between simulation steps, so tracking
+    // it exactly is smooth.
+    s.move.copy(s.target).sub(controls.target);
     controls.target.add(s.move);
     camera.position.add(s.move);
     controls.update();
