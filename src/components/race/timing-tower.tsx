@@ -19,6 +19,8 @@ export interface TimingTowerProps {
   fastestLapIndex?: number | null;
   /** The drawer supplies its own title bar, so it turns this one off. */
   showHeader?: boolean;
+  /** Phone-sized: narrower, smaller type, no driver names. */
+  compact?: boolean;
   className?: string;
 }
 
@@ -50,6 +52,7 @@ export default function TimingTower({
   onShuffle,
   fastestLapIndex,
   showHeader = true,
+  compact = false,
   className,
 }: TimingTowerProps) {
   const { t } = useAppPref();
@@ -106,15 +109,31 @@ export default function TimingTower({
       className={cn(
         // Broadcast graphics are dark in every theme: the tower is styled
         // after the F1 TV overlay, not after the app.
-        "pointer-events-auto w-[248px] overflow-hidden rounded-md bg-[#15151e]/92 text-white shadow-2xl shadow-black/50 backdrop-blur-md",
+        "pointer-events-auto overflow-hidden rounded-md bg-[#15151e]/92 text-white shadow-2xl shadow-black/50 backdrop-blur-md",
+        compact ? "w-[132px]" : "w-[248px]",
         className,
       )}
     >
       {showHeader && (
-        <div className="flex items-center justify-between border-b border-white/10 bg-black/40 py-1.5 pl-0 pr-2">
-          <div className="flex items-center gap-2">
-            <span aria-hidden className="h-6 w-1 bg-[#e10600]" />
-            <span className="text-[11px] font-extrabold uppercase italic tracking-[0.16em]">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b border-white/10 bg-black/40 pl-0 pr-2",
+            compact ? "py-1" : "py-1.5",
+          )}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <span
+              aria-hidden
+              className={cn("w-1 shrink-0 bg-[#e10600]", compact ? "h-5" : "h-6")}
+            />
+            <span
+              className={cn(
+                "truncate font-extrabold uppercase italic",
+                compact
+                  ? "text-[9px] tracking-[0.1em]"
+                  : "text-[11px] tracking-[0.16em]",
+              )}
+            >
               {t.raceGridOrder}
             </span>
           </div>
@@ -134,7 +153,12 @@ export default function TimingTower({
           content, not an arbitrary slice of it, and a tower that cuts off at
           P19 makes the reader wonder who is missing. The cap only bites on
           short viewports, where scrolling is the honest answer. */}
-      <ol className="f1tv-scroll max-h-[calc(100vh-7rem)] overflow-y-auto">
+      <ol
+        className={cn(
+          "f1tv-scroll overflow-y-auto",
+          compact ? "max-h-[calc(100dvh-13rem)]" : "max-h-[calc(100vh-7rem)]",
+        )}
+      >
         {rows.map((entry, position) => {
           const driver = entry.driver;
           if (!driver) return null;
@@ -167,20 +191,35 @@ export default function TimingTower({
                       : "odd:bg-white/[0.03] hover:bg-white/10",
                 )}
               >
-                <span className="w-7 shrink-0 py-1.5 text-center text-xs font-extrabold italic tabular-nums">
+                <span
+                  className={cn(
+                    "shrink-0 text-center font-extrabold italic tabular-nums",
+                    compact ? "w-5 py-1 text-[10px]" : "w-7 py-1.5 text-xs",
+                  )}
+                >
                   {position + 1}
                 </span>
                 <span
                   aria-hidden
-                  className="mr-2 h-4 w-[3px] shrink-0 rounded-sm"
+                  className={cn(
+                    "h-4 w-[3px] shrink-0 rounded-sm",
+                    compact ? "mr-1.5" : "mr-2",
+                  )}
                   style={{ backgroundColor: driver.team.livery.body }}
                 />
-                <span className="shrink-0 text-xs font-extrabold tracking-wider">
+                <span
+                  className={cn(
+                    "shrink-0 font-extrabold tracking-wider",
+                    compact ? "text-[10px]" : "text-xs",
+                  )}
+                >
                   {driver.code}
                 </span>
-                <span className="ml-2 hidden min-w-0 flex-1 truncate text-[10px] uppercase tracking-wide text-white/40 xl:block">
-                  {driver.lastName}
-                </span>
+                {!compact && (
+                  <span className="ml-2 hidden min-w-0 flex-1 truncate text-[10px] uppercase tracking-wide text-white/40 xl:block">
+                    {driver.lastName}
+                  </span>
+                )}
                 {holdsFastest && (
                   <span
                     aria-hidden
@@ -190,9 +229,13 @@ export default function TimingTower({
                 )}
                 <span
                   className={cn(
-                    "ml-auto shrink-0 pr-2 text-[11px] tabular-nums",
+                    "ml-auto shrink-0 tabular-nums",
+                    compact ? "pr-1.5 text-[9px]" : "pr-2 text-[11px]",
                     position === 0 && entry.row
-                      ? "text-[9px] uppercase tracking-wider text-white/35"
+                      ? cn(
+                          "uppercase tracking-wider text-white/35",
+                          compact ? "text-[7px]" : "text-[9px]",
+                        )
                       : "text-white/70",
                   )}
                 >
