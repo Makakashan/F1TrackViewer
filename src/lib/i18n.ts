@@ -141,6 +141,10 @@ const en = {
   raceGridOrder: "Grid",
   raceShuffle: "Shuffle",
   raceInterval: "Interval",
+  /** The leader's own gap column — the car everything else is measured from. */
+  raceLeaderGap: "Leader",
+  /** Suffix for a lapped car's gap: "+1 Lap". */
+  raceLapsDown: "Lap",
   raceScene: "Scene",
   raceFollowing: "Camera",
   raceNoCars:
@@ -286,6 +290,8 @@ const ru: Dict = {
   raceGridOrder: "Решётка",
   raceShuffle: "Перемешать",
   raceInterval: "Интервал",
+  raceLeaderGap: "Лидер",
+  raceLapsDown: "кр.",
   raceScene: "Сцена",
   raceFollowing: "Камера",
   raceNoCars:
