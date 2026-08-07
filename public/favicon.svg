@@ -1,4 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>F1 Track Studio</title>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#e10600"/>
@@ -6,21 +7,16 @@
     </linearGradient>
   </defs>
   <rect x="2" y="2" width="60" height="60" rx="14" ry="14" fill="url(#bg)"/>
-  <g transform="translate(14, 16)">
-    <rect x="0" y="0" width="3" height="34" fill="#fff" rx="1.5"/>
-    <g transform="translate(4, 2)">
-      <rect x="0"  y="0"  width="8" height="8" fill="#fff"/>
-      <rect x="8"  y="0"  width="8" height="8" fill="#0a0a0d"/>
-      <rect x="16" y="0"  width="8" height="8" fill="#fff"/>
-      <rect x="24" y="0"  width="8" height="8" fill="#0a0a0d"/>
-      <rect x="0"  y="8"  width="8" height="8" fill="#0a0a0d"/>
-      <rect x="8"  y="8"  width="8" height="8" fill="#fff"/>
-      <rect x="16" y="8"  width="8" height="8" fill="#0a0a0d"/>
-      <rect x="24" y="8"  width="8" height="8" fill="#fff"/>
-      <rect x="0"  y="16" width="8" height="8" fill="#fff"/>
-      <rect x="8"  y="16" width="8" height="8" fill="#0a0a0d"/>
-      <rect x="16" y="16" width="8" height="8" fill="#fff"/>
-      <rect x="24" y="16" width="8" height="8" fill="#0a0a0d"/>
+  <!-- The mark at tab size drops the slipstream bars: at 16px they collapse
+       into a red smudge against a red tile. The banana and the numeral are
+       what has to survive. -->
+  <g transform="translate(-9.7, 17.8) scale(0.712)">
+    <g transform="rotate(-12 46 20)">
+      <path d="M28 5c-2 13 3 24 14 28 8 3 16 2 20-2-7 1-13-1-18-6-6-6-9-13-9-20 0-1-1-2-3-2-2 0-4 1-4 2z" fill="#ffd12e"/>
+      <path d="M28 5c-2 13 3 24 14 28 3 1 6 2 9 2-8-3-14-9-17-17-2-5-3-10-2-15 0-1-1-1-2-1s-2 1-2 3z" fill="#e8b71d"/>
+      <path d="M27 7c-1-3 0-5 2-5s3 2 3 4z" fill="#3a2e14"/>
+      <path d="M60 30c2-1 3 0 3 1 0 2-2 3-4 2z" fill="#3a2e14"/>
     </g>
+    <path d="M76 3 h19 l-10 34 h-19 l7-24 -9 4 2-9 z" fill="#ffffff"/>
   </g>
 </svg>

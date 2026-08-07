@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Shuffle, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
+import BrandMark from "@/components/brand-mark";
 import { useAppPref } from "@/components/app-pref-provider";
 import type { DriverWithTeam } from "@/lib/f1-drivers";
 import type { RaceStanding } from "@/lib/race-sim";
@@ -211,10 +212,17 @@ export default function TimingTower({
           the colour and nothing else; the counter is centred and is the
           largest thing in the graphic, because it is the headline. */}
       <div aria-hidden className="h-[3px] w-full bg-[#e10600]" />
+      {/* The mark sits where the championship's own logo does on television.
+          That one is a trademark and this app is unofficial, so the space
+          carries this project's banana instead — same job, no borrowed
+          identity. */}
+      <div className={cn("flex justify-center", compact ? "pt-1.5" : "pt-2.5")}>
+        <BrandMark className={compact ? "h-[13px] w-auto" : "h-[18px] w-auto"} title={t.appName} />
+      </div>
       <div
         className={cn(
           "relative flex items-baseline justify-center gap-1.5",
-          compact ? "py-1.5" : "py-2.5",
+          compact ? "pb-1.5 pt-1" : "pb-2.5 pt-1.5",
         )}
       >
         <span
