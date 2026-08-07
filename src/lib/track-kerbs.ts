@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { sampleCurvature } from "./track-curvature";
+import { apronRoomAt, type ApronRoom } from "./track-apron";
 import type { HalfWidth } from "./track-geometry";
 
 /**
@@ -13,9 +14,13 @@ import type { HalfWidth } from "./track-geometry";
  */
 
 /**
- * Kerb red and white. The red is much deeper than the FIA original because the
- * track surface itself is rendered in F1 red (#e10600) — at kerb red the
- * stripes vanish into it and only the white blocks read.
+ * Kerb red and white.
+ *
+ * The deep red this used to carry was chosen when kerbs were drawn over the
+ * schematic's red ribbon, where a true kerb red disappeared into the road. They
+ * are a race-view feature now and the surface under them is asphalt, so the red
+ * can be the red it is in life — at the old value the stripes read as a faint
+ * dotted line from any distance.
  */
 const KERB_RED = new THREE.Color("#7d0f0c");
 const KERB_WHITE = new THREE.Color("#f2f4f7");
@@ -25,8 +30,18 @@ export interface KerbOptions {
   maxCornerRadiusMeters?: number;
   /** Lateral width of the strip, measured outward from the track edge. */
   widthMeters?: number;
+  /**
+   * How much paved verge each sample has. The kerb never reaches past it, so
+   * it cannot end up lying on grass or inside a building.
+   */
+  room?: ApronRoom;
   /** Arc length of one red or white block. */
   stripeMeters?: number;
+  /**
+   * Share of the strip's width to lay on the outside of a corner, where a
+   * circuit's exit kerb goes. Zero draws the apex kerb only.
+   */
+  outerWidthShare?: number;
   /** Corner runs are grown by this much at each end, as real kerbs are. */
   runPaddingMeters?: number;
   /** Distance over which the strip widens from nothing to full at each end. */
@@ -46,16 +61,20 @@ const DEFAULTS = {
   // 260 m was loose enough to catch the gentle bends along a "straight" and
   // scatter two-block kerb fragments down them; a real corner is far tighter.
   maxCornerRadiusMeters: 170,
-  widthMeters: 2.2,
+  widthMeters: 1.3,
   // Real kerb blocks run about a meter. This is now independent of the curve
   // sampling, so the number is what actually reaches the screen.
   stripeMeters: 1,
+  // Off: real circuits do carry exit kerbs, but not at every corner and not
+  // for the whole length of one, and a strip down the outside of every turn
+  // reads as a painted border rather than as kerbing.
+  outerWidthShare: 0,
   runPaddingMeters: 10,
   taperMeters: 14,
   minRunMeters: 25,
   exitRadiusMeters: 420,
-  liftMeters: 0.09,
-} satisfies Required<KerbOptions>;
+  liftMeters: 0.055,
+} satisfies Required<Omit<KerbOptions, "room">>;
 
 function halfWidthAt(halfWidth: HalfWidth, s: number): number {
   return typeof halfWidth === "function" ? halfWidth(s) : halfWidth;
@@ -187,6 +206,8 @@ export function buildKerbGeometry(
     minRunMeters,
     exitRadiusMeters,
     liftMeters,
+    outerWidthShare,
+    room,
   } = { ...DEFAULTS, ...options };
 
   const n = samples;
@@ -265,47 +286,65 @@ export function buildKerbGeometry(
     const firstStripe = Math.floor(runStart / stripeMeters);
     const lastStripe = Math.ceil(runEnd / stripeMeters);
 
-    for (let stripe = firstStripe; stripe < lastStripe; stripe++) {
-      const d0 = Math.max(stripe * stripeMeters, runStart);
-      const d1 = Math.min((stripe + 1) * stripeMeters, runEnd);
-      if (d1 - d0 < 1e-3) continue;
+    // A corner is kerbed on both sides. The apex kerb is the one this used to
+    // draw; the one facing it across the road is what a driver actually looks
+    // at for most of a lap, and leaving it out is why the circuit read as
+    // having no kerbs at all from inside the car.
+    for (const side of [innerSign, -innerSign as 1 | -1]) {
+      const inner = side === innerSign;
+      const sideWidth = inner ? widthMeters : widthMeters * outerWidthShare;
+      if (sideWidth < 0.05) continue;
 
-      const taper0 = taperAt(d0);
-      const taper1 = taperAt(d1);
-      if (taper0 <= 0 && taper1 <= 0) continue;
+      for (let stripe = firstStripe; stripe < lastStripe; stripe++) {
+        const d0 = Math.max(stripe * stripeMeters, runStart);
+        const d1 = Math.min((stripe + 1) * stripeMeters, runEnd);
+        if (d1 - d0 < 1e-3) continue;
 
-      color.copy(stripe % 2 === 0 ? KERB_RED : KERB_WHITE);
+        const taper0 = taperAt(d0);
+        const taper1 = taperAt(d1);
+        if (taper0 <= 0 && taper1 <= 0) continue;
 
-      // The kerb is part of the paved width, not a plate bolted to the outside
-      // of it: it occupies the outermost `widthMeters` of the ribbon on the
-      // inside of the corner. Hanging it past the edge instead leaves it
-      // floating over the terrain, which sits a few meters below the surface.
-      const edge0 = halfWidthAt(halfWidth, wrap01(d0 / totalLength)) * innerSign;
-      const edge1 = halfWidthAt(halfWidth, wrap01(d1 / totalLength)) * innerSign;
-      const inner0 = edge0 - widthMeters * taper0 * innerSign;
-      const inner1 = edge1 - widthMeters * taper1 * innerSign;
+        color.copy(stripe % 2 === 0 ? KERB_RED : KERB_WHITE);
 
-      // Kerbs ramp upward away from the racing line, so the raised lip is the
-      // edge side. The lift tapers with the width — a full-height lip that
-      // stops dead would read as a step in the road.
-      const lift0 = liftMeters * taper0;
-      const lift1 = liftMeters * taper1;
+        // The kerb is bolted to the outside of the road, not carved out of it.
+        // Its inner edge is the white line and it reaches outward across the
+        // apron — which is why the apron has to exist first, and why the strip
+        // is clamped to whatever room that sample actually has.
+        const s0 = wrap01(d0 / totalLength);
+        const s1 = wrap01(d1 / totalLength);
+        const edge0 = halfWidthAt(halfWidth, s0) * side;
+        const edge1 = halfWidthAt(halfWidth, s1) * side;
+        const room0 = room ? apronRoomAt(room, s0, side) : sideWidth;
+        const room1 = room ? apronRoomAt(room, s1, side) : sideWidth;
+        const reach0 = Math.min(sideWidth, room0) * taper0;
+        const reach1 = Math.min(sideWidth, room1) * taper1;
+        // Nothing to lay this stretch on: the kerb ends where the paving does.
+        if (reach0 < 0.05 && reach1 < 0.05) continue;
+        const outer0 = edge0 + reach0 * side;
+        const outer1 = edge1 + reach1 * side;
 
-      // Wound so the strip faces up for either turn direction.
-      if (innerSign > 0) {
-        pushVertex(d0, inner0, 0);
-        pushVertex(d1, inner1, 0);
-        pushVertex(d0, edge0, lift0);
-        pushVertex(d0, edge0, lift0);
-        pushVertex(d1, inner1, 0);
-        pushVertex(d1, edge1, lift1);
-      } else {
-        pushVertex(d0, inner0, 0);
-        pushVertex(d0, edge0, lift0);
-        pushVertex(d1, inner1, 0);
-        pushVertex(d0, edge0, lift0);
-        pushVertex(d1, edge1, lift1);
-        pushVertex(d1, inner1, 0);
+        // Kerbs ramp upward away from the racing line, so the raised lip is
+        // the outer side. The lift tapers with the width — a full-height lip
+        // that stops dead would read as a step in the road.
+        const lift0 = liftMeters * (reach0 / Math.max(sideWidth, 1e-6));
+        const lift1 = liftMeters * (reach1 / Math.max(sideWidth, 1e-6));
+
+        // Wound so the strip faces up on either edge.
+        if (side > 0) {
+          pushVertex(d0, edge0, 0);
+          pushVertex(d1, edge1, 0);
+          pushVertex(d0, outer0, lift0);
+          pushVertex(d0, outer0, lift0);
+          pushVertex(d1, edge1, 0);
+          pushVertex(d1, outer1, lift1);
+        } else {
+          pushVertex(d0, edge0, 0);
+          pushVertex(d0, outer0, lift0);
+          pushVertex(d1, edge1, 0);
+          pushVertex(d0, outer0, lift0);
+          pushVertex(d1, outer1, lift1);
+          pushVertex(d1, edge1, 0);
+        }
       }
     }
   }
