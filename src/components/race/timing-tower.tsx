@@ -48,6 +48,41 @@ const TYRE_COLOUR: Record<TyreCompound, string> = {
 };
 
 /**
+ * The two sidewall arcs of the compound ring.
+ *
+ * Path data from matteocelani/f1-telemetry (MIT), `TyreIcon.tsx` — the shape is
+ * the one every timing screen draws, and re-deriving the béziers by hand would
+ * produce a worse copy of the same circle.
+ */
+const TYRE_ARC_LEFT =
+  "M70 19C40.6787 26.58 19 53.4792 19 85.5C19 117.521 40.6787 144.42 70 152";
+const TYRE_ARC_RIGHT =
+  "M101 152C130.321 144.42 152 117.521 152 85.5C152 53.4792 130.321 26.58 101 19";
+
+/** The compound, drawn as the marked ring rather than as a bare letter. */
+function TyreMark({ compound, size }: { compound: TyreCompound; size: number }) {
+  return (
+    <span
+      className="relative flex shrink-0 items-center justify-center"
+      style={{ width: size, height: size, color: TYRE_COLOUR[compound] }}
+      title={compound}
+    >
+      <svg viewBox="0 0 172 172" className="absolute inset-0 h-full w-full" aria-hidden>
+        <circle cx="86" cy="86" r="86" fill="#15151e" />
+        <path d={TYRE_ARC_LEFT} stroke="currentColor" strokeWidth="22" fill="none" />
+        <path d={TYRE_ARC_RIGHT} stroke="currentColor" strokeWidth="22" fill="none" />
+      </svg>
+      <span
+        className="relative font-black leading-none text-white"
+        style={{ fontSize: Math.round(size * 0.5) }}
+      >
+        {compound}
+      </span>
+    </span>
+  );
+}
+
+/**
  * Gaps the way a broadcast writes them: tenths under a minute, m:ss.t over it.
  *
  * Two cars alongside each other are "+0.0" and not a dash — nought point nought
@@ -198,7 +233,7 @@ export default function TimingTower({
         // Broadcast graphics are dark in every theme: the tower is styled
         // after the television overlay, not after the app.
         "pointer-events-auto overflow-hidden rounded-md bg-[#0d0d14]/92 text-white shadow-2xl shadow-black/60 backdrop-blur-md",
-        compact ? "w-[106px]" : "w-[168px]",
+        compact ? "w-[124px]" : "w-[196px]",
         className,
       )}
     >
@@ -224,7 +259,7 @@ export default function TimingTower({
         <span
           className={cn(
             "font-extrabold tabular-nums",
-            compact ? "text-[14px]" : "text-[18px]",
+            compact ? "text-[15px]" : "text-[20px]",
           )}
         >
           {lap ?? 1}
@@ -303,11 +338,11 @@ export default function TimingTower({
                   // measures itself from its content changes height the moment
                   // a car moves — which makes the whole tower jump every time
                   // it has something to report.
-                  "flex w-full items-center border-b border-white/[0.06] text-left transition-colors",
-                  compact ? "h-[22px]" : "h-[27px]",
+                  "flex w-full items-stretch border-b border-black/40 text-left transition-colors",
+                  compact ? "h-[24px]" : "h-[30px]",
                   selected
-                    ? "bg-white/15"
-                    : "odd:bg-white/[0.03] hover:bg-white/10",
+                    ? "bg-white/20"
+                    : "bg-white/[0.045] hover:bg-white/[0.12]",
                 )}
               >
                 {/* The leader's box is filled, the way the broadcast marks the
@@ -316,34 +351,37 @@ export default function TimingTower({
                     it now holds is already the row it is sitting in. */}
                 <span
                   className={cn(
-                    "flex h-full shrink-0 items-center justify-center font-extrabold tabular-nums",
-                    compact ? "w-4 text-[10px]" : "w-[22px] text-[12px]",
+                    "flex shrink-0 items-center justify-center font-black tabular-nums",
+                    compact ? "w-[18px] text-[11px]" : "w-[26px] text-[13px]",
                     direction === "up"
                       ? "bg-[#00b04f] text-white"
                       : direction === "down"
                         ? "bg-[#e10600] text-white"
                         : leader
                           ? "bg-[#e10600] text-white"
-                          : "text-white/90",
+                          : "bg-black/45 text-white",
                   )}
                 >
                   {direction ? (
-                    <span aria-hidden className="text-[8px] leading-none">
+                    <span aria-hidden className={compact ? "text-[8px] leading-none" : "text-[10px] leading-none"}>
                       {direction === "up" ? "▲" : "▼"}
                     </span>
                   ) : (
                     position + 1
                   )}
                 </span>
+                {/* The livery block runs the full height and sits flush against
+                    the position cell — on the broadcast it is the seam between
+                    the two, not a stripe floating in a gutter. */}
                 <span
                   aria-hidden
-                  className={cn("h-full shrink-0", compact ? "mx-1 w-[3px]" : "mx-1.5 w-[4px]")}
+                  className={cn("shrink-0", compact ? "w-[3px]" : "w-[5px]")}
                   style={{ backgroundColor: driver.team.livery.body }}
                 />
                 <span
                   className={cn(
-                    "shrink-0 font-extrabold tracking-tight",
-                    compact ? "w-[26px] text-[11px]" : "w-[33px] text-[14px]",
+                    "flex shrink-0 items-center font-black uppercase tracking-tight",
+                    compact ? "pl-1.5 text-[12px]" : "pl-2 text-[15px]",
                   )}
                 >
                   {driver.code}
@@ -352,7 +390,10 @@ export default function TimingTower({
                   <span
                     aria-hidden
                     title={t.raceFastestLap}
-                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#b955ff]"
+                    className={cn(
+                      "my-auto shrink-0 rounded-full bg-[#b955ff]",
+                      compact ? "ml-1 h-1.5 w-1.5" : "ml-1.5 h-2 w-2",
+                    )}
                   />
                 )}
                 {/* The gap takes the slack rather than a margin doing it: the
@@ -361,23 +402,18 @@ export default function TimingTower({
                     block whatever the tower is wide. */}
                 <span
                   className={cn(
-                    "min-w-0 flex-1 truncate text-right tabular-nums",
-                    compact ? "text-[9px]" : "text-[11px]",
-                    started ? "text-white/85" : "text-white/40",
+                    "flex min-w-0 flex-1 items-center justify-end truncate font-semibold tabular-nums",
+                    compact ? "px-1 text-[10px]" : "px-1.5 text-[12px]",
+                    started ? "text-white" : "text-white/45",
                   )}
                 >
                   {gap}
                 </span>
-                <span
-                  className={cn(
-                    "shrink-0 text-center font-extrabold",
-                    compact ? "ml-1 mr-1 w-2.5 text-[8px]" : "ml-2 mr-1.5 w-3 text-[10px]",
-                  )}
-                  style={tyre ? { color: TYRE_COLOUR[tyre] } : undefined}
-                  title={tyre}
-                >
-                  {tyre ?? ""}
-                </span>
+                {tyre && (
+                  <span className={cn("flex shrink-0 items-center", compact ? "pr-1" : "pr-1.5")}>
+                    <TyreMark compound={tyre} size={compact ? 12 : 16} />
+                  </span>
+                )}
               </button>
             </li>
           );
