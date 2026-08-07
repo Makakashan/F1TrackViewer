@@ -8,10 +8,11 @@ import ErrorBanner from "@/components/error-banner";
 import SettingsMenu from "@/components/settings-menu";
 import { useAppPref } from "@/components/app-pref-provider";
 import { useCircuits } from "@/hooks/use-circuits";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useTrackData } from "@/hooks/use-track-data";
 import { useCircuitScene } from "@/hooks/use-circuit-scene";
 import { useRaceSimulation } from "@/hooks/use-race-simulation";
-import { raceGridOrder, raceLapCount } from "@/lib/race-session";
+import { raceGridOrder, raceLapCount, raceTyreChoices } from "@/lib/race-session";
 import { useUrlState } from "@/lib/url-state";
 import RaceBetaNotice from "@/components/race/race-beta-notice";
 import RaceCircuitPicker from "@/components/race/race-circuit-picker";
@@ -44,6 +45,7 @@ export default function RaceApp() {
   const { t, resolvedTheme } = useAppPref();
   const [error, setError] = useState<string | null>(null);
   const { circuits, selectedId, onSelect } = useCircuits(setError);
+  const isMobile = useIsMobile();
 
   const {
     track: urlTrack,
@@ -99,6 +101,19 @@ export default function RaceApp() {
       })),
     [order],
   );
+
+  const tyres = useMemo(
+    () =>
+      selectedId
+        ? raceTyreChoices(selectedId, gridNonce, order.length)
+        : undefined,
+    [selectedId, gridNonce, order.length],
+  );
+
+  // Gaps only mean something once the cars are moving. Through the lights the
+  // field is stationary on a grid whose slots are eight meters apart, and
+  // reporting that spacing as an interval is a number about the tarmac.
+  const gapsLive = race.phase === "racing" || race.phase === "finished";
 
   const lapLength = geojson?.features[0]?.properties.length ?? 0;
   const totalLaps = selectedId ? raceLapCount(selectedId, lapLength) : 0;
@@ -299,33 +314,26 @@ export default function RaceApp() {
         )}
 
         <div className="pointer-events-none absolute inset-0 p-4">
+          {/* One tower, sized by the viewport rather than two towers hidden
+              from each other by a media query: the second copy still mounts,
+              still re-renders five times a second and still measures its rows
+              for the slide animation, and it pays that out of the frame budget
+              the race is drawn with. */}
           <TimingTower
-            className="absolute left-4 top-4 hidden md:block"
+            compact={isMobile}
+            className={
+              isMobile ? "absolute left-2 top-2" : "absolute left-4 top-4"
+            }
             order={order}
             standings={race.standings}
             selectedIndex={selectedDriver}
             onSelect={selectDriver}
             onShuffle={() => setGridNonce((nonce) => nonce + 1)}
             fastestLapIndex={race.fastestLap?.index ?? null}
+            tyres={tyres}
             lap={leaderLap}
             totalLaps={totalLaps}
-            started={race.phase !== "standby"}
-          />
-
-          {/* The same tower, phone-sized: always on screen, because gaps that
-              hide behind a tap might as well not exist. */}
-          <TimingTower
-            compact
-            className="absolute left-2 top-2 md:hidden"
-            order={order}
-            standings={race.standings}
-            selectedIndex={selectedDriver}
-            onSelect={selectDriver}
-            onShuffle={() => setGridNonce((nonce) => nonce + 1)}
-            fastestLapIndex={race.fastestLap?.index ?? null}
-            lap={leaderLap}
-            totalLaps={totalLaps}
-            started={race.phase !== "standby"}
+            started={gapsLive}
           />
 
           <RaceStatusBar
