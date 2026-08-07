@@ -22,7 +22,7 @@ import type { HalfWidth } from "./track-geometry";
  * can be the red it is in life — at the old value the stripes read as a faint
  * dotted line from any distance.
  */
-const KERB_RED = new THREE.Color("#7d0f0c");
+const KERB_RED = new THREE.Color("#cc1120");
 const KERB_WHITE = new THREE.Color("#f2f4f7");
 
 export interface KerbOptions {
@@ -61,7 +61,10 @@ const DEFAULTS = {
   // 260 m was loose enough to catch the gentle bends along a "straight" and
   // scatter two-block kerb fragments down them; a real corner is far tighter.
   maxCornerRadiusMeters: 170,
-  widthMeters: 1.3,
+  // A real kerb runs about two meters. It cost racing surface when it was cut
+  // out of the ribbon; lying on the apron it costs nothing, so it can be the
+  // width it actually is.
+  widthMeters: 1.9,
   // Real kerb blocks run about a meter. This is now independent of the curve
   // sampling, so the number is what actually reaches the screen.
   stripeMeters: 1,
@@ -71,9 +74,13 @@ const DEFAULTS = {
   outerWidthShare: 0,
   runPaddingMeters: 10,
   taperMeters: 14,
-  minRunMeters: 25,
+  // 25 m dropped 59 corners across the calendar — chicanes and the short
+  // direction changes at the end of a straight, all of them kerbed in life.
+  // The radius threshold already rejects the gentle bends, so a run this
+  // short under it is a corner, not noise.
+  minRunMeters: 12,
   exitRadiusMeters: 420,
-  liftMeters: 0.055,
+  liftMeters: 0.07,
 } satisfies Required<Omit<KerbOptions, "room">>;
 
 function halfWidthAt(halfWidth: HalfWidth, s: number): number {
