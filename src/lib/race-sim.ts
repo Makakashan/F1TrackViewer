@@ -117,6 +117,78 @@ export interface RaceCar {
   finished: boolean;
   /** True once the car has finished and rolled to a stop. */
   stopped: boolean;
+  /** Where this car has been, so gaps can be timed rather than estimated. */
+  trace: CarTrace;
+}
+
+/**
+ * A car's recent history as a ring of (distance, time) samples.
+ *
+ * This is what a timing loop at the trackside records, and it is the only way
+ * to answer "how far behind is this car" in seconds: the honest interval is
+ * how long ago the car ahead stood where this car stands now.
+ */
+export interface CarTrace {
+  distance: Float64Array;
+  time: Float64Array;
+  /** Index of the newest sample; -1 while empty. */
+  head: number;
+  count: number;
+  /** Race time the next sample is due. */
+  nextAt: number;
+}
+
+/** How often the trace records a car's position, in simulated seconds. */
+const TRACE_INTERVAL_S = 0.25;
+/** How far back the trace remembers. Gaps wider than this fall back. */
+const TRACE_WINDOW_S = 150;
+const TRACE_CAPACITY = Math.ceil(TRACE_WINDOW_S / TRACE_INTERVAL_S);
+
+function createTrace(): CarTrace {
+  return {
+    distance: new Float64Array(TRACE_CAPACITY),
+    time: new Float64Array(TRACE_CAPACITY),
+    head: -1,
+    count: 0,
+    nextAt: 0,
+  };
+}
+
+function pushTrace(trace: CarTrace, distance: number, time: number): void {
+  trace.head = (trace.head + 1) % TRACE_CAPACITY;
+  trace.distance[trace.head] = distance;
+  trace.time[trace.head] = time;
+  if (trace.count < TRACE_CAPACITY) trace.count++;
+}
+
+/**
+ * When the traced car was at `distance`, or null if that is outside the window.
+ *
+ * Samples run oldest to newest and distance only grows, so this is a binary
+ * search with a linear interpolation between the two samples that bracket the
+ * point.
+ */
+function timeAtDistance(trace: CarTrace, distance: number): number | null {
+  if (trace.count < 2) return null;
+  const at = (i: number) =>
+    (trace.head - trace.count + 1 + i + TRACE_CAPACITY * 2) % TRACE_CAPACITY;
+  if (distance <= trace.distance[at(0)]) return null;
+  const newest = at(trace.count - 1);
+  if (distance >= trace.distance[newest]) return trace.time[newest];
+
+  let low = 0;
+  let high = trace.count - 1;
+  while (high - low > 1) {
+    const mid = (low + high) >> 1;
+    if (trace.distance[at(mid)] <= distance) low = mid;
+    else high = mid;
+  }
+  const a = at(low);
+  const b = at(high);
+  const span = trace.distance[b] - trace.distance[a];
+  if (!(span > 0)) return trace.time[b];
+  const f = (distance - trace.distance[a]) / span;
+  return trace.time[a] + (trace.time[b] - trace.time[a]) * f;
 }
 
 export interface RaceSimState {
@@ -174,6 +246,7 @@ export function createRaceSim(setup: RaceSimSetup): RaceSimState {
     finishTime: null,
     finished: false,
     stopped: false,
+    trace: createTrace(),
   }));
   return { cars, time: 0, flagged: false, fastestLap: null, complete: false };
 }
@@ -296,6 +369,17 @@ export function stepRace(
     }
 
     advance(car, dt, lapLengthMeters, lapTarget, state);
+  }
+
+  // The trackside record, written after everyone has moved. Fixed spacing in
+  // simulated time, so the same race timed at 1x and at 16x reads identically.
+  for (const car of state.cars) {
+    if (state.time < car.trace.nextAt) continue;
+    pushTrace(car.trace, car.distance, state.time);
+    car.trace.nextAt =
+      state.time - car.trace.nextAt > TRACE_INTERVAL_S
+        ? state.time + TRACE_INTERVAL_S
+        : car.trace.nextAt + TRACE_INTERVAL_S;
   }
 
   state.complete = state.cars.every((car) => car.stopped);
@@ -440,6 +524,26 @@ export interface RaceStanding {
   finished: boolean;
 }
 
+/**
+ * How far `car` is behind `ahead`, in seconds.
+ *
+ * Timed, not estimated: the gap is how long ago `ahead` stood where `car`
+ * stands now. Dividing the distance between them by the current speed — the
+ * obvious way — makes the number a function of where on the lap the pair
+ * happens to be, so a pair holding station reads half a second down the
+ * straight and two and a half through the hairpin without either car gaining
+ * a meter.
+ *
+ * The estimate survives as the fallback for gaps wider than the trace window
+ * and for the opening seconds, where there is no history to read.
+ */
+function gapSeconds(state: RaceSimState, car: RaceCar, ahead: RaceCar): number {
+  if (ahead === car) return 0;
+  const when = timeAtDistance(ahead.trace, car.distance);
+  if (when != null) return Math.max(0, state.time - when);
+  return (ahead.distance - car.distance) / Math.max(car.speed, 1);
+}
+
 export function raceStandings(
   state: RaceSimState,
   lapLengthMeters: number,
@@ -453,11 +557,11 @@ export function raceStandings(
     const gapToLeader =
       car.finished && leader.finished && car.finishTime != null && leader.finishTime != null
         ? car.finishTime - leader.finishTime
-        : (leader.distance - car.distance) / Math.max(car.speed, 1);
+        : gapSeconds(state, car, leader);
     const gapToAhead =
       car.finished && ahead.finished && car.finishTime != null && ahead.finishTime != null
         ? car.finishTime - ahead.finishTime
-        : (ahead.distance - car.distance) / Math.max(car.speed, 1);
+        : gapSeconds(state, car, ahead);
     return {
       index: car.index,
       place: i + 1,
