@@ -1,5 +1,19 @@
 import type { Metadata } from "next";
+import { Titillium_Web } from "next/font/google";
 import "./globals.css";
+
+/**
+ * The timing overlay's typeface, and only its typeface — the rest of the app
+ * keeps the system stack. A broadcast tower is set in a squarish humanist sans
+ * with very heavy weights, and the system font at weight 900 is a different
+ * letter shape, not a bolder one.
+ */
+const timingFont = Titillium_Web({
+  subsets: ["latin", "latin-ext"],
+  weight: ["400", "600", "700", "900"],
+  variable: "--font-timing",
+  display: "swap",
+});
 import { Toaster } from "@/components/ui/toaster";
 import { AppPrefProvider } from "@/components/app-pref-provider";
 import IntroGate from "@/components/intro-gate";
@@ -29,7 +43,11 @@ export default function RootLayout({
   // AppPrefProvider based on localStorage / system preference. We default to
   // "dark" here so the very first paint (before hydration) is sane.
   return (
-    <html lang="en" className="dark" suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`dark ${timingFont.variable}`}
+      suppressHydrationWarning
+    >
       <body className="antialiased bg-background text-foreground">
         <AppPrefProvider>
           <IntroGate>{children}</IntroGate>

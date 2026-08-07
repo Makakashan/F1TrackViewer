@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+  <style>
+    @font-face { font-family: 'Titillium Web'; src: local('Titillium Web'); }
+    body { margin: 0; background: transparent; }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700;900&display=swap" rel="stylesheet">
+</helmet>
+<div style="width:210px;font-family:'Titillium Web',Arial,sans-serif;background:rgba(20,22,26,0.92);border-radius:2px;overflow:visible;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+
+  <div style="background:linear-gradient(180deg,#1c1f24,#0f1114);padding:16px 16px 12px;border-bottom:2px solid #2a2d33;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div style="display:flex;align-items:center;gap:3px;padding:2px 4px 2px 0;">
+        <span style="font-style:italic;font-weight:900;font-size:19px;color:#fff;font-family:Arial,sans-serif;">F</span>
+        <span style="font-size:15px;line-height:1;filter:brightness(0) invert(1);">🍌</span>
+      </div>
+      <div>
+        <div style="color:#fff;font-weight:900;font-size:15px;letter-spacing:1.5px;line-height:1.15;">LIVE TIMING</div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:1px;">
+          <span style="color:#fff;font-weight:900;font-size:11px;letter-spacing:1px;">RUI</span>
+          <span style="color:#9aa0a8;font-weight:600;font-size:9.5px;letter-spacing:0.8px;white-space:nowrap;">WORLD CHAMPIONSHIP</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:flex;align-items:baseline;justify-content:center;gap:8px;background:#16181c;padding:4px 16px;border-bottom:1px solid #2a2d33;">
+    <span style="color:#e8eaed;font-weight:600;font-size:19px;letter-spacing:1px;">LAP</span>
+    <span style="color:#fff;font-weight:900;font-size:22px;">{{ lap }}</span>
+    <span style="color:#9aa0a8;font-weight:600;font-size:15px;">/ {{ totalLaps }}</span>
+  </div>
+
+  <div style="display:flex;flex-direction:column;">
+    <sc-for list="{{ drivers }}" as="d" hint-placeholder-count="10">
+      <div style="position:relative;display:flex;align-items:center;height:38px;background:{{ d.rowBg }};border-bottom:1px solid {{ d.rowBorder }};">
+        <div style="width:34px;height:100%;display:flex;align-items:center;justify-content:center;background:{{ d.posBg }};color:{{ d.posColor }};font-weight:900;font-size:16px;">{{ d.pos }}</div>
+        <div style="width:6px;height:100%;background:{{ d.barColor }};flex-shrink:0;"></div>
+        <div style="width:24px;display:flex;justify-content:center;flex-shrink:0;">
+          <div style="width:14px;height:14px;border-radius:50%;background:{{ d.barColor }};opacity:0.85;"></div>
+        </div>
+        <div style="width:36px;color:{{ d.tagColor }};font-weight:700;font-size:15px;letter-spacing:0.5px;padding-left:2px;">{{ d.tag }}</div>
+        <div style="flex:1;"></div>
+        <div style="text-align:right;color:{{ d.gapColor }};font-weight:600;font-size:16px;white-space:nowrap;letter-spacing:0.5px;line-height:1;">{{ d.gap }}</div>
+        <div style="width:18px;text-align:right;color:{{ d.tireColor }};font-weight:900;font-size:13px;padding-right:4px;margin-left:2px;line-height:1;margin-top:2px;">{{ d.tire }}</div>
+        <sc-if value="{{ d.fastestLap }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;right:-16px;top:4px;bottom:4px;width:15px;border-radius:2px;background:#c400ff;display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;line-height:1;">⏱</div>
+        </sc-if>
+        <sc-if value="{{ d.pit }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;right:-16px;top:4px;bottom:4px;width:15px;border-radius:2px;background:#e10600;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:900;font-size:13px;">!</div>
+        </sc-if>
+      </div>
+    </sc-for>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:360,&quot;height&quot;:900}}">
+
+class Component extends DCLogic {
+  renderVals() {
+    const teamColors = {
+      ANT: '#00d2be', HAM: '#e10600', LEC: '#e10600', HAD: '#3671c6',
+      RUS: '#00d2be', GAS: '#0090ff', PIA: '#ff8000', LAW: '#6692ff',
+      LIN: '#6692ff', ALB: '#005aff', SAI: '#005aff', OCO: '#b6babd',
+      HUL: '#52e252', COL: '#0090ff', ALO: '#229971', PER: '#229971',
+      BOR: '#52e252', STR: '#229971', NOR: '#ff8000', BEA: '#b6babd',
+      BOT: '#005aff', VER: '#3671c6',
+    };
+    const raw = [
+      { pos: 1, tag: 'ANT', gap: 'Leader', tire: 'S', pit: false },
+      { pos: 2, tag: 'HAM', gap: '+0.3', tire: 'S', pit: false },
+      { pos: 3, tag: 'LEC', gap: '+0.9', tire: 'S', pit: false },
+      { pos: 4, tag: 'HAD', gap: '+1.7', tire: 'H', pit: false },
+      { pos: 5, tag: 'RUS', gap: '+2.5', tire: 'S', pit: true },
+      { pos: 6, tag: 'GAS', gap: '+27.8', tire: 'H', pit: true },
+      { pos: 7, tag: 'PIA', gap: '+29.4', tire: 'S', pit: false },
+      { pos: 8, tag: 'LAW', gap: '+38.4', tire: 'S', pit: false },
+      { pos: 9, tag: 'LIN', gap: '+1 Lap', tire: 'M', pit: false },
+      { pos: 10, tag: 'ALB', gap: '+1 Lap', tire: 'S', pit: false },
+      { pos: 11, tag: 'SAI', gap: '+1 Lap', tire: 'S', pit: false },
+      { pos: 12, tag: 'OCO', gap: '+1 Lap', tire: 'H', pit: false },
+      { pos: 13, tag: 'HUL', gap: '+1 Lap', tire: 'H', pit: false },
+      { pos: 14, tag: 'COL', gap: '+1 Lap', tire: 'H', pit: true },
+      { pos: 15, tag: 'ALO', gap: '+1 Lap', tire: 'S', pit: false },
+      { pos: 16, tag: 'PER', gap: '+1 Lap', tire: 'S', pit: false },
+      { pos: 17, tag: 'BOR', gap: '+1 Lap', tire: 'S', pit: false },
+      { pos: 18, tag: 'STR', gap: 'Out', tire: '', pit: true },
+      { pos: 19, tag: 'NOR', gap: 'Out', tire: '', pit: false },
+      { pos: 20, tag: 'BEA', gap: 'Out', tire: '', pit: false },
+      { pos: 21, tag: 'BOT', gap: 'Out', tire: '', pit: false },
+      { pos: 22, tag: 'VER', gap: 'Out', tire: '', pit: false },
+    ];
+    const tireColors = { S: '#ff2020', M: '#f5d707', H: '#f2f2f2' };
+    const hexToRgba = (hex, a) => {
+      const h = hex.replace('#', '');
+      const r = parseInt(h.substring(0, 2), 16), g = parseInt(h.substring(2, 4), 16), b = parseInt(h.substring(4, 6), 16);
+      return `rgba(${r},${g},${b},${a})`;
+    };
+    const drivers = raw.map((d, i) => {
+      const isOut = d.gap === 'Out';
+      const teamColor = teamColors[d.tag] || '#888';
+      const tireColor = tireColors[d.tire] || '#c7cbd1';
+      return {
+        ...d,
+        fastestLap: d.pos === 1,
+        rowBg: i % 2 === 0 ? '#1a1d22' : '#15171b',
+        rowBorder: isOut ? 'rgba(120,123,130,0.35)' : 'rgba(255,255,255,0.04)',
+        posBg: d.pos === 1 ? '#e10600' : 'transparent',
+        posColor: isOut ? '#7a7d82' : (d.pos === 1 ? '#fff' : '#b6babd'),
+        barColor: isOut ? hexToRgba(teamColor, 0.4) : teamColor,
+        tagColor: isOut ? '#9a9da2' : '#fff',
+        gapColor: isOut ? '#75787d' : '#fff',
+        tireColor: isOut ? hexToRgba(tireColor, 0.4) : tireColor,
+      };
+    });
+    return { lap: 65, totalLaps: 78, drivers };
+  }
+}
+
+</script>
+</body>
+</html>

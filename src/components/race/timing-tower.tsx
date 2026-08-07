@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Shuffle, Timer } from "lucide-react";
+import { ArrowLeftRight, Shuffle, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
-import BrandMark, { BananaGlyph } from "@/components/brand-mark";
+import BrandMark from "@/components/brand-mark";
 import { useAppPref } from "@/components/app-pref-provider";
 import type { DriverWithTeam } from "@/lib/f1-drivers";
 import type { RaceStanding } from "@/lib/race-sim";
@@ -91,6 +91,9 @@ export default function TimingTower({
   className,
 }: TimingTowerProps) {
   const { t } = useAppPref();
+  // Which gap the column reports. Local to the tower: it is a way of reading
+  // the same race, not a fact about it, so it does not belong in race state.
+  const [gapMode, setGapMode] = useState<"leader" | "ahead">("ahead");
   const [moved, setMoved] = useState<Record<number, "up" | "down">>({});
   const lastPlaces = useRef<Map<number, number>>(new Map());
   const timers = useRef<Set<number>>(new Set());
@@ -196,98 +199,82 @@ export default function TimingTower({
 
   return (
     <div
+      style={{ fontFamily: "var(--font-timing), system-ui, sans-serif" }}
       className={cn(
-        // Broadcast graphics are dark in every theme: the tower is styled
-        // after the television overlay, not after the app.
-        // One panel, not twenty bands. The broadcast tower is a single sheet
-        // of dark glass with the rows sitting on it — the striping and the
-        // seams this used to draw are what made it read as a spreadsheet.
-        "pointer-events-auto overflow-hidden rounded-sm bg-[#12141d]/88 text-white shadow-2xl shadow-black/60 backdrop-blur-md",
-        compact ? "w-[132px]" : "w-[204px]",
+        // Broadcast graphics are dark in every theme: the tower is styled after
+        // the television overlay, not after the app. Chips hang off the right
+        // edge, so the panel cannot clip its own children.
+        "pointer-events-auto rounded-sm bg-[#14161a]/92 text-white shadow-[0_8px_24px_rgba(0,0,0,0.4)]",
+        compact ? "w-[142px]" : "w-[210px]",
         className,
       )}
     >
-      {/* The brand bar and the lap band, in the broadcast's own order. The
-          logo that sits here on television is a trademark, so the bar carries
-          the colour and nothing else; the counter is centred and is the
-          largest thing in the graphic, because it is the headline. */}
-      <div aria-hidden className="h-[3px] w-full bg-[#e10600]" />
-      {/* The mark sits where the championship's own logo does on television.
-          That one is a trademark and this app is unofficial, so the space
-          carries this project's banana instead — same job, no borrowed
-          identity. */}
+      {/* The mark and the series, set to the left the way the graphic sets
+          them — a logo centred over a column of numbers reads as a title, and
+          this is a header. */}
       <div
         className={cn(
-          "flex flex-col items-center border-b border-white/15",
-          compact ? "gap-1 px-2 pb-1.5 pt-2" : "gap-1.5 px-3 pb-2 pt-3",
+          "flex items-center border-b-2 border-[#2a2d33] bg-linear-to-b from-[#1c1f24] to-[#0f1114]",
+          compact ? "gap-1.5 px-2 pb-2 pt-2.5" : "gap-2.5 px-4 pb-3 pt-4",
         )}
       >
         <BrandMark
-          className={compact ? "h-[24px] w-auto" : "h-[34px] w-auto"}
+          className={compact ? "h-[13px] w-auto shrink-0" : "h-[16px] w-auto shrink-0"}
           title={t.appName}
         />
-        {/* The sanctioning line the graphic carries under its logo. This race
-            is sanctioned by nobody, and the line says so rather than
-            impersonating a body that exists. */}
-        <div className={cn("flex items-center", compact ? "gap-1" : "gap-1.5")}>
-          {/* The roundel goes on a phone: at 132px the badge and the two lines
-              together run past the panel, and the words are the part that
-              carries the meaning. */}
-          {!compact && (
-            <span className="flex h-[17px] w-[17px] items-center justify-center rounded-full border border-white/70 text-[7px] font-black leading-none tracking-tight">
+        <div className="min-w-0 flex-1">
+          <div
+            className={cn(
+              "whitespace-nowrap font-black uppercase leading-tight",
+              compact ? "text-[10px] tracking-[0.6px]" : "text-[14px] tracking-[1.2px]",
+            )}
+          >
+            {t.brandLiveTiming}
+          </div>
+          <div className={cn("mt-px flex items-center", compact ? "gap-1" : "gap-1.5")}>
+            <span
+              className={cn(
+                "font-black",
+                compact ? "text-[8px] tracking-[0.4px]" : "text-[10px] tracking-[0.8px]",
+              )}
+            >
               RUI
             </span>
-          )}
-          <span className="flex flex-col items-center leading-none">
-            <span
-              className={cn(
-                "flex items-center whitespace-nowrap font-bold uppercase tracking-tight",
-                compact ? "gap-[2px] text-[7px]" : "gap-0.5 text-[8px]",
-              )}
-            >
-              {t.brandSeries}
-              <BananaGlyph className={compact ? "h-[7px] w-auto" : "h-[9px] w-auto"} />
-            </span>
-            <span
-              className={cn(
-                "whitespace-nowrap font-medium uppercase tracking-tight text-white/55",
-                compact ? "mt-[2px] text-[5px]" : "mt-0.5 text-[7px]",
-              )}
-            >
-              {t.brandSanction}
-            </span>
-          </span>
+            {!compact && (
+              <span className="whitespace-nowrap text-[8.5px] font-semibold tracking-[0.4px] text-[#9aa0a8]">
+                {t.brandSanction}
+              </span>
+            )}
+          </div>
         </div>
       </div>
+
       <div
         className={cn(
-          "relative flex items-baseline justify-center gap-1.5",
-          compact ? "pb-1.5 pt-1" : "pb-2.5 pt-1.5",
+          "relative flex items-baseline justify-center border-b border-[#2a2d33] bg-[#16181c]",
+          compact ? "gap-1.5 px-2 py-1" : "gap-2 px-4 py-1",
         )}
       >
         <span
           className={cn(
-            "font-medium uppercase tracking-wide text-white/85",
-            compact ? "text-[10px]" : "text-[13px]",
+            "font-semibold uppercase text-[#e8eaed]",
+            compact ? "text-[13px] tracking-[0.6px]" : "text-[19px] tracking-[1px]",
           )}
         >
           {t.raceLap}
         </span>
         <span
-          className={cn(
-            "font-black tabular-nums",
-            compact ? "text-[15px]" : "text-[20px]",
-          )}
+          className={cn("font-black tabular-nums", compact ? "text-[16px]" : "text-[22px]")}
         >
           {lap ?? 1}
         </span>
         <span
           className={cn(
-            "font-medium tabular-nums text-white/45",
-            compact ? "text-[10px]" : "text-[13px]",
+            "font-semibold tabular-nums text-[#9aa0a8]",
+            compact ? "text-[11px]" : "text-[15px]",
           )}
         >
-          / {totalLaps || "—"}
+          / {totalLaps || "\u2014"}
         </span>
         <button
           type="button"
@@ -303,6 +290,23 @@ export default function TimingTower({
         </button>
       </div>
 
+      {/* Which gap the column is showing, said in the control that changes it.
+          Neither answer is the right one on its own: the interval says who is
+          catching whom, the leader gap says how the field has strung out, and
+          the broadcast switches between them for exactly that reason. */}
+      <button
+        type="button"
+        onClick={() => setGapMode(gapMode === "leader" ? "ahead" : "leader")}
+        aria-pressed={gapMode === "ahead"}
+        className={cn(
+          "flex w-full items-center justify-center border-b border-[#2a2d33] bg-[#101216] font-bold uppercase text-[#9aa0a8] transition-colors hover:bg-[#1b1e23] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#e10600]",
+          compact ? "gap-1 py-[3px] text-[7px] tracking-[0.6px]" : "gap-1.5 py-1 text-[9px] tracking-[1px]",
+        )}
+      >
+        <ArrowLeftRight className={compact ? "h-2 w-2" : "h-2.5 w-2.5"} />
+        {gapMode === "leader" ? t.raceLeaderGap : t.raceInterval}
+      </button>
+
       {/* The full grid, unscrolled: twenty rows is the content, not a slice of
           it, and a tower that cuts off at P19 makes the reader wonder who is
           missing. Scrolling is left as the fallback for viewports too short to
@@ -310,8 +314,8 @@ export default function TimingTower({
       <ol
         ref={list}
         className={cn(
-          "f1tv-scroll overflow-y-auto",
-          compact ? "max-h-[calc(100dvh-8.5rem)]" : "max-h-[calc(100vh-8rem)]",
+          "f1tv-scroll overflow-y-auto overflow-x-visible",
+          compact ? "max-h-[calc(100dvh-10.5rem)]" : "max-h-[calc(100vh-10rem)]",
         )}
       >
         {rows.map((entry, position) => {
@@ -324,14 +328,21 @@ export default function TimingTower({
           // A lapped car's gap in seconds is a lie by omission — the honest
           // number is how many laps down it is. Before the cars move there is
           // no gap at all, so the column carries the car number instead of a
-          // figure the race has not produced yet.
+          // figure the race has not produced yet. The leader's own cell names
+          // the mode, because the leader has no gap to report in either.
           const gap = !started || !entry.row
             ? `${driver.number}`
             : leader
-              ? t.raceLeaderGap
+              ? gapMode === "leader"
+                ? t.raceLeaderGap
+                : t.raceInterval
               : entry.row.lapsDown > 0
                 ? `+${entry.row.lapsDown} ${t.raceLapsDown}`
-                : formatGap(entry.row.gapToAhead);
+                : formatGap(
+                    gapMode === "leader"
+                      ? entry.row.gapToLeader
+                      : entry.row.gapToAhead,
+                  );
           const holdsFastest = fastestLapIndex != null && fastestLapIndex === index;
           const tyre = tyres?.[index];
 
@@ -355,71 +366,76 @@ export default function TimingTower({
                   // measures itself from its content changes height the moment
                   // a car moves — which makes the whole tower jump every time
                   // it has something to report.
-                  "flex w-full items-center text-left transition-colors duration-500",
-                  compact ? "h-[25px] gap-1 px-1" : "h-[31px] gap-1.5 px-1.5",
+                  "flex w-full items-center border-b border-white/[0.04] text-left transition-colors duration-500",
+                  compact ? "h-[26px]" : "h-[38px]",
                   selected
                     ? "bg-white/20"
                     : direction === "up"
-                      ? "bg-[#00b04f]/25 hover:bg-[#00b04f]/35"
+                      ? "bg-[#00b04f]/25"
                       : direction === "down"
-                        ? "bg-[#e10600]/25 hover:bg-[#e10600]/35"
-                        : "hover:bg-white/10",
+                        ? "bg-[#e10600]/25"
+                        : "odd:bg-[#1a1d22] even:bg-[#15171b] hover:bg-white/10",
                 )}
               >
-                {/* The place is a plain number — the tower is already sorted
-                    by it, and a plate around every one of them is twenty
-                    boxes competing with the one thing the graphic actually
-                    marks. The leader gets that plate, the fastest lap gets it
-                    in violet, and a car that has just gained or lost a place
-                    gets it in green or red with the arrow in place of the
-                    number for as long as the change is news. */}
+                {/* The place fills its own cell rather than sitting in a plate:
+                    the leader's cell is red, a car that has just gained or lost
+                    a place is green or red with an arrow for as long as the
+                    change is news, and everyone else is grey on the row. */}
                 <span
                   className={cn(
-                    "flex shrink-0 items-center justify-center font-black tabular-nums leading-none",
-                    compact ? "h-[15px] w-[15px] text-[10px]" : "h-[19px] w-[19px] text-[13px]",
+                    "flex h-full shrink-0 items-center justify-center font-black tabular-nums",
+                    compact ? "w-[22px] text-[12px]" : "w-[34px] text-[16px]",
                     direction === "up"
                       ? "bg-[#00b04f] text-white"
                       : direction === "down"
                         ? "bg-[#e10600] text-white"
                         : leader
                           ? "bg-[#e10600] text-white"
-                          : "text-white",
+                          : "text-[#b6babd]",
                   )}
                 >
                   {direction ? (
-                    <span aria-hidden className={compact ? "text-[8px]" : "text-[10px]"}>
-                      {direction === "up" ? "▲" : "▼"}
+                    <span aria-hidden className={compact ? "text-[9px]" : "text-[12px]"}>
+                      {direction === "up" ? "\u25b2" : "\u25bc"}
                     </span>
                   ) : (
                     position + 1
                   )}
                 </span>
-                {/* Where the constructor badge goes on television. That badge
-                    is a trademark and the liveries here are approximations, so
-                    the disc carries the team's colour and nothing else — the
-                    column still reads as "which team", which is the whole job
-                    the badge does at this size. */}
                 <span
                   aria-hidden
-                  className={cn(
-                    "shrink-0 rounded-full",
-                    compact ? "h-2.5 w-2.5" : "h-3 w-3",
-                  )}
+                  className={cn("h-full shrink-0", compact ? "w-1" : "w-1.5")}
                   style={{ backgroundColor: driver.team.livery.body }}
                 />
+                {/* Where the constructor badge goes on television. That badge
+                    is a trademark and the liveries here are approximations, so
+                    the disc carries the team's colour and nothing else. */}
                 <span
                   className={cn(
-                    "shrink-0 font-black uppercase tracking-tight",
-                    compact ? "text-[12px]" : "text-[15px]",
+                    "flex shrink-0 justify-center",
+                    compact ? "w-3.5" : "w-6",
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className={cn("rounded-full opacity-85", compact ? "h-2 w-2" : "h-3.5 w-3.5")}
+                    style={{ backgroundColor: driver.team.livery.body }}
+                  />
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 font-bold",
+                    compact ? "w-[26px] pl-px text-[11px] tracking-[0.3px]" : "w-9 pl-0.5 text-[15px] tracking-[0.5px]",
                   )}
                 >
                   {driver.code}
                 </span>
+                <span className="flex-1" />
                 <span
                   className={cn(
-                    "ml-auto shrink-0 truncate text-right font-bold tabular-nums",
-                    compact ? "text-[11px]" : "text-[14px]",
-                    started ? "text-white" : "text-white/45",
+                    "whitespace-nowrap text-right font-semibold leading-none tabular-nums",
+                    compact ? "text-[11px] tracking-[0.3px]" : "text-[16px] tracking-[0.5px]",
+                    started ? "text-white" : "text-[#75787d]",
                   )}
                 >
                   {gap}
@@ -429,32 +445,28 @@ export default function TimingTower({
                     with something illegible inside it. */}
                 <span
                   className={cn(
-                    "shrink-0 text-center font-bold leading-none",
-                    compact ? "w-2 text-[9px]" : "w-2.5 text-[11px]",
+                    "shrink-0 text-right font-black leading-none",
+                    compact ? "ml-1 mt-px w-3 pr-1 text-[10px]" : "ml-1.5 mt-0.5 w-[15px] pr-1.5 text-[13px]",
                   )}
                   style={tyre ? { color: TYRE_COLOUR[tyre] } : undefined}
                   title={tyre}
                 >
                   {tyre ?? ""}
                 </span>
-                {/* The fastest lap is a violet chip at the edge of the row,
-                    not a recolouring of the place: the two are separate facts,
-                    and a car can perfectly well lead the race and hold the
-                    fastest lap at once. The slot is reserved on every row so
-                    that one car setting a time does not shift twenty gaps
-                    sideways. */}
-                <span
-                  className={cn(
-                    "flex shrink-0 items-center justify-center",
-                    compact ? "h-[13px] w-[13px]" : "h-4 w-4",
-                    holdsFastest && "bg-[#a020f0]",
-                  )}
-                  title={holdsFastest ? t.raceFastestLap : undefined}
-                >
-                  {holdsFastest && (
+                {/* The fastest lap hangs off the panel, where the graphic puts
+                    it: inside the row it would have to take width from the gap
+                    on every row that has no time to report. */}
+                {holdsFastest && (
+                  <span
+                    title={t.raceFastestLap}
+                    className={cn(
+                      "absolute inset-y-1 flex items-center justify-center rounded-[2px] bg-[#c400ff] text-white",
+                      compact ? "-right-3 w-3" : "-right-4 w-[15px]",
+                    )}
+                  >
                     <Timer className={compact ? "h-2 w-2" : "h-2.5 w-2.5"} strokeWidth={3} />
-                  )}
-                </span>
+                  </span>
+                )}
               </button>
             </li>
           );
