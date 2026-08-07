@@ -198,38 +198,42 @@ export default function TimingTower({
         // Broadcast graphics are dark in every theme: the tower is styled
         // after the television overlay, not after the app.
         "pointer-events-auto overflow-hidden rounded-md bg-[#0d0d14]/92 text-white shadow-2xl shadow-black/60 backdrop-blur-md",
-        compact ? "w-[112px]" : "w-[190px]",
+        compact ? "w-[106px]" : "w-[168px]",
         className,
       )}
     >
-      {/* The lap band. It reads as the headline of the graphic rather than a
-          panel title, which is why the counter is the largest text here. */}
+      {/* The brand bar and the lap band, in the broadcast's own order. The
+          logo that sits here on television is a trademark, so the bar carries
+          the colour and nothing else; the counter is centred and is the
+          largest thing in the graphic, because it is the headline. */}
+      <div aria-hidden className="h-[3px] w-full bg-[#e10600]" />
       <div
         className={cn(
-          "flex items-center gap-1.5 border-b border-white/10 bg-linear-to-r from-[#e10600]/25 to-transparent",
-          compact ? "py-1 pl-1.5 pr-1" : "py-1.5 pl-2 pr-1.5",
+          "relative flex items-baseline justify-center gap-1.5 border-b border-white/10 bg-black/45",
+          compact ? "py-1" : "py-1.5",
         )}
       >
         <span
-          aria-hidden
-          className={cn("w-[3px] shrink-0 rounded-sm bg-[#e10600]", compact ? "h-4" : "h-5")}
-        />
-        <span
           className={cn(
-            "font-extrabold uppercase italic tracking-[0.1em] text-white/50",
-            compact ? "text-[8px]" : "text-[9px]",
+            "font-bold uppercase tracking-[0.2em] text-white/45",
+            compact ? "text-[8px]" : "text-[10px]",
           )}
         >
           {t.raceLap}
         </span>
         <span
           className={cn(
-            "font-extrabold tabular-nums leading-none",
-            compact ? "text-[13px]" : "text-[15px]",
+            "font-extrabold tabular-nums",
+            compact ? "text-[14px]" : "text-[18px]",
           )}
         >
           {lap ?? 1}
-          <span className={cn("font-bold text-white/45", compact ? "text-[9px]" : "text-[10px]")}>
+          <span
+            className={cn(
+              "font-bold text-white/40",
+              compact ? "text-[9px]" : "text-[11px]",
+            )}
+          >
             /{totalLaps || "—"}
           </span>
         </span>
@@ -239,8 +243,8 @@ export default function TimingTower({
           title={t.raceShuffle}
           aria-label={t.raceShuffle}
           className={cn(
-            "ml-auto flex shrink-0 items-center justify-center rounded text-white/40 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e10600]",
-            compact ? "h-4 w-4" : "h-5 w-5",
+            "absolute flex shrink-0 items-center justify-center rounded text-white/30 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e10600]",
+            compact ? "right-0.5 top-0.5 h-4 w-4" : "right-1 top-1 h-5 w-5",
           )}
         >
           <Shuffle className={compact ? "h-2.5 w-2.5" : "h-3 w-3"} />
@@ -299,9 +303,11 @@ export default function TimingTower({
                   // measures itself from its content changes height the moment
                   // a car moves — which makes the whole tower jump every time
                   // it has something to report.
-                  "flex w-full items-stretch border-b border-white/5 text-left transition-colors",
+                  "flex w-full items-center border-b border-white/[0.06] text-left transition-colors",
                   compact ? "h-[22px]" : "h-[27px]",
-                  selected ? "bg-white/15" : "bg-white/[0.02] hover:bg-white/10",
+                  selected
+                    ? "bg-white/15"
+                    : "odd:bg-white/[0.03] hover:bg-white/10",
                 )}
               >
                 {/* The leader's box is filled, the way the broadcast marks the
@@ -310,8 +316,8 @@ export default function TimingTower({
                     it now holds is already the row it is sitting in. */}
                 <span
                   className={cn(
-                    "flex shrink-0 items-center justify-center font-extrabold tabular-nums",
-                    compact ? "w-4 text-[10px]" : "w-6 text-[12px]",
+                    "flex h-full shrink-0 items-center justify-center font-extrabold tabular-nums",
+                    compact ? "w-4 text-[10px]" : "w-[22px] text-[12px]",
                     direction === "up"
                       ? "bg-[#00b04f] text-white"
                       : direction === "down"
@@ -331,13 +337,13 @@ export default function TimingTower({
                 </span>
                 <span
                   aria-hidden
-                  className={cn("shrink-0", compact ? "ml-1 w-[3px]" : "ml-1.5 w-[4px]")}
+                  className={cn("h-full shrink-0", compact ? "mx-1 w-[3px]" : "mx-1.5 w-[4px]")}
                   style={{ backgroundColor: driver.team.livery.body }}
                 />
                 <span
                   className={cn(
-                    "flex shrink-0 items-center font-extrabold tracking-wider",
-                    compact ? "pl-1 text-[11px]" : "pl-1.5 text-[13px]",
+                    "shrink-0 font-extrabold tracking-tight",
+                    compact ? "w-[26px] text-[11px]" : "w-[33px] text-[14px]",
                   )}
                 >
                   {driver.code}
@@ -346,31 +352,32 @@ export default function TimingTower({
                   <span
                     aria-hidden
                     title={t.raceFastestLap}
-                    className="my-auto ml-1 h-1.5 w-1.5 shrink-0 rounded-full bg-[#b955ff]"
+                    className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#b955ff]"
                   />
                 )}
+                {/* The gap takes the slack rather than a margin doing it: the
+                    column has to end where the compound begins, with a space
+                    between them, and the code has to sit against its colour
+                    block whatever the tower is wide. */}
                 <span
                   className={cn(
-                    "ml-auto flex shrink-0 items-center justify-end tabular-nums",
+                    "min-w-0 flex-1 truncate text-right tabular-nums",
                     compact ? "text-[9px]" : "text-[11px]",
                     started ? "text-white/85" : "text-white/40",
                   )}
                 >
                   {gap}
                 </span>
-                {tyre && (
-                  <span
-                    className={cn(
-                      "flex shrink-0 items-center justify-center font-extrabold",
-                      compact ? "w-3 pr-1 text-[8px]" : "w-4 pr-1.5 text-[10px]",
-                    )}
-                    style={{ color: TYRE_COLOUR[tyre] }}
-                    title={tyre}
-                  >
-                    {tyre}
-                  </span>
-                )}
-                {!tyre && <span className={compact ? "w-1.5" : "w-2"} />}
+                <span
+                  className={cn(
+                    "shrink-0 text-center font-extrabold",
+                    compact ? "ml-1 mr-1 w-2.5 text-[8px]" : "ml-2 mr-1.5 w-3 text-[10px]",
+                  )}
+                  style={tyre ? { color: TYRE_COLOUR[tyre] } : undefined}
+                  title={tyre}
+                >
+                  {tyre ?? ""}
+                </span>
               </button>
             </li>
           );
