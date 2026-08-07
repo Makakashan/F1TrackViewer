@@ -16,6 +16,7 @@
     "race:laptimes": "bun scripts/audit-lap-times.ts",
     "start": "next start -p 4000",
     "widths:generate": "bun scripts/generate-track-widths.ts",
+    "race:kerbs": "bun scripts/audit-kerbs.ts",
     "race:gaps": "bun scripts/audit-gaps.ts"
   },
   "dependencies": {
