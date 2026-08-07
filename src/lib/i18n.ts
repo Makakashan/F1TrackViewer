@@ -123,7 +123,7 @@ const en = {
   raceStandby: "Ready to start",
   raceLightsOut: "Lights out",
   raceStart: "Start race",
-  raceStartHint: "Lights, then one lap. The rest of the distance is not simulated yet.",
+  raceStartHint: "Lights out, then the full race distance.",
   racePause: "Pause",
   raceResume: "Resume",
   raceReset: "Back to the grid",
@@ -141,6 +141,10 @@ const en = {
   raceGridOrder: "Grid",
   raceShuffle: "Shuffle",
   raceInterval: "Interval",
+  /** The leader's own gap column — the car everything else is measured from. */
+  raceLeaderGap: "Leader",
+  /** Suffix for a lapped car's gap: "+1 Lap". */
+  raceLapsDown: "Lap",
   raceScene: "Scene",
   raceFollowing: "Camera",
   raceNoCars:
@@ -268,7 +272,7 @@ const ru: Dict = {
   raceStandby: "Готов к старту",
   raceLightsOut: "Старт",
   raceStart: "Начать гонку",
-  raceStartHint: "Огни, затем один круг. Остальная дистанция пока не симулируется.",
+  raceStartHint: "Огни, затем полная дистанция гонки.",
   racePause: "Пауза",
   raceResume: "Продолжить",
   raceReset: "На решётку",
@@ -286,6 +290,8 @@ const ru: Dict = {
   raceGridOrder: "Решётка",
   raceShuffle: "Перемешать",
   raceInterval: "Интервал",
+  raceLeaderGap: "Лидер",
+  raceLapsDown: "кр.",
   raceScene: "Сцена",
   raceFollowing: "Камера",
   raceNoCars:

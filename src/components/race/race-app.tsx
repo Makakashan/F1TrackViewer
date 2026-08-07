@@ -8,10 +8,11 @@ import ErrorBanner from "@/components/error-banner";
 import SettingsMenu from "@/components/settings-menu";
 import { useAppPref } from "@/components/app-pref-provider";
 import { useCircuits } from "@/hooks/use-circuits";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useTrackData } from "@/hooks/use-track-data";
 import { useCircuitScene } from "@/hooks/use-circuit-scene";
 import { useRaceSimulation } from "@/hooks/use-race-simulation";
-import { raceGridOrder, raceLapCount } from "@/lib/race-session";
+import { raceGridOrder, raceLapCount, raceTyreChoices } from "@/lib/race-session";
 import { useUrlState } from "@/lib/url-state";
 import RaceBetaNotice from "@/components/race/race-beta-notice";
 import RaceCircuitPicker from "@/components/race/race-circuit-picker";
@@ -20,7 +21,6 @@ import RaceSceneSettings from "@/components/race/race-scene-settings";
 import RaceStatusBar from "@/components/race/race-status-bar";
 import RaceResults from "@/components/race/race-results";
 import TimingTower from "@/components/race/timing-tower";
-import MobileTimingTower from "@/components/race/mobile-timing-tower";
 
 const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
   ssr: false,
@@ -45,6 +45,7 @@ export default function RaceApp() {
   const { t, resolvedTheme } = useAppPref();
   const [error, setError] = useState<string | null>(null);
   const { circuits, selectedId, onSelect } = useCircuits(setError);
+  const isMobile = useIsMobile();
 
   const {
     track: urlTrack,
@@ -100,6 +101,19 @@ export default function RaceApp() {
       })),
     [order],
   );
+
+  const tyres = useMemo(
+    () =>
+      selectedId
+        ? raceTyreChoices(selectedId, gridNonce, order.length)
+        : undefined,
+    [selectedId, gridNonce, order.length],
+  );
+
+  // Gaps only mean something once the cars are moving. Through the lights the
+  // field is stationary on a grid whose slots are eight meters apart, and
+  // reporting that spacing as an interval is a number about the tarmac.
+  const gapsLive = race.phase === "racing" || race.phase === "finished";
 
   const lapLength = geojson?.features[0]?.properties.length ?? 0;
   const totalLaps = selectedId ? raceLapCount(selectedId, lapLength) : 0;
@@ -225,7 +239,7 @@ export default function RaceApp() {
               {t.appName}
             </div>
           </div>
-          <span className="rounded bg-[#e10600]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#e10600]">
+          <span className="hidden rounded bg-[#e10600]/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#e10600] sm:inline">
             {t.raceBeta}
           </span>
           <RaceCircuitPicker
@@ -300,20 +314,30 @@ export default function RaceApp() {
         )}
 
         <div className="pointer-events-none absolute inset-0 p-4">
+          {/* One tower, sized by the viewport rather than two towers hidden
+              from each other by a media query: the second copy still mounts,
+              still re-renders five times a second and still measures its rows
+              for the slide animation, and it pays that out of the frame budget
+              the race is drawn with. */}
           <TimingTower
-            className="absolute left-4 top-4 hidden md:block"
+            compact={isMobile}
+            className={
+              isMobile ? "absolute left-2 top-2" : "absolute left-4 top-4"
+            }
             order={order}
             standings={race.standings}
             selectedIndex={selectedDriver}
             onSelect={selectDriver}
             onShuffle={() => setGridNonce((nonce) => nonce + 1)}
             fastestLapIndex={race.fastestLap?.index ?? null}
+            tyres={tyres}
+            lap={leaderLap}
+            totalLaps={totalLaps}
+            started={gapsLive}
           />
 
           <RaceStatusBar
-            className="absolute left-1/2 top-4 -translate-x-1/2"
-            lap={leaderLap}
-            totalLaps={totalLaps}
+            className="absolute right-2 top-2 sm:left-1/2 sm:right-auto sm:top-4 sm:-translate-x-1/2"
             lit={race.lit}
             phase={race.phase}
             fastestLap={
@@ -324,15 +348,6 @@ export default function RaceApp() {
                   }
                 : null
             }
-          />
-
-          <MobileTimingTower
-            className="absolute bottom-6 left-4 md:hidden"
-            order={order}
-            standings={race.standings}
-            selectedIndex={selectedDriver}
-            onSelect={selectDriver}
-            onShuffle={() => setGridNonce((nonce) => nonce + 1)}
           />
 
           {showResults && (
@@ -346,7 +361,7 @@ export default function RaceApp() {
           )}
 
           <RaceControls
-            className="absolute bottom-6 left-1/2 -translate-x-1/2"
+            className="absolute bottom-4 left-1/2 w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 sm:bottom-6"
             started={race.phase !== "standby"}
             paused={race.paused}
             speed={race.speed}

@@ -70,6 +70,31 @@ export function raceGridOrder(
   return drivers;
 }
 
+/** The three dry compounds, by the letter timing screens print. */
+export type TyreCompound = "S" | "M" | "H";
+
+const COMPOUNDS: TyreCompound[] = ["S", "M", "H"];
+
+/**
+ * What each car starts on.
+ *
+ * Cosmetic for now: the simulation has no tyre model, so the compound changes
+ * nothing about how a car goes round. It is drawn because a timing tower
+ * without it is missing a column the eye looks for — and seeded, so the same
+ * grid always shows the same choices rather than re-rolling every render.
+ */
+export function raceTyreChoices(
+  circuitId: string,
+  nonce = 0,
+  count = 20,
+): TyreCompound[] {
+  const random = randomFrom(seedFrom(`${circuitId}:${nonce}:tyres`));
+  return Array.from(
+    { length: count },
+    () => COMPOUNDS[Math.floor(random() * COMPOUNDS.length)],
+  );
+}
+
 /** How a race progresses. The simulation will drive this; the HUD reads it. */
 export type RacePhase =
   | "standby"

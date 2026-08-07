@@ -29,13 +29,18 @@ const LATERAL_M = 5;
 const TARGET_HEIGHT_M = 0.9;
 
 /**
- * How quickly the follow target catches the car, per second.
+ * How the follow target catches the car.
  *
- * The camera rides the target at a fixed user-set offset, so this is the only
- * smoothing there is: high enough that the car never escapes the frame, low
- * enough that a kerb doesn't kick the whole view.
+ * Two filters rather than one. The velocity filter smooths the car's own
+ * step-to-step speed, which is piecewise constant because the simulation runs
+ * at a fixed rate; the error filter closes whatever distance is left. Feeding
+ * the velocity forward is what keeps the lag at zero — a plain error filter
+ * trails by speed divided by rate, which is meters at racing speed, and
+ * tracking the interpolated pose exactly instead hands every step boundary
+ * straight to the camera as a jolt.
  */
-const TARGET_RATE = 10;
+const VELOCITY_RATE = 9;
+const ERROR_RATE = 7;
 
 /** Free-camera pan, as a share of the camera-to-target distance per second. */
 const PAN_RATE = 1.4;
@@ -103,6 +108,9 @@ export default function RaceCameraRig({
     target: new THREE.Vector3(),
     move: new THREE.Vector3(),
     offset: new THREE.Vector3(),
+    lastTarget: new THREE.Vector3(),
+    velocity: new THREE.Vector3(),
+    step: new THREE.Vector3(),
   });
 
   // Movement keys are held, not tapped, so they are polled per frame; the
@@ -243,15 +251,28 @@ export default function RaceCameraRig({
       controls.target.copy(s.target);
       camera.lookAt(s.target);
       controls.update();
+      s.lastTarget.copy(s.target);
+      s.velocity.set(0, 0, 0);
       return;
     }
 
-    // Frame-rate independent smoothing: the same lag whether the page is
-    // running at 30 or 144.
-    s.move
+    // Velocity feed-forward plus error correction: the camera runs at the
+    // car's own speed and only filters the difference, so it neither trails
+    // the car nor passes its step-rate jitter on to the whole view.
+    if (delta > 1e-4) {
+      s.step.copy(s.target).sub(s.lastTarget).divideScalar(delta);
+      s.velocity.lerp(s.step, 1 - Math.exp(-VELOCITY_RATE * delta));
+    }
+    s.lastTarget.copy(s.target);
+
+    s.move.copy(s.velocity).multiplyScalar(delta);
+    s.offset
       .copy(s.target)
       .sub(controls.target)
-      .multiplyScalar(1 - Math.exp(-TARGET_RATE * delta));
+      .sub(s.move)
+      .multiplyScalar(1 - Math.exp(-ERROR_RATE * delta));
+    s.move.add(s.offset);
+
     controls.target.add(s.move);
     camera.position.add(s.move);
     controls.update();
