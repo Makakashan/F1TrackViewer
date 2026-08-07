@@ -47,40 +47,6 @@ const TYRE_COLOUR: Record<TyreCompound, string> = {
   H: "#f2f2f2",
 };
 
-/**
- * The two sidewall arcs of the compound ring.
- *
- * Path data from matteocelani/f1-telemetry (MIT), `TyreIcon.tsx` — the shape is
- * the one every timing screen draws, and re-deriving the béziers by hand would
- * produce a worse copy of the same circle.
- */
-const TYRE_ARC_LEFT =
-  "M70 19C40.6787 26.58 19 53.4792 19 85.5C19 117.521 40.6787 144.42 70 152";
-const TYRE_ARC_RIGHT =
-  "M101 152C130.321 144.42 152 117.521 152 85.5C152 53.4792 130.321 26.58 101 19";
-
-/** The compound, drawn as the marked ring rather than as a bare letter. */
-function TyreMark({ compound, size }: { compound: TyreCompound; size: number }) {
-  return (
-    <span
-      className="relative flex shrink-0 items-center justify-center"
-      style={{ width: size, height: size, color: TYRE_COLOUR[compound] }}
-      title={compound}
-    >
-      <svg viewBox="0 0 172 172" className="absolute inset-0 h-full w-full" aria-hidden>
-        <circle cx="86" cy="86" r="86" fill="#15151e" />
-        <path d={TYRE_ARC_LEFT} stroke="currentColor" strokeWidth="22" fill="none" />
-        <path d={TYRE_ARC_RIGHT} stroke="currentColor" strokeWidth="22" fill="none" />
-      </svg>
-      <span
-        className="relative font-black leading-none text-white"
-        style={{ fontSize: Math.round(size * 0.5) }}
-      >
-        {compound}
-      </span>
-    </span>
-  );
-}
 
 /**
  * Gaps the way a broadcast writes them: tenths under a minute, m:ss.t over it.
@@ -232,8 +198,11 @@ export default function TimingTower({
       className={cn(
         // Broadcast graphics are dark in every theme: the tower is styled
         // after the television overlay, not after the app.
-        "pointer-events-auto overflow-hidden rounded-[2px] bg-black/80 text-white shadow-2xl shadow-black/60 backdrop-blur-md",
-        compact ? "w-[124px]" : "w-[196px]",
+        // One panel, not twenty bands. The broadcast tower is a single sheet
+        // of dark glass with the rows sitting on it — the striping and the
+        // seams this used to draw are what made it read as a spreadsheet.
+        "pointer-events-auto overflow-hidden rounded-sm bg-[#12141d]/88 text-white shadow-2xl shadow-black/60 backdrop-blur-md",
+        compact ? "w-[132px]" : "w-[204px]",
         className,
       )}
     >
@@ -244,30 +213,33 @@ export default function TimingTower({
       <div aria-hidden className="h-[3px] w-full bg-[#e10600]" />
       <div
         className={cn(
-          "relative flex items-center justify-center bg-black",
-          compact ? "gap-1.5 py-1" : "gap-2.5 py-1.5",
+          "relative flex items-baseline justify-center gap-1.5",
+          compact ? "py-1.5" : "py-2.5",
         )}
       >
         <span
           className={cn(
-            "font-black uppercase leading-none tracking-[0.06em]",
-            compact ? "text-[12px]" : "text-[17px]",
+            "font-medium uppercase tracking-wide text-white/85",
+            compact ? "text-[10px]" : "text-[13px]",
           )}
         >
           {t.raceLap}
         </span>
         <span
-          aria-hidden
-          className={cn("w-px bg-white/25", compact ? "h-3" : "h-4")}
-        />
-        <span
           className={cn(
-            "font-black tabular-nums leading-none",
-            compact ? "text-[12px]" : "text-[17px]",
+            "font-black tabular-nums",
+            compact ? "text-[15px]" : "text-[20px]",
           )}
         >
           {lap ?? 1}
-          <span className="text-white/45">/{totalLaps || "—"}</span>
+        </span>
+        <span
+          className={cn(
+            "font-medium tabular-nums text-white/45",
+            compact ? "text-[10px]" : "text-[13px]",
+          )}
+        >
+          / {totalLaps || "—"}
         </span>
         <button
           type="button"
@@ -322,7 +294,7 @@ export default function TimingTower({
                 if (element) rowRefs.current.set(driver.code, element);
                 else rowRefs.current.delete(driver.code);
               }}
-              className="relative mb-px"
+              className="relative"
             >
               <button
                 type="button"
@@ -335,58 +307,47 @@ export default function TimingTower({
                   // measures itself from its content changes height the moment
                   // a car moves — which makes the whole tower jump every time
                   // it has something to report.
-                  "flex w-full items-center gap-1 text-left transition-colors duration-500",
-                  compact ? "h-[24px] pr-1" : "h-[30px] pr-1.5",
+                  "flex w-full items-center text-left transition-colors duration-500",
+                  compact ? "h-[25px] gap-1 px-1" : "h-[31px] gap-1.5 px-1.5",
                   selected
-                    ? "bg-white/25"
+                    ? "bg-white/20"
                     : direction === "up"
-                      ? "bg-[#00b04f]/20 hover:bg-[#00b04f]/30"
+                      ? "bg-[#00b04f]/25 hover:bg-[#00b04f]/35"
                       : direction === "down"
-                        ? "bg-[#e10600]/20 hover:bg-[#e10600]/30"
-                        : "bg-white/[0.07] hover:bg-white/[0.16]",
+                        ? "bg-[#e10600]/25 hover:bg-[#e10600]/35"
+                        : "hover:bg-white/10",
                 )}
               >
-                {/* The place, in the plate the broadcast draws: white with a
-                    black number, purple when the car holds the fastest lap,
-                    and green or red carrying an arrow for the seconds after it
-                    changes hands. The plate sits on a black gutter, which is
-                    what separates the column from the row behind it. */}
+                {/* The place is a plain number — the tower is already sorted
+                    by it, and a plate around every one of them is twenty
+                    boxes competing with the one thing the graphic actually
+                    marks. The leader gets that plate, the fastest lap gets it
+                    in violet, and a car that has just gained or lost a place
+                    gets it in green or red with the arrow in place of the
+                    number for as long as the change is news. */}
                 <span
                   className={cn(
-                    "flex h-full shrink-0 items-center justify-center bg-black/70",
-                    compact ? "w-[22px]" : "w-[30px]",
+                    "flex shrink-0 items-center justify-center font-black tabular-nums leading-none",
+                    compact ? "h-[15px] w-[15px] text-[10px]" : "h-[19px] w-[19px] text-[13px]",
+                    direction === "up"
+                      ? "bg-[#00b04f] text-white"
+                      : direction === "down"
+                        ? "bg-[#e10600] text-white"
+                        : holdsFastest
+                          ? "bg-[#b955ff] text-white"
+                          : leader
+                            ? "bg-[#e10600] text-white"
+                            : "text-white",
                   )}
+                  title={holdsFastest ? t.raceFastestLap : undefined}
                 >
-                  <span
-                    className={cn(
-                      "flex items-center justify-center font-black tabular-nums leading-none",
-                      compact ? "h-[16px] w-[16px] text-[10px]" : "h-[21px] w-[21px] text-[13px]",
-                      direction === "up"
-                        ? "bg-[#00b04f] text-white"
-                        : direction === "down"
-                          ? "bg-[#e10600] text-white"
-                          : holdsFastest
-                            ? "bg-[#b955ff] text-white"
-                            : "bg-white text-black",
-                    )}
-                    title={holdsFastest ? t.raceFastestLap : undefined}
-                  >
-                    {direction ? (
-                      <span aria-hidden className={compact ? "text-[8px]" : "text-[10px]"}>
-                        {direction === "up" ? "▲" : "▼"}
-                      </span>
-                    ) : (
-                      position + 1
-                    )}
-                  </span>
-                </span>
-                <span
-                  className={cn(
-                    "shrink-0 font-black uppercase tracking-tight",
-                    compact ? "text-[12px]" : "text-[15px]",
+                  {direction ? (
+                    <span aria-hidden className={compact ? "text-[8px]" : "text-[10px]"}>
+                      {direction === "up" ? "▲" : "▼"}
+                    </span>
+                  ) : (
+                    position + 1
                   )}
-                >
-                  {driver.code}
                 </span>
                 {/* Where the constructor badge goes on television. That badge
                     is a trademark and the liveries here are approximations, so
@@ -396,21 +357,41 @@ export default function TimingTower({
                 <span
                   aria-hidden
                   className={cn(
-                    "shrink-0 rounded-full ring-1 ring-black/50",
-                    compact ? "ml-auto h-2.5 w-2.5" : "ml-auto h-3.5 w-3.5",
+                    "shrink-0 rounded-full",
+                    compact ? "h-2.5 w-2.5" : "h-3 w-3",
                   )}
                   style={{ backgroundColor: driver.team.livery.body }}
                 />
                 <span
                   className={cn(
-                    "shrink-0 truncate text-right font-semibold tabular-nums",
-                    compact ? "w-[36px] text-[10px]" : "w-[48px] text-[12px]",
+                    "shrink-0 font-black uppercase tracking-tight",
+                    compact ? "text-[12px]" : "text-[15px]",
+                  )}
+                >
+                  {driver.code}
+                </span>
+                <span
+                  className={cn(
+                    "ml-auto shrink-0 truncate text-right font-bold tabular-nums",
+                    compact ? "text-[10px]" : "text-[13px]",
                     started ? "text-white" : "text-white/45",
                   )}
                 >
                   {gap}
                 </span>
-                {tyre && <TyreMark compound={tyre} size={compact ? 12 : 16} />}
+                {/* The compound is the letter in its own colour, which is how
+                    the tower prints it — a drawn tyre at this size is a blob
+                    with something illegible inside it. */}
+                <span
+                  className={cn(
+                    "shrink-0 text-center font-bold leading-none",
+                    compact ? "w-2 text-[9px]" : "w-2.5 text-[11px]",
+                  )}
+                  style={tyre ? { color: TYRE_COLOUR[tyre] } : undefined}
+                  title={tyre}
+                >
+                  {tyre ?? ""}
+                </span>
               </button>
             </li>
           );
