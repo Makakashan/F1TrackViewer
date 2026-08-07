@@ -294,7 +294,13 @@ export default function TimingTower({
                 aria-current={selected}
                 data-selected={selected}
                 className={cn(
+                  // Fixed height, not padding: the arrow and the number are
+                  // different glyphs at different sizes, and a row that
+                  // measures itself from its content changes height the moment
+                  // a car moves — which makes the whole tower jump every time
+                  // it has something to report.
                   "flex w-full items-stretch border-b border-white/5 text-left transition-colors",
+                  compact ? "h-[22px]" : "h-[27px]",
                   selected ? "bg-white/15" : "bg-white/[0.02] hover:bg-white/10",
                 )}
               >
@@ -305,7 +311,7 @@ export default function TimingTower({
                 <span
                   className={cn(
                     "flex shrink-0 items-center justify-center font-extrabold tabular-nums",
-                    compact ? "w-4 py-[3px] text-[10px]" : "w-6 py-1 text-[12px]",
+                    compact ? "w-4 text-[10px]" : "w-6 text-[12px]",
                     direction === "up"
                       ? "bg-[#00b04f] text-white"
                       : direction === "down"
