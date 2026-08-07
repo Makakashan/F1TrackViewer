@@ -6,8 +6,6 @@ import StartLightsStrip from "@/components/race/start-lights-strip";
 import type { RacePhase } from "@/lib/race-session";
 
 export interface RaceStatusBarProps {
-  lap: number;
-  totalLaps: number;
   lit: number;
   phase: RacePhase;
   /** Fastest lap so far: holder's code and the time. */
@@ -22,10 +20,14 @@ function formatLapTime(seconds: number): string {
   return `${minutes}:${rest.toFixed(3).padStart(6, "0")}`;
 }
 
-/** Lights, lap counter and session state — the top-centre strip of the HUD. */
+/**
+ * Lights, session state and the fastest lap.
+ *
+ * The lap counter used to live here and now belongs to the tower's lap band,
+ * where the broadcast puts it — two counters on one screen only invite the
+ * reader to check whether they agree.
+ */
 export default function RaceStatusBar({
-  lap,
-  totalLaps,
   lit,
   phase,
   fastestLap,
@@ -53,16 +55,6 @@ export default function RaceStatusBar({
       )}
     >
       <StartLightsStrip lit={lit} />
-
-      <div className="leading-none">
-        <div className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
-          {t.raceLap}
-        </div>
-        <div className="mt-1 text-sm font-bold tabular-nums">
-          {lap}
-          <span className="text-muted-foreground">/{totalLaps || "—"}</span>
-        </div>
-      </div>
 
       {fastestLap && (
         <div className="hidden leading-none sm:block">

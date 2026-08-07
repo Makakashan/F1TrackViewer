@@ -307,6 +307,9 @@ export default function RaceApp() {
             onSelect={selectDriver}
             onShuffle={() => setGridNonce((nonce) => nonce + 1)}
             fastestLapIndex={race.fastestLap?.index ?? null}
+            lap={leaderLap}
+            totalLaps={totalLaps}
+            started={race.phase !== "standby"}
           />
 
           {/* The same tower, phone-sized: always on screen, because gaps that
@@ -320,12 +323,13 @@ export default function RaceApp() {
             onSelect={selectDriver}
             onShuffle={() => setGridNonce((nonce) => nonce + 1)}
             fastestLapIndex={race.fastestLap?.index ?? null}
+            lap={leaderLap}
+            totalLaps={totalLaps}
+            started={race.phase !== "standby"}
           />
 
           <RaceStatusBar
             className="absolute right-2 top-2 sm:left-1/2 sm:right-auto sm:top-4 sm:-translate-x-1/2"
-            lap={leaderLap}
-            totalLaps={totalLaps}
             lit={race.lit}
             phase={race.phase}
             fastestLap={
