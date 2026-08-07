@@ -34,12 +34,15 @@ export interface TimingTowerProps {
 /** How long a row shows its arrow after its car changes position. */
 const MOVE_FLASH_MS = 2200;
 /**
- * How long a row takes to slide to its new place.
+ * How long a row takes to slide to its new place, and on what curve.
  *
- * Short on purpose: two rows crossing overlap for the length of the slide, and
- * a reshuffle at sixteen times speed produces several at once.
+ * Long enough to read as a car moving past another rather than as a cut, and
+ * eased so that it leaves and arrives slowly — a linear slide of this length
+ * reads as a scroll. Two rows crossing overlap for the whole slide, which is
+ * the cost of making the swap legible at sixteen times speed.
  */
-const SLIDE_MS = 240;
+const SLIDE_MS = 460;
+const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 
 /** Compound colours, as the tyre walls are marked. */
 const TYRE_COLOUR: Record<TyreCompound, string> = {
@@ -182,7 +185,7 @@ export default function TimingTower({
       element.style.transform = `translateY(${previous - top}px)`;
       element.style.zIndex = "1";
       requestAnimationFrame(() => {
-        element.style.transition = `transform ${SLIDE_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`;
+        element.style.transition = `transform ${SLIDE_MS}ms ${SLIDE_EASING}`;
         element.style.transform = "";
       });
     }
@@ -367,14 +370,10 @@ export default function TimingTower({
                   // a car moves — which makes the whole tower jump every time
                   // it has something to report.
                   "flex w-full items-center border-b border-white/[0.04] text-left transition-colors duration-500",
-                  compact ? "h-[26px]" : "h-[38px]",
+                  compact ? "h-[22px]" : "h-[30px]",
                   selected
                     ? "bg-white/20"
-                    : direction === "up"
-                      ? "bg-[#00b04f]/25"
-                      : direction === "down"
-                        ? "bg-[#e10600]/25"
-                        : "odd:bg-[#1a1d22] even:bg-[#15171b] hover:bg-white/10",
+                    : "odd:bg-[#1a1d22] even:bg-[#15171b] hover:bg-white/10",
                 )}
               >
                 {/* The place fills its own cell rather than sitting in a plate:
@@ -383,8 +382,8 @@ export default function TimingTower({
                     change is news, and everyone else is grey on the row. */}
                 <span
                   className={cn(
-                    "flex h-full shrink-0 items-center justify-center font-black tabular-nums",
-                    compact ? "w-[22px] text-[12px]" : "w-[34px] text-[16px]",
+                    "flex h-full shrink-0 items-center justify-center font-black tabular-nums transition-colors duration-500",
+                    compact ? "w-[22px] text-[11px]" : "w-[34px] text-[15px]",
                     direction === "up"
                       ? "bg-[#00b04f] text-white"
                       : direction === "down"
@@ -425,7 +424,7 @@ export default function TimingTower({
                 <span
                   className={cn(
                     "shrink-0 font-bold",
-                    compact ? "w-[26px] pl-px text-[11px] tracking-[0.3px]" : "w-9 pl-0.5 text-[15px] tracking-[0.5px]",
+                    compact ? "w-[26px] pl-px text-[11px] tracking-[0.3px]" : "w-9 pl-0.5 text-[14px] tracking-[0.5px]",
                   )}
                 >
                   {driver.code}
@@ -434,7 +433,7 @@ export default function TimingTower({
                 <span
                   className={cn(
                     "whitespace-nowrap text-right font-semibold leading-none tabular-nums",
-                    compact ? "text-[11px] tracking-[0.3px]" : "text-[16px] tracking-[0.5px]",
+                    compact ? "text-[11px] tracking-[0.3px]" : "text-[15px] tracking-[0.5px]",
                     started ? "text-white" : "text-[#75787d]",
                   )}
                 >
