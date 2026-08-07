@@ -17,7 +17,7 @@ export interface TimingTowerProps {
   selectedIndex: number;
   onSelect: (index: number) => void;
   onShuffle: () => void;
-  /** Which car holds the fastest lap — its row gets the purple mark. */
+  /** Which car holds the fastest lap — its row carries the violet chip. */
   fastestLapIndex?: number | null;
   /** Compound per car, indexed like `order`. */
   tyres?: TyreCompound[];
@@ -42,6 +42,10 @@ const MOVE_FLASH_MS = 2200;
  * the cost of making the swap legible at sixteen times speed.
  */
 const SLIDE_MS = 460;
+
+/** Row heights, in pixels. The marker layer positions itself off these. */
+const ROW_H = 30;
+const ROW_H_COMPACT = 22;
 const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 
 /** Compound colours, as the tyre walls are marked. */
@@ -98,6 +102,9 @@ export default function TimingTower({
   // the same race, not a fact about it, so it does not belong in race state.
   const [gapMode, setGapMode] = useState<"leader" | "ahead">("ahead");
   const [moved, setMoved] = useState<Record<number, "up" | "down">>({});
+  // Only read when the list actually scrolls, which it does on viewports too
+  // short for the field.
+  const [scrollTop, setScrollTop] = useState(0);
   const lastPlaces = useRef<Map<number, number>>(new Map());
   const timers = useRef<Set<number>>(new Set());
   const list = useRef<HTMLOListElement>(null);
@@ -108,6 +115,14 @@ export default function TimingTower({
   const rows = standings?.length
     ? standings.map((row) => ({ row, driver: order[row.index] }))
     : order.map((driver, index) => ({ row: null, driver, index }));
+
+  const rowHeight = compact ? ROW_H_COMPACT : ROW_H;
+  const fastestRow =
+    fastestLapIndex == null
+      ? -1
+      : rows.findIndex((entry) =>
+          entry.row ? entry.row.index === fastestLapIndex : false,
+        );
 
   // A position change is worth calling out: twenty rows reshuffling silently is
   // the one thing a timing tower must not do. The row says which way it went
@@ -314,10 +329,17 @@ export default function TimingTower({
           it, and a tower that cuts off at P19 makes the reader wonder who is
           missing. Scrolling is left as the fallback for viewports too short to
           hold the field at all. */}
+      {/* The list scrolls, so nothing inside it may stick out sideways: a box
+          that scrolls on one axis clips or scrolls on the other, which is
+          where the stray horizontal bar under the tower came from. Markers
+          that belong beside a row therefore live in their own layer next to
+          the list, positioned off the row height. */}
+      <div className="relative">
       <ol
         ref={list}
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         className={cn(
-          "f1tv-scroll overflow-y-auto overflow-x-visible",
+          "f1tv-scroll overflow-y-auto",
           compact ? "max-h-[calc(100dvh-10.5rem)]" : "max-h-[calc(100vh-10rem)]",
         )}
       >
@@ -346,7 +368,6 @@ export default function TimingTower({
                       ? entry.row.gapToLeader
                       : entry.row.gapToAhead,
                   );
-          const holdsFastest = fastestLapIndex != null && fastestLapIndex === index;
           const tyre = tyres?.[index];
 
           return (
@@ -369,8 +390,8 @@ export default function TimingTower({
                   // measures itself from its content changes height the moment
                   // a car moves — which makes the whole tower jump every time
                   // it has something to report.
-                  "flex w-full items-center border-b border-white/[0.04] text-left transition-colors duration-500",
-                  compact ? "h-[22px]" : "h-[30px]",
+                  "relative flex w-full items-center border-b border-white/[0.04] text-left transition-colors duration-500",
+                  compact ? "h-[22px] pr-1" : "h-[30px] pr-1.5",
                   selected
                     ? "bg-white/20"
                     : "odd:bg-[#1a1d22] even:bg-[#15171b] hover:bg-white/10",
@@ -445,32 +466,38 @@ export default function TimingTower({
                 <span
                   className={cn(
                     "shrink-0 text-right font-black leading-none",
-                    compact ? "ml-1 mt-px w-3 pr-1 text-[10px]" : "ml-1.5 mt-0.5 w-[15px] pr-1.5 text-[13px]",
+                    compact ? "ml-1 mt-px w-3 text-[10px]" : "ml-1.5 mt-0.5 w-[15px] text-[13px]",
                   )}
                   style={tyre ? { color: TYRE_COLOUR[tyre] } : undefined}
                   title={tyre}
                 >
                   {tyre ?? ""}
                 </span>
-                {/* The fastest lap hangs off the panel, where the graphic puts
-                    it: inside the row it would have to take width from the gap
-                    on every row that has no time to report. */}
-                {holdsFastest && (
-                  <span
-                    title={t.raceFastestLap}
-                    className={cn(
-                      "absolute inset-y-1 flex items-center justify-center rounded-[2px] bg-[#c400ff] text-white",
-                      compact ? "-right-3 w-3" : "-right-4 w-[15px]",
-                    )}
-                  >
-                    <Timer className={compact ? "h-2 w-2" : "h-2.5 w-2.5"} strokeWidth={3} />
-                  </span>
-                )}
               </button>
             </li>
           );
         })}
       </ol>
+
+      {fastestRow >= 0 && (
+        <span
+          title={t.raceFastestLap}
+          style={{
+            top: fastestRow * rowHeight + 3 - scrollTop,
+            transition: `top ${SLIDE_MS}ms ${SLIDE_EASING}`,
+          }}
+          className={cn(
+            "pointer-events-none absolute flex items-center justify-center rounded-[2px] bg-[#c400ff] text-white",
+            // Flush with the panel, so it reads as bolted to the tower rather
+            // than floating beside it.
+            compact ? "-right-2.5 h-3.5 w-2.5" : "-right-[13px] h-5 w-[13px]",
+          )}
+        >
+          <Timer className={compact ? "h-2 w-2" : "h-2.5 w-2.5"} strokeWidth={3} />
+        </span>
+      )}
+      </div>
+
     </div>
   );
 }
