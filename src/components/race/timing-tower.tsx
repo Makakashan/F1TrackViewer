@@ -232,7 +232,7 @@ export default function TimingTower({
       className={cn(
         // Broadcast graphics are dark in every theme: the tower is styled
         // after the television overlay, not after the app.
-        "pointer-events-auto overflow-hidden rounded-md bg-[#0d0d14]/92 text-white shadow-2xl shadow-black/60 backdrop-blur-md",
+        "pointer-events-auto overflow-hidden rounded-[2px] bg-black/80 text-white shadow-2xl shadow-black/60 backdrop-blur-md",
         compact ? "w-[124px]" : "w-[196px]",
         className,
       )}
@@ -244,33 +244,30 @@ export default function TimingTower({
       <div aria-hidden className="h-[3px] w-full bg-[#e10600]" />
       <div
         className={cn(
-          "relative flex items-baseline justify-center gap-1.5 border-b border-white/10 bg-black/45",
-          compact ? "py-1" : "py-1.5",
+          "relative flex items-center justify-center bg-black",
+          compact ? "gap-1.5 py-1" : "gap-2.5 py-1.5",
         )}
       >
         <span
           className={cn(
-            "font-bold uppercase tracking-[0.2em] text-white/45",
-            compact ? "text-[8px]" : "text-[10px]",
+            "font-black uppercase leading-none tracking-[0.06em]",
+            compact ? "text-[12px]" : "text-[17px]",
           )}
         >
           {t.raceLap}
         </span>
         <span
+          aria-hidden
+          className={cn("w-px bg-white/25", compact ? "h-3" : "h-4")}
+        />
+        <span
           className={cn(
-            "font-extrabold tabular-nums",
-            compact ? "text-[15px]" : "text-[20px]",
+            "font-black tabular-nums leading-none",
+            compact ? "text-[12px]" : "text-[17px]",
           )}
         >
           {lap ?? 1}
-          <span
-            className={cn(
-              "font-bold text-white/40",
-              compact ? "text-[9px]" : "text-[11px]",
-            )}
-          >
-            /{totalLaps || "—"}
-          </span>
+          <span className="text-white/45">/{totalLaps || "—"}</span>
         </span>
         <button
           type="button"
@@ -325,7 +322,7 @@ export default function TimingTower({
                 if (element) rowRefs.current.set(driver.code, element);
                 else rowRefs.current.delete(driver.code);
               }}
-              className="relative"
+              className="relative mb-px"
             >
               <button
                 type="button"
@@ -338,82 +335,82 @@ export default function TimingTower({
                   // measures itself from its content changes height the moment
                   // a car moves — which makes the whole tower jump every time
                   // it has something to report.
-                  "flex w-full items-stretch border-b border-black/40 text-left transition-colors",
-                  compact ? "h-[24px]" : "h-[30px]",
+                  "flex w-full items-center gap-1 text-left transition-colors duration-500",
+                  compact ? "h-[24px] pr-1" : "h-[30px] pr-1.5",
                   selected
-                    ? "bg-white/20"
-                    : "bg-white/[0.045] hover:bg-white/[0.12]",
+                    ? "bg-white/25"
+                    : direction === "up"
+                      ? "bg-[#00b04f]/20 hover:bg-[#00b04f]/30"
+                      : direction === "down"
+                        ? "bg-[#e10600]/20 hover:bg-[#e10600]/30"
+                        : "bg-white/[0.07] hover:bg-white/[0.16]",
                 )}
               >
-                {/* The leader's box is filled, the way the broadcast marks the
-                    car everything else is measured against. A car that has
-                    just moved shows the arrow in that cell instead: the place
-                    it now holds is already the row it is sitting in. */}
+                {/* The place, in the plate the broadcast draws: white with a
+                    black number, purple when the car holds the fastest lap,
+                    and green or red carrying an arrow for the seconds after it
+                    changes hands. The plate sits on a black gutter, which is
+                    what separates the column from the row behind it. */}
                 <span
                   className={cn(
-                    "flex shrink-0 items-center justify-center font-black tabular-nums",
-                    compact ? "w-[18px] text-[11px]" : "w-[26px] text-[13px]",
-                    direction === "up"
-                      ? "bg-[#00b04f] text-white"
-                      : direction === "down"
-                        ? "bg-[#e10600] text-white"
-                        : leader
-                          ? "bg-[#e10600] text-white"
-                          : "bg-black/45 text-white",
+                    "flex h-full shrink-0 items-center justify-center bg-black/70",
+                    compact ? "w-[22px]" : "w-[30px]",
                   )}
                 >
-                  {direction ? (
-                    <span aria-hidden className={compact ? "text-[8px] leading-none" : "text-[10px] leading-none"}>
-                      {direction === "up" ? "▲" : "▼"}
-                    </span>
-                  ) : (
-                    position + 1
-                  )}
+                  <span
+                    className={cn(
+                      "flex items-center justify-center font-black tabular-nums leading-none",
+                      compact ? "h-[16px] w-[16px] text-[10px]" : "h-[21px] w-[21px] text-[13px]",
+                      direction === "up"
+                        ? "bg-[#00b04f] text-white"
+                        : direction === "down"
+                          ? "bg-[#e10600] text-white"
+                          : holdsFastest
+                            ? "bg-[#b955ff] text-white"
+                            : "bg-white text-black",
+                    )}
+                    title={holdsFastest ? t.raceFastestLap : undefined}
+                  >
+                    {direction ? (
+                      <span aria-hidden className={compact ? "text-[8px]" : "text-[10px]"}>
+                        {direction === "up" ? "▲" : "▼"}
+                      </span>
+                    ) : (
+                      position + 1
+                    )}
+                  </span>
                 </span>
-                {/* The livery block runs the full height and sits flush against
-                    the position cell — on the broadcast it is the seam between
-                    the two, not a stripe floating in a gutter. */}
-                <span
-                  aria-hidden
-                  className={cn("shrink-0", compact ? "w-[3px]" : "w-[5px]")}
-                  style={{ backgroundColor: driver.team.livery.body }}
-                />
                 <span
                   className={cn(
-                    "flex shrink-0 items-center font-black uppercase tracking-tight",
-                    compact ? "pl-1.5 text-[12px]" : "pl-2 text-[15px]",
+                    "shrink-0 font-black uppercase tracking-tight",
+                    compact ? "text-[12px]" : "text-[15px]",
                   )}
                 >
                   {driver.code}
                 </span>
-                {holdsFastest && (
-                  <span
-                    aria-hidden
-                    title={t.raceFastestLap}
-                    className={cn(
-                      "my-auto shrink-0 rounded-full bg-[#b955ff]",
-                      compact ? "ml-1 h-1.5 w-1.5" : "ml-1.5 h-2 w-2",
-                    )}
-                  />
-                )}
-                {/* The gap takes the slack rather than a margin doing it: the
-                    column has to end where the compound begins, with a space
-                    between them, and the code has to sit against its colour
-                    block whatever the tower is wide. */}
+                {/* Where the constructor badge goes on television. That badge
+                    is a trademark and the liveries here are approximations, so
+                    the disc carries the team's colour and nothing else — the
+                    column still reads as "which team", which is the whole job
+                    the badge does at this size. */}
+                <span
+                  aria-hidden
+                  className={cn(
+                    "shrink-0 rounded-full ring-1 ring-black/50",
+                    compact ? "ml-auto h-2.5 w-2.5" : "ml-auto h-3.5 w-3.5",
+                  )}
+                  style={{ backgroundColor: driver.team.livery.body }}
+                />
                 <span
                   className={cn(
-                    "flex min-w-0 flex-1 items-center justify-end truncate font-semibold tabular-nums",
-                    compact ? "px-1 text-[10px]" : "px-1.5 text-[12px]",
+                    "shrink-0 truncate text-right font-semibold tabular-nums",
+                    compact ? "w-[36px] text-[10px]" : "w-[48px] text-[12px]",
                     started ? "text-white" : "text-white/45",
                   )}
                 >
                   {gap}
                 </span>
-                {tyre && (
-                  <span className={cn("flex shrink-0 items-center", compact ? "pr-1" : "pr-1.5")}>
-                    <TyreMark compound={tyre} size={compact ? 12 : 16} />
-                  </span>
-                )}
+                {tyre && <TyreMark compound={tyre} size={compact ? 12 : 16} />}
               </button>
             </li>
           );
