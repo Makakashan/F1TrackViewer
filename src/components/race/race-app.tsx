@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Flag, Globe2, LogOut, RefreshCw } from "lucide-react";
+import { Globe2, LogOut, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import BrandMark from "@/components/brand-mark";
 import ErrorBanner from "@/components/error-banner";
 import SettingsMenu from "@/components/settings-menu";
 import { useAppPref } from "@/components/app-pref-provider";
@@ -17,6 +18,7 @@ import { useUrlState } from "@/lib/url-state";
 import RaceBetaNotice from "@/components/race/race-beta-notice";
 import RaceCircuitPicker from "@/components/race/race-circuit-picker";
 import RaceControls from "@/components/race/race-controls";
+import RaceFastestLapPopup from "@/components/race/race-fastest-lap-popup";
 import RaceSceneSettings from "@/components/race/race-scene-settings";
 import RaceStatusBar from "@/components/race/race-status-bar";
 import RaceResults from "@/components/race/race-results";
@@ -228,9 +230,7 @@ export default function RaceApp() {
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 backdrop-blur md:px-4">
         <div className="flex min-w-0 items-center gap-2 md:gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-linear-to-br from-red-600 to-orange-600 shadow-[0_0_20px_rgba(225,6,0,0.4)]">
-            <Flag className="h-4 w-4 text-white" />
-          </div>
+          <BrandMark className="h-6 w-auto shrink-0" title={t.appName} />
           <div className="hidden leading-none sm:block">
             <div className="text-sm font-bold tracking-tight">
               {t.raceModeTitle}
@@ -340,6 +340,13 @@ export default function RaceApp() {
             className="absolute right-2 top-2 sm:left-1/2 sm:right-auto sm:top-4 sm:-translate-x-1/2"
             lit={race.lit}
             phase={race.phase}
+          />
+
+          {/* Under the lights, where the eye already is when something has
+              just happened on track — which is the right edge on a phone and
+              the centre on a desktop, because that is where the lights are. */}
+          <RaceFastestLapPopup
+            className="absolute right-2 top-14 sm:left-1/2 sm:right-auto sm:top-20 sm:-translate-x-1/2"
             fastestLap={
               race.fastestLap
                 ? {

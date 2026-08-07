@@ -8,8 +8,10 @@ import {
   buildTrackCurve,
   computeBounds,
   densifyCoords,
+  lonLatToXZ,
   sceneRadiusFromBounds,
   stripClosingDuplicate,
+  xzToLonLat,
   REAL_ELEVATION_SCALE,
 } from "@/lib/geo-utils";
 import { smoothTerrainTrackProfile } from "@/lib/elevation";
@@ -25,6 +27,13 @@ import {
   buildKerbGeometry,
   buildTrackEdgeLineGeometry,
 } from "@/lib/track-kerbs";
+import {
+  APRON_GROUND_TOLERANCE_M,
+  buildTrackApronGeometry,
+  buildFootprintIndex,
+  sampleApronRoom,
+  type ApronClearance,
+} from "@/lib/track-apron";
 import { buildStartGridGeometry, startGridSlots } from "@/lib/start-grid";
 import StartGridCars from "@/components/three/start-grid-cars";
 import RaceCameraRig from "@/components/three/race-camera-rig";
@@ -302,6 +311,64 @@ export default function TrackMesh({
     [curve, halfWidth, samples],
   );
 
+  // Where the paved verge may go. With no environment loaded there is nothing
+  // to bump into, so the strip runs the whole lap; with one, a building
+  // standing on it or ground that has walked away from the road takes it out,
+  // and the smoothing turns each gap into a taper.
+  const apronClearance = useMemo<ApronClearance | null>(() => {
+    if (!environmentBundle) return null;
+    const { centerLon, centerLat } = bounds;
+    const footprints = environmentBundle.buildings.buildings
+      .map((building) =>
+        building.footprint.map(([lon, lat]) => {
+          const p = lonLatToXZ(lon, lat, centerLon, centerLat);
+          return [p.x, p.z] as [number, number];
+        }),
+      )
+      .filter((ring) => ring.length >= 3);
+    const index = buildFootprintIndex(footprints);
+    return (point, centre) => {
+      if (index(point.x, point.z)) return false;
+      if (!terrainSampler) return true;
+      // Ground against ground: the rendered surface sits above the terrain by
+      // a clearance that varies along the lap, so comparing the verge to the
+      // road would reject the whole circuit.
+      const [lon, lat] = xzToLonLat(point.x, point.z, centerLon, centerLat);
+      const [centreLon, centreLat] = xzToLonLat(
+        centre.x,
+        centre.z,
+        centerLon,
+        centerLat,
+      );
+      const here = terrainSampler.heightAt(lon, lat);
+      const road = terrainSampler.heightAt(centreLon, centreLat);
+      return Math.abs(here - road) <= APRON_GROUND_TOLERANCE_M;
+    };
+  }, [bounds, environmentBundle, terrainSampler]);
+
+  // Always sampled, even with nothing to bump into: the curvature limit on the
+  // inside of a corner is a fact about the curve, and skipping it is what folded
+  // the strip through itself at a hairpin.
+  const apronRoom = useMemo(
+    () => sampleApronRoom(curve, halfWidth, samples, apronClearance),
+    [apronClearance, curve, halfWidth, samples],
+  );
+
+  // Asphalt beyond the white line, so the kerb has something to lie on. Drawn
+  // just under the surface raise, which keeps the ribbon on top wherever the
+  // two overlap by a hair.
+  const apronGeometry = useMemo(
+    () =>
+      buildTrackApronGeometry(
+        curve,
+        halfWidth,
+        TRACK_SURFACE_RAISE - 0.01,
+        samples,
+        apronRoom,
+      ),
+    [curve, halfWidth, samples, apronRoom],
+  );
+
   // Kerbs sit a couple of centimeters above the surface and take a deeper
   // polygon offset than it, so they never z-fight with the ribbon they border;
   // overlay markers still draw on top via TRACK_OVERLAY_RENDER_ORDER.
@@ -312,8 +379,9 @@ export default function TrackMesh({
         halfWidth,
         TRACK_SURFACE_RAISE + 0.02,
         samples,
+        { room: apronRoom },
       ),
-    [curve, halfWidth, samples],
+    [curve, halfWidth, samples, apronRoom],
   );
 
   const edgeLineGeometry = useMemo(
@@ -752,7 +820,26 @@ export default function TrackMesh({
         />
       </mesh>
 
-      {kerbGeometry && (
+      {/* Paved verge and kerbs belong to the race view. The map view is a
+          schematic — there the ribbon is the circuit's shape, and a second
+          strip traced around it in the sector colour reads as an outline
+          somebody forgot to turn off. */}
+      {raceView && apronGeometry && (
+        <mesh geometry={apronGeometry} renderOrder={TRACK_RENDER_ORDER}>
+          <meshBasicMaterial
+            color={ASPHALT_COLOR}
+            side={THREE.DoubleSide}
+            depthTest
+            depthWrite
+            toneMapped={false}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1}
+          />
+        </mesh>
+      )}
+
+      {raceView && kerbGeometry && (
         <mesh geometry={kerbGeometry} renderOrder={TRACK_RENDER_ORDER}>
           <meshBasicMaterial
             vertexColors

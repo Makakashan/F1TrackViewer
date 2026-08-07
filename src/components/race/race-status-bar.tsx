@@ -8,29 +8,19 @@ import type { RacePhase } from "@/lib/race-session";
 export interface RaceStatusBarProps {
   lit: number;
   phase: RacePhase;
-  /** Fastest lap so far: holder's code and the time. */
-  fastestLap?: { code: string; time: number } | null;
   className?: string;
 }
 
-/** m:ss.mmm, the way a lap time is written everywhere else in the sport. */
-function formatLapTime(seconds: number): string {
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds - minutes * 60;
-  return `${minutes}:${rest.toFixed(3).padStart(6, "0")}`;
-}
-
 /**
- * Lights, session state and the fastest lap.
+ * Lights and session state.
  *
- * The lap counter used to live here and now belongs to the tower's lap band,
- * where the broadcast puts it — two counters on one screen only invite the
- * reader to check whether they agree.
+ * The lap counter and the fastest lap both live in the tower now, where the
+ * broadcast puts them. Two of anything on one screen only invites the reader
+ * to check whether they agree.
  */
 export default function RaceStatusBar({
   lit,
   phase,
-  fastestLap,
   className,
 }: RaceStatusBarProps) {
   const { t } = useAppPref();
@@ -55,17 +45,6 @@ export default function RaceStatusBar({
       )}
     >
       <StartLightsStrip lit={lit} />
-
-      {fastestLap && (
-        <div className="hidden leading-none sm:block">
-          <div className="text-[9px] uppercase tracking-[0.18em] text-[#b955ff]">
-            {t.raceFastestLap}
-          </div>
-          <div className="mt-1 text-sm font-bold tabular-nums text-[#b955ff]">
-            {fastestLap.code} {formatLapTime(fastestLap.time)}
-          </div>
-        </div>
-      )}
 
       <div
         className={cn(

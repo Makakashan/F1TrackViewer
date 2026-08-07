@@ -55,6 +55,18 @@ export function lonLatToXZ(
   return new THREE.Vector3(x, 0, z);
 }
 
+/** The inverse of `lonLatToXZ`, for asking the map about a point in the scene. */
+export function xzToLonLat(
+  x: number,
+  z: number,
+  centerLon: number,
+  centerLat: number,
+): [number, number] {
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = 111_320 * Math.cos((centerLat * Math.PI) / 180);
+  return [centerLon + x / metersPerDegLon, centerLat - z / metersPerDegLat];
+}
+
 /**
  * Distance in meters between two [lon, lat] points.
  */

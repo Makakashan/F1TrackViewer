@@ -51,6 +51,10 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     "build/**",
     "next-env.d.ts",
     "examples/**",
+    // Design mockups handed over as standalone pages. They are read as a
+    // specification and reimplemented, never built — linting a bundled runtime
+    // that ships its own React reports on somebody else's code.
+    "graphics/**",
     "skills",
     ".venv/**",
     ".fastf1-cache/**",
