@@ -18,6 +18,7 @@ import { useUrlState } from "@/lib/url-state";
 import RaceBetaNotice from "@/components/race/race-beta-notice";
 import RaceCircuitPicker from "@/components/race/race-circuit-picker";
 import RaceControls from "@/components/race/race-controls";
+import RaceFastestLapPopup from "@/components/race/race-fastest-lap-popup";
 import RaceSceneSettings from "@/components/race/race-scene-settings";
 import RaceStatusBar from "@/components/race/race-status-bar";
 import RaceResults from "@/components/race/race-results";
@@ -339,6 +340,13 @@ export default function RaceApp() {
             className="absolute right-2 top-2 sm:left-1/2 sm:right-auto sm:top-4 sm:-translate-x-1/2"
             lit={race.lit}
             phase={race.phase}
+          />
+
+          {/* Under the lights, where the eye already is when something has
+              just happened on track — which is the right edge on a phone and
+              the centre on a desktop, because that is where the lights are. */}
+          <RaceFastestLapPopup
+            className="absolute right-2 top-14 sm:left-1/2 sm:right-auto sm:top-20 sm:-translate-x-1/2"
             fastestLap={
               race.fastestLap
                 ? {
