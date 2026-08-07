@@ -12,6 +12,23 @@ import { cn } from "@/lib/utils";
  * dark overlay and on a light page, and a two-tone banana turns to mud at the
  * size a tab icon gets.
  */
+/** The banana on its own, for setting inside a line of text as the numeral. */
+export function BananaGlyph({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="64 2 34 38"
+      className={cn("block", className)}
+      aria-hidden
+      fill="currentColor"
+    >
+      <path d={BANANA} />
+    </svg>
+  );
+}
+
+const BANANA =
+  "M79.5 3 H89.5 C96 21 89.5 34.5 69.5 38.6 C67.3 39.4 66 36.6 68.2 35.4 C81.5 28.5 85 18 83 8 L79.5 8 Z";
+
 export default function BrandMark({
   className,
   title,
@@ -36,7 +53,7 @@ export default function BrandMark({
       {/* The banana as the one. Outer curve down the front, inner curve back
           up, and a stem squared off at the top where a numeral would have its
           flag. */}
-      <path d="M79.5 3 H89.5 C96 21 89.5 34.5 69.5 38.6 C67.3 39.4 66 36.6 68.2 35.4 C81.5 28.5 85 18 83 8 L79.5 8 Z" />
+      <path d={BANANA} />
     </svg>
   );
 }

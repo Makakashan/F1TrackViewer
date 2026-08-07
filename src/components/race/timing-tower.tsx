@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Shuffle, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
-import BrandMark from "@/components/brand-mark";
+import BrandMark, { BananaGlyph } from "@/components/brand-mark";
 import { useAppPref } from "@/components/app-pref-provider";
 import type { DriverWithTeam } from "@/lib/f1-drivers";
 import type { RaceStanding } from "@/lib/race-sim";
@@ -218,14 +218,46 @@ export default function TimingTower({
           identity. */}
       <div
         className={cn(
-          "flex justify-center border-b border-white/15",
-          compact ? "px-3 py-2" : "px-5 py-3",
+          "flex flex-col items-center border-b border-white/15",
+          compact ? "gap-1 px-2 pb-1.5 pt-2" : "gap-1.5 px-3 pb-2 pt-3",
         )}
       >
         <BrandMark
-          className={compact ? "h-[22px] w-auto" : "h-[32px] w-auto"}
+          className={compact ? "h-[24px] w-auto" : "h-[34px] w-auto"}
           title={t.appName}
         />
+        {/* The sanctioning line the graphic carries under its logo. This race
+            is sanctioned by nobody, and the line says so rather than
+            impersonating a body that exists. */}
+        <div className={cn("flex items-center", compact ? "gap-1" : "gap-1.5")}>
+          {/* The roundel goes on a phone: at 132px the badge and the two lines
+              together run past the panel, and the words are the part that
+              carries the meaning. */}
+          {!compact && (
+            <span className="flex h-[17px] w-[17px] items-center justify-center rounded-full border border-white/70 text-[7px] font-black leading-none tracking-tight">
+              RUI
+            </span>
+          )}
+          <span className="flex flex-col items-center leading-none">
+            <span
+              className={cn(
+                "flex items-center whitespace-nowrap font-bold uppercase tracking-tight",
+                compact ? "gap-[2px] text-[7px]" : "gap-0.5 text-[8px]",
+              )}
+            >
+              {t.brandSeries}
+              <BananaGlyph className={compact ? "h-[7px] w-auto" : "h-[9px] w-auto"} />
+            </span>
+            <span
+              className={cn(
+                "whitespace-nowrap font-medium uppercase tracking-tight text-white/55",
+                compact ? "mt-[2px] text-[5px]" : "mt-0.5 text-[7px]",
+              )}
+            >
+              {t.brandSanction}
+            </span>
+          </span>
+        </div>
       </div>
       <div
         className={cn(

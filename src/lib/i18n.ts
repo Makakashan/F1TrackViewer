@@ -141,6 +141,10 @@ const en = {
   raceGridOrder: "Grid",
   raceShuffle: "Shuffle",
   raceInterval: "Interval",
+  /** The series line under the mark. The banana is set after it as the one. */
+  brandSeries: "RUI Formula",
+  /** Sanctioned by nobody, and saying so beats imitating a body that exists. */
+  brandSanction: "Unofficial Championship",
   /** The leader's own gap column — the car everything else is measured from. */
   raceLeaderGap: "Leader",
   /** Suffix for a lapped car's gap: "+1 Lap". */
@@ -290,6 +294,8 @@ const ru: Dict = {
   raceGridOrder: "Решётка",
   raceShuffle: "Перемешать",
   raceInterval: "Интервал",
+  brandSeries: "RUI Formula",
+  brandSanction: "Неофициальный чемпионат",
   raceLeaderGap: "Лидер",
   raceLapsDown: "кр.",
   raceScene: "Сцена",
