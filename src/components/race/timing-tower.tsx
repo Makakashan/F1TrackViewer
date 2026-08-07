@@ -216,8 +216,16 @@ export default function TimingTower({
           That one is a trademark and this app is unofficial, so the space
           carries this project's banana instead — same job, no borrowed
           identity. */}
-      <div className={cn("flex justify-center", compact ? "pt-1.5" : "pt-2.5")}>
-        <BrandMark className={compact ? "h-[13px] w-auto" : "h-[18px] w-auto"} title={t.appName} />
+      <div
+        className={cn(
+          "flex justify-center border-b border-white/15",
+          compact ? "px-3 py-2" : "px-5 py-3",
+        )}
+      >
+        <BrandMark
+          className={compact ? "h-[22px] w-auto" : "h-[32px] w-auto"}
+          title={t.appName}
+        />
       </div>
       <div
         className={cn(
