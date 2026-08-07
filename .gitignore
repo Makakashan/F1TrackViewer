@@ -93,3 +93,7 @@ skills-lock.json
 # car and LOD is derived from it in CI at deploy time.
 /cars/*
 !/cars/apx_gp.glb
+
+# Playwright MCP scratch output — screenshots and console logs from browser
+# automation runs, never part of the app.
+.playwright-mcp/
