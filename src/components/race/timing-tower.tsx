@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Shuffle } from "lucide-react";
+import { Shuffle, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppPref } from "@/components/app-pref-provider";
 import type { DriverWithTeam } from "@/lib/f1-drivers";
@@ -333,13 +333,10 @@ export default function TimingTower({
                       ? "bg-[#00b04f] text-white"
                       : direction === "down"
                         ? "bg-[#e10600] text-white"
-                        : holdsFastest
-                          ? "bg-[#b955ff] text-white"
-                          : leader
-                            ? "bg-[#e10600] text-white"
-                            : "text-white",
+                        : leader
+                          ? "bg-[#e10600] text-white"
+                          : "text-white",
                   )}
-                  title={holdsFastest ? t.raceFastestLap : undefined}
                 >
                   {direction ? (
                     <span aria-hidden className={compact ? "text-[8px]" : "text-[10px]"}>
@@ -373,7 +370,7 @@ export default function TimingTower({
                 <span
                   className={cn(
                     "ml-auto shrink-0 truncate text-right font-bold tabular-nums",
-                    compact ? "text-[10px]" : "text-[13px]",
+                    compact ? "text-[11px]" : "text-[14px]",
                     started ? "text-white" : "text-white/45",
                   )}
                 >
@@ -391,6 +388,24 @@ export default function TimingTower({
                   title={tyre}
                 >
                   {tyre ?? ""}
+                </span>
+                {/* The fastest lap is a violet chip at the edge of the row,
+                    not a recolouring of the place: the two are separate facts,
+                    and a car can perfectly well lead the race and hold the
+                    fastest lap at once. The slot is reserved on every row so
+                    that one car setting a time does not shift twenty gaps
+                    sideways. */}
+                <span
+                  className={cn(
+                    "flex shrink-0 items-center justify-center",
+                    compact ? "h-[13px] w-[13px]" : "h-4 w-4",
+                    holdsFastest && "bg-[#a020f0]",
+                  )}
+                  title={holdsFastest ? t.raceFastestLap : undefined}
+                >
+                  {holdsFastest && (
+                    <Timer className={compact ? "h-2 w-2" : "h-2.5 w-2.5"} strokeWidth={3} />
+                  )}
                 </span>
               </button>
             </li>
