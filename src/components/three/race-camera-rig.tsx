@@ -96,9 +96,14 @@ export default function RaceCameraRig({
   const invalidate = useThree((state) => state.invalidate);
   const lastKey = useRef<string | null>(null);
   const pressed = useRef<Set<string>>(new Set());
-  // Set when the rig owes the camera a default framing: a new car, follow
-  // switched back on, or the race starting.
+  // Set when the rig owes the camera a framing: a new car, follow switched
+  // back on, or the race starting.
   const needsFraming = useRef(true);
+  // Where the camera sits in the followed car's own frame — across, up, ahead.
+  // Kept so that switching drivers hands the new car the view the user built
+  // around the old one instead of throwing it away for the default.
+  const localOffset = useRef<THREE.Vector3 | null>(null);
+  const knownSlots = useRef<GridSlot[] | null>(null);
   const scratch = useRef({
     position: new THREE.Vector3(),
     quaternion: new THREE.Quaternion(),
@@ -111,7 +116,41 @@ export default function RaceCameraRig({
     lastTarget: new THREE.Vector3(),
     velocity: new THREE.Vector3(),
     step: new THREE.Vector3(),
+    local: new THREE.Vector3(),
   });
+
+  /** Camera position for a car frame, from the stored offset or the default. */
+  function placeCamera(
+    origin: THREE.Vector3,
+    forward: THREE.Vector3,
+    across: THREE.Vector3,
+    out: THREE.Vector3,
+  ) {
+    const offset = localOffset.current;
+    const ox = offset ? offset.x : LATERAL_M;
+    const oy = offset ? offset.y : HEIGHT_M;
+    const oz = offset ? offset.z : DISTANCE_M;
+    out
+      .copy(origin)
+      .addScaledVector(across, ox)
+      .addScaledVector(UP, oy)
+      .addScaledVector(forward, oz);
+  }
+
+  /** The reverse: remember where the user has left the camera. */
+  function rememberCamera(
+    origin: THREE.Vector3,
+    forward: THREE.Vector3,
+    across: THREE.Vector3,
+  ) {
+    const s = scratch.current;
+    s.local.copy(camera.position).sub(origin);
+    localOffset.current = (localOffset.current ?? new THREE.Vector3()).set(
+      s.local.dot(across),
+      s.local.dot(UP),
+      s.local.dot(forward),
+    );
+  }
 
   // Movement keys are held, not tapped, so they are polled per frame; the
   // listeners only maintain the set. Keydown also kicks a frame — before the
@@ -163,16 +202,20 @@ export default function RaceCameraRig({
     if (lastKey.current === key) return;
     lastKey.current = key;
 
+    // A different circuit is a different scene, and the view built around the
+    // last one means nothing on it.
+    if (knownSlots.current !== slots) {
+      knownSlots.current = slots;
+      localOffset.current = null;
+    }
+
     const target = slot.position.clone().addScaledVector(UP, TARGET_HEIGHT_M);
 
     // Offset toward the centerline rather than the verge: the gantry posts and
     // the barriers live at the edges, and a camera set down beside one frames
     // the post instead of the car.
-    camera.position
-      .copy(slot.position)
-      .addScaledVector(slot.forward, DISTANCE_M)
-      .addScaledVector(slot.across, -slot.side * LATERAL_M)
-      .addScaledVector(UP, HEIGHT_M);
+    const across = slot.across.clone().multiplyScalar(-slot.side);
+    placeCamera(slot.position, slot.forward, across, camera.position);
     camera.lookAt(target);
 
     controls.target.copy(target);
@@ -224,6 +267,17 @@ export default function RaceCameraRig({
       return;
     }
 
+    // Parked on the grid, the car is not moving, so there is nothing to track
+    // — only the angle the user is orbiting to, which is worth keeping.
+    if (follow && !racing) {
+      const slot = slots[focusIndex];
+      if (slot) {
+        s.across.copy(slot.across).multiplyScalar(-slot.side);
+        rememberCamera(slot.position, slot.forward, s.across);
+      }
+      return;
+    }
+
     // Follow. The target rides the car; the camera rides the target at
     // whatever offset the user's orbiting has left it — moving both by the
     // same delta is what preserves the chosen angle while tracking.
@@ -237,17 +291,14 @@ export default function RaceCameraRig({
     poseAt(pose.s, pose.lateral, s.position, s.quaternion);
     s.target.copy(s.position).addScaledVector(UP, TARGET_HEIGHT_M);
 
+    s.forward.copy(NOSE).applyQuaternion(s.quaternion).normalize();
+    s.across.crossVectors(s.forward, UP).normalize();
+
     if (needsFraming.current) {
-      // The default view, same as on the grid: above, ahead, three-quarter —
-      // looking back at the oncoming car.
+      // Whatever view the user last had on a car — the default only until they
+      // have moved the camera themselves.
       needsFraming.current = false;
-      s.forward.copy(NOSE).applyQuaternion(s.quaternion).normalize();
-      s.across.crossVectors(s.forward, UP).normalize();
-      camera.position
-        .copy(s.position)
-        .addScaledVector(s.forward, DISTANCE_M)
-        .addScaledVector(s.across, LATERAL_M)
-        .addScaledVector(UP, HEIGHT_M);
+      placeCamera(s.position, s.forward, s.across, camera.position);
       controls.target.copy(s.target);
       camera.lookAt(s.target);
       controls.update();
@@ -276,6 +327,10 @@ export default function RaceCameraRig({
     controls.target.add(s.move);
     camera.position.add(s.move);
     controls.update();
+
+    // Read back rather than track the drag: the user orbits through
+    // OrbitControls, which moves the camera behind the rig's back.
+    rememberCamera(s.position, s.forward, s.across);
   });
 
   return null;
