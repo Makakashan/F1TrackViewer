@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { sampleCurvature } from "./track-curvature";
+import { sampleCornerCoverage } from "./track-corners";
 import type { HalfWidth } from "./track-geometry";
 
 /**
@@ -19,8 +20,28 @@ import type { HalfWidth } from "./track-geometry";
  * fades with it.
  */
 
-/** How far the paving reaches past the white line where nothing is in the way. */
+/** How far the paving reaches past the white line through a corner. */
 export const APRON_WIDTH_M = 4;
+
+/**
+ * How far it reaches down a straight.
+ *
+ * Asphalt run-off is a corner's feature: it is there because cars leave the
+ * road where the road turns. Down a straight a circuit has a verge and then
+ * grass, and paving the full width everywhere read as a road twice as wide as
+ * the one being driven. This is the strip the white line is painted beside.
+ */
+export const APRON_STRAIGHT_WIDTH_M = 1;
+
+/**
+ * How far past a corner the wide paving runs before narrowing.
+ *
+ * Both are generous next to the kerb's own 10 m / 14 m: the kerb has to stay
+ * on the paving for its whole length including its taper, so the paving has to
+ * outlast it at both ends.
+ */
+const CORNER_PADDING_M = 26;
+const CORNER_TAPER_M = 30;
 
 /**
  * How far the ground may sit from the track surface before the apron gives up.
@@ -100,6 +121,7 @@ export function sampleApronRoom(
   samples: number,
   clearance: ApronClearance | null,
   widthMeters = APRON_WIDTH_M,
+  straightWidthMeters = APRON_STRAIGHT_WIDTH_M,
 ): ApronRoom {
   const room = fullApronRoom(samples, widthMeters);
   const total = curve.getLength();
@@ -108,6 +130,12 @@ export function sampleApronRoom(
   // The geometric limit comes first and applies whether or not anything is
   // standing in the way: it is a fact about the curve, not about the scenery.
   const profile = sampleCurvature(curve, samples);
+  const coverage = profile
+    ? sampleCornerCoverage(profile.curvature, profile.ds, {
+        paddingMeters: CORNER_PADDING_M,
+        taperMeters: CORNER_TAPER_M,
+      })
+    : null;
 
   const up = new THREE.Vector3(0, 1, 0);
   const point = new THREE.Vector3();
@@ -129,10 +157,16 @@ export function sampleApronRoom(
     const insideSign = Math.sign(curvature);
     const insideLimit = Math.max(0, (radius - edge) * CORNER_ROOM_SHARE);
 
+    // Full width through the corner, a verge along the straight, and the
+    // taper between them doing the work of the transition.
+    const cornerness = coverage ? coverage[i] : 1;
+    const paved =
+      straightWidthMeters + (widthMeters - straightWidthMeters) * cornerness;
+
     for (const sign of [1, -1] as const) {
       const target = sign > 0 ? room.plus : room.minus;
       const limit =
-        sign === insideSign ? Math.min(widthMeters, insideLimit) : widthMeters;
+        sign === insideSign ? Math.min(paved, insideLimit) : paved;
       if (limit <= 0.05) {
         target[i] = 0;
         continue;

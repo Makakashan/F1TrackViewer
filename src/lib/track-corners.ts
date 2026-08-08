@@ -120,3 +120,66 @@ export function circularRuns(state: number[]): CornerRun[] {
     return runs;
   }
 }
+
+export interface CornerCoverageOptions {
+  /** Corner runs are grown by this much at each end before the taper. */
+  paddingMeters: number;
+  /** Distance over which coverage rises from 0 to 1 at each end of a run. */
+  taperMeters: number;
+  minRunMeters?: number;
+  enterRadiusMeters?: number;
+  exitRadiusMeters?: number;
+}
+
+/**
+ * Per-sample "how much of a corner is this", 0 on a straight and 1 through a
+ * turn, with a ramp between.
+ *
+ * The ramp is the point: anything driven off this — paving width, in the one
+ * case that uses it — changes over tens of meters rather than switching at the
+ * sample where the curvature threshold happens to be crossed.
+ */
+export function sampleCornerCoverage(
+  curvature: number[],
+  ds: number,
+  {
+    paddingMeters,
+    taperMeters,
+    minRunMeters = CORNER_MIN_RUN_M,
+    enterRadiusMeters = CORNER_ENTER_RADIUS_M,
+    exitRadiusMeters = CORNER_EXIT_RADIUS_M,
+  }: CornerCoverageOptions,
+): Float32Array {
+  const n = curvature.length;
+  const coverage = new Float32Array(n);
+  if (n === 0 || !(ds > 0)) return coverage;
+
+  const sides = resolveCornerSides(
+    curvature,
+    1 / enterRadiusMeters,
+    1 / exitRadiusMeters,
+  );
+  const minRunSamples = Math.max(2, Math.round(minRunMeters / ds));
+  const padSamples = Math.max(0, Math.round(paddingMeters / ds));
+  const taperSamples = Math.max(1, taperMeters / ds);
+
+  for (const { start, count } of circularRuns(sides)) {
+    if (count < minRunSamples) continue;
+
+    const span = Math.min(n, count + padSamples * 2);
+    for (let k = 0; k < span; k++) {
+      const i = (start - padSamples + k + n * 2) % n;
+      // Distance to the nearer end of the padded run, in samples.
+      const fromEnd = Math.min(k, span - 1 - k);
+      const value = smoothstep(fromEnd / taperSamples);
+      if (value > coverage[i]) coverage[i] = value;
+    }
+  }
+
+  return coverage;
+}
+
+function smoothstep(x: number): number {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
+}
