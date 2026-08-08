@@ -1,10 +1,27 @@
 "use client";
 
-import { Flag, Pause, Play, RotateCcw, Video, Move3d } from "lucide-react";
+import { useState } from "react";
+import {
+  Flag,
+  MoreHorizontal,
+  Pause,
+  Play,
+  RotateCcw,
+  Video,
+  Move3d,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { useAppPref } from "@/components/app-pref-provider";
 import { RACE_SPEED_OPTIONS, type RaceSpeed } from "@/hooks/use-race-simulation";
+
+/** The speed steps a phone's bar has room to show. */
+const PHONE_SPEEDS: readonly RaceSpeed[] = [1, 4, 16];
 
 export interface RaceControlsProps {
   /** True from the moment the lights sequence begins until the flag. */
@@ -46,6 +63,7 @@ export default function RaceControls({
   className,
 }: RaceControlsProps) {
   const { t } = useAppPref();
+  const [moreOpen, setMoreOpen] = useState(false);
 
   return (
     <div
@@ -54,9 +72,12 @@ export default function RaceControls({
         className,
       )}
     >
-      <div className="flex flex-wrap items-center justify-center gap-1.5 rounded-lg border border-border bg-background/80 p-1.5 shadow-xl backdrop-blur-md sm:gap-2">
+      {/* One row, always. The bar sits over the scene at the bottom of the
+          screen, and a second row appearing the moment the race starts moves
+          the buttons under the thumb that just pressed one of them. */}
+      <div className="flex max-w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background/80 p-1.5 shadow-xl backdrop-blur-md sm:gap-2">
         {started ? (
-          <Button size="sm" className="gap-2" onClick={onTogglePause}>
+          <Button size="sm" className="shrink-0 gap-2" onClick={onTogglePause}>
             {paused ? (
               <Play className="h-3.5 w-3.5" />
             ) : (
@@ -65,13 +86,13 @@ export default function RaceControls({
             {paused ? t.raceResume : t.racePause}
           </Button>
         ) : (
-          <Button size="sm" className="gap-2" onClick={onStart}>
+          <Button size="sm" className="shrink-0 gap-2" onClick={onStart}>
             <Play className="h-3.5 w-3.5" />
             {t.raceStart}
           </Button>
         )}
 
-        <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+        <div className="flex shrink-0 items-center gap-0.5 rounded-md border border-border p-0.5">
           {RACE_SPEED_OPTIONS.map((option) => (
             <button
               key={option}
@@ -80,10 +101,16 @@ export default function RaceControls({
               aria-pressed={option === speed}
               aria-label={`${t.raceSpeed} ${option}x`}
               className={cn(
-                "rounded px-2 py-1 text-[11px] font-semibold tabular-nums transition-colors",
+                "rounded px-1.5 py-1 text-[11px] font-semibold tabular-nums transition-colors sm:px-2",
                 option === speed
                   ? "bg-accent text-foreground"
                   : "text-muted-foreground hover:text-foreground",
+                // A phone gets the three steps that differ enough to be worth
+                // a tap — unless it is already on one of the others, in which
+                // case hiding it would hide the current speed.
+                PHONE_SPEEDS.includes(option) || option === speed
+                  ? undefined
+                  : "hidden sm:block",
               )}
             >
               {option}x
@@ -95,12 +122,12 @@ export default function RaceControls({
           <Button
             size="sm"
             variant="outline"
-            className="gap-2"
+            className="hidden shrink-0 gap-2 sm:inline-flex"
             onClick={onFinish}
             title={t.raceFinishNow}
           >
             <Flag className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">{t.raceFinishNow}</span>
+            {t.raceFinishNow}
           </Button>
         )}
 
@@ -110,7 +137,7 @@ export default function RaceControls({
         <Button
           size="sm"
           variant={cameraFollow ? "secondary" : "outline"}
-          className="gap-2"
+          className="shrink-0 gap-2"
           onClick={onToggleCamera}
           title={t.raceCamHint}
         >
@@ -127,13 +154,59 @@ export default function RaceControls({
         <Button
           size="sm"
           variant="ghost"
-          className="gap-2"
+          className="hidden shrink-0 gap-2 sm:inline-flex"
           onClick={onReset}
           title={t.raceReset}
           aria-label={t.raceReset}
         >
           <RotateCcw className="h-3.5 w-3.5" />
         </Button>
+
+        {/* The two that end the race rather than run it, behind one button on
+            a phone: they are the rarest presses here and the most expensive
+            to hit by accident. */}
+        <Popover open={moreOpen} onOpenChange={setMoreOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0 gap-2 sm:hidden"
+              aria-label={t.raceMore}
+            >
+              <MoreHorizontal className="h-3.5 w-3.5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" side="top" className="w-52 p-1.5">
+            <div className="flex flex-col gap-1">
+              {canFinish && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="justify-start gap-2"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    onFinish();
+                  }}
+                >
+                  <Flag className="h-3.5 w-3.5" />
+                  {t.raceFinishNow}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="justify-start gap-2"
+                onClick={() => {
+                  setMoreOpen(false);
+                  onReset();
+                }}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                {t.raceReset}
+              </Button>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
       {/* Keyboard hints on a touch screen are noise about keys that do not
           exist. */}
