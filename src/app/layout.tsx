@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Titillium_Web } from "next/font/google";
 import "./globals.css";
 
@@ -32,6 +32,27 @@ export const metadata: Metadata = {
     shortcut: faviconUrl,
     apple: faviconUrl,
   },
+};
+
+/**
+ * The page runs edge to edge, and the interface keeps clear of the cutouts.
+ *
+ * `viewportFit: "cover"` is what makes `env(safe-area-inset-*)` report anything
+ * other than zero — without it a phone letterboxes the page inside the safe
+ * area, the insets are all 0, and any code reading them is decoration. With it
+ * the 3D scene fills the screen, notch to gesture bar, and every panel drawn
+ * over the scene pays for its own inset.
+ */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  // Matched to the app's own background in each theme, because with `cover`
+  // the strip behind the status bar is the browser's colour, not the page's.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f9fafb" },
+    { media: "(prefers-color-scheme: dark)", color: "#060809" },
+  ],
 };
 
 export default function RootLayout({
