@@ -14,6 +14,7 @@ import type { GridEntry } from "@/lib/f1-teams";
 import type { RaceController } from "@/hooks/use-race-simulation";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 import TrackMesh from "@/components/three/track-mesh";
+import { RACE_FOLLOW_MIN_DISTANCE_M } from "@/components/three/race-camera-rig";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useStartFinishCalibration } from "@/hooks/use-start-finish-calibration";
 import { canCreateWebGLContext, getSceneBackground } from "@/lib/scene-config";
@@ -256,7 +257,9 @@ export default function TrackViewer({
               dampingFactor={0.08}
               autoRotate={autoRotate}
               autoRotateSpeed={0.5}
-              minDistance={raceMode ? 6 : sceneRadius * 0.4}
+              minDistance={
+                raceMode ? RACE_FOLLOW_MIN_DISTANCE_M : sceneRadius * 0.4
+              }
               maxDistance={raceMode ? sceneRadius * 4 : sceneRadius * 4}
               minPolarAngle={Math.PI / 12}
               maxPolarAngle={raceMode ? Math.PI / 2.12 : Math.PI / 2.8}

@@ -53,7 +53,7 @@ export default function RaceResults({
   return (
     <div
       className={cn(
-        "pointer-events-auto w-[320px] overflow-hidden rounded-md bg-[#15151e]/95 text-white shadow-2xl shadow-black/60 backdrop-blur-md",
+        "pointer-events-auto w-[min(320px,calc(100vw-1.5rem))] overflow-hidden rounded-md bg-[#15151e]/95 text-white shadow-2xl shadow-black/60 backdrop-blur-md",
         className,
       )}
     >
@@ -74,7 +74,7 @@ export default function RaceResults({
         </button>
       </div>
 
-      <ol className="f1tv-scroll max-h-[min(60vh,480px)] overflow-y-auto">
+      <ol className="f1tv-scroll max-h-[min(65dvh,480px)] overflow-y-auto">
         {standings.map((row) => {
           const driver = order[row.index];
           if (!driver) return null;

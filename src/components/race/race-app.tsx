@@ -15,6 +15,7 @@ import { useCircuitScene } from "@/hooks/use-circuit-scene";
 import { useRaceSimulation } from "@/hooks/use-race-simulation";
 import { raceGridOrder, raceLapCount, raceTyreChoices } from "@/lib/race-session";
 import { useUrlState } from "@/lib/url-state";
+import { cn } from "@/lib/utils";
 import RaceBetaNotice from "@/components/race/race-beta-notice";
 import RaceCircuitPicker from "@/components/race/race-circuit-picker";
 import RaceControls from "@/components/race/race-controls";
@@ -227,7 +228,7 @@ export default function RaceApp() {
     !!environmentBundle && environmentEnabled && environmentTerrain;
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 backdrop-blur md:px-4">
         <div className="flex min-w-0 items-center gap-2 md:gap-3">
           <BrandMark className="h-6 w-auto shrink-0" title={t.appName} />
@@ -321,9 +322,12 @@ export default function RaceApp() {
               the race is drawn with. */}
           <TimingTower
             compact={isMobile}
-            className={
-              isMobile ? "absolute left-2 top-2" : "absolute left-4 top-4"
-            }
+            className={cn(
+              isMobile ? "absolute left-2 top-2" : "absolute left-4 top-4",
+              // A phone has no room for both; the classification is what the
+              // race was building toward, so the tower steps out of its way.
+              isMobile && showResults && "hidden",
+            )}
             order={order}
             standings={race.standings}
             selectedIndex={selectedDriver}
@@ -346,7 +350,10 @@ export default function RaceApp() {
               just happened on track — which is the right edge on a phone and
               the centre on a desktop, because that is where the lights are. */}
           <RaceFastestLapPopup
-            className="absolute right-2 top-14 sm:left-1/2 sm:right-auto sm:top-20 sm:-translate-x-1/2"
+            className={cn(
+              "absolute right-2 top-14 sm:left-1/2 sm:right-auto sm:top-20 sm:-translate-x-1/2",
+              showResults && "hidden",
+            )}
             fastestLap={
               race.fastestLap
                 ? {
@@ -358,8 +365,17 @@ export default function RaceApp() {
           />
 
           {showResults && (
+            <button
+              type="button"
+              aria-label={t.raceClose}
+              onClick={() => setShowResults(false)}
+              className="pointer-events-auto absolute inset-0 z-10 bg-black/55 backdrop-blur-[2px] sm:hidden"
+            />
+          )}
+
+          {showResults && (
             <RaceResults
-              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
+              className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2"
               order={order}
               standings={race.standings}
               fastestLap={race.fastestLap}
@@ -368,7 +384,7 @@ export default function RaceApp() {
           )}
 
           <RaceControls
-            className="absolute bottom-4 left-1/2 w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 sm:bottom-6"
+            className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 sm:bottom-6"
             started={race.phase !== "standby"}
             paused={race.paused}
             speed={race.speed}

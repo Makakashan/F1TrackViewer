@@ -195,7 +195,7 @@ export default function F1TrackApp({
     !!environmentBundle && environmentEnabled && environmentTerrain;
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/80 px-3 backdrop-blur md:px-4">
         <div className="flex items-center gap-2 md:gap-3">
           <div className="flex items-center gap-2">
