@@ -340,7 +340,10 @@ export default function TimingTower({
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         className={cn(
           "f1tv-scroll overflow-y-auto",
-          compact ? "max-h-[calc(100dvh-10.5rem)]" : "max-h-[calc(100vh-10rem)]",
+          // Leaves the control bar its own room at the bottom of the screen —
+          // dvh rather than vh because a phone browser's chrome eats into the
+          // viewport without changing what vh reports.
+          compact ? "max-h-[calc(100dvh-17rem)]" : "max-h-[calc(100dvh-15rem)]",
         )}
       >
         {rows.map((entry, position) => {

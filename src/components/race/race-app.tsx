@@ -227,7 +227,7 @@ export default function RaceApp() {
     !!environmentBundle && environmentEnabled && environmentTerrain;
 
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-background text-foreground">
+    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-background text-foreground">
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 backdrop-blur md:px-4">
         <div className="flex min-w-0 items-center gap-2 md:gap-3">
           <BrandMark className="h-6 w-auto shrink-0" title={t.appName} />
@@ -368,7 +368,7 @@ export default function RaceApp() {
           )}
 
           <RaceControls
-            className="absolute bottom-4 left-1/2 w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 sm:bottom-6"
+            className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 sm:bottom-6"
             started={race.phase !== "standby"}
             paused={race.paused}
             speed={race.speed}
