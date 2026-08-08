@@ -46,7 +46,12 @@ export default function RaceCircuitPicker({
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="h-[420px] w-[300px] p-0">
+      {/* Sized against the viewport as well as its own content: a list taller
+          than the phone it opens on scrolls the page instead of itself. */}
+      <PopoverContent
+        align="start"
+        className="h-[min(420px,var(--radix-popover-content-available-height))] w-[min(300px,calc(100vw-1.5rem))] p-0"
+      >
         <CircuitList
           circuits={circuits}
           selectedId={selectedId}
