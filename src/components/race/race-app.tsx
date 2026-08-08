@@ -204,6 +204,12 @@ export default function RaceApp() {
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        // A popover is already using this key to close itself; leaving the
+        // mode as well means one press dismisses a menu and the race behind
+        // it. The popper wrapper only exists while something is open.
+        if (document.querySelector("[data-radix-popper-content-wrapper]")) {
+          return;
+        }
         exitRace();
         return;
       }
