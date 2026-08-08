@@ -182,7 +182,7 @@ export default function GlobeLanding() {
 	}, []);
 
 	return (
-		<main className="relative h-screen w-screen overflow-hidden bg-background text-foreground">
+		<main className="relative h-dvh w-screen overflow-hidden bg-background text-foreground">
 			<div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_50%_45%,transparent_0%,rgba(3,5,10,0.08)_45%,rgba(3,5,10,0.72)_100%)]" />
 			<header className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4 py-4 md:px-6">
 				<div className="flex items-center gap-3">
@@ -358,7 +358,14 @@ export default function GlobeLanding() {
 				</button>
 			)}
 
-			{!mobileMenuOpen && <RaceModeBanner circuits={circuits} />}
+			{!mobileMenuOpen && (
+				<RaceModeBanner
+					circuits={circuits}
+					// On a phone the circuit card owns the bottom of the screen;
+					// two things stacked there is the overlap this had before.
+					stacked={selectedCircuit != null}
+				/>
+			)}
 
 			<button
 				className="absolute left-4 top-24 z-20 flex h-10 items-center gap-2 rounded-md border border-foreground/10 bg-background/58 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/68 backdrop-blur-xl active:bg-foreground/10 md:hidden"
