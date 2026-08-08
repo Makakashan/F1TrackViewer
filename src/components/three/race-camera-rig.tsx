@@ -20,13 +20,32 @@ export interface RaceCameraRigProps {
   onDetach?: () => void;
 }
 
-/** How far ahead of the car the camera sits on the grid, and how high. */
-const DISTANCE_M = 13;
-const HEIGHT_M = 4.2;
+/**
+ * How far ahead of the car the camera sits on the grid, and how high.
+ *
+ * A broadcast establishing shot rather than an onboard: far enough ahead and
+ * high enough that the grid behind the car is in frame, which is what the view
+ * is for before the lights go out.
+ */
+const DISTANCE_M = 35;
+const HEIGHT_M = 16;
 /** Sideways offset, for a three-quarter view rather than a head-on one. */
-const LATERAL_M = 5;
+const LATERAL_M = 13;
+
 /** Aim a little above the floor — the car's body, not the tarmac under it. */
 const TARGET_HEIGHT_M = 0.9;
+
+/**
+ * How close the camera may be pulled to the car it is following.
+ *
+ * The default framing is the closest view on offer, so zooming past it is not
+ * a thing the controls allow — see the OrbitControls limits in track-viewer.
+ */
+export const RACE_FOLLOW_MIN_DISTANCE_M = Math.hypot(
+  DISTANCE_M,
+  HEIGHT_M - TARGET_HEIGHT_M,
+  LATERAL_M,
+);
 
 /**
  * How the follow target catches the car.
