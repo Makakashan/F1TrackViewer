@@ -2,6 +2,13 @@ import * as THREE from "three";
 import { sampleCurvature } from "./track-curvature";
 import { apronRoomAt, type ApronRoom } from "./track-apron";
 import type { HalfWidth } from "./track-geometry";
+import {
+  circularRuns,
+  CORNER_ENTER_RADIUS_M,
+  CORNER_EXIT_RADIUS_M,
+  CORNER_MIN_RUN_M,
+  resolveCornerSides,
+} from "./track-corners";
 
 /**
  * Kerbs — the red/white striped strips lining the inside of every corner.
@@ -60,7 +67,10 @@ export interface KerbOptions {
 const DEFAULTS = {
   // 260 m was loose enough to catch the gentle bends along a "straight" and
   // scatter two-block kerb fragments down them; a real corner is far tighter.
-  maxCornerRadiusMeters: 170,
+  // Shared with the apron so the paving and the stripes agree on what a corner
+  // is — the kerb lies on the paving, and the two disagreeing means a stripe
+  // hanging over grass.
+  maxCornerRadiusMeters: CORNER_ENTER_RADIUS_M,
   // A real kerb runs about two meters. It cost racing surface when it was cut
   // out of the ribbon; lying on the apron it costs nothing, so it can be the
   // width it actually is.
@@ -78,8 +88,8 @@ const DEFAULTS = {
   // direction changes at the end of a straight, all of them kerbed in life.
   // The radius threshold already rejects the gentle bends, so a run this
   // short under it is a corner, not noise.
-  minRunMeters: 12,
-  exitRadiusMeters: 420,
+  minRunMeters: CORNER_MIN_RUN_M,
+  exitRadiusMeters: CORNER_EXIT_RADIUS_M,
   liftMeters: 0.07,
 } satisfies Required<Omit<KerbOptions, "room">>;
 
@@ -89,106 +99,6 @@ function halfWidthAt(halfWidth: HalfWidth, s: number): number {
 
 function wrap01(value: number): number {
   return ((value % 1) + 1) % 1;
-}
-
-/**
- * Mark which side of the track is the inside of a corner, 0 on a straight.
- *
- * Uses hysteresis rather than one threshold. Real corners are not
- * constant-radius: through a complex like Becketts the curvature repeatedly
- * dips under any single threshold, which chopped one corner into several runs
- * that each tapered to nothing and back — the kerb pulsed. Entering a corner
- * takes `enter` curvature, but leaving it takes a much gentler `exit`, so the
- * kerb stays on through the dips and only ends where the track really
- * straightens.
- */
-function resolveCornerSides(
-  curvature: number[],
-  enter: number,
-  exit: number,
-): number[] {
-  const n = curvature.length;
-  const sides = new Array<number>(n).fill(0);
-
-  // Start where the track is straightest, so the walk never begins mid-corner
-  // and carries a stale state around the wrap.
-  let origin = 0;
-  for (let i = 1; i < n; i++) {
-    if (Math.abs(curvature[i]) < Math.abs(curvature[origin])) origin = i;
-  }
-
-  let active = 0;
-  for (let step = 0; step < n; step++) {
-    const i = (origin + step) % n;
-    const magnitude = Math.abs(curvature[i]);
-    const sign = Math.sign(curvature[i]);
-
-    if (active === 0) {
-      if (magnitude > enter) active = sign;
-    } else if (sign !== active && magnitude > enter) {
-      // A genuine change of direction: the next corner starts here.
-      active = sign;
-    } else if (magnitude < exit) {
-      active = 0;
-    }
-
-    sides[i] = active;
-  }
-
-  return sides;
-}
-
-interface KerbRun {
-  start: number;
-  count: number;
-  /** Which side of the centerline this stretch of kerb belongs to. */
-  sign: 1 | -1;
-}
-
-/**
- * Contiguous index ranges sharing the same non-zero value in `state`, over a
- * circular array. Runs are split where the turn direction flips, so an S-bend
- * gets one kerb per direction instead of a single strip stuck on one edge
- * through both halves. A run straddling index 0 is returned as one range whose
- * start is near the end of the array — callers must read indices modulo n.
- */
-function circularRuns(state: number[]): KerbRun[] {
-  const n = state.length;
-  if (n === 0) return [];
-
-  const origin = state.indexOf(0);
-  // No zero anywhere: the whole loop is one continuous turn (an oval), unless
-  // the direction flips somewhere, in which case a flip point serves as the
-  // seam instead.
-  if (origin < 0) {
-    const flip = state.findIndex((v, i) => v !== state[(i - 1 + n) % n]);
-    if (flip < 0) return [{ start: 0, count: n, sign: state[0] > 0 ? 1 : -1 }];
-    return scan(flip);
-  }
-  return scan(origin);
-
-  function scan(from: number): KerbRun[] {
-    const runs: KerbRun[] = [];
-    let start = -1;
-    let current = 0;
-
-    for (let step = 0; step <= n; step++) {
-      const i = (from + step) % n;
-      const value = step < n ? state[i] : 0;
-      if (value !== current && start >= 0) {
-        runs.push({
-          start,
-          count: (i - start + n) % n,
-          sign: current > 0 ? 1 : -1,
-        });
-        start = -1;
-      }
-      if (value !== 0 && start < 0) start = i;
-      current = value;
-    }
-
-    return runs;
-  }
 }
 
 /**
