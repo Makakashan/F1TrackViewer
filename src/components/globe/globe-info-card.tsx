@@ -91,7 +91,7 @@ export default function GlobeInfoCard({
   return (
     <aside
       ref={ref}
-      className="pointer-events-auto fixed inset-x-3 bottom-3 z-20 md:inset-x-auto md:bottom-auto md:right-6 md:top-24 md:w-90"
+      className="pointer-events-auto fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] right-[calc(0.75rem+env(safe-area-inset-right))] z-20 md:inset-x-auto md:bottom-auto md:right-6 md:top-24 md:w-90"
     >
       <div className="space-y-3 rounded-2xl border border-foreground/10 bg-background/58 p-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
         <div className="rounded-2xl border border-foreground/10 bg-background/20 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_50px_rgba(0,0,0,0.18)]">

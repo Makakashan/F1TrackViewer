@@ -229,7 +229,10 @@ export default function RaceApp() {
 
   return (
     <div className="flex h-dvh w-screen flex-col overflow-hidden bg-background text-foreground">
-      <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 backdrop-blur md:px-4">
+      {/* The bar is 3.5rem of content plus whatever the status bar takes —
+          the page reaches under it now, and a header that ignored that would
+          hand the notch its first row of buttons. */}
+      <header className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur md:px-4">
         <div className="flex min-w-0 items-center gap-2 md:gap-3">
           <BrandMark className="h-6 w-auto shrink-0" title={t.appName} />
           <div className="hidden leading-none sm:block">
@@ -314,7 +317,11 @@ export default function RaceApp() {
           </div>
         )}
 
-        <div className="pointer-events-none absolute inset-0 p-4">
+        {/* Absolutely positioned children resolve against this box's padding
+            edge, so the insets belong here once rather than on each of them.
+            The scene underneath keeps the whole screen; only the overlay
+            steps back from the cutouts. */}
+        <div className="pointer-events-none absolute inset-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]">
           {/* One tower, sized by the viewport rather than two towers hidden
               from each other by a media query: the second copy still mounts,
               still re-renders five times a second and still measures its rows
@@ -384,7 +391,7 @@ export default function RaceApp() {
           )}
 
           <RaceControls
-            className="absolute bottom-[calc(1rem+env(safe-area-inset-bottom))] left-1/2 w-max max-w-[calc(100vw-1rem)] -translate-x-1/2 sm:bottom-6"
+            className="absolute bottom-4 left-1/2 w-max max-w-full -translate-x-1/2 sm:bottom-6"
             started={race.phase !== "standby"}
             paused={race.paused}
             speed={race.speed}

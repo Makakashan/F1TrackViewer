@@ -184,7 +184,9 @@ export default function GlobeLanding() {
 	return (
 		<main className="relative h-dvh w-screen overflow-hidden bg-background text-foreground">
 			<div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_50%_45%,transparent_0%,rgba(3,5,10,0.08)_45%,rgba(3,5,10,0.72)_100%)]" />
-			<header className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4 py-4 md:px-6">
+			{/* The globe runs edge to edge under the status bar; the chrome on
+			    top of it does not. */}
+			<header className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] md:px-6">
 				<div className="flex items-center gap-3">
 					<div className="flex h-9 w-9 items-center justify-center rounded-md bg-linear-to-br from-red-600 to-orange-600 shadow-[0_0_24px_rgba(225,6,0,0.45)]">
 						<Flag className="h-4.5 w-4.5 text-white" />
@@ -368,7 +370,7 @@ export default function GlobeLanding() {
 			)}
 
 			<button
-				className="absolute left-4 top-24 z-20 flex h-10 items-center gap-2 rounded-md border border-foreground/10 bg-background/58 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/68 backdrop-blur-xl active:bg-foreground/10 md:hidden"
+				className="absolute left-[calc(1rem+env(safe-area-inset-left))] top-[calc(6rem+env(safe-area-inset-top))] z-20 flex h-10 items-center gap-2 rounded-md border border-foreground/10 bg-background/58 px-3 text-xs font-semibold uppercase tracking-[0.16em] text-foreground/68 backdrop-blur-xl active:bg-foreground/10 md:hidden"
 				onClick={() => setMobileMenuOpen(true)}
 			>
 				<List className="h-4 w-4 text-red-300" />
@@ -376,7 +378,7 @@ export default function GlobeLanding() {
 			</button>
 
 			{mobileMenuOpen && (
-				<div className="absolute inset-x-3 bottom-3 top-20 z-40 flex flex-col overflow-hidden rounded-md border border-foreground/12 bg-background/82 shadow-2xl shadow-black/50 backdrop-blur-xl md:hidden">
+				<div className="absolute bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] right-[calc(0.75rem+env(safe-area-inset-right))] top-[calc(5rem+env(safe-area-inset-top))] z-40 flex flex-col overflow-hidden rounded-md border border-foreground/12 bg-background/82 shadow-2xl shadow-black/50 backdrop-blur-xl md:hidden">
 					<div className="flex items-center justify-between border-b border-foreground/10 px-3 py-3">
 						<div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-foreground/68">
 							<List className="h-3.5 w-3.5 text-red-300" />
