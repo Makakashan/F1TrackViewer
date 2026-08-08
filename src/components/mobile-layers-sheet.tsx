@@ -30,7 +30,7 @@ export default function MobileLayersSheet(props: TrackSettingsPanelProps) {
           <Layers className="h-4 w-4" />
         </Button>
       </DrawerTrigger>
-      <DrawerContent className="max-h-[82vh] bg-sidebar">
+      <DrawerContent className="max-h-[82dvh] bg-sidebar">
         <DrawerHeader className="pb-2 text-left">
           <DrawerTitle className="flex items-center gap-2 text-sm">
             <Layers className="h-4 w-4 text-primary" />
