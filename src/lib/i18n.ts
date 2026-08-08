@@ -141,6 +141,8 @@ const en = {
   raceGridOrder: "Grid",
   raceShuffle: "Shuffle",
   raceInterval: "Interval",
+  /** The overflow menu a phone header and control bar fold down into. */
+  raceMore: "More",
   /** The series line under the mark. The banana is set after it as the one. */
   brandSeries: "RUI Formula",
   brandSanction: "World Championship",
@@ -295,6 +297,7 @@ const ru: Dict = {
   raceGridOrder: "Решётка",
   raceShuffle: "Перемешать",
   raceInterval: "Интервал",
+  raceMore: "Ещё",
   brandSeries: "RUI Formula",
   brandSanction: "Чемпионат мира",
   brandLiveTiming: "Хронометраж",

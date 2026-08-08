@@ -20,6 +20,7 @@ import RaceBetaNotice from "@/components/race/race-beta-notice";
 import RaceCircuitPicker from "@/components/race/race-circuit-picker";
 import RaceControls from "@/components/race/race-controls";
 import RaceFastestLapPopup from "@/components/race/race-fastest-lap-popup";
+import RaceHeaderMenu from "@/components/race/race-header-menu";
 import RaceSceneSettings from "@/components/race/race-scene-settings";
 import RaceStatusBar from "@/components/race/race-status-bar";
 import RaceResults from "@/components/race/race-results";
@@ -233,7 +234,7 @@ export default function RaceApp() {
           the page reaches under it now, and a header that ignored that would
           hand the notch its first row of buttons. */}
       <header className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur md:px-4">
-        <div className="flex min-w-0 items-center gap-2 md:gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-3">
           <BrandMark className="h-6 w-auto shrink-0" title={t.appName} />
           <div className="hidden leading-none sm:block">
             <div className="text-sm font-bold tracking-tight">
@@ -253,7 +254,25 @@ export default function RaceApp() {
           />
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        {/* A phone gets one button here; the four the desktop shows leave the
+            circuit name no width and end up drawn over it. */}
+        <RaceHeaderMenu
+          className="shrink-0 sm:hidden"
+          onBackToGlobe={handleBackToGlobe}
+          onExit={exitRace}
+          environmentAvailable={!!environmentAvailable}
+          environmentEnabled={environmentEnabled}
+          setEnvironmentEnabled={setUrlEnvironmentEnabled}
+          environmentTerrain={environmentTerrain}
+          setEnvironmentTerrain={setUrlEnvironmentTerrain}
+          realWidthAvailable={!!widthProfile}
+          realWidthEnabled={realWidthEnabled}
+          setRealWidthEnabled={setUrlRealWidthEnabled}
+          qualityMode={qualityMode}
+          setQualityMode={setUrlQualityMode}
+        />
+
+        <div className="hidden shrink-0 items-center gap-2 sm:flex">
           <RaceSceneSettings
             environmentAvailable={!!environmentAvailable}
             environmentEnabled={environmentEnabled}

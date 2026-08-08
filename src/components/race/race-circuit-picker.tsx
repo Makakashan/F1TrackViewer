@@ -37,7 +37,10 @@ export default function RaceCircuitPicker({
         <Button
           variant="outline"
           size="sm"
-          className="max-w-[140px] gap-2 sm:max-w-[200px]"
+          // On a phone this is the only thing in the bar that can give, so it
+          // takes the leftover width and truncates instead of pushing the
+          // buttons beside it off their own row.
+          className="min-w-0 flex-1 gap-2 sm:max-w-[200px] sm:flex-none"
         >
           <span className="truncate">{selected?.name ?? "—"}</span>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
