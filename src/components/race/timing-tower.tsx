@@ -5,9 +5,9 @@ import { ArrowLeftRight, Shuffle, Timer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import BrandMark from "@/components/brand-mark";
 import { useAppPref } from "@/components/app-pref-provider";
-import type { DriverWithTeam } from "@/lib/f1-drivers";
-import type { RaceStanding } from "@/lib/race-sim";
-import type { TyreCompound } from "@/lib/race-session";
+import type { DriverWithTeam } from "@/lib/race/f1-drivers";
+import type { RaceStanding } from "@/lib/race/race-sim";
+import type { TyreCompound } from "@/lib/race/race-session";
 
 export interface TimingTowerProps {
   /** The grid, in starting order. Row content comes from here. */

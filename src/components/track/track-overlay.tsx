@@ -3,7 +3,7 @@
 import { ChevronRight, RefreshCw } from "lucide-react";
 import { useAppPref } from "@/components/app-pref-provider";
 import type { CircuitProperties } from "@/lib/f1-circuits";
-import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
+import type { TrackMarkers, TrackViewMode } from "@/lib/track/track-markers";
 
 interface TrackOverlayProps {
   properties: CircuitProperties | null;

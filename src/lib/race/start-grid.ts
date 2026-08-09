@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { HalfWidth } from "./track-geometry";
+import type { HalfWidth } from "@/lib/track/track-geometry";
 
 /**
  * Starting grid markings — the staggered boxes behind the start/finish line.

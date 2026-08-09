@@ -1,4 +1,4 @@
-import { distanceMeters } from "./geo-utils";
+import { distanceMeters } from "@/lib/geo-utils";
 
 function median(values: number[]): number {
   if (!values.length) return 0;

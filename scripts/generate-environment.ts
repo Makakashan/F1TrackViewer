@@ -34,8 +34,8 @@ import type {
   WaterFile,
   WaterPolygon,
   EnvironmentIndex,
-} from "../src/lib/environment-types";
-import { ENVIRONMENT_ATTRIBUTION } from "../src/lib/environment-types";
+} from "../src/lib/env/environment-types";
+import { ENVIRONMENT_ATTRIBUTION } from "../src/lib/env/environment-types";
 import type { CircuitGeoJSON, CircuitLocation } from "../src/lib/f1-circuits";
 
 const RAW_BASE = "https://raw.githubusercontent.com/bacinger/f1-circuits/master";

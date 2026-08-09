@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { distanceToCurveS, sectorArcFraction } from "./track-markers";
-import type { SectorDefinition, TrackMarkers } from "./track-markers";
+import { distanceToCurveS, sectorArcFraction } from "@/lib/track/track-markers";
+import type { SectorDefinition, TrackMarkers } from "@/lib/track/track-markers";
 
 /**
  * Half-width may be a constant (manual slider) or a function of normalized

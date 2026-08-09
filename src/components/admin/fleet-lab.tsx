@@ -9,8 +9,8 @@ import {
   formatBytes,
   formatCount,
   type CarModelEntry,
-} from "@/lib/car-library";
-import { GRID_SIZE, TEAMS_2025 } from "@/lib/f1-teams";
+} from "@/lib/cars/car-library";
+import { GRID_SIZE, TEAMS_2025 } from "@/lib/race/f1-teams";
 import type { CarFleetStats } from "@/components/three/car-fleet";
 import { cn } from "@/lib/utils";
 

@@ -3,7 +3,7 @@
 import { Layers } from "lucide-react";
 import TrackSettingsPanel, {
   type TrackSettingsPanelProps,
-} from "@/components/track-settings-panel";
+} from "@/components/track/track-settings-panel";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,

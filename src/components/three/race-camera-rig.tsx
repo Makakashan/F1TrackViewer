@@ -3,10 +3,10 @@
 import { useEffect, useRef } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import type { GridSlot } from "@/lib/start-grid";
+import type { GridSlot } from "@/lib/race/start-grid";
 import type { PoseAt } from "@/components/three/start-grid-cars";
 import type { RaceController } from "@/hooks/use-race-simulation";
-import { interpolateCarPose } from "@/lib/race-sim";
+import { interpolateCarPose } from "@/lib/race/race-sim";
 
 export interface RaceCameraRigProps {
   slots: GridSlot[];

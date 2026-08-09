@@ -2,7 +2,7 @@
 
 import { Car, Flag, LogOut, ShieldCheck, Users } from "lucide-react";
 import { useState } from "react";
-import F1TrackApp from "@/components/f1-track-app";
+import F1TrackApp from "@/components/track/f1-track-app";
 import CarModelLab from "@/components/admin/car-model-lab";
 import FleetLab from "@/components/admin/fleet-lab";
 import { cn } from "@/lib/utils";

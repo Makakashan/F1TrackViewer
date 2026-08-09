@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import type { TrackMarkers } from "@/lib/track-markers";
-import { fetchTrackMarkers } from "@/lib/track-markers";
-import type { EnvironmentBundle } from "@/lib/environment-types";
-import { fetchEnvironmentBundle, hasEnvironment } from "@/lib/environment-loader";
-import type { TrackWidthProfile } from "@/lib/track-width";
-import { fetchTrackWidthProfile } from "@/lib/track-width";
+import type { TrackMarkers } from "@/lib/track/track-markers";
+import { fetchTrackMarkers } from "@/lib/track/track-markers";
+import type { EnvironmentBundle } from "@/lib/env/environment-types";
+import { fetchEnvironmentBundle, hasEnvironment } from "@/lib/env/environment-loader";
+import type { TrackWidthProfile } from "@/lib/track/track-width";
+import { fetchTrackWidthProfile } from "@/lib/track/track-width";
 
 /**
  * Everything a rendered circuit needs beyond its centerline: sector markers,

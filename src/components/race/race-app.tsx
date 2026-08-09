@@ -13,7 +13,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { useTrackData } from "@/hooks/use-track-data";
 import { useCircuitScene } from "@/hooks/use-circuit-scene";
 import { useRaceSimulation } from "@/hooks/use-race-simulation";
-import { raceGridOrder, raceLapCount, raceTyreChoices } from "@/lib/race-session";
+import { raceGridOrder, raceLapCount, raceTyreChoices } from "@/lib/race/race-session";
 import { useUrlState } from "@/lib/url-state";
 import { cn } from "@/lib/utils";
 import RaceBetaNotice from "@/components/race/race-beta-notice";
@@ -26,7 +26,7 @@ import RaceStatusBar from "@/components/race/race-status-bar";
 import RaceResults from "@/components/race/race-results";
 import TimingTower from "@/components/race/timing-tower";
 
-const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
+const TrackViewer = dynamic(() => import("@/components/track/track-viewer"), {
   ssr: false,
   loading: () => (
     <div className="flex h-full w-full items-center justify-center bg-background text-muted-foreground">

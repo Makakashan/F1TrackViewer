@@ -8,8 +8,8 @@ import {
   type RaceSimSetup,
   type RaceSimState,
   type RaceStanding,
-} from "@/lib/race-sim";
-import type { RacePhase } from "@/lib/race-session";
+} from "@/lib/race/race-sim";
+import type { RacePhase } from "@/lib/race/race-session";
 import { useStartLightSequence } from "@/hooks/use-start-lights";
 
 /**

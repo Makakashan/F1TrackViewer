@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import { sampleCurvature } from "./track-curvature";
-import { sampleCornerCoverage } from "./track-corners";
-import type { HalfWidth } from "./track-geometry";
+import { sampleCurvature } from "@/lib/track/track-curvature";
+import { sampleCornerCoverage } from "@/lib/track/track-corners";
+import type { HalfWidth } from "@/lib/track/track-geometry";
 
 /**
  * The apron — the paved strip just outside the white line, which the kerb is

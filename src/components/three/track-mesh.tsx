@@ -14,31 +14,31 @@ import {
   xzToLonLat,
   REAL_ELEVATION_SCALE,
 } from "@/lib/geo-utils";
-import { smoothTerrainTrackProfile } from "@/lib/elevation";
+import { smoothTerrainTrackProfile } from "@/lib/track/elevation";
 import {
   buildExtrudedTrack,
   buildTrackOutline,
   buildSectorMesh,
   buildSectorSplitLineGeometry,
   type HalfWidth,
-} from "@/lib/track-geometry";
-import { sampleWidthAt, type TrackWidthProfile } from "@/lib/track-width";
+} from "@/lib/track/track-geometry";
+import { sampleWidthAt, type TrackWidthProfile } from "@/lib/track/track-width";
 import {
   buildKerbGeometry,
   buildTrackEdgeLineGeometry,
-} from "@/lib/track-kerbs";
+} from "@/lib/track/track-kerbs";
 import {
   APRON_GROUND_TOLERANCE_M,
   buildTrackApronGeometry,
   buildFootprintIndex,
   sampleApronRoom,
   type ApronClearance,
-} from "@/lib/track-apron";
-import { buildStartGridGeometry, startGridSlots } from "@/lib/start-grid";
+} from "@/lib/track/track-apron";
+import { buildStartGridGeometry, startGridSlots } from "@/lib/race/start-grid";
 import StartGridCars from "@/components/three/start-grid-cars";
 import RaceCameraRig from "@/components/three/race-camera-rig";
-import type { GridEntry } from "@/lib/f1-teams";
-import { START_LIGHT_ROWS } from "@/lib/start-lights";
+import type { GridEntry } from "@/lib/race/f1-teams";
+import { START_LIGHT_ROWS } from "@/lib/race/start-lights";
 import {
   buildStartFinishGantryGeometry,
   buildStartFinishGeometry,
@@ -46,23 +46,23 @@ import {
   findNearestCurveS,
   resolveStartFinishPlacement,
   type StartFinishPlacement,
-} from "@/lib/start-finish";
-import { buildStartLightsGeometry } from "@/lib/start-lights";
-import { buildSpeedProfile } from "@/lib/speed-profile";
-import { buildRacingLine } from "@/lib/racing-line";
-import { halfWidthAt } from "@/lib/track-geometry";
+} from "@/lib/track/start-finish";
+import { buildStartLightsGeometry } from "@/lib/race/start-lights";
+import { buildSpeedProfile } from "@/lib/race/speed-profile";
+import { buildRacingLine } from "@/lib/track/racing-line";
+import { halfWidthAt } from "@/lib/track/track-geometry";
 import type { RaceController } from "@/hooks/use-race-simulation";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import {
   MARKER_COLORS,
   type TrackMarkers,
   type TrackViewMode,
-} from "@/lib/track-markers";
-import type { EnvironmentBundle } from "@/lib/environment-types";
-import { buildTerrainSampler } from "@/lib/terrain-sampler";
-import EnvironmentLayer from "@/components/environment-layer";
+} from "@/lib/track/track-markers";
+import type { EnvironmentBundle } from "@/lib/env/environment-types";
+import { buildTerrainSampler } from "@/lib/env/terrain-sampler";
+import EnvironmentLayer from "@/components/three/environment-layer";
 import StudioStage from "@/components/three/studio-stage";
-import type { CameraPreset } from "@/components/track-viewer";
+import type { CameraPreset } from "@/components/track/track-viewer";
 import {
   TRACK_SURFACE_RAISE,
   TRACK_PAINT_RAISE,

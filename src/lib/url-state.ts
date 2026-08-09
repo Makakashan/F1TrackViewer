@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import type { CameraPreset } from "@/components/track-viewer";
-import type { TrackViewMode } from "@/lib/track-markers";
+import type { CameraPreset } from "@/components/track/track-viewer";
+import type { TrackViewMode } from "@/lib/track/track-markers";
 import { readPref, writePref } from "@/lib/local-pref";
 
 export type QualityMode = "auto" | "performance" | "quality";

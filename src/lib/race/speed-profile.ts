@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { sampleCurvature } from "./track-curvature";
+import { sampleCurvature } from "@/lib/track/track-curvature";
 
 /**
  * How fast a car can be at every point of a circuit: a cornering limit from

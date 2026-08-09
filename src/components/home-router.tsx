@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import F1TrackApp from "@/components/f1-track-app";
+import F1TrackApp from "@/components/track/f1-track-app";
 import RaceApp from "@/components/race/race-app";
 import GlobeLanding from "@/components/globe/globe-landing";
 import { useUrlState } from "@/lib/url-state";

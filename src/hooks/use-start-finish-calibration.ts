@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import {
   createCircuitMarkerSchema,
   formatMarkerExport,
-} from "@/lib/start-finish";
+} from "@/lib/track/start-finish";
 import { START_FINISH_STORAGE_KEY } from "@/lib/scene-config";
 
 export interface StartFinishCalibrationState {

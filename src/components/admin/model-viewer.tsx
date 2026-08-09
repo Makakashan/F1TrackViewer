@@ -4,7 +4,7 @@ import { Canvas, useStore } from "@react-three/fiber";
 import { Grid, OrbitControls, useGLTF, useProgress } from "@react-three/drei";
 import { Suspense, useEffect, useMemo } from "react";
 import * as THREE from "three";
-import { computeGltfStats, type GltfStats } from "@/lib/gltf-stats";
+import { computeGltfStats, type GltfStats } from "@/lib/cars/gltf-stats";
 
 export interface ModelViewerProps {
   url: string;

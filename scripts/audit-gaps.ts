@@ -13,10 +13,10 @@
 import { readFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { buildTrackCurve, computeBounds } from "../src/lib/geo-utils";
-import { buildSpeedProfile } from "../src/lib/speed-profile";
-import { buildRacingLine } from "../src/lib/racing-line";
-import { startGridSlots } from "../src/lib/start-grid";
-import { createRaceSim, stepRace, raceStandings } from "../src/lib/race-sim";
+import { buildSpeedProfile } from "../src/lib/race/speed-profile";
+import { buildRacingLine } from "../src/lib/track/racing-line";
+import { startGridSlots } from "../src/lib/race/start-grid";
+import { createRaceSim, stepRace, raceStandings } from "../src/lib/race/race-sim";
 
 const CACHE_DIR = ".cache/circuit-geojson";
 const RAW_BASE = "https://raw.githubusercontent.com/bacinger/f1-circuits/master";

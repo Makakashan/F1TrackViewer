@@ -1,4 +1,4 @@
-import type { EnvironmentManifest, TerrainFile } from "@/lib/environment-types";
+import type { EnvironmentManifest, TerrainFile } from "@/lib/env/environment-types";
 
 export const TERRAIN_VERTICAL_SCALE = 1;
 

@@ -2,7 +2,7 @@ import {
   normalizeElevationProfile,
   sampleElevationCoords,
   interpolateElevations,
-} from "./elevation";
+} from "@/lib/track/elevation";
 
 const ELEVATION_CACHE_VERSION = 2;
 const ELEVATION_CACHE_PREFIX = `f1tv:elevations:v${ELEVATION_CACHE_VERSION}:`;

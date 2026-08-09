@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Globe2, RefreshCw, Flag, X } from "lucide-react";
-import TrackOverlay from "@/components/track-overlay";
-import TrackSidePanel from "@/components/track-side-panel";
+import TrackOverlay from "@/components/track/track-overlay";
+import TrackSidePanel from "@/components/track/track-side-panel";
 import ErrorBanner from "@/components/error-banner";
-import MobileInfoSheet from "@/components/mobile-info-sheet";
-import MobileLayersSheet from "@/components/mobile-layers-sheet";
+import MobileInfoSheet from "@/components/track/mobile-info-sheet";
+import MobileLayersSheet from "@/components/track/mobile-layers-sheet";
 import SettingsMenu from "@/components/settings-menu";
 import { Button } from "@/components/ui/button";
 import { useAppPref } from "@/components/app-pref-provider";
@@ -15,13 +15,13 @@ import { type CircuitProperties } from "@/lib/f1-circuits";
 import { useCircuits } from "@/hooks/use-circuits";
 import { useTrackData } from "@/hooks/use-track-data";
 import { useCircuitScene } from "@/hooks/use-circuit-scene";
-import type { TrackViewMode } from "@/lib/track-markers";
-import type { StartFinishPlacement } from "@/lib/start-finish";
+import type { TrackViewMode } from "@/lib/track/track-markers";
+import type { StartFinishPlacement } from "@/lib/track/start-finish";
 import { useUrlState } from "@/lib/url-state";
 import { readPref, writePref } from "@/lib/local-pref";
 
 // Three.js scene must be client-only — no SSR for WebGL.
-const TrackViewer = dynamic(() => import("@/components/track-viewer"), {
+const TrackViewer = dynamic(() => import("@/components/track/track-viewer"), {
   ssr: false,
   loading: () => {
     return (

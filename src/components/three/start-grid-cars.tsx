@@ -8,11 +8,11 @@ import {
   carModelUrl,
   fetchCarLibrary,
   type CarModelEntry,
-} from "@/lib/car-library";
+} from "@/lib/cars/car-library";
 import { TRACK_PROP_RENDER_ORDER } from "@/lib/scene-config";
-import type { GridSlot } from "@/lib/start-grid";
-import type { GridEntry } from "@/lib/f1-teams";
-import { interpolateCarPose } from "@/lib/race-sim";
+import type { GridSlot } from "@/lib/race/start-grid";
+import type { GridEntry } from "@/lib/race/f1-teams";
+import { interpolateCarPose } from "@/lib/race/race-sim";
 import type { RaceController } from "@/hooks/use-race-simulation";
 
 /**

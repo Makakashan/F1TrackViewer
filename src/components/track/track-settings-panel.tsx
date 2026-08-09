@@ -14,8 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { useAppPref } from "@/components/app-pref-provider";
 import { cn } from "@/lib/utils";
-import type { CameraPreset } from "@/components/track-viewer";
-import type { TrackViewMode } from "@/lib/track-markers";
+import type { CameraPreset } from "@/components/track/track-viewer";
+import type { TrackViewMode } from "@/lib/track/track-markers";
 import type { QualityMode } from "@/lib/url-state";
 
 export interface TrackSettingsPanelProps {

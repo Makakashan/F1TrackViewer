@@ -1,7 +1,7 @@
-import { speedAt, ACCEL_G, BRAKING_G, type SpeedProfile } from "./speed-profile";
-import { racingLineOffsetAt, type RacingLine } from "./racing-line";
-import { seedFrom, randomFrom } from "./race-session";
-import { gridSetbackMeters, type GridSlot } from "./start-grid";
+import { speedAt, ACCEL_G, BRAKING_G, type SpeedProfile } from "@/lib/race/speed-profile";
+import { racingLineOffsetAt, type RacingLine } from "@/lib/track/racing-line";
+import { seedFrom, randomFrom } from "@/lib/race/race-session";
+import { gridSetbackMeters, type GridSlot } from "@/lib/race/start-grid";
 
 /**
  * Twenty cars driving a lap.

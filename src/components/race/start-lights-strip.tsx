@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { START_LIGHT_COLUMNS, START_LIGHT_ROWS } from "@/lib/start-lights";
+import { START_LIGHT_COLUMNS, START_LIGHT_ROWS } from "@/lib/race/start-lights";
 
 export interface StartLightsStripProps {
   /** How many columns are lit, 0–5. */

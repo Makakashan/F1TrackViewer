@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { sampleCurvature } from "./track-curvature";
-import { halfWidthAt, type HalfWidth } from "./track-geometry";
+import { sampleCurvature } from "@/lib/track/track-curvature";
+import { halfWidthAt, type HalfWidth } from "@/lib/track/track-geometry";
 
 /**
  * The line the cars drive: lateral offsets from the centerline, one per

@@ -7,10 +7,10 @@ import type {
   BuildingFeature,
   RoadLine,
   EnvironmentManifest,
-} from "@/lib/environment-types";
-import { DIORAMA_COLORS } from "@/lib/diorama-palette";
+} from "@/lib/env/environment-types";
+import { DIORAMA_COLORS } from "@/lib/env/diorama-palette";
 import { densifyCoords, xzToLonLat } from "@/lib/geo-utils";
-import { buildTerrainSampler, type TerrainSampler } from "@/lib/terrain-sampler";
+import { buildTerrainSampler, type TerrainSampler } from "@/lib/env/terrain-sampler";
 
 /**
  * Local-meters projection of a [lon, lat] pair onto the diorama plane.

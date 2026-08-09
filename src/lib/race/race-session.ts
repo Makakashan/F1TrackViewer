@@ -1,4 +1,4 @@
-import { driversWithTeams, type DriverWithTeam } from "./f1-drivers";
+import { driversWithTeams, type DriverWithTeam } from "@/lib/race/f1-drivers";
 
 /**
  * The parts of a race that exist before there is a simulation: who lines up

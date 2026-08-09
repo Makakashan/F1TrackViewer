@@ -1,10 +1,10 @@
 "use client";
 
 import { Info, SlidersHorizontal } from "lucide-react";
-import TrackInfo, { type TrackInfoProps } from "@/components/track-info";
+import TrackInfo, { type TrackInfoProps } from "@/components/track/track-info";
 import TrackSettingsPanel, {
   type TrackSettingsPanelProps,
-} from "@/components/track-settings-panel";
+} from "@/components/track/track-settings-panel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppPref } from "@/components/app-pref-provider";
 

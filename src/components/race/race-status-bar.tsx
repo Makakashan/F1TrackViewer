@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils";
 import { useAppPref } from "@/components/app-pref-provider";
 import StartLightsStrip from "@/components/race/start-lights-strip";
-import type { RacePhase } from "@/lib/race-session";
+import type { RacePhase } from "@/lib/race/race-session";
 
 export interface RaceStatusBarProps {
   lit: number;

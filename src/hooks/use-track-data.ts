@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { CircuitGeoJSON, fetchCircuitGeoJson } from "@/lib/f1-circuits";
-import { fetchElevations } from "@/lib/elevation-api";
+import { fetchElevations } from "@/lib/track/elevation-api";
 import { useAppPref } from "@/components/app-pref-provider";
 
 const ELEVATION_RETRY_DELAYS_MS = [30_000, 120_000, 300_000];

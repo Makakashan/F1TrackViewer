@@ -10,9 +10,9 @@ import {
   useRef,
 } from "react";
 import * as THREE from "three";
-import { GRID_SPACING } from "@/lib/car-config";
-import { buildCarMesh, disposeCarMesh, type CarPart } from "@/lib/car-mesh";
-import { buildGrid, GRID_SIZE, type GridEntry } from "@/lib/f1-teams";
+import { GRID_SPACING } from "@/lib/cars/car-config";
+import { buildCarMesh, disposeCarMesh, type CarPart } from "@/lib/cars/car-mesh";
+import { buildGrid, GRID_SIZE, type GridEntry } from "@/lib/race/f1-teams";
 
 /** Instances are placed, never resized; one shared vector avoids the churn. */
 const UNIT_SCALE = new THREE.Vector3(1, 1, 1);

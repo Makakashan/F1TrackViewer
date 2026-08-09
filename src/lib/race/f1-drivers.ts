@@ -1,4 +1,4 @@
-import { TEAMS_2025, teamById, type Team } from "./f1-teams";
+import { TEAMS_2025, teamById, type Team } from "@/lib/race/f1-teams";
 
 /**
  * The twenty drivers of the 2025 Formula 1 season.

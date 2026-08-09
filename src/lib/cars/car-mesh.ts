@@ -15,8 +15,8 @@
  */
 
 import * as THREE from "three";
-import { CAR_LENGTH } from "./car-config";
-import { liverySlotFor, type LiverySlot } from "./f1-teams";
+import { CAR_LENGTH } from "@/lib/cars/car-config";
+import { liverySlotFor, type LiverySlot } from "@/lib/race/f1-teams";
 
 export interface CarPart {
   /** Source material name — what decides the livery slot. */

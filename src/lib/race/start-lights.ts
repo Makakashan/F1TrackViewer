@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { gantryFrame } from "./start-finish";
-import type { HalfWidth } from "./track-geometry";
+import { gantryFrame } from "@/lib/track/start-finish";
+import type { HalfWidth } from "@/lib/track/track-geometry";
 
 /**
  * The FIA start lights, hung under the start/finish gantry.

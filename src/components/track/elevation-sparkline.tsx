@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { elevationStats } from "@/lib/elevation";
+import { elevationStats } from "@/lib/track/elevation";
 
 interface ElevationSparklineProps {
   elevations: number[];

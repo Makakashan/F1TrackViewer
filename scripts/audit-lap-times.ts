@@ -20,7 +20,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { buildTrackCurve, computeBounds } from "../src/lib/geo-utils";
-import { buildSpeedProfile, idealLapTime } from "../src/lib/speed-profile";
+import { buildSpeedProfile, idealLapTime } from "../src/lib/race/speed-profile";
 
 const RAW_BASE = "https://raw.githubusercontent.com/bacinger/f1-circuits/master";
 const CACHE_DIR = ".cache/circuit-geojson";

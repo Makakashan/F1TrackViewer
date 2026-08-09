@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { halfWidthAt, type HalfWidth } from "./track-geometry";
+import { halfWidthAt, type HalfWidth } from "@/lib/track/track-geometry";
 
 export type StartFinishSource = "verified" | "calibrated" | "estimated";
 

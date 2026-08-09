@@ -8,7 +8,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import CircuitList from "@/components/circuit-list";
+import CircuitList from "@/components/track/circuit-list";
 import type { CircuitLocation } from "@/lib/f1-circuits";
 
 export interface RaceCircuitPickerProps {

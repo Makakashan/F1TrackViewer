@@ -1,14 +1,14 @@
 import * as THREE from "three";
-import { sampleCurvature } from "./track-curvature";
-import { apronRoomAt, type ApronRoom } from "./track-apron";
-import type { HalfWidth } from "./track-geometry";
+import { sampleCurvature } from "@/lib/track/track-curvature";
+import { apronRoomAt, type ApronRoom } from "@/lib/track/track-apron";
+import type { HalfWidth } from "@/lib/track/track-geometry";
 import {
   circularRuns,
   CORNER_ENTER_RADIUS_M,
   CORNER_EXIT_RADIUS_M,
   CORNER_MIN_RUN_M,
   resolveCornerSides,
-} from "./track-corners";
+} from "@/lib/track/track-corners";
 
 /**
  * Kerbs — the red/white striped strips lining the inside of every corner.

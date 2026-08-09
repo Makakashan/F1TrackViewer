@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { START_LIGHT_COLUMNS } from "@/lib/start-lights";
-import type { RacePhase } from "@/lib/race-session";
+import { START_LIGHT_COLUMNS } from "@/lib/race/start-lights";
+import type { RacePhase } from "@/lib/race/race-session";
 
 const COLUMN_INTERVAL_MS = 1000;
 /** The hold before the lights go out is deliberately unpredictable, as in a real start. */

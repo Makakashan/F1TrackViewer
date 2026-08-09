@@ -47,7 +47,7 @@ import sharp from "sharp";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { gzipSync } from "node:zlib";
-import { LIVERY_SLOT_PATTERNS, type Livery } from "../src/lib/f1-teams";
+import { LIVERY_SLOT_PATTERNS, type Livery } from "../src/lib/race/f1-teams";
 
 /** sRGB -> linear. glTF factors are linear; texture pixels are not. */
 function srgbToLinear(channel: number): number {

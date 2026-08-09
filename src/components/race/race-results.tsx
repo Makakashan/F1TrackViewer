@@ -3,8 +3,8 @@
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAppPref } from "@/components/app-pref-provider";
-import type { DriverWithTeam } from "@/lib/f1-drivers";
-import type { RaceStanding } from "@/lib/race-sim";
+import type { DriverWithTeam } from "@/lib/race/f1-drivers";
+import type { RaceStanding } from "@/lib/race/race-sim";
 
 export interface RaceResultsProps {
   order: DriverWithTeam[];

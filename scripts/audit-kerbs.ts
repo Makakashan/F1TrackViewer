@@ -13,8 +13,8 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { buildTrackCurve, computeBounds } from "../src/lib/geo-utils";
-import { sampleCurvature } from "../src/lib/track-curvature";
-import { sampleApronRoom, apronRoomAt } from "../src/lib/track-apron";
+import { sampleCurvature } from "../src/lib/track/track-curvature";
+import { sampleApronRoom, apronRoomAt } from "../src/lib/track/track-apron";
 
 const CACHE_DIR = ".cache/circuit-geojson";
 const RAW_BASE = "https://raw.githubusercontent.com/bacinger/f1-circuits/master";

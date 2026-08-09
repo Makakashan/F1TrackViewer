@@ -22,8 +22,8 @@ import {
   formatBytes,
   formatCount,
   type CarModelEntry,
-} from "@/lib/car-library";
-import { REFERENCE_CAR_LENGTH, type GltfStats } from "@/lib/gltf-stats";
+} from "@/lib/cars/car-library";
+import { REFERENCE_CAR_LENGTH, type GltfStats } from "@/lib/cars/gltf-stats";
 import { cn } from "@/lib/utils";
 
 const ModelViewer = dynamic(() => import("./model-viewer"), {

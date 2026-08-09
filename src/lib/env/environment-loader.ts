@@ -16,7 +16,7 @@ import type {
   SurfaceFile,
   TerrainFile,
   WaterFile,
-} from "./environment-types";
+} from "@/lib/env/environment-types";
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 

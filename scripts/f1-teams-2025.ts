@@ -10,4 +10,4 @@ export {
   TEAMS_2025,
   type Livery,
   type Team,
-} from "../src/lib/f1-teams";
+} from "../src/lib/race/f1-teams";

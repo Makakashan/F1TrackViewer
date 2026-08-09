@@ -12,10 +12,10 @@ import {
   Spline,
 } from "lucide-react";
 import { type CircuitProperties } from "@/lib/f1-circuits";
-import { elevationStats } from "@/lib/elevation";
+import { elevationStats } from "@/lib/track/elevation";
 import { useAppPref } from "@/components/app-pref-provider";
-import type { TrackMarkers, TrackViewMode } from "@/lib/track-markers";
-import ElevationSparkline from "@/components/elevation-sparkline";
+import type { TrackMarkers, TrackViewMode } from "@/lib/track/track-markers";
+import ElevationSparkline from "@/components/track/elevation-sparkline";
 
 export interface TrackInfoProps {
   properties: CircuitProperties | null;
