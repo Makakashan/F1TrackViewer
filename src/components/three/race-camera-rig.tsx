@@ -56,6 +56,15 @@ const PAN_RATE = 1.4;
 const PAN_MIN_M_S = 25;
 /** Free-camera yaw around the target, in radians per second. */
 const YAW_RATE = 1.6;
+/**
+ * Longest step a key press may move the camera, in seconds.
+ *
+ * Between the lights and a key press the loop renders on demand, so the first
+ * frame after one arrives carries the whole idle span as its delta — a key
+ * tapped after five seconds of stillness moved the camera five seconds' worth
+ * before settling into a smooth pan.
+ */
+const MAX_INPUT_STEP_S = 1 / 30;
 
 const UP = new THREE.Vector3(0, 1, 0);
 const NOSE = new THREE.Vector3(0, 0, 1);
@@ -231,11 +240,13 @@ export default function RaceCameraRig({
     const s = scratch.current;
     const keys = pressed.current;
 
+    const inputStep = Math.min(delta, MAX_INPUT_STEP_S);
+
     // Q/E spin the view around whatever it is looking at, in either mode.
     const yaw = (keys.has("KeyQ") ? 1 : 0) - (keys.has("KeyE") ? 1 : 0);
     if (yaw !== 0) {
       s.offset.copy(camera.position).sub(controls.target);
-      s.offset.applyAxisAngle(UP, yaw * YAW_RATE * delta);
+      s.offset.applyAxisAngle(UP, yaw * YAW_RATE * inputStep);
       camera.position.copy(controls.target).add(s.offset);
       controls.update();
       invalidate();
@@ -259,7 +270,7 @@ export default function RaceCameraRig({
           PAN_MIN_M_S,
           camera.position.distanceTo(controls.target) * PAN_RATE,
         );
-        s.move.normalize().multiplyScalar(span * delta);
+        s.move.normalize().multiplyScalar(span * inputStep);
         camera.position.add(s.move);
         controls.target.add(s.move);
       }
