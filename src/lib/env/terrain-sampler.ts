@@ -18,8 +18,6 @@ export interface TerrainSampler {
  */
 export interface TerrainSurfaceOptions {
   isWater?(lon: number, lat: number): boolean;
-  isCarved?(lon: number, lat: number): boolean;
-  carveDepthMeters?: number;
 }
 
 export function terrainReferenceElevation(terrain: TerrainFile): number {
@@ -49,7 +47,7 @@ export function buildTerrainSampler(
 ): TerrainSampler {
   const n = terrain.gridSize;
   const { minLon, minLat, maxLon, maxLat } = manifest.bbox;
-  const { isWater, isCarved, carveDepthMeters = 0 } = options;
+  const { isWater } = options;
 
   const referenceElevation = terrainReferenceElevation(terrain);
   const heights = new Float32Array(terrain.heights.length);
@@ -60,13 +58,10 @@ export function buildTerrainSampler(
     for (let col = 0; col < n; col++) {
       const i = row * n + col;
       const lon = minLon + ((maxLon - minLon) * col) / (n - 1);
-      let y =
+      const y =
         isWater?.(lon, lat) === true
           ? 0
           : terrainLocalHeight(terrain.heights[i], referenceElevation);
-      if (isCarved?.(lon, lat) === true) {
-        y = Math.max(0, y - carveDepthMeters);
-      }
       heights[i] = y;
       if (y > maxHeight) maxHeight = y;
     }

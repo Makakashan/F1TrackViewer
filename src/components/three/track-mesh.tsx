@@ -73,7 +73,8 @@ import {
   TERRAIN_TRACK_OFFSET,
   TERRAIN_TRACK_MAX_SEGMENT_M,
   TERRAIN_TRACK_SMOOTH_RADIUS_M,
-  TERRAIN_TRACK_WALL_DEPTH,
+  TERRAIN_TRACK_WALL_DIG_M,
+  TERRAIN_TRACK_MIN_WALL_M,
   disposeGeometry,
   getSceneColors,
 } from "@/lib/scene-config";
@@ -191,6 +192,17 @@ export default function TrackMesh({
     [terrainSampler],
   );
 
+  /** Closes the ribbon's side wall in the ground rather than at a fixed depth. */
+  const trackSkirtBottom = useMemo(() => {
+    if (!terrainSampler) return undefined;
+    const { centerLon, centerLat } = bounds;
+    return (x: number, z: number, topY: number) => {
+      const [lon, lat] = xzToLonLat(x, z, centerLon, centerLat);
+      const ground = terrainSampler.heightAt(lon, lat) - TERRAIN_TRACK_WALL_DIG_M;
+      return Math.min(ground, topY - TERRAIN_TRACK_MIN_WALL_M);
+    };
+  }, [terrainSampler, bounds]);
+
   const { curve, peakY, minY } = useMemo(() => {
     if (terrainSampler) {
       let min = Infinity;
@@ -287,10 +299,10 @@ export default function TrackMesh({
         TRACK_SURFACE_RAISE,
         groundY,
         samples,
-        terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
+        trackSkirtBottom,
         widthColorAt,
       ),
-    [curve, halfWidth, groundY, samples, terrainSampler, widthColorAt],
+    [curve, halfWidth, groundY, samples, trackSkirtBottom, widthColorAt],
   );
 
   const outlineGeometry = useMemo(
@@ -560,10 +572,10 @@ export default function TrackMesh({
         TRACK_SURFACE_RAISE,
         groundY,
         samples,
-        terrainSampler ? TERRAIN_TRACK_WALL_DEPTH : undefined,
+        trackSkirtBottom,
       ),
     );
-  }, [showSectors, curve, markers, halfWidth, groundY, samples, terrainSampler]);
+  }, [showSectors, curve, markers, halfWidth, groundY, samples, trackSkirtBottom]);
 
   const splitLineGeometries = useMemo(() => {
     if (!showSectors || !markers) return [];

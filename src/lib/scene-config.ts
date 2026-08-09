@@ -18,7 +18,15 @@ export const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
  */
 export const TRACK_PROP_RENDER_ORDER = TRACK_OVERLAY_RENDER_ORDER + 1;
 export const TERRAIN_TRACK_OFFSET = 4.5;
-export const TERRAIN_TRACK_WALL_DEPTH = TERRAIN_TRACK_OFFSET + TRACK_SURFACE_RAISE;
+/**
+ * How far the track's side wall is buried in the ground it reaches. The road
+ * runs on a smoothed profile and the ground it crosses does not, so a wall of
+ * any fixed depth is left hanging over one stretch and sunk in the next; this
+ * is the margin on a wall that ends where the terrain under it actually is.
+ */
+export const TERRAIN_TRACK_WALL_DIG_M = 1.5;
+/** Shortest the wall may get, so a road on flat ground still has an edge. */
+export const TERRAIN_TRACK_MIN_WALL_M = 1.2;
 // GeoJSON straights can span 400 m between two points, and the terrain-mode
 // curve only samples elevation at each one, so anything longer is subdivided.
 export const TERRAIN_TRACK_MAX_SEGMENT_M = 40;

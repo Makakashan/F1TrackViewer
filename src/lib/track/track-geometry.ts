@@ -24,6 +24,14 @@ export function halfWidthAt(halfWidth: HalfWidth, s: number): number {
  */
 const WALL_SHADE = 0.42;
 
+/**
+ * Where the side wall under a track edge ends. Given the edge's position and
+ * the road height above it, returns the Y to close the skirt at — see
+ * `trackSkirtBottom`, which lands it in the ground rather than at a fixed
+ * depth the terrain has no reason to meet.
+ */
+export type TrackBottomYAt = (x: number, z: number, topY: number) => number;
+
 /** Extruded track mesh — top surface + side walls down to groundY. Flat-shaded quads. */
 export function buildExtrudedTrack(
   curve: THREE.CatmullRomCurve3,
@@ -31,7 +39,7 @@ export function buildExtrudedTrack(
   topRaise: number,
   groundY: number,
   samples: number,
-  wallDepth?: number,
+  bottomYAt?: TrackBottomYAt,
   colorAt?: TrackColorAt,
 ): THREE.BufferGeometry {
   const N = samples;
@@ -98,14 +106,15 @@ export function buildExtrudedTrack(
     const rx = p.x - side.x * hw;
     const rz = p.z - side.z * hw;
     const wallTopY = topY - 0.08;
-    const bottomY = wallDepth == null ? groundY : topY - wallDepth;
+    const bottomL = bottomYAt ? bottomYAt(lx, lz, topY) : groundY;
+    const bottomR = bottomYAt ? bottomYAt(rx, rz, topY) : groundY;
 
     pushV(lx, topY, lz, 0, 0, 0);
     pushV(rx, topY, rz, 0, 0, 0);
     pushV(lx, wallTopY, lz, 0, 0, 0, WALL_SHADE);
     pushV(rx, wallTopY, rz, 0, 0, 0, WALL_SHADE);
-    pushV(lx, bottomY, lz, 0, 0, 0, WALL_SHADE);
-    pushV(rx, bottomY, rz, 0, 0, 0, WALL_SHADE);
+    pushV(lx, bottomL, lz, 0, 0, 0, WALL_SHADE);
+    pushV(rx, bottomR, rz, 0, 0, 0, WALL_SHADE);
   }
 
   const stride = 6;
@@ -247,7 +256,7 @@ export function buildSectorMesh(
   topRaise: number,
   groundY: number,
   totalSamples: number,
-  wallDepth?: number,
+  bottomYAt?: TrackBottomYAt,
 ): THREE.BufferGeometry {
   const fromS = distanceToCurveS(
     sector.fromDistance,
@@ -335,14 +344,15 @@ export function buildSectorMesh(
     const rx = p.x - side.x * hw;
     const rz = p.z - side.z * hw;
     const wallTopY = topY - 0.08;
-    const bottomY = wallDepth == null ? groundY : topY - wallDepth;
+    const bottomL = bottomYAt ? bottomYAt(lx, lz, topY) : groundY;
+    const bottomR = bottomYAt ? bottomYAt(rx, rz, topY) : groundY;
 
     pushV(lx, topY, lz, 0, 0, 0);
     pushV(rx, topY, rz, 0, 0, 0);
     pushV(lx, wallTopY, lz, 0, 0, 0, WALL_SHADE);
     pushV(rx, wallTopY, rz, 0, 0, 0, WALL_SHADE);
-    pushV(lx, bottomY, lz, 0, 0, 0, WALL_SHADE);
-    pushV(rx, bottomY, rz, 0, 0, 0, WALL_SHADE);
+    pushV(lx, bottomL, lz, 0, 0, 0, WALL_SHADE);
+    pushV(rx, bottomR, rz, 0, 0, 0, WALL_SHADE);
   }
 
   const stride = 6;

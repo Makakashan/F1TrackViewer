@@ -73,8 +73,6 @@ const ROAD_RIBBON_WIDTH_M = 1.2;
 // dips below the terrain mesh — same failure mode as the track curve.
 const ROAD_MAX_SEGMENT_M = 25;
 const TERRAIN_BASE_SLAB_DEPTH = 0;
-const TERRAIN_TRACK_CARVE_RADIUS_M = 30;
-const TERRAIN_TRACK_CARVE_DEPTH_M = 4;
 const BROADCAST_VIEW_PADDING_M = 360;
 const MAX_BROADCAST_BUILDINGS = 420;
 // Building extrusion runs ExtrudeGeometry synchronously per building on the
@@ -429,12 +427,6 @@ export default function EnvironmentLayer({
     const gridSize = bundle.terrain.gridSize;
     const { minLon, minLat, maxLon, maxLat } = manifest.bbox;
 
-    const trackPoints = trackCoordinates.map(([lon, lat]) =>
-      lonLatToShapeXY(lon, lat, originLon, originLat),
-    );
-    const carveRadiusSq =
-      TERRAIN_TRACK_CARVE_RADIUS_M * TERRAIN_TRACK_CARVE_RADIUS_M;
-
     return buildTerrainSampler(bundle.terrain, manifest, {
       isWater(lon, lat) {
         if (surface) {
@@ -445,17 +437,6 @@ export default function EnvironmentLayer({
         const point = lonLatToShapeXY(lon, lat, originLon, originLat);
         return waterMasks.some((mask) => isPointInPolygon(point, mask));
       },
-      isCarved(lon, lat) {
-        const point = lonLatToShapeXY(lon, lat, originLon, originLat);
-        for (let i = 0; i < trackPoints.length; i++) {
-          const next = trackPoints[(i + 1) % trackPoints.length];
-          if (distanceToSegmentSq2D(point, trackPoints[i], next) <= carveRadiusSq) {
-            return true;
-          }
-        }
-        return false;
-      },
-      carveDepthMeters: TERRAIN_TRACK_CARVE_DEPTH_M,
     });
   }, [
     bundle.terrain,
@@ -465,7 +446,6 @@ export default function EnvironmentLayer({
     hasTerrain,
     originLon,
     originLat,
-    trackCoordinates,
   ]);
 
   return (
