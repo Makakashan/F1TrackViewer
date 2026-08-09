@@ -6,16 +6,13 @@ import { gridSetbackMeters, type GridSlot } from "./start-grid";
 /**
  * Twenty cars driving a lap.
  *
- * Pure and deterministic: the same seed and the same sequence of steps always
- * produce the same race. That is why the stepper takes a fixed `dt` from its
- * caller instead of a frame delta — a dropped frame must not change who wins,
- * and a phone must not race differently from a desktop.
+ * Pure and deterministic: same seed and same sequence of steps, same race.
+ * Hence the fixed `dt` rather than a frame delta — a dropped frame must not
+ * change who wins.
  *
- * The model is longitudinal with a lateral escape. Cars follow the racing line
- * at their own pace; a car that catches another either finds room beside it
- * and goes by, or queues up behind it. There is no wheel-to-wheel fight and no
- * contact — a car never occupies the same space as another, it just runs out
- * of room and lifts.
+ * The model is longitudinal with a lateral escape. A car that catches another
+ * either finds room beside it and goes by, or queues up behind it. No
+ * wheel-to-wheel fight and no contact.
  */
 
 const G = 9.81;
@@ -27,34 +24,22 @@ const MIN_GAP_M = 6;
 /** Extra gap per unit of speed — a time headway, in seconds. */
 const HEADWAY_S = 0.35;
 /**
- * Share of the braking limit a car plans to use when closing on another.
- *
- * Below 1 so the gap opens before the physics runs out: planning to brake at
- * exactly the limit leaves nothing for the case where the car ahead is also
- * braking, which is the case every time they arrive at a corner together.
+ * Share of the braking limit a car plans to use when closing on another. Under
+ * 1 to leave something for the case where the car ahead is braking too.
  */
 const CLOSING_BRAKE_MARGIN = 0.45;
 /** Sideways travel rate when moving off the line, in meters per second. */
 const LATERAL_RATE_MS = 2.4;
 /**
- * Cap on sideways travel as a share of forward travel — roughly the tangent
- * of the steering angle the move implies. Without it a car pulling away from
- * the grid drifts to the racing line faster than it drives forward, which
- * reads as the car sliding sideways off its box.
+ * Cap on sideways travel as a share of forward travel — roughly the tangent of
+ * the steering angle implied. Without it a car leaving the grid slides
+ * sideways off its box.
  */
 const MAX_LATERAL_SLOPE = 0.2;
 /** Clear space a car needs beside another before it will pull alongside. */
 const SIDE_CLEARANCE_M = CAR_WIDTH_M + 0.6;
-/**
- * How far back a car looks for the one ahead, in meters. Anything further
- * cannot affect this step, and skipping it keeps the pass over the field
- * cheap.
- */
+/** How far back, and how many places up, a car looks for the one ahead. */
 const LOOKAHEAD_M = 120;
-/**
- * How many cars up the order to look. Five covers a queue into a slow corner;
- * anything ahead of that is separated by cars that are themselves blocking.
- */
 const LOOKAHEAD_CARS = 5;
 /** Reaction to the lights going out, in seconds. */
 const REACTION_MIN_S = 0.2;
@@ -62,13 +47,8 @@ const REACTION_MAX_S = 0.5;
 /** Spread of per-car pace, as a fraction of the speed limit. */
 const PACE_SPREAD = 0.015;
 /**
- * How far a car's pace may wander over a race distance, as a fraction.
- *
- * The stand-in for everything a race actually varies — tyres, fuel, a driver
- * losing their rhythm. Without it the order settles by lap three and the
- * remaining distance is a procession; with it, who is quick changes slowly
- * across the afternoon. Deterministic like everything else: drawn from the
- * seed, applied linearly.
+ * How far a car's pace may wander over a race distance — the stand-in for
+ * tyres, fuel and rhythm. Without it the order settles by lap three.
  */
 const PACE_DRIFT_SPREAD = 0.008;
 /** Hard bounds on drifted pace, so no car becomes comically fast or slow. */
@@ -93,10 +73,7 @@ export interface RaceCar {
   speed: number;
   /** Lateral offset from the centerline, in meters. */
   lateral: number;
-  /**
-   * Where the car was before the most recent step. The renderer draws between
-   * the two — a 30 Hz simulation shown raw on a 144 Hz screen is a slideshow.
-   */
+  /** Where the car was before the most recent step; the renderer tweens. */
   prevS: number;
   prevLateral: number;
   /** Multiplier on the speed limit — this car's pace. */
@@ -122,11 +99,9 @@ export interface RaceCar {
 }
 
 /**
- * A car's recent history as a ring of (distance, time) samples.
- *
- * This is what a timing loop at the trackside records, and it is the only way
- * to answer "how far behind is this car" in seconds: the honest interval is
- * how long ago the car ahead stood where this car stands now.
+ * A car's recent history as a ring of (distance, time) samples — what a
+ * trackside timing loop records, and the only way to answer "how far behind"
+ * in seconds.
  */
 export interface CarTrace {
   distance: Float64Array;
@@ -161,13 +136,7 @@ function pushTrace(trace: CarTrace, distance: number, time: number): void {
   if (trace.count < TRACE_CAPACITY) trace.count++;
 }
 
-/**
- * When the traced car was at `distance`, or null if that is outside the window.
- *
- * Samples run oldest to newest and distance only grows, so this is a binary
- * search with a linear interpolation between the two samples that bracket the
- * point.
- */
+/** When the traced car was at `distance`, or null if outside the window. */
 function timeAtDistance(trace: CarTrace, distance: number): number | null {
   if (trace.count < 2) return null;
   const at = (i: number) =>
@@ -196,9 +165,8 @@ export interface RaceSimState {
   /** Seconds since the lights went out. */
   time: number;
   /**
-   * True once the leader has covered the race distance. From then on every
-   * car finishes at its next line crossing, however many laps it has done —
-   * the flag falls once, not once per car.
+   * True once the leader has covered the race distance. Everyone else then
+   * finishes at their next crossing — the flag falls once, not once per car.
    */
   flagged: boolean;
   /** Fastest lap of the race so far. */
@@ -234,8 +202,7 @@ export function createRaceSim(setup: RaceSimSetup): RaceSimState {
     speed: 0,
     lateral: slot.lateralOffset,
     prevLateral: slot.lateralOffset,
-    // Pace is drawn per car rather than derived from grid position: a grid is
-    // an order, not a ranking of speed, and a field where P20 is always the
+    // Drawn per car, not from grid position: a field where P20 is always the
     // slowest car never changes shape.
     pace: 1 + (random() * 2 - 1) * PACE_SPREAD,
     driftRate: ((random() * 2 - 1) * PACE_DRIFT_SPREAD) / Math.max(raceSeconds, 1),
@@ -251,13 +218,7 @@ export function createRaceSim(setup: RaceSimSetup): RaceSimState {
   return { cars, time: 0, flagged: false, fastestLap: null, complete: false };
 }
 
-/**
- * Advance the race by exactly `dt` seconds.
- *
- * Mutates in place — this runs tens of times a second on twenty cars, and
- * allocating a new field each step is the one thing that would make it show
- * up in a profile.
- */
+/** Advance the race by exactly `dt` seconds. Mutates in place. */
 export function stepRace(
   state: RaceSimState,
   setup: RaceSimSetup,
@@ -266,8 +227,7 @@ export function stepRace(
   if (state.complete) return;
   state.time += dt;
 
-  // Snapshot before anything moves: after the last step of a frame these are
-  // the "from" of the render interpolation.
+  // The "from" of the render interpolation.
   for (const car of state.cars) {
     car.prevS = car.s;
     car.prevLateral = car.lateral;
@@ -276,8 +236,7 @@ export function stepRace(
   const { speedProfile, racingLine, lapLengthMeters, halfWidthAtS } = setup;
   const lapTarget = setup.laps;
 
-  // Leader first. Everything below asks "what is directly in front of me",
-  // which is only answerable once the field is in track order.
+  // Leader first: "what is in front of me" needs the field in track order.
   const order = state.cars.slice().sort((a, b) => b.distance - a.distance);
 
   for (let i = 0; i < order.length; i++) {
@@ -285,10 +244,8 @@ export function stepRace(
 
     if (car.stopped) continue;
 
-    // Past the flag a car rolls to a stop rather than braking on the line:
-    // twenty cars stopping dead where they cross would pile into each other,
-    // and a slowing-down lap is what actually happens. It still watches the
-    // car in front — the queue does not stop being a queue after the flag.
+    // Past the flag a car rolls to a stop rather than braking on the line. It
+    // still watches the car in front.
     const coolingDown = car.finished;
     if (!coolingDown && state.time < car.reaction) continue;
 
@@ -297,9 +254,8 @@ export function stepRace(
     }
     let target = coolingDown ? 0 : speedAt(speedProfile, car.s) * car.pace;
 
-    // The blocker is the nearest car ahead that shares this car's lane, not
-    // simply the next one in the running order: a car already passed sits
-    // beside, not in front, and braking for it would undo the pass.
+    // Nearest car ahead sharing this lane, not simply the next in the order:
+    // a car already passed sits beside, not in front.
     let blocker: RaceCar | null = null;
     let blockerGap = Infinity;
     for (let j = i - 1; j >= 0 && j >= i - LOOKAHEAD_CARS; j--) {
@@ -315,10 +271,8 @@ export function stepRace(
 
     let blocked = false;
     if (blocker) {
-      // The gap that matters is the one needed to shed the *closing* speed.
-      // A time headway alone is a following distance, not a braking one: at
-      // 300 km/h behind a car doing 80, thirty-five meters is a third of what
-      // it takes to avoid arriving inside it.
+      // The gap needed to shed the closing speed. A time headway alone is a
+      // following distance, not a braking one.
       const closingSpeed = Math.max(0, car.speed - blocker.speed);
       const closingDistance =
         (closingSpeed * closingSpeed) /
@@ -326,10 +280,8 @@ export function stepRace(
       const desiredGap = MIN_GAP_M + car.speed * HEADWAY_S + closingDistance;
       if (blockerGap < desiredGap) {
         blocked = true;
-        // Slowing down happens whether or not there is room beside. Moving
-        // over takes about a second; closing on the car ahead takes rather
-        // less than that, so a car that only steers ends up inside the one it
-        // meant to pass.
+        // Slowing happens whether or not there is room beside: moving over
+        // takes about a second, closing on the car ahead takes less.
         const closeness = clamp(blockerGap / Math.max(desiredGap, 0.001), 0, 1);
         target = Math.min(target, blocker.speed * closeness);
 
@@ -343,11 +295,9 @@ export function stepRace(
       }
     }
 
-    // Return to the racing line whenever nothing is in the way. Cars merge
-    // off the grid by exactly this rule — a grid slot is just a lateral
-    // offset the line does not have. The neighbour check matters as much here
-    // as when passing: two cars side by side are both drawn to the same line,
-    // and without it they converge into each other on the way back to it.
+    // Back to the racing line whenever nothing is in the way — which is also
+    // how cars merge off the grid. The neighbour check matters here too: two
+    // cars side by side are drawn to the same line.
     const lineOffset = racingLineOffsetAt(racingLine, car.s);
     if (!blocked) {
       const drift = lateralStep(car.speed, dt);
@@ -357,8 +307,8 @@ export function stepRace(
       }
     }
 
-    // Gentle deceleration belongs to the slowing-down lap alone; a car
-    // closing on traffic brakes properly whether or not it has finished.
+    // Gentle deceleration is for the slowing-down lap alone; a car closing on
+    // traffic brakes properly whether or not it has finished.
     const decel = coolingDown && !blocked ? COOLDOWN_G : BRAKING_G;
     const accelLimit = (target > car.speed ? ACCEL_G : decel) * G * dt;
     car.speed += clamp(target - car.speed, -accelLimit, accelLimit);
@@ -371,8 +321,8 @@ export function stepRace(
     advance(car, dt, lapLengthMeters, lapTarget, state);
   }
 
-  // The trackside record, written after everyone has moved. Fixed spacing in
-  // simulated time, so the same race timed at 1x and at 16x reads identically.
+  // Fixed spacing in simulated time, so a race timed at 1x and at 16x reads
+  // identically.
   for (const car of state.cars) {
     if (state.time < car.trace.nextAt) continue;
     pushTrace(car.trace, car.distance, state.time);
@@ -397,15 +347,11 @@ function advance(
   car.distance += step;
   car.s = wrap01(car.s + step / lapLengthMeters);
 
-  // Distance is measured from the line, so a car that has covered a full lap
-  // length has crossed it once — the crossing seconds after the lights go out
-  // happens at distance zero and correctly counts for nothing.
+  // Distance is measured from the line, so a full lap length is one crossing.
   while (!car.finished && car.distance >= (car.laps + 1) * lapLengthMeters) {
     car.laps += 1;
 
-    // Lap 1 includes the launch from the box; that is how the sport times it
-    // too. Cooling-down travel never sets a lap time — the loop stops at the
-    // flag below.
+    // Lap 1 includes the launch from the box, as the sport times it.
     const lapTime = state.time - car.lapStartTime;
     car.lapStartTime = state.time;
     if (car.bestLap == null || lapTime < car.bestLap) car.bestLap = lapTime;
@@ -413,10 +359,8 @@ function advance(
       state.fastestLap = { index: car.index, time: lapTime };
     }
 
-    // The flag falls when the leader completes the distance; everyone else
-    // finishes at their next crossing, on whatever lap they are on. The
-    // leader is processed first each step, so a lapped car crossing in the
-    // same step already sees the flag.
+    // The leader is stepped first, so a lapped car crossing in the same step
+    // already sees the flag.
     if (car.laps >= lapTarget) state.flagged = true;
     if (state.flagged) {
       car.finished = true;
@@ -425,12 +369,7 @@ function advance(
   }
 }
 
-/**
- * Which side has room to pull alongside, or 0 for neither.
- *
- * Returns a signed direction rather than a boolean because the answer is
- * "which way", and the caller has no better information to pick with.
- */
+/** Which side has room to pull alongside, or 0 for neither. */
 function sideRoom(
   car: RaceCar,
   ahead: RaceCar,
@@ -486,8 +425,7 @@ function wrap01(s: number): number {
 
 /**
  * The pose to draw, `alpha` of the way from the previous step to the current
- * one. `alpha` is the unconsumed remainder of the frame's time over the step
- * size — exactly how far into the next step the screen already is.
+ * one — the unconsumed remainder of the frame's time over the step size.
  */
 export function interpolateCarPose(
   car: RaceCar,
@@ -504,10 +442,8 @@ export function interpolateCarPose(
 }
 
 /**
- * The field in running order, with the gaps a timing tower shows.
- *
- * Computed on demand rather than kept in the state: it is only needed at the
- * rate the HUD refreshes, which is a fraction of the simulation rate.
+ * The field in running order, with the gaps a timing tower shows. Computed on
+ * demand — the HUD refreshes far slower than the simulation steps.
  */
 export interface RaceStanding {
   /** Index into the caller's running order. */
@@ -525,17 +461,10 @@ export interface RaceStanding {
 }
 
 /**
- * How far `car` is behind `ahead`, in seconds.
- *
- * Timed, not estimated: the gap is how long ago `ahead` stood where `car`
- * stands now. Dividing the distance between them by the current speed — the
- * obvious way — makes the number a function of where on the lap the pair
- * happens to be, so a pair holding station reads half a second down the
- * straight and two and a half through the hairpin without either car gaining
- * a meter.
- *
- * The estimate survives as the fallback for gaps wider than the trace window
- * and for the opening seconds, where there is no history to read.
+ * How far `car` is behind `ahead`, in seconds: how long ago `ahead` stood
+ * where `car` stands now. Distance over speed is the obvious way and it makes
+ * a pair holding station read 0.5 s down the straight and 2.5 s through the
+ * hairpin, so it survives only as the fallback outside the trace window.
  */
 function gapSeconds(state: RaceSimState, car: RaceCar, ahead: RaceCar): number {
   if (ahead === car) return 0;
@@ -552,8 +481,7 @@ export function raceStandings(
   const leader = order[0];
   return order.map((car, i) => {
     const ahead = i > 0 ? order[i - 1] : car;
-    // Finished cars have stopped moving, so a distance-over-speed gap is
-    // meaningless — the frozen finishing gap is the result.
+    // Finished cars have stopped: the frozen finishing gap is the result.
     const gapToLeader =
       car.finished && leader.finished && car.finishTime != null && leader.finishTime != null
         ? car.finishTime - leader.finishTime

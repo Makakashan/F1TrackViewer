@@ -13,16 +13,12 @@ import type { RacePhase } from "@/lib/race-session";
 import { useStartLightSequence } from "@/hooks/use-start-lights";
 
 /**
- * The race, as the rest of the app sees it.
+ * The race, as the rest of the app sees it: a ref the scene reads every frame
+ * and a snapshot the HUD re-renders from a few times a second. One shared path
+ * would be twelve hundred React updates a second.
  *
- * Two channels out, deliberately: a ref the scene reads every frame, and a
- * snapshot the HUD re-renders from a few times a second. Twenty cars at sixty
- * frames is twelve hundred React updates a second if they share one path, and
- * nobody reads a timing tower that fast anyway.
- *
- * The simulation itself is stepped from inside the Canvas, because that is
- * where the frame clock is. This hook owns the state; the scene owns the
- * heartbeat.
+ * The stepper runs inside the Canvas, where the frame clock is. This hook owns
+ * the state; the scene owns the heartbeat.
  */
 
 /** Simulation steps per second. Fixed, so frame rate cannot change the race. */
@@ -31,11 +27,8 @@ const PERFORMANCE_STEP_HZ = 20;
 /** How often the HUD snapshot is refreshed, in seconds. */
 const SNAPSHOT_INTERVAL_S = 0.2;
 /**
- * Longest span a single frame may advance the race, in simulated seconds.
- *
- * A backgrounded tab hands back a delta of whatever it was away for; without
- * a cap the first frame on return runs thousands of steps and the page hangs
- * for exactly as long as it takes.
+ * Longest span a single frame may advance the race. A backgrounded tab hands
+ * back however long it was away, and the first frame on return would hang.
  */
 const MAX_FRAME_ADVANCE_S = 0.5;
 
@@ -43,12 +36,9 @@ export const RACE_SPEED_OPTIONS = [1, 2, 4, 8, 16] as const;
 export type RaceSpeed = (typeof RACE_SPEED_OPTIONS)[number];
 
 /**
- * The half of the simulation the 3D scene needs.
- *
- * Split out because the HUD half changes five times a second, and handing the
- * scene an object that changes that often re-reconciles the whole track tree
- * at the same rate. This one only changes when the race does something — it
- * starts, it pauses, it finishes.
+ * The half of the simulation the 3D scene needs. Split out because the HUD
+ * half changes five times a second, which would re-reconcile the track tree
+ * at the same rate; this one changes when the race starts, pauses or ends.
  */
 export interface RaceController {
   phase: RacePhase;
@@ -87,9 +77,8 @@ export interface RaceSimulation {
 
 export function useRaceSimulation(lowDetail = false): RaceSimulation {
   const lights = useStartLightSequence();
-  // The callbacks, not the object: these end up in the dependency lists of
-  // effects one component up, where an identity that changes per render is a
-  // loop rather than a re-run.
+  // The callbacks, not the object: these land in dependency lists one
+  // component up, where a per-render identity is a loop.
   const { run: runLights, reset: resetLights } = lights;
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState<RaceSpeed>(1);
@@ -183,12 +172,9 @@ export function useRaceSimulation(lowDetail = false): RaceSimulation {
   );
 
   /**
-   * To the flag: run the remaining race in one go.
-   *
-   * The whole simulation is deterministic and cheap — 78 laps of twenty cars
-   * is a few hundred thousand steps, well under a second — so "skip" is not a
-   * different code path, it is the same stepper without the renderer between
-   * steps. The cap is a parachute against a car that somehow never finishes.
+   * To the flag: the same stepper without the renderer between steps, since
+   * 78 laps of twenty cars runs in well under a second. The cap is a parachute
+   * against a car that somehow never finishes.
    */
   const finish = useCallback(() => {
     const setup = setupRef.current;

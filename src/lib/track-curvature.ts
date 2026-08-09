@@ -2,11 +2,8 @@ import * as THREE from "three";
 
 /**
  * Signed curvature of a closed track centerline, sampled at even arc length.
- *
- * Shared because three different things ask the same question of a circuit:
- * kerbs need to know where the corners are, the racing line needs to know
- * which way they bend, and the speed profile needs the radius. Computing it
- * three times invites three subtly different answers to "is this a corner".
+ * Shared by the kerbs, the racing line and the speed profile, so all three
+ * agree on where a corner is.
  */
 export interface CurvatureProfile {
   /** Number of samples; sample i sits at s = i / samples. */
@@ -24,7 +21,7 @@ export interface CurvatureProfile {
   curvature: number[];
 }
 
-/** Smoothing window radius in meters — see the note at its use site. */
+/** Smoothing window radius, in meters. */
 const SMOOTH_RADIUS_M = 6;
 
 export function sampleCurvature(
@@ -42,9 +39,6 @@ export function sampleCurvature(
   const tangents: THREE.Vector3[] = [];
   for (let i = 0; i < n; i++) tangents.push(curve.getTangentAt(i / n));
 
-  // Signed curvature in the XZ plane. Positive and negative distinguish left
-  // from right turns; the sign picks which edge a kerb belongs to and which
-  // way the racing line leans.
   const raw = new Array<number>(n);
   for (let i = 0; i < n; i++) {
     const a = tangents[(i - 1 + n) % n];
@@ -54,8 +48,7 @@ export function sampleCurvature(
     raw[i] = Math.atan2(cross, dot) / (2 * ds);
   }
 
-  // A single noisy sample must not spawn a two-meter kerb fragment, nor a
-  // braking event for a corner that is not there.
+  // One noisy sample must not spawn a kerb fragment or a braking event.
   const smoothRadius = Math.max(1, Math.round(smoothRadiusMeters / ds));
   const curvature = new Array<number>(n);
   for (let i = 0; i < n; i++) {

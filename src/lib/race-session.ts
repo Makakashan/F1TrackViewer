@@ -6,17 +6,13 @@ import { driversWithTeams, type DriverWithTeam } from "./f1-drivers";
  */
 
 /**
- * A grand prix runs the smallest number of laps exceeding 305 km. That single
- * rule reproduces the real number on almost every circuit from the lap length
- * the viewer already knows, so there is no table to keep in sync.
+ * A grand prix runs the smallest number of laps exceeding 305 km, which
+ * reproduces the real number on almost every circuit with no table to keep in
+ * sync.
  */
 const RACE_DISTANCE_M = 305_000;
 
-/**
- * The circuits the rule does not describe. Monaco is the standing exception in
- * the regulations themselves — it runs to 260 km because it is slower than
- * anywhere else on the calendar.
- */
+/** Monaco is the exception in the regulations themselves: 260 km. */
 const LAP_COUNT_OVERRIDES: Record<string, number> = {
   "mc-1929": 78,
 };
@@ -50,12 +46,8 @@ export function randomFrom(seed: number): () => number {
 }
 
 /**
- * The starting order.
- *
- * Random, because until a qualifying session exists any fixed order is a claim
- * the project cannot support — but seeded by circuit, so the same track always
- * shows the same grid. That keeps a shared link, a screenshot and a bug report
- * describing the same scene. `nonce` re-rolls it on demand.
+ * The starting order. Random until there is a qualifying session, but seeded
+ * by circuit so a shared link and a screenshot describe the same grid.
  */
 export function raceGridOrder(
   circuitId: string,
@@ -76,12 +68,8 @@ export type TyreCompound = "S" | "M" | "H";
 const COMPOUNDS: TyreCompound[] = ["S", "M", "H"];
 
 /**
- * What each car starts on.
- *
- * Cosmetic for now: the simulation has no tyre model, so the compound changes
- * nothing about how a car goes round. It is drawn because a timing tower
- * without it is missing a column the eye looks for — and seeded, so the same
- * grid always shows the same choices rather than re-rolling every render.
+ * What each car starts on. Cosmetic — there is no tyre model — but a timing
+ * tower without the column looks wrong. Seeded like the grid.
  */
 export function raceTyreChoices(
   circuitId: string,

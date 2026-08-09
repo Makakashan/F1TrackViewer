@@ -4,51 +4,26 @@ import { sampleCornerCoverage } from "./track-corners";
 import type { HalfWidth } from "./track-geometry";
 
 /**
- * The apron — the paved strip just outside the white line.
- *
- * Kerbs used to be cut out of the ribbon itself, which is why a circuit with
- * kerbs read as a narrower circuit: two and a bit meters of racing surface
- * disappeared into stripes at every corner. A real kerb is not part of the
- * road, it is bolted to the edge of it, and beyond it there is more tarmac
- * before the run-off begins.
- *
- * So the strip is generated rather than carved. The catch is that this app does
- * not know where the run-off actually is — it only has terrain and building
- * footprints — so the apron is laid only where there is room for it: no
- * building standing on it, and no hillside where flat asphalt would either
- * bury itself or hang in the air. Everywhere else it fades out, and the kerb
- * fades with it.
+ * The apron — the paved strip just outside the white line, which the kerb is
+ * bolted to. Laid only where there is room for it: nothing knows where the
+ * run-off really is, so a building standing on it or a hillside under it takes
+ * the strip out and the kerb fades with it.
  */
 
 /** How far the paving reaches past the white line through a corner. */
 export const APRON_WIDTH_M = 4;
 
-/**
- * How far it reaches down a straight.
- *
- * Asphalt run-off is a corner's feature: it is there because cars leave the
- * road where the road turns. Down a straight a circuit has a verge and then
- * grass, and paving the full width everywhere read as a road twice as wide as
- * the one being driven. This is the strip the white line is painted beside.
- */
+/** And down a straight, where a circuit has a verge rather than run-off. */
 export const APRON_STRAIGHT_WIDTH_M = 1;
 
-/**
- * How far past a corner the wide paving runs before narrowing.
- *
- * Both are generous next to the kerb's own 10 m / 14 m: the kerb has to stay
- * on the paving for its whole length including its taper, so the paving has to
- * outlast it at both ends.
- */
+// Generous next to the kerb's own 10 m / 14 m: the kerb has to stay on the
+// paving for its whole length, taper included.
 const CORNER_PADDING_M = 26;
 const CORNER_TAPER_M = 30;
 
 /**
  * How far the ground may sit from the track surface before the apron gives up.
- *
- * Generous on purpose: a circuit is graded, so its verges are within a meter or
- * so of the road for most of a lap, and the cases worth catching are cuttings
- * and embankments, which are several meters out.
+ * Loose enough to pass a graded verge and still catch a cutting.
  */
 export const APRON_GROUND_TOLERANCE_M = 1.6;
 
@@ -56,13 +31,8 @@ export const APRON_GROUND_TOLERANCE_M = 1.6;
 const ROOM_SMOOTH_M = 12;
 
 /**
- * How much of the room left inside a corner the apron may take.
- *
- * Inside a corner the strip is offset toward the centre of the turn, so its
- * width is capped by how far that centre is: at a 10 m hairpin the inner edge
- * of the road already sits on a 2.5 m radius, and a 4 m strip laid on it passes
- * through the middle and folds through itself. Kept under one so the innermost
- * ring never collapses to a point.
+ * How much of the room left inside a corner the apron may take. Under one so
+ * the innermost ring of a hairpin never collapses through itself.
  */
 const CORNER_ROOM_SHARE = 0.7;
 
@@ -76,17 +46,9 @@ export interface ApronRoom {
 }
 
 /**
- * Whether the apron may be paved at a point.
- *
- * `point` is where the outer lip would land and `centre` is the centreline
- * beside it — both are needed because the honest terrain test compares ground
- * against ground. The rendered track surface is not the ground: it is the
- * terrain maximum over a neighbourhood, smoothed along the lap and lifted clear
- * of it, so measuring the verge against the road rejects every sample on a
- * circuit with any relief at all.
- *
- * Returning false takes that sample out, and the smoothing turns the gap into a
- * taper rather than a step.
+ * Whether the apron may be paved at a point. `point` is the outer lip, `centre`
+ * the centreline beside it: the terrain test has to compare ground against
+ * ground, since the rendered surface sits well clear of the terrain under it.
  */
 export type ApronClearance = (
   point: THREE.Vector3,
@@ -109,11 +71,8 @@ export function fullApronRoom(
 
 /**
  * Walk both edges and ask `clearance` whether the strip fits, then blur the
- * answer along the lap.
- *
- * The blur is what makes this usable: the raw test flickers wherever a footprint
- * clips a corner of the strip, and a strip that switches on and off every few
- * meters reads worse than no strip at all.
+ * answer along the lap — the raw test flickers wherever a footprint clips the
+ * strip.
  */
 export function sampleApronRoom(
   curve: THREE.CatmullRomCurve3,
@@ -127,8 +86,6 @@ export function sampleApronRoom(
   const total = curve.getLength();
   if (!(total > 0) || samples < 2) return room;
 
-  // The geometric limit comes first and applies whether or not anything is
-  // standing in the way: it is a fact about the curve, not about the scenery.
   const profile = sampleCurvature(curve, samples);
   const coverage = profile
     ? sampleCornerCoverage(profile.curvature, profile.ds, {
@@ -157,8 +114,6 @@ export function sampleApronRoom(
     const insideSign = Math.sign(curvature);
     const insideLimit = Math.max(0, (radius - edge) * CORNER_ROOM_SHARE);
 
-    // Full width through the corner, a verge along the straight, and the
-    // taper between them doing the work of the transition.
     const cornerness = coverage ? coverage[i] : 1;
     const paved =
       straightWidthMeters + (widthMeters - straightWidthMeters) * cornerness;
@@ -171,8 +126,7 @@ export function sampleApronRoom(
         target[i] = 0;
         continue;
       }
-      // Probed at the outer lip: if the far edge fits, everything between it
-      // and the white line does too.
+      // If the far edge fits, everything inside it does too.
       probe.copy(point).addScaledVector(side, sign * (edge + limit));
       const open = !clearance || clearance(probe, point);
       target[i] = open ? limit / widthMeters : 0;
@@ -218,11 +172,9 @@ export function apronRoomAt(
 }
 
 /**
- * The apron itself: one quad per sample per side, from the white line out to
- * whatever room the sample has.
- *
- * Flat, and at the surface height rather than sloping away — this is the paved
- * verge, not the run-off, and the run-off is somebody else's geometry.
+ * One quad per sample per side, from the white line out to whatever room the
+ * sample has. Flat and level with the surface: this is the paved verge, not the
+ * run-off.
  */
 export function buildTrackApronGeometry(
   curve: THREE.CatmullRomCurve3,
@@ -306,11 +258,9 @@ export function buildTrackApronGeometry(
 }
 
 /**
- * "Is this point inside a building?", asked a few thousand times.
- *
- * A uniform grid over footprint bounding boxes: the apron probes every sample
- * on both sides, and testing each of those against four hundred polygons is
- * long enough to be felt when the environment is switched on.
+ * "Is this point inside a building?", asked a few thousand times — a uniform
+ * grid over footprint bounding boxes, because the brute-force version is felt
+ * when the environment is switched on.
  */
 export function buildFootprintIndex(
   footprints: [number, number][][],

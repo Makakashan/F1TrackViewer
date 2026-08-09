@@ -2,12 +2,8 @@ import * as THREE from "three";
 import type { HalfWidth } from "./track-geometry";
 
 /**
- * Starting grid markings — the staggered boxes the cars line up in behind the
- * start/finish line.
- *
- * Laid out from the resolved start/finish position rather than from data:
- * every circuit uses the same FIA geometry (8 m between staggered boxes,
- * alternating sides of the centerline), so the only per-circuit inputs are
+ * Starting grid markings — the staggered boxes behind the start/finish line.
+ * Every circuit uses the same FIA geometry, so the only per-circuit inputs are
  * where the line is, which way the cars face, and how wide the track is.
  */
 
@@ -32,11 +28,8 @@ function halfWidthAt(halfWidth: HalfWidth, s: number): number {
 }
 
 /**
- * How far behind the start line a grid box sits, in meters.
- *
- * The simulation measures every car's progress from the line, not from where
- * it happens to be parked — otherwise pole and P20 both read as "zero meters
- * covered" and the field sorts into the wrong order on the first step.
+ * How far behind the start line a grid box sits. The simulation measures
+ * progress from the line, or pole and P20 both start at zero meters covered.
  */
 export function gridSetbackMeters(place: number): number {
   return FIRST_SLOT_SETBACK_M + (place - 1) * SLOT_PITCH_M;
@@ -60,15 +53,9 @@ export interface GridSlot {
 }
 
 /**
- * Where each car stands on the grid.
- *
- * Shared by the painted boxes and by whatever is placed in them, so a change
- * to the layout can't leave the cars sitting beside their markings.
- *
- * `halfWidth` is sampled per slot rather than taken as one number for the lap:
- * the ribbon narrows and widens along the circuit, and offsetting every box by
- * a fraction of the lap *mean* puts the outer wheels off the asphalt wherever
- * the track is tighter than average.
+ * Where each car stands on the grid — shared by the painted boxes and by
+ * whatever is placed in them. `halfWidth` is sampled per slot, since a lap
+ * mean puts the outer wheels off the asphalt where the track is tighter.
  */
 export function startGridSlots(
   curve: THREE.CatmullRomCurve3,
@@ -117,11 +104,8 @@ export function startGridSlots(
 }
 
 /**
- * Build the grid boxes as flat white quads.
- *
- * `directionSign` is the same convention as TrackMarkers: +1 when lap distance
- * increases with s. The grid always sits behind the line, so it is laid out
- * against that direction.
+ * The grid boxes as flat white quads. `directionSign` follows TrackMarkers:
+ * +1 when lap distance increases with s.
  */
 export function buildStartGridGeometry(
   curve: THREE.CatmullRomCurve3,
@@ -142,10 +126,7 @@ export function buildStartGridGeometry(
   const indices: number[] = [];
   const point = new THREE.Vector3();
 
-  /**
-   * One painted rectangle, positioned in the local frame of the box center:
-   * `along` runs with the direction of travel, `lateral` across the track.
-   */
+  /** One painted rectangle in the local frame of the box center. */
   function pushRect(
     center: THREE.Vector3,
     forward: THREE.Vector3,
@@ -182,13 +163,11 @@ export function buildStartGridGeometry(
     halfWidth,
     directionSign,
   )) {
-    // Paint sits on the asphalt. Any physical lift here is invisible from a
-    // map camera and reads as levitating markings from inside the car; the
-    // material's polygon offset is what keeps it out of the surface.
+    // Paint sits on the asphalt: a physical lift reads as levitating markings
+    // from inside the car. Polygon offset keeps it out of the surface.
     const y = position.y + topRaise;
 
-    // Front transverse line plus the two longitudinal sides: the open-backed
-    // box the cars are lined up in, as painted.
+    // Front transverse line plus two longitudinal sides — an open-backed box.
     pushRect(position, forward, across, y, BOX_LENGTH_M / 2, 0, LINE_M, BOX_WIDTH_M);
     for (const edge of [-1, 1]) {
       pushRect(

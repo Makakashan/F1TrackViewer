@@ -2,17 +2,13 @@ import * as THREE from "three";
 import { sampleCurvature } from "./track-curvature";
 
 /**
- * How fast a car can be at every point of a circuit.
+ * How fast a car can be at every point of a circuit: a cornering limit from
+ * the local radius, then a backward pass that brakes into every corner and a
+ * forward pass that accelerates out of it.
  *
- * The model is the classic three-pass one: a cornering limit from the local
- * radius, then a backward pass that brakes into every corner and a forward
- * pass that accelerates out of it. Everything a lap needs is in the table, so
- * a running car does one array lookup per step instead of integrating.
- *
- * Deliberately not telemetry. A recorded lap is one driver on one day, and
- * twenty cars would need it scaled by an invented factor anyway — at which
- * point the realism it was chosen for is gone, and half the circuits in the
- * app predate telemetry entirely.
+ * Not telemetry, on purpose — a recorded lap is one driver on one day, twenty
+ * cars would need it scaled by an invented factor, and half the circuits here
+ * predate telemetry entirely.
  */
 export interface SpeedProfile {
   /** Speed limit in m/s at sample i, which sits at s = i / samples. */
@@ -30,20 +26,12 @@ export interface SpeedProfile {
 const G = 9.81;
 
 /**
- * Limits of a modern F1 car, in g.
+ * Limits of a modern F1 car, in g — the whole model. Conservative ends of the
+ * real ranges, since the geometry is a GeoJSON trace rather than a survey.
  *
- * These four numbers are the whole model, so they are worth stating plainly:
- * a 2020s car pulls 4-6 g in medium-speed corners, brakes at 5-6 g, and puts
- * down about 1.5 g on corner exit. The conservative end of each range is used
- * — the numbers have to hold on circuits whose geometry comes from a GeoJSON
- * trace rather than a survey, and an optimistic model produces lap times no
- * real car has ever set.
- *
- * `LATERAL_G` was picked by measurement, not from the range: at 4.0 the ideal
- * lap sits 2% under a real pole lap averaged over the 23 current-calendar
- * circuits, worst case 8% (scripts/audit-lap-times.ts). Higher values make
- * the model quick everywhere, because a traced centerline rounds off the
- * tightest corners and hands the car radius it does not have.
+ * `LATERAL_G` came from measurement: at 4.0 the ideal lap sits 2% under a real
+ * pole lap averaged over the 23 current-calendar circuits, worst case 8%
+ * (scripts/audit-lap-times.ts).
  */
 export const LATERAL_G = 4.0;
 export const BRAKING_G = 5;
@@ -51,11 +39,8 @@ export const ACCEL_G = 1.5;
 /** Top speed in m/s (~340 km/h). */
 export const MAX_SPEED_MS = 94.4;
 /**
- * Slowest a car is ever allowed to be, in m/s (~68 km/h).
- *
- * A GeoJSON trace can kink hard enough to imply a radius no real corner has,
- * usually where two survey points nearly double back. Without a floor one bad
- * vertex stops the whole field dead.
+ * Slowest a car is ever allowed to be, in m/s (~68 km/h). A traced centerline
+ * can kink hard enough that one bad vertex stops the whole field dead.
  */
 export const MIN_SPEED_MS = 19;
 /** Radius above which a sample counts as straight, in meters. */
@@ -80,9 +65,8 @@ export function buildSpeedProfile(
     speeds[i] = clampSpeed(Math.sqrt(LATERAL_G * G * radius));
   }
 
-  // Backward pass: a car cannot arrive at a corner faster than it can brake
-  // from. Two laps of it, because the limit at the start of the array depends
-  // on the end of it — the track is a loop, not a line.
+  // A car cannot arrive at a corner faster than it can brake from. Two laps of
+  // it, because the start of the array depends on the end of it.
   const brakeStep = 2 * BRAKING_G * G * ds;
   for (let pass = 0; pass < 2; pass++) {
     for (let i = n - 1; i >= 0; i--) {
@@ -92,7 +76,7 @@ export function buildSpeedProfile(
     }
   }
 
-  // Forward pass: nor can it leave one faster than it can accelerate to.
+  // Nor leave one faster than it can accelerate to.
   const accelStep = 2 * ACCEL_G * G * ds;
   for (let pass = 0; pass < 2; pass++) {
     for (let i = 0; i < n; i++) {
@@ -122,10 +106,8 @@ export function speedAt(profile: SpeedProfile, s: number): number {
 }
 
 /**
- * Time to drive one lap at the profile's own limits, in seconds.
- *
- * The check on the whole model: a number that can be put next to a real lap
- * time without opening a browser.
+ * Time to drive one lap at the profile's own limits — the check on the whole
+ * model, comparable to a real lap time without opening a browser.
  */
 export function idealLapTime(profile: SpeedProfile): number {
   let time = 0;

@@ -21,11 +21,8 @@ export interface RaceCameraRigProps {
 }
 
 /**
- * How far ahead of the car the camera sits on the grid, and how high.
- *
- * A broadcast establishing shot rather than an onboard: far enough ahead and
- * high enough that the grid behind the car is in frame, which is what the view
- * is for before the lights go out.
+ * How far ahead of the car the camera sits on the grid, and how high — a
+ * broadcast establishing shot with the grid behind the car in frame.
  */
 const DISTANCE_M = 35;
 const HEIGHT_M = 16;
@@ -36,10 +33,8 @@ const LATERAL_M = 13;
 const TARGET_HEIGHT_M = 0.9;
 
 /**
- * How close the camera may be pulled to the car it is following.
- *
- * The default framing is the closest view on offer, so zooming past it is not
- * a thing the controls allow — see the OrbitControls limits in track-viewer.
+ * How close the camera may be pulled to the car it follows. The default
+ * framing is the closest view on offer.
  */
 export const RACE_FOLLOW_MIN_DISTANCE_M = Math.hypot(
   DISTANCE_M,
@@ -48,15 +43,10 @@ export const RACE_FOLLOW_MIN_DISTANCE_M = Math.hypot(
 );
 
 /**
- * How the follow target catches the car.
- *
- * Two filters rather than one. The velocity filter smooths the car's own
- * step-to-step speed, which is piecewise constant because the simulation runs
- * at a fixed rate; the error filter closes whatever distance is left. Feeding
- * the velocity forward is what keeps the lag at zero — a plain error filter
- * trails by speed divided by rate, which is meters at racing speed, and
- * tracking the interpolated pose exactly instead hands every step boundary
- * straight to the camera as a jolt.
+ * How the follow target catches the car. Two filters: one smooths the car's
+ * piecewise-constant step speed, the other closes the remaining error. The
+ * velocity feed-forward is what keeps the lag at zero, where a plain error
+ * filter trails by meters at racing speed.
  */
 const VELOCITY_RATE = 9;
 const ERROR_RATE = 7;
@@ -94,13 +84,10 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 /**
  * The camera in race mode: glued to a car when `follow` is on, WASD flight
- * when it is off.
- *
- * Following does not mean framed: the rig owns *where the camera looks* (the
- * car) and the user owns *from where* — dragging orbits around the moving car
- * without breaking the follow, exactly like orbiting a parked one. Only WASD
- * or the HUD button let go of the car; the rig itself never decides its mode,
- * it reports via `onDetach` and the HUD flips the state.
+ * when it is off. The rig owns what the camera looks at, the user owns where
+ * from — dragging orbits the moving car without breaking the follow. Only
+ * WASD or the HUD button let go, and the rig reports that via `onDetach`
+ * rather than deciding its own mode.
  */
 export default function RaceCameraRig({
   slots,
@@ -119,8 +106,7 @@ export default function RaceCameraRig({
   // back on, or the race starting.
   const needsFraming = useRef(true);
   // Where the camera sits in the followed car's own frame — across, up, ahead.
-  // Kept so that switching drivers hands the new car the view the user built
-  // around the old one instead of throwing it away for the default.
+  // Kept so switching drivers carries the view the user built over.
   const localOffset = useRef<THREE.Vector3 | null>(null);
   const knownSlots = useRef<GridSlot[] | null>(null);
   const scratch = useRef({
@@ -171,11 +157,9 @@ export default function RaceCameraRig({
     );
   }
 
-  // Movement keys are held, not tapped, so they are polled per frame; the
-  // listeners only maintain the set. Keydown also kicks a frame — before the
-  // race the loop is on demand, and a key press must not wait for one.
-  // Dragging deliberately does not detach: orbiting the followed car is how
-  // the user picks their angle, and the rig keeps that angle while it tracks.
+  // Movement keys are held, not tapped, so they are polled per frame and the
+  // listeners only maintain the set. Keydown also kicks a frame: before the
+  // race the loop is on demand.
   useEffect(() => {
     const keys = pressed.current;
     const onKeyDown = (event: KeyboardEvent) => {

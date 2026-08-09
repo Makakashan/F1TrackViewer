@@ -12,23 +12,11 @@ import {
 
 /**
  * Kerbs — the red/white striped strips lining the inside of every corner.
- *
- * Circuit GeoJSON carries no kerb data, so they are derived from the geometry
- * itself: sample the centerline curvature, call anything tighter than
- * `maxCornerRadiusMeters` a corner, and lay a strip along the inner edge of
- * each corner run. That reproduces the real layout closely enough at circuit
- * scale, and works for all 31 circuits without a per-track table.
+ * Circuit GeoJSON carries no kerb data, so they are derived from the
+ * centerline's curvature, which covers all 31 circuits without a per-track
+ * table.
  */
 
-/**
- * Kerb red and white.
- *
- * The deep red this used to carry was chosen when kerbs were drawn over the
- * schematic's red ribbon, where a true kerb red disappeared into the road. They
- * are a race-view feature now and the surface under them is asphalt, so the red
- * can be the red it is in life — at the old value the stripes read as a faint
- * dotted line from any distance.
- */
 const KERB_RED = new THREE.Color("#cc1120");
 const KERB_WHITE = new THREE.Color("#f2f4f7");
 
@@ -55,39 +43,21 @@ export interface KerbOptions {
   taperMeters?: number;
   /** A run shorter than this is curvature noise, not a corner. */
   minRunMeters?: number;
-  /**
-   * A corner already in progress only ends once the radius opens past this.
-   * Well above `maxCornerRadiusMeters` on purpose — see resolveCornerSides.
-   */
+  /** Radius a corner in progress must open past before it ends. */
   exitRadiusMeters?: number;
   /** Height of the strip's outer lip above its inner edge — kerbs are ramped. */
   liftMeters?: number;
 }
 
 const DEFAULTS = {
-  // 260 m was loose enough to catch the gentle bends along a "straight" and
-  // scatter two-block kerb fragments down them; a real corner is far tighter.
-  // Shared with the apron so the paving and the stripes agree on what a corner
-  // is — the kerb lies on the paving, and the two disagreeing means a stripe
-  // hanging over grass.
   maxCornerRadiusMeters: CORNER_ENTER_RADIUS_M,
-  // A real kerb runs about two meters. It cost racing surface when it was cut
-  // out of the ribbon; lying on the apron it costs nothing, so it can be the
-  // width it actually is.
   widthMeters: 1.9,
-  // Real kerb blocks run about a meter. This is now independent of the curve
-  // sampling, so the number is what actually reaches the screen.
   stripeMeters: 1,
-  // Off: real circuits do carry exit kerbs, but not at every corner and not
-  // for the whole length of one, and a strip down the outside of every turn
-  // reads as a painted border rather than as kerbing.
+  // Real circuits do carry exit kerbs, but not at every corner: a strip down
+  // the outside of every turn reads as a painted border rather than kerbing.
   outerWidthShare: 0,
   runPaddingMeters: 10,
   taperMeters: 14,
-  // 25 m dropped 59 corners across the calendar — chicanes and the short
-  // direction changes at the end of a straight, all of them kerbed in life.
-  // The radius threshold already rejects the gentle bends, so a run this
-  // short under it is a corner, not noise.
   minRunMeters: CORNER_MIN_RUN_M,
   exitRadiusMeters: CORNER_EXIT_RADIUS_M,
   liftMeters: 0.07,
@@ -159,9 +129,8 @@ export function buildKerbGeometry(
   const point = new THREE.Vector3();
   const sideVector = new THREE.Vector3();
 
-  // Vertices are emitted per quad rather than shared between them so each
-  // stripe keeps a single flat color instead of gradient-blending into its
-  // neighbour.
+  // Per quad rather than shared, so each stripe keeps one flat color instead
+  // of gradient-blending into its neighbour.
   function pushVertex(distance: number, offset: number, lift: number) {
     const u = wrap01(distance / totalLength);
     point.copy(curve.getPointAt(u));
@@ -180,11 +149,9 @@ export function buildKerbGeometry(
   for (const { start, count, sign: innerSign } of circularRuns(cornerSide)) {
     if (count < minRunSamples) continue;
 
-    // Work in arc length from here on. Emitting one quad per curve sample
-    // would clamp the stripe length to the sample spacing — 4 m at Monaco —
-    // and the pattern would come out in blocks several times too long.
-    // Snapped to the stripe grid at both ends so no block is left clipped
-    // short — a half-length block next to full ones reads as a mistake.
+    // Arc length from here on: one quad per curve sample would clamp the
+    // stripe to the sample spacing, 4 m at Monaco. Snapped to the stripe grid
+    // at both ends so no block comes out clipped short.
     const runStart =
       Math.floor(((start - padSamples) * ds) / stripeMeters) * stripeMeters;
     const rawEnd = runStart + Math.min(totalLength, (count + padSamples * 2) * ds);
@@ -203,10 +170,8 @@ export function buildKerbGeometry(
     const firstStripe = Math.floor(runStart / stripeMeters);
     const lastStripe = Math.ceil(runEnd / stripeMeters);
 
-    // A corner is kerbed on both sides. The apex kerb is the one this used to
-    // draw; the one facing it across the road is what a driver actually looks
-    // at for most of a lap, and leaving it out is why the circuit read as
-    // having no kerbs at all from inside the car.
+    // A corner is kerbed on both sides — the one facing the apex across the
+    // road is what a driver looks at for most of a lap.
     for (const side of [innerSign, -innerSign as 1 | -1]) {
       const inner = side === innerSign;
       const sideWidth = inner ? widthMeters : widthMeters * outerWidthShare;
@@ -223,10 +188,9 @@ export function buildKerbGeometry(
 
         color.copy(stripe % 2 === 0 ? KERB_RED : KERB_WHITE);
 
-        // The kerb is bolted to the outside of the road, not carved out of it.
-        // Its inner edge is the white line and it reaches outward across the
-        // apron — which is why the apron has to exist first, and why the strip
-        // is clamped to whatever room that sample actually has.
+        // Bolted to the outside of the road, not carved out of it: the inner
+        // edge is the white line and the strip reaches out across the apron,
+        // clamped to whatever room that sample has.
         const s0 = wrap01(d0 / totalLength);
         const s1 = wrap01(d1 / totalLength);
         const edge0 = halfWidthAt(halfWidth, s0) * side;
@@ -240,9 +204,8 @@ export function buildKerbGeometry(
         const outer0 = edge0 + reach0 * side;
         const outer1 = edge1 + reach1 * side;
 
-        // Kerbs ramp upward away from the racing line, so the raised lip is
-        // the outer side. The lift tapers with the width — a full-height lip
-        // that stops dead would read as a step in the road.
+        // Kerbs ramp upward away from the racing line. The lift tapers with
+        // the width, or the lip would stop dead like a step in the road.
         const lift0 = liftMeters * (reach0 / Math.max(sideWidth, 1e-6));
         const lift1 = liftMeters * (reach1 / Math.max(sideWidth, 1e-6));
 
@@ -280,11 +243,8 @@ export function buildKerbGeometry(
 }
 
 /**
- * The continuous white line down both edges of the track.
- *
- * Without it the kerbs are the only marking on the surface and read as decals
- * dropped onto a plain ribbon; with it they land at the end of a line that
- * runs the whole lap, which is what makes them look like part of the road.
+ * The continuous white line down both edges of the track. Without it the kerbs
+ * are the only marking on the surface and read as decals on a plain ribbon.
  */
 export function buildTrackEdgeLineGeometry(
   curve: THREE.CatmullRomCurve3,

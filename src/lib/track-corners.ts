@@ -1,21 +1,12 @@
 /**
- * Where a circuit's corners are, derived from the centerline.
- *
- * Kerbs asked this first and the apron asks it now: a kerb belongs to a corner,
- * and so does the run-off it lies on. Two copies of "is this a corner" drift —
- * the apron would pave a bend the kerb declined to stripe, or stop short of one
- * it did — so both read the same answer from here.
+ * Where a circuit's corners are, derived from the centerline. Kerbs and the
+ * apron both read from here so they cannot disagree about which bends exist.
  */
 
 /** Radius below which a sample counts as entering a corner. */
 export const CORNER_ENTER_RADIUS_M = 170;
 
-/**
- * Radius a corner already in progress must open past before it ends.
- *
- * Well above the entry threshold on purpose — see the hysteresis note on
- * `resolveCornerSides`.
- */
+/** Radius a corner in progress must open past before it ends (hysteresis). */
 export const CORNER_EXIT_RADIUS_M = 420;
 
 /** A run shorter than this is curvature noise, not a corner. */
@@ -31,13 +22,9 @@ export interface CornerRun {
 /**
  * Mark which side of the track is the inside of a corner, 0 on a straight.
  *
- * Uses hysteresis rather than one threshold. Real corners are not
- * constant-radius: through a complex like Becketts the curvature repeatedly
- * dips under any single threshold, which chopped one corner into several runs
- * that each tapered to nothing and back — the kerb pulsed. Entering a corner
- * takes `enter` curvature, but leaving it takes a much gentler `exit`, so the
- * corner stays on through the dips and only ends where the track really
- * straightens.
+ * Two thresholds rather than one: real corners are not constant-radius, and
+ * through a complex like Becketts a single threshold chopped one corner into
+ * several runs that each tapered to nothing and back.
  */
 export function resolveCornerSides(
   curvature: number[],
@@ -47,8 +34,7 @@ export function resolveCornerSides(
   const n = curvature.length;
   const sides = new Array<number>(n).fill(0);
 
-  // Start where the track is straightest, so the walk never begins mid-corner
-  // and carries a stale state around the wrap.
+  // Start where the track is straightest, so the walk never begins mid-corner.
   let origin = 0;
   for (let i = 1; i < n; i++) {
     if (Math.abs(curvature[i]) < Math.abs(curvature[origin])) origin = i;
@@ -63,7 +49,6 @@ export function resolveCornerSides(
     if (active === 0) {
       if (magnitude > enter) active = sign;
     } else if (sign !== active && magnitude > enter) {
-      // A genuine change of direction: the next corner starts here.
       active = sign;
     } else if (magnitude < exit) {
       active = 0;
@@ -87,9 +72,7 @@ export function circularRuns(state: number[]): CornerRun[] {
   if (n === 0) return [];
 
   const origin = state.indexOf(0);
-  // No zero anywhere: the whole loop is one continuous turn (an oval), unless
-  // the direction flips somewhere, in which case a flip point serves as the
-  // seam instead.
+  // No zero anywhere: an oval. A direction flip serves as the seam instead.
   if (origin < 0) {
     const flip = state.findIndex((v, i) => v !== state[(i - 1 + n) % n]);
     if (flip < 0) return [{ start: 0, count: n, sign: state[0] > 0 ? 1 : -1 }];
@@ -133,11 +116,8 @@ export interface CornerCoverageOptions {
 
 /**
  * Per-sample "how much of a corner is this", 0 on a straight and 1 through a
- * turn, with a ramp between.
- *
- * The ramp is the point: anything driven off this — paving width, in the one
- * case that uses it — changes over tens of meters rather than switching at the
- * sample where the curvature threshold happens to be crossed.
+ * turn. The ramp is the point: paving width changes over tens of meters rather
+ * than at the sample where the threshold happens to be crossed.
  */
 export function sampleCornerCoverage(
   curvature: number[],
@@ -169,7 +149,6 @@ export function sampleCornerCoverage(
     const span = Math.min(n, count + padSamples * 2);
     for (let k = 0; k < span; k++) {
       const i = (start - padSamples + k + n * 2) % n;
-      // Distance to the nearer end of the padded run, in samples.
       const fromEnd = Math.min(k, span - 1 - k);
       const value = smoothstep(fromEnd / taperSamples);
       if (value > coverage[i]) coverage[i] = value;
