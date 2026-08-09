@@ -2,125 +2,135 @@
 
 Interactive Formula 1 circuit explorer built with Next.js, React Three Fiber, and Three.js.
 
-MVP 4 adds a globe-first entry flow: open the site, rotate a textured Earth, pick an F1 circuit marker, and jump into the detailed 3D TrackViewer.
+Pick a circuit from a textured globe, look at it as a 3D diorama with real elevation
+and a real city around it, then start a race on it and watch twenty cars drive the lap.
 
 ![Globe circuit selector](docs/screenshots/globe-landing.png)
 
 ![3D track viewer](docs/screenshots/track-viewer.png)
 
-## Highlights
+## What it does
 
-- **Globe circuit selector** with local Earth textures, compact markers, search, desktop sidebar, and mobile circuit panel.
-- **No runtime map APIs** for the globe. Earth assets live under `public/textures/earth/`.
-- **3D TrackViewer** for existing `?track=...` URLs, with the original track experience preserved.
-- **Static circuit data** from `bacinger/f1-circuits`, plus a local `public/circuits-index.json` for globe marker placement.
-- **Real elevation profiles** from pre-generated static JSON, with Open-Meteo/OpenTopoData fallback logic.
-- **Sector overlays** from FastF1 telemetry or manually verified sector distances.
-- **Real per-point track width** for supported modern circuits using TUMFTM racetrack data.
-- **Static environment layers** for generated circuit dioramas: terrain, roads, water, buildings, landuse, and surface data.
-- **Shareable URLs** for track, width, elevation, sector, environment, terrain, and real-width state.
-- **Dark F1-style UI**, English/Russian dictionaries, responsive desktop and mobile layouts.
+**Globe.** A textured Earth with a marker per circuit, search, and a preview card.
+Earth assets are local — no runtime map APIs.
 
-## How It Works
+**Track viewer.** The circuit as a 3D ribbon: real elevation, sector overlays, real
+per-point width where the data exists, and an optional diorama of the terrain,
+buildings, water, roads and landuse around it.
 
-Opening `/` with no `track` query param shows the globe landing page.
+**Race view.** The same circuit rendered as asphalt rather than a schematic — kerbs
+derived from the centerline's curvature, the paved apron they sit on, painted grid
+boxes, a start-light gantry — with twenty cars on it. The simulation is deterministic:
+a per-circuit seed fixes the grid order, each car's pace, and its reaction to the
+lights, so the same link always shows the same race. A timing tower carries the
+running order, gaps timed off each car's own trace, laps and fastest lap. Speed runs
+from 1x to 16x, and "to the flag" runs the remaining distance without drawing it.
 
-Opening a URL with `?track=...` renders the existing TrackViewer directly:
+Everything is a URL:
 
 ```txt
-/?track=es-1991&width=7&elevation=1&sectors=0&realwidth=0&environment=1&terrain=1
+/?track=es-1991&width=7&elevation=1&sectors=0&realwidth=0&environment=1&terrain=1&quality=auto
+/?track=mc-1929&race=1
 ```
 
-Selecting a circuit on the globe does not replace the viewer. It only previews the circuit and offers an `Open Circuit` action that navigates to the existing TrackViewer route.
+`/` with no `track` opens the globe. `/admin` is a local tool for inspecting car
+models and the instanced fleet.
 
-## Local Development
+## Local development
 
-Requirements:
-
-- Bun 1.1+ or Node.js 20+
-- A modern browser with WebGL
+Requirements: Bun 1.1+ or Node.js 20+, and a browser with WebGL.
 
 ```bash
 bun install
-bun run dev
-```
-
-Open:
-
-```txt
-http://localhost:4000
+bun run dev     # http://localhost:4000
 ```
 
 ## Scripts
 
 | Command | Purpose |
 |---|---|
-| `bun run dev` | Start the Next.js dev server on port 4000 |
+| `bun run dev` | Dev server on port 4000 |
 | `bun run build` | Production build |
 | `bun run build:pages` | Static export for GitHub Pages |
 | `bun run lint` | ESLint |
-| `bun run elevations:generate` | Generate static elevation JSON files |
-| `bun run widths:generate` | Generate TUMFTM real-width profiles |
-| `bun run environment:generate` | Generate static environment bundles |
+| `bun run elevations:generate` | Static elevation profiles |
+| `bun run widths:generate` | TUMFTM real-width profiles |
+| `bun run environment:generate` | Diorama bundles (terrain, buildings, water, roads) |
+| `bun run cars:teams` | Team liveries from the base car model |
+| `bun run cars:lods` | Reduced-triangle car models |
+| `bun run cars:generate` | Car manifest |
+| `bun run race:laptimes` | Compare the speed model's ideal lap against real pole laps |
+| `bun run race:audit` | Headless race, checking the field stays sane |
+| `bun run race:kerbs` | Corner detection coverage across the calendar |
+| `bun run race:gaps` | Timing-tower gaps against a headless race |
 
-## Project Layout
+The generators need Python with `fastf1` and `pandas` for the telemetry-derived
+sector splits; everything they produce is committed under `public/`, so running the
+app never touches them.
+
+## Layout
 
 ```txt
 src/
-  app/
-    page.tsx                 # Routes globe vs TrackViewer based on ?track=
+  app/                       Next.js routes: / and /admin
   components/
-    globe/                   # Globe landing, Earth scene, markers, info card
-    track-viewer.tsx         # Main Three.js circuit renderer
-    track-side-panel.tsx     # Desktop info/settings panel
-    track-settings-panel.tsx # Camera, layers, terrain, width controls
-    mobile-info-sheet.tsx    # Mobile TrackViewer info panel
-    ui/                      # shadcn/ui components
-  hooks/
-    use-circuts.ts           # Circuit index loading + URL initial selection
-    use-track-data.ts        # GeoJSON + elevation loading
+    globe/                   Earth, markers, circuit preview
+    track/                   viewer UI — panels, sheets, settings, circuit list
+    race/                    race HUD — timing tower, controls, results, lights
+    three/                   every R3F component: track mesh, cars, camera rig,
+                             environment layer, studio stage
+    admin/                   model and fleet inspection tools
+    ui/                      shadcn/ui primitives
+  hooks/                     circuit index, track data, race simulation, lights
   lib/
-    f1-circuits.ts           # Circuit metadata helpers
-    track-geometry.ts        # Ribbon/mesh geometry builders
-    track-width.ts           # TUMFTM width-profile loader
-    environment-loader.ts    # Static environment bundle loader
-    i18n.ts                  # English/Russian dictionaries
+    track/                   centerline geometry, curvature, corners, kerbs,
+                             apron, width, markers, start/finish, elevation
+    race/                    simulation, speed profile, grid, drivers, teams
+    cars/                    car dimensions, mesh building, model stats
+    env/                     diorama bundles, terrain sampling, palette
+    (root)                   geo-utils, url-state, i18n, scene-config, prefs
 public/
-  circuits-index.json        # Globe circuit marker index
-  elevations/                # Static elevation profiles
-  environments/              # Static diorama/environment bundles
-  textures/earth/            # Local Earth texture assets
+  circuits-index.json        globe marker index
+  elevations/                static elevation profiles
+  environments/              per-circuit diorama bundles
+  track-markers/             sector splits, start/finish, lap length
+  track-widths/              TUMFTM width profiles
+  cars/                      car models per team, with LODs
+  textures/earth/            Earth textures
 docs/
   architecture.md
   earth-textures.md
-  screenshots/
 ```
 
-## Earth Textures
-
-The globe looks for:
+## Earth textures
 
 ```txt
 public/textures/earth/earth-day.jpg
 public/textures/earth/earth-clouds.png   # optional
-public/textures/earth/earth-night.jpg    # reserved for future night-side work
+public/textures/earth/earth-night.jpg    # reserved
 ```
 
-Use equirectangular Earth maps. A 2048 or 4096 pixel wide JPG/WebP is a good first target. Avoid huge 16k/32k files for initial load and GitHub Pages.
+Equirectangular maps, 2048 or 4096 px wide. Avoid 16k files — they have to load over
+GitHub Pages.
 
-## Data Sources
+## Data sources
 
 | Source | Used for | License |
 |---|---|---|
 | [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits) | Track geometry and metadata | MIT |
+| [FastF1](https://github.com/theOehrly/Fast-F1) | Sector splits from session telemetry | MIT |
 | [Open-Meteo](https://open-meteo.com/en/docs#elevation-api) | Elevation data | CC-BY 4.0 |
 | [OpenTopoData](https://opentopodata.org/) | Elevation fallback | CC-BY 4.0 |
 | [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database) | Real per-point track width | LGPL-3.0 |
 | [OpenStreetMap](https://www.openstreetmap.org/copyright) | Generated environment layers | ODbL |
+| [Jolpica](https://github.com/jolpica/jolpica-f1) | Driver and team data | AGPL-3.0 |
 
 ## Disclaimer
 
-Unofficial, non-commercial project. Not affiliated with, endorsed by, or sponsored by Formula 1, Formula One Licensing B.V., the FIA, or any data provider. F1, FORMULA ONE, and related marks are trademarks of Formula One Licensing B.V. Used here for identification purposes only.
+Unofficial, non-commercial project. Not affiliated with, endorsed by, or sponsored by
+Formula 1, Formula One Licensing B.V., the FIA, or any data provider. F1, FORMULA ONE,
+and related marks are trademarks of Formula One Licensing B.V. Used here for
+identification purposes only.
 
 ## License
 

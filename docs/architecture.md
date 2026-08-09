@@ -1,79 +1,84 @@
-# F1 Track Viewer — Architecture
+# F1 Track Studio — Architecture
 
-## Overview
+3D viewer and race simulation for Formula 1 circuits. Next.js, React Three Fiber,
+Tailwind.
 
-3D viewer for Formula 1 circuits. Built with Next.js, React Three Fiber, and Tailwind CSS.
+## Modes
 
-## Data Flow
+`/` routes on the URL and on the store. No `track` param opens the globe
+(`components/globe/`). A `track` opens the viewer (`components/track/f1-track-app`).
+`race=1` opens race mode (`components/race/race-app`). Entering or leaving race mode
+is a state change that writes the URL, so the store wins after hydration and the URL
+wins before it.
+
+## Data flow
 
 ```
-f1-circuits (GitHub) → useCircuits() → CircuitList
-                  ↓
-          useTrackData(selectedId)
-                  ↓
-         fetchCircuitGeoJson() → TrackViewer (Three.js)
-                  ↓
-         fetchElevations() → elevation profile
+public/circuits-index.json → useCircuits()        → circuit list, globe markers
+        bacinger GeoJSON   → useTrackData()       → centerline coordinates
+  public/elevations/<id>   → useTrackData()       → per-vertex elevation
+  public/track-markers/<id>→ useTrackData()       → sectors, start/finish, lap length
+  public/track-widths/<id> → useTrackData()       → real per-point width
+  public/environments/<id> → environment-loader   → terrain, buildings, water, roads
+                                    ↓
+                              TrackMesh (three/)
 ```
 
-## File Structure
+`TrackMesh` is where the scene is assembled: it builds the centerline curve, the
+ribbon, kerbs, apron, painted markings, the start-light gantry, the fleet of cars and
+the environment layer, and it drives the race camera.
 
-### Hooks
-- `use-circuits.ts` — loads circuit index from GitHub, manages selection
-- `use-track-data.ts` — loads GeoJSON geometry + elevation data with retry
+## The circuit, geometrically
 
-### Components
-- `track-viewer.tsx` — Three.js Canvas with OrbitControls
-- `track-controls.tsx` — autorotate, elevation toggle, track width slider
-- `track-overlay.tsx` — circuit name overlay + mouse controls hint
-- `circuit-list.tsx` — searchable list of circuits with country flags
-- `circuit-sidebar.tsx` — wraps CircuitList with loading skeleton
-- `mobile-menu.tsx` — hamburger menu with Sheet for mobile
-- `mobile-info-sheet.tsx` — track info panel for mobile
-- `elevation-sparkline.tsx` — SVG sparkline for elevation profile
-- `error-banner.tsx` — centered error display
+Everything downstream of the centerline reads one curvature profile
+(`lib/track/track-curvature`), so nothing can disagree about where a corner is:
 
-### Lib
-- `geo-utils.ts` — WGS84 → metric conversion, bounds, CatmullRom curve builder
-- `elevation.ts` — SRTM data smoothing, normalization, interpolation, stats
-- `elevation-api.ts` — Open-Meteo/OpenTopoData API calls, localStorage caching
-- `track-geometry.ts` — Three.js BufferGeometry builders for track mesh + outline
-- `f1-circuits.ts` — GitHub API helpers for bacinger/f1-circuits dataset
+- **`lib/track/track-corners`** turns curvature into corner runs, with hysteresis —
+  entering a corner takes a 170 m radius, leaving it takes 420 m, because a complex
+  like Becketts dips under any single threshold and chops one corner into several.
+- **`lib/track/track-kerbs`** lays striped blocks along the inner edge of each run.
+- **`lib/track/track-apron`** paves the strip the kerb is bolted to: full width
+  through a corner, a verge down a straight, and nothing where a building footprint
+  or a hillside says there is no room.
+- **`lib/track/racing-line`** offsets the line the cars drive, smoothed forward and
+  backward so it eases out and back instead of snapping.
+- **`lib/race/speed-profile`** turns radius into a speed limit, then brakes into every
+  corner and accelerates out of it.
 
-## Key Algorithms
+## Terrain
 
-### Elevation Smoothing (`elevation.ts`)
+`lib/env/terrain-sampler` owns the rendered height field: the raw elevation grid with
+water flattened, a trench carved along the track, and interpolation across the same
+two triangles the terrain mesh builds per cell. The mesh reads its vertex heights back
+from the sampler, and everything draped on the terrain — roads, buildings, the track
+ribbon — samples through it, so nothing has to guess a clearance that keeps it above a
+surface it cannot see.
 
-SRTM data from Open-Meteo can produce spikes on tight street circuits (Monaco, Baku).
-The pipeline:
-1. `normalizeElevationProfile()` — statistical outlier removal + local median filter
-2. `smoothByTrackDistance()` — weighted averaging along track distance (45m radius)
-3. `limitTrackGrade()` — caps slope to 20% grade, 4 passes bidirectional
+## The race
 
-### Track Geometry (`track-geometry.ts`)
+`lib/race/race-sim` is pure and deterministic: a fixed `dt`, a seed per circuit, no
+allocation per step. Cars follow the racing line at their own pace; a car that catches
+another either finds room beside it or queues behind it. Each car keeps a ring of
+(distance, time) samples so gaps are timed — how long ago the car ahead stood where
+this car stands now — rather than estimated from distance over speed.
 
-`buildExtrudedTrack()` creates a solid 3D ribbon:
-- 6 vertices per sample: topL/topR (road surface), wallL/wallR (slightly below), botL/botR (ground)
-- Flat shading via per-quad normals (cross product of vertex positions)
-- Walls extend down to `groundY` for a "3D-printed" look
+`hooks/use-race-simulation` owns the state and hands out two channels: a ref the scene
+reads every frame, and a snapshot the HUD re-renders from five times a second. The
+stepper runs inside the Canvas, where the frame clock is.
 
-`buildTrackOutline()` creates thin black lines along both top edges for visual definition.
+## Elevation smoothing
 
-### Centripetal Parametrization
+SRTM data spikes on tight street circuits. `lib/track/elevation`:
 
-`buildTrackCurve()` uses `"centripetal"` parametrization (not uniform) to prevent
-self-intersections on street circuits where consecutive GeoJSON points cluster tightly.
+1. `normalizeElevationProfile()` — outlier removal plus a local median filter
+2. `smoothByTrackDistance()` — weighted averaging along track distance
+3. `limitTrackGrade()` — caps slope, four bidirectional passes
 
-## External Data Sources
+In terrain mode the curve's Y comes from the terrain sampler instead, smoothed over a
+120 m window so the ribbon does not ripple with every DEM cell.
 
-| Source | Data | License |
-|--------|------|---------|
-| bacinger/f1-circuits | Circuit geometry (GeoJSON) | MIT |
-| Open-Meteo | SRTM elevation data | CC-BY 4.0 |
-| OpenTopoData | Alternative elevation source | CC-BY 4.0 |
+## Caching
 
-## Caching Strategy
-
-1. Static JSON in `public/elevations/` (pre-generated)
-2. localStorage cache (versioned, `f1tv:elevations:v2:`)
-3. Open-Meteo API (rate-limited, 64 samples max)
+1. Static JSON under `public/` — the normal path
+2. localStorage, versioned (`f1tv:elevations:v2:`)
+3. Open-Meteo / OpenTopoData at runtime, as a fallback only
