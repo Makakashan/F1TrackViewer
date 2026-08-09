@@ -27,7 +27,6 @@ export const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
  */
 export const TRACK_PROP_RENDER_ORDER = TRACK_OVERLAY_RENDER_ORDER + 1;
 export const TERRAIN_TRACK_OFFSET = 4.5;
-export const TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M = 25;
 export const TERRAIN_TRACK_WALL_DEPTH = TERRAIN_TRACK_OFFSET + TRACK_SURFACE_RAISE;
 // Long straights in real circuit GeoJSON can span 400m+ between two points.
 // The terrain-mode curve only samples elevation at each point, so segments

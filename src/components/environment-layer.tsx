@@ -5,21 +5,12 @@ import * as THREE from "three";
 import type {
   EnvironmentBundle,
   BuildingFeature,
-  WaterPolygon,
   RoadLine,
-  TerrainFile,
   EnvironmentManifest,
-  SurfaceFile,
 } from "@/lib/environment-types";
 import { DIORAMA_COLORS } from "@/lib/diorama-palette";
-import { densifyCoords } from "@/lib/geo-utils";
-import {
-  buildTerrainSampler,
-  terrainHeightNear,
-  terrainLocalHeight,
-  terrainReferenceElevation,
-  type TerrainSampler,
-} from "@/lib/terrain-sampler";
+import { densifyCoords, xzToLonLat } from "@/lib/geo-utils";
+import { buildTerrainSampler, type TerrainSampler } from "@/lib/terrain-sampler";
 
 /**
  * Local-meters projection of a [lon, lat] pair onto the diorama plane.
@@ -67,10 +58,10 @@ const LAYER_Y_FLAT = {
 const LAYER_Y_DRAPE = {
   landuse: 0.1,
   water: 0.08,
-  // Extra margin over the neighbourhood-max terrain sample (see
-  // terrainHeightNear) so residual interpolation error on a densified but
-  // still-straight ribbon segment never dips below the rendered surface.
-  roads: 1.5,
+  // Enough to win the depth test against the surface the ribbon is sampled
+  // from, and nothing more — see the triangle interpolation in
+  // buildTerrainSampler.
+  roads: 0.05,
   buildings: 0.15,
 } as const;
 
@@ -81,7 +72,6 @@ const ROAD_RIBBON_WIDTH_M = 1.2;
 // endpoints, so a hill between sparse points doesn't get "seen" and the road
 // dips below the terrain mesh — same failure mode as the track curve.
 const ROAD_MAX_SEGMENT_M = 25;
-const ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M = 15;
 const TERRAIN_BASE_SLAB_DEPTH = 0;
 const TERRAIN_TRACK_CARVE_RADIUS_M = 30;
 const TERRAIN_TRACK_CARVE_DEPTH_M = 4;
@@ -416,13 +406,67 @@ export default function EnvironmentLayer({
     return focus ? clampBBox(focus, manifest.bbox) : manifest.bbox;
   }, [trackCoordinates, originLat, manifest.bbox]);
 
-  // Build a terrain sampler once — used by all draped layers to query the
-  // elevation at any [lon, lat] point. Water areas are flattened based on
-  // proximity to known water polygon vertices.
+  /**
+   * One sampler, carrying the same flattening and carving the terrain mesh
+   * renders. Every draped layer reads its height from here, so nothing has to
+   * guess at a clearance that keeps it above a surface it cannot see.
+   */
   const terrainSampler = useMemo(() => {
     if (!hasTerrain) return null;
-    return buildTerrainSampler(bundle.terrain, manifest);
-  }, [bundle.terrain, manifest, hasTerrain]);
+    const waterMasks = bundle.water.polygons
+      .map((poly) =>
+        poly.points.map(([lon, lat]) =>
+          lonLatToShapeXY(lon, lat, originLon, originLat),
+        ),
+      )
+      .filter(
+        (poly) => poly.length >= 3 && polygonArea2D(poly) >= MIN_WATER_AREA_SQ_M,
+      );
+    const surface =
+      bundle.surface?.gridSize === bundle.terrain.gridSize
+        ? bundle.surface
+        : null;
+    const gridSize = bundle.terrain.gridSize;
+    const { minLon, minLat, maxLon, maxLat } = manifest.bbox;
+
+    const trackPoints = trackCoordinates.map(([lon, lat]) =>
+      lonLatToShapeXY(lon, lat, originLon, originLat),
+    );
+    const carveRadiusSq =
+      TERRAIN_TRACK_CARVE_RADIUS_M * TERRAIN_TRACK_CARVE_RADIUS_M;
+
+    return buildTerrainSampler(bundle.terrain, manifest, {
+      isWater(lon, lat) {
+        if (surface) {
+          const col = Math.round(((lon - minLon) / (maxLon - minLon)) * (gridSize - 1));
+          const row = Math.round(((lat - minLat) / (maxLat - minLat)) * (gridSize - 1));
+          return surface.waterMask[row * gridSize + col] === 1;
+        }
+        const point = lonLatToShapeXY(lon, lat, originLon, originLat);
+        return waterMasks.some((mask) => isPointInPolygon(point, mask));
+      },
+      isCarved(lon, lat) {
+        const point = lonLatToShapeXY(lon, lat, originLon, originLat);
+        for (let i = 0; i < trackPoints.length; i++) {
+          const next = trackPoints[(i + 1) % trackPoints.length];
+          if (distanceToSegmentSq2D(point, trackPoints[i], next) <= carveRadiusSq) {
+            return true;
+          }
+        }
+        return false;
+      },
+      carveDepthMeters: TERRAIN_TRACK_CARVE_DEPTH_M,
+    });
+  }, [
+    bundle.terrain,
+    bundle.surface,
+    bundle.water.polygons,
+    manifest,
+    hasTerrain,
+    originLon,
+    originLat,
+    trackCoordinates,
+  ]);
 
   return (
     <group>
@@ -436,16 +480,13 @@ export default function EnvironmentLayer({
           resolvedTheme={resolvedTheme}
         />
       )}
-      {hasTerrain && (
+      {hasTerrain && terrainSampler && (
         <TerrainMesh
-          terrain={bundle.terrain}
+          sampler={terrainSampler}
           manifest={manifest}
           originLon={originLon}
           originLat={originLat}
           baseY={baseY}
-          waterPolygons={bundle.water.polygons}
-          surface={bundle.surface}
-          trackCoordinates={trackCoordinates}
           bbox={broadcastBBox}
           resolvedTheme={resolvedTheme}
         />
@@ -582,30 +623,24 @@ function DioramaBase({
 // reads on top.
 
 function TerrainMesh({
-  terrain,
+  sampler,
   manifest,
   originLon,
   originLat,
   baseY,
-  waterPolygons,
-  surface,
-  trackCoordinates,
   bbox,
   resolvedTheme,
 }: {
-  terrain: TerrainFile;
+  sampler: TerrainSampler;
   manifest: EnvironmentManifest;
   originLon: number;
   originLat: number;
   baseY: number;
-  waterPolygons: WaterPolygon[];
-  surface: SurfaceFile | null;
-  trackCoordinates: [number, number][];
   bbox: BBox;
   resolvedTheme: EnvironmentTheme;
 }) {
   const geometry = useMemo(() => {
-    const n = terrain.gridSize;
+    const n = sampler.gridSize;
     if (n < 2) return null;
     const minLon = manifest.bbox.minLon;
     const minLat = manifest.bbox.minLat;
@@ -634,64 +669,19 @@ function TerrainMesh({
     const uvs: number[] = [];
     const indices: number[] = [];
     const colors: number[] = [];
-    const referenceElevation = terrainReferenceElevation(terrain);
 
     const themeColors = THEME_COLORS[resolvedTheme];
     const terrainTop = new THREE.Color(themeColors.terrain);
     const terrainEdge = new THREE.Color(
       resolvedTheme === "dark" ? "#020304" : "#C8D0DB",
     );
-    const waterMasks = waterPolygons
-      .map((poly) =>
-        poly.points.map(([lon, lat]) =>
-          lonLatToShapeXY(lon, lat, originLon, originLat),
-        ),
-      )
-      .filter((poly) => poly.length >= 3 && polygonArea2D(poly) >= MIN_WATER_AREA_SQ_M);
-    const trackPoints = trackCoordinates.map(([lon, lat]) =>
-      lonLatToShapeXY(lon, lat, originLon, originLat),
-    );
-    const trackCarveRadiusSq =
-      TERRAIN_TRACK_CARVE_RADIUS_M * TERRAIN_TRACK_CARVE_RADIUS_M;
-
-    function isInsideTrackCarve(point: { x: number; y: number }): boolean {
-      for (let i = 0; i < trackPoints.length - 1; i++) {
-        if (
-          distanceToSegmentSq2D(point, trackPoints[i], trackPoints[i + 1]) <=
-          trackCarveRadiusSq
-        ) {
-          return true;
-        }
-      }
-      if (trackPoints.length > 2) {
-        return (
-          distanceToSegmentSq2D(
-            point,
-            trackPoints[trackPoints.length - 1],
-            trackPoints[0],
-          ) <= trackCarveRadiusSq
-        );
-      }
-      return false;
-    }
 
     for (let row = rowStart; row <= rowEnd; row++) {
       for (let col = colStart; col <= colEnd; col++) {
-        const idx = row * n + col;
         const lon = minLon + ((maxLon - minLon) * col) / (n - 1);
         const lat = minLat + ((maxLat - minLat) * row) / (n - 1);
         const { x, z } = lonLatToXZ(lon, lat, originLon, originLat);
-        const shapePoint = { x, y: -z };
-        const h = terrain.heights[idx] ?? 0;
-        const isWater =
-          surface?.gridSize === n
-            ? surface.waterMask[idx] === 1
-            : waterMasks.some((mask) => isPointInPolygon(shapePoint, mask));
-        const rawY = isWater ? 0 : terrainLocalHeight(h, referenceElevation);
-        const y = isInsideTrackCarve(shapePoint)
-          ? Math.max(0, rawY - TERRAIN_TRACK_CARVE_DEPTH_M)
-          : rawY;
-        positions.push(x, y, z);
+        positions.push(x, sampler.heightAtNode(row, col), z);
         uvs.push(
           cols === 1 ? 0 : (col - colStart) / (cols - 1),
           rows === 1 ? 0 : (row - rowStart) / (rows - 1),
@@ -769,17 +759,7 @@ function TerrainMesh({
     geo.setIndex(indices);
     geo.computeVertexNormals();
     return geo;
-  }, [
-    terrain,
-    manifest,
-    originLon,
-    originLat,
-    waterPolygons,
-    surface,
-    trackCoordinates,
-    bbox,
-    resolvedTheme,
-  ]);
+  }, [sampler, manifest, originLon, originLat, bbox, resolvedTheme]);
 
   useEffect(() => {
     return () => {
@@ -841,17 +821,6 @@ function RoadLinesMesh({
         }
         const a = lonLatToXZ(aLon, aLat, originLon, originLat);
         const b = lonLatToXZ(bLon, bLat, originLon, originLat);
-        const aY = terrainSampler
-          ? baseY +
-            terrainHeightNear(terrainSampler, aLon, aLat, ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M) +
-            drapeY
-          : baseY + flatY;
-        const bY = terrainSampler
-          ? baseY +
-            terrainHeightNear(terrainSampler, bLon, bLat, ROAD_TERRAIN_CLEARANCE_SAMPLE_RADIUS_M) +
-            drapeY
-          : baseY + flatY;
-
         const dx = b.x - a.x;
         const dz = b.z - a.z;
         const len = Math.hypot(dx, dz);
@@ -861,20 +830,24 @@ function RoadLinesMesh({
         const offsetZ = (dx / len) * halfWidth;
         const base = positions.length / 3;
 
-        positions.push(
-          a.x + offsetX,
-          aY,
-          a.z + offsetZ,
-          a.x - offsetX,
-          aY,
-          a.z - offsetZ,
-          b.x + offsetX,
-          bY,
-          b.z + offsetZ,
-          b.x - offsetX,
-          bY,
-          b.z - offsetZ,
-        );
+        // Sampled at each corner rather than once on the centreline: a 1.2 m
+        // ribbon laid across a hillside picks up half a meter of drop over its
+        // own width, which is the whole remaining gap once the sampler agrees
+        // with the mesh.
+        const cornerY = (x: number, z: number) => {
+          if (!terrainSampler) return baseY + flatY;
+          const [lon, lat] = xzToLonLat(x, z, originLon, originLat);
+          return baseY + terrainSampler.heightAt(lon, lat) + drapeY;
+        };
+
+        for (const [x, z] of [
+          [a.x + offsetX, a.z + offsetZ],
+          [a.x - offsetX, a.z - offsetZ],
+          [b.x + offsetX, b.z + offsetZ],
+          [b.x - offsetX, b.z - offsetZ],
+        ]) {
+          positions.push(x, cornerY(x, z), z);
+        }
         indices.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
       }
     }

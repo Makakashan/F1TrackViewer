@@ -59,7 +59,7 @@ import {
   type TrackViewMode,
 } from "@/lib/track-markers";
 import type { EnvironmentBundle } from "@/lib/environment-types";
-import { buildTerrainSampler, terrainHeightNear } from "@/lib/terrain-sampler";
+import { buildTerrainSampler } from "@/lib/terrain-sampler";
 import EnvironmentLayer from "@/components/environment-layer";
 import StudioStage from "@/components/three/studio-stage";
 import type { CameraPreset } from "@/components/track-viewer";
@@ -71,7 +71,6 @@ import {
   TRACK_OVERLAY_RENDER_ORDER,
   TRACK_PROP_RENDER_ORDER,
   TERRAIN_TRACK_OFFSET,
-  TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M,
   TERRAIN_TRACK_MAX_SEGMENT_M,
   TERRAIN_TRACK_SMOOTH_RADIUS_M,
   TERRAIN_TRACK_WALL_DEPTH,
@@ -187,20 +186,8 @@ export default function TrackMesh({
     return buildTerrainSampler(environmentBundle.terrain, environmentBundle.manifest);
   }, [environmentBundle, environmentTerrain]);
 
-  // Sample the max terrain height in a small neighbourhood so the track
-  // ribbon never dips under a nearby terrain peak (flat-shaded triangles
-  // can sit above the bilinear value).  Radius is kept small (12 m) to
-  // avoid the floating look that the old 46 m radius caused.
   const trackTerrainHeightNear = useCallback(
-    (lon: number, lat: number): number => {
-      if (!terrainSampler) return 0;
-      return terrainHeightNear(
-        terrainSampler,
-        lon,
-        lat,
-        TERRAIN_TRACK_CLEARANCE_SAMPLE_RADIUS_M,
-      );
-    },
+    (lon: number, lat: number): number => terrainSampler?.heightAt(lon, lat) ?? 0,
     [terrainSampler],
   );
 
@@ -597,6 +584,9 @@ export default function TrackMesh({
     return () => {
       trackGeometry.dispose();
       outlineGeometry.dispose();
+      // Built beside the kerb and rebuilt on the same inputs, but never freed
+      // with it — one lap's worth of paving left behind per circuit switch.
+      apronGeometry?.dispose();
       kerbGeometry?.dispose();
       edgeLineGeometry.dispose();
       startFinishGeometry.dispose();
@@ -609,6 +599,7 @@ export default function TrackMesh({
   }, [
     trackGeometry,
     outlineGeometry,
+    apronGeometry,
     kerbGeometry,
     edgeLineGeometry,
     startFinishGeometry,

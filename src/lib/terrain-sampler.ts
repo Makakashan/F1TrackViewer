@@ -4,8 +4,22 @@ export const TERRAIN_VERTICAL_SCALE = 1;
 
 export interface TerrainSampler {
   heightAt(lon: number, lat: number): number;
+  /** Rendered height at a grid node, row-major. */
+  heightAtNode(row: number, col: number): number;
+  gridSize: number;
   minHeight: number;
   maxHeight: number;
+}
+
+/**
+ * Modifiers the terrain mesh applies on top of the raw elevation grid. Anything
+ * draped on the terrain has to see them too, or it sits on a surface that is
+ * not the one being drawn.
+ */
+export interface TerrainSurfaceOptions {
+  isWater?(lon: number, lat: number): boolean;
+  isCarved?(lon: number, lat: number): boolean;
+  carveDepthMeters?: number;
 }
 
 export function terrainReferenceElevation(terrain: TerrainFile): number {
@@ -31,30 +45,46 @@ export function terrainLocalHeight(
 export function buildTerrainSampler(
   terrain: TerrainFile,
   manifest: EnvironmentManifest,
+  options: TerrainSurfaceOptions = {},
 ): TerrainSampler {
   const n = terrain.gridSize;
-  const minLon = manifest.bbox.minLon;
-  const minLat = manifest.bbox.minLat;
-  const maxLat = manifest.bbox.maxLat;
-  const maxLon = manifest.bbox.maxLon;
+  const { minLon, minLat, maxLon, maxLat } = manifest.bbox;
+  const { isWater, isCarved, carveDepthMeters = 0 } = options;
 
   const referenceElevation = terrainReferenceElevation(terrain);
-  let maxLocalHeight = 0;
-  for (const h of terrain.heights) {
-    maxLocalHeight = Math.max(
-      maxLocalHeight,
-      terrainLocalHeight(h, referenceElevation),
-    );
+  const heights = new Float32Array(terrain.heights.length);
+  let maxHeight = 0;
+
+  for (let row = 0; row < n; row++) {
+    const lat = minLat + ((maxLat - minLat) * row) / (n - 1);
+    for (let col = 0; col < n; col++) {
+      const i = row * n + col;
+      const lon = minLon + ((maxLon - minLon) * col) / (n - 1);
+      let y =
+        isWater?.(lon, lat) === true
+          ? 0
+          : terrainLocalHeight(terrain.heights[i], referenceElevation);
+      if (isCarved?.(lon, lat) === true) {
+        y = Math.max(0, y - carveDepthMeters);
+      }
+      heights[i] = y;
+      if (y > maxHeight) maxHeight = y;
+    }
   }
 
-  const localHeights = new Float32Array(terrain.heights.length);
-  for (let i = 0; i < terrain.heights.length; i++) {
-    localHeights[i] = terrainLocalHeight(
-      terrain.heights[i],
-      referenceElevation,
-    );
+  function heightAtNode(row: number, col: number): number {
+    const r = Math.min(n - 1, Math.max(0, row));
+    const c = Math.min(n - 1, Math.max(0, col));
+    return heights[r * n + c];
   }
 
+  /**
+   * Interpolates across the same two triangles the mesh builds per cell —
+   * split along the (row, col+1)–(row+1, col) diagonal — so a draped point
+   * lands on the rendered surface rather than on a bilinear approximation of
+   * it. Bilinear was off by meters on this 40-plus-meter grid, which is what
+   * the old neighbourhood-max plus fixed clearance was papering over.
+   */
   function heightAt(lon: number, lat: number): number {
     if (n < 2) return 0;
     const u = (lon - minLon) / (maxLon - minLon);
@@ -63,57 +93,21 @@ export function buildTerrainSampler(
 
     const fx = u * (n - 1);
     const fy = v * (n - 1);
-    const ix = Math.floor(fx);
-    const iy = Math.floor(fy);
-    const ix1 = Math.min(ix + 1, n - 1);
-    const iy1 = Math.min(iy + 1, n - 1);
-    const tx = fx - ix;
-    const ty = fy - iy;
-    const h00 = localHeights[iy * n + ix];
-    const h10 = localHeights[iy * n + ix1];
-    const h01 = localHeights[iy1 * n + ix];
-    const h11 = localHeights[iy1 * n + ix1];
-    const h0 = h00 * (1 - tx) + h10 * tx;
-    const h1 = h01 * (1 - tx) + h11 * tx;
-    return h0 * (1 - ty) + h1 * ty;
+    const col = Math.min(n - 2, Math.floor(fx));
+    const row = Math.min(n - 2, Math.floor(fy));
+    const tx = fx - col;
+    const ty = fy - row;
+
+    const h00 = heightAtNode(row, col);
+    const h10 = heightAtNode(row, col + 1);
+    const h01 = heightAtNode(row + 1, col);
+    const h11 = heightAtNode(row + 1, col + 1);
+
+    if (tx + ty <= 1) {
+      return h00 + tx * (h10 - h00) + ty * (h01 - h00);
+    }
+    return h11 + (1 - tx) * (h01 - h11) + (1 - ty) * (h10 - h11);
   }
 
-  return {
-    heightAt,
-    minHeight: 0,
-    maxHeight: maxLocalHeight,
-  };
-}
-
-/**
- * Max terrain height in a small neighbourhood around a point, instead of the
- * raw bilinear sample at that exact point. The rendered terrain mesh is
- * flat-shaded — a triangle can bulge above the bilinear plane near a ridge —
- * so anything draped on top (track ribbon, roads) needs this margin to avoid
- * dipping below the actual rendered surface.
- */
-export function terrainHeightNear(
-  sampler: TerrainSampler,
-  lon: number,
-  lat: number,
-  radiusMeters: number,
-): number {
-  const metersPerDegLat = 111_320;
-  const metersPerDegLon = 111_320 * Math.cos((lat * Math.PI) / 180);
-  const dLat = radiusMeters / metersPerDegLat;
-  const dLon = radiusMeters / metersPerDegLon;
-  let max = sampler.heightAt(lon, lat);
-  for (const [ox, oy] of [
-    [dLon, 0],
-    [-dLon, 0],
-    [0, dLat],
-    [0, -dLat],
-    [dLon, dLat],
-    [dLon, -dLat],
-    [-dLon, dLat],
-    [-dLon, -dLat],
-  ] as const) {
-    max = Math.max(max, sampler.heightAt(lon + ox, lat + oy));
-  }
-  return max;
+  return { heightAt, heightAtNode, gridSize: n, minHeight: 0, maxHeight };
 }
