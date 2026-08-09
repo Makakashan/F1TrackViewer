@@ -1,15 +1,4 @@
-/**
- * Static environment layer schema for generated circuit dioramas.
- *
- * All artifacts are produced by `scripts/generate-environment.ts` and served
- * as static JSON from `public/environments/{circuitId}/*.json`. The browser
- * never talks to Overpass or Open-Meteo directly.
- *
- * Coordinate convention: every polygon / footprint / grid point is stored as
- * raw `[lon, lat]` (WGS84). The renderer projects to local meters using the
- * manifest's `center` as the origin so the track and the city live in the
- * same metric space.
- */
+/** Static environment layer schema for generated circuit dioramas. */
 
 export interface EnvironmentManifest {
   schemaVersion: 1;
@@ -93,11 +82,7 @@ export interface TerrainFile {
   heightMeters: number;
   minElevation: number;
   maxElevation: number;
-  /**
-   * Row-major heights (length = gridSize * gridSize).
-   * Row 0 corresponds to minLat (south), column 0 to minLon (west).
-   * Values are absolute WGS84 ellipsoid heights in meters.
-   */
+  /** Row-major heights (length = gridSize gridSize). */
   heights: number[];
 }
 
@@ -107,9 +92,7 @@ export interface SurfaceFile {
   gridSize: number;
   seaLevelMeters: number;
   floodThresholdMeters: number;
-  /**
-   * Row-major mask matching terrain.json. 1 = water/sea/harbor, 0 = land.
-   */
+  /** Row-major mask matching terrain.json. */
   waterMask: number[];
 }
 

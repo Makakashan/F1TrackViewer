@@ -21,9 +21,7 @@ function PopoverContent({
   className,
   align = "center",
   sideOffset = 4,
-  // Radix will slide a popover back inside the viewport, but with no padding
-  // it stops flush against the edge, where a phone's rounded corners and
-  // gesture bar cut into it. This keeps the same gutter the page uses.
+  // Radix will slide a popover back inside the viewport.
   collisionPadding = 12,
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {

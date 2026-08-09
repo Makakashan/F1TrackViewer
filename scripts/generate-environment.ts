@@ -1,22 +1,4 @@
-/**
- * MVP3 Monaco diorama generator.
- *
- * Pipeline:
- *   1. Read bacinger/f1-circuits GeoJSON for the requested circuit.
- *   2. Compute track bbox, pad by ~1000 m, snap to a clean box.
- *   3. Query Overpass API for buildings / water / roads / landuse.
- *   4. Query Open-Meteo Elevation API for a 64×64 terrain grid.
- *   5. Write cleaned JSON to `public/environments/{circuitId}/`.
- *
- * Raw API responses and a small on-disk cache live under `data/` and are
- * git-ignored — only the polished `public/environments/**` files are
- * committed, so the deployed site never calls Overpass or Open-Meteo.
- *
- * Usage:
- *   bun run environment:generate -- mc-1929
- *   bun run environment:generate -- --refresh mc-1929
- *   bun run environment:generate -- --skip-terrain mc-1929
- */
+/** MVP3 Monaco diorama generator. */
 
 import { mkdir, readFile, writeFile, stat, readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -170,10 +152,7 @@ function getTrackBBox(coords: [number, number][]): BBox {
   );
 }
 
-/**
- * Pad a bbox by `meters` in each direction, converting meters → degrees at
- * the bbox center latitude. Same approach as @turf/buffer for small areas.
- */
+/** Pad a bbox by `meters` in each direction, converting meters → degrees at the bbox center latitude. */
 function padBBox(bbox: BBox, meters: number): BBox {
   const centerLat = (bbox.minLat + bbox.maxLat) / 2;
   const metersPerDegLat = 111_320;
@@ -269,10 +248,7 @@ interface OverpassResponse {
   elements: (OverpassNode | OverpassWay | OverpassRelation)[];
 }
 
-/**
- * Run an Overpass QL query, falling back to the secondary endpoint if the
- * primary rate-limits. Results are cached per-query on disk.
- */
+/** Run an Overpass QL query, falling back to the secondary endpoint if the primary rate-limits. */
 async function runOverpass(
   query: string,
   cachePath: string,
@@ -568,8 +544,7 @@ out skel qt;`;
     });
   }
 
-  // Keep geometry density sane for Monaco. Buildings are sorted by footprint
-  // area (largest first) so the cap keeps the most prominent structures.
+  // Keep geometry density sane for Monaco.
   const ranked = buildings
     .map((b) => ({ b, area: polygonArea(b.footprint) }))
     .sort((a, b) => b.area - a.area)
@@ -657,8 +632,7 @@ out skel qt;`;
 
   for (const way of ways) {
     if (!way.tags?.highway) continue;
-    // Skip the race track itself — it's tagged as highway=service or
-    // construction in places; we only want the surrounding street grid.
+    // Skip the race track itself — it's tagged as highway=service or construction in places.
     const pts = wayToCoords(way, nodes);
     if (pts.length < 2) continue;
     roads.push({
@@ -1161,8 +1135,7 @@ function wayToCoords(
   way: OverpassWay,
   nodes: Map<number, OverpassNode>,
 ): [number, number][] {
-  // Prefer pre-resolved `geometry` if the API returned it (out geom), else
-  // resolve via the nodes map (out body + >; out skel qt).
+  // Prefer pre-resolved `geometry` if the API returned it (out geom).
   if (way.geometry && way.geometry.length) {
     return way.geometry.map((g) => [g.lon, g.lat] as [number, number]);
   }

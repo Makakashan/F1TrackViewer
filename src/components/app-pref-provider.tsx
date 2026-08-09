@@ -60,8 +60,7 @@ function applyTheme(theme: Theme): "light" | "dark" {
 }
 
 export function AppPrefProvider({ children }: { children: ReactNode }) {
-  // Lazy init — only runs on client. The first server-rendered paint uses the
-  // HTML class set by <html className="dark"> in layout.tsx, which is fine.
+  // Lazy init — only runs on client.
   const [lang, setLangState] = useState<Lang>("en");
   const [theme, setThemeState] = useState<Theme>("system");
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">("dark");

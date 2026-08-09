@@ -1,19 +1,8 @@
-/**
- * Measure a loaded glTF scene: what it costs to draw and how big it is.
- *
- * The numbers a manifest can record stop at file size. Everything that decides
- * whether a model is usable — triangle count, how many draw calls it forces,
- * how much texture memory it pins, whether it is even the right size in metres
- * — only exists once the file is parsed, so it is computed here from the live
- * scene graph rather than from the glTF JSON.
- */
+/** Measure a loaded glTF scene: what it costs to draw and how big it is. */
 
 import * as THREE from "three";
 
-/**
- * Length of a current-generation Formula 1 car, in metres. Used only to report
- * the factor a model would need to be scaled by; nothing here rescales.
- */
+/** Length of a current-generation Formula 1 car, in metres. */
 export const REFERENCE_CAR_LENGTH = 5.6;
 
 export interface MaterialStat {
@@ -48,21 +37,10 @@ export interface GltfStats {
   animations: { name: string; duration: number }[];
   /** Bounding box size on the raw axes, in the file's own units. */
   size: { x: number; y: number; z: number };
-  /**
-   * Bounding box centre and floor, in the file's own units.
-   *
-   * Recorded here because this is the one place the scene is measured while
-   * still detached. Box3.setFromObject walks world matrices, so re-measuring
-   * after the object has been parented into a scaled group returns world-space
-   * bounds and silently multiplies any offset derived from them.
-   */
+  /** Bounding box centre and floor, in the file's own units. */
   center: { x: number; y: number; z: number };
   minY: number;
-  /**
-   * Bounding box resolved into car terms. Models arrive facing +X or +Z with
-   * no way to tell from the file which it is, so length is simply the longer
-   * horizontal extent — reporting raw x/y/z as L/W/H mislabels half of them.
-   */
+  /** Bounding box resolved into car terms. */
   footprint: { length: number; width: number; height: number };
   /** Longest horizontal axis — what a car's length normalization keys off. */
   longestAxis: number;
@@ -107,9 +85,7 @@ export function computeGltfStats(
   let drawCalls = 0;
   let nodes = 0;
 
-  // Deduplicate by object identity: glTF shares materials and textures across
-  // primitives, and counting them per mesh would badly overstate both the
-  // material list and texture memory.
+  // Deduplicate by object identity: glTF shares materials and textures across primitives.
   const materials = new Map<THREE.Material, MaterialStat>();
   const textures = new Map<THREE.Texture, TextureStat>();
 

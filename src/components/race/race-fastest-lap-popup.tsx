@@ -21,28 +21,16 @@ function formatLapTime(seconds: number): string {
   return `${minutes}:${rest.toFixed(3).padStart(6, "0")}`;
 }
 
-/**
- * The fastest lap, announced under the lights and then gone.
- *
- * It is an event, not a status: the tower already carries who holds it, on the
- * row that holds it, and a panel repeating that all race long is one more thing
- * on screen that never changes. This appears when the time is set and leaves on
- * its own.
- */
+/** The fastest lap, announced under the lights and then gone. */
 export default function RaceFastestLapPopup({
   fastestLap,
   className,
 }: RaceFastestLapPopupProps) {
   const { t } = useAppPref();
-  // What the card has already had its turn showing. Storing the retired key
-  // rather than the visible one keeps every state write inside the timeout —
-  // setting state straight from an effect body turns one arrival from the
-  // simulation into a second render pass, five times a second.
+  // What the card has already had its turn showing.
   const [retired, setRetired] = useState<string | null>(null);
 
-  // Keyed on the time rather than the object: the simulation hands over a new
-  // object on every tick, and re-popping the card on each of them would leave
-  // it up permanently.
+  // Keyed on the time rather than the object: the simulation hands over a new object on every tick.
   const key = fastestLap ? `${fastestLap.code}:${fastestLap.time}` : null;
   useEffect(() => {
     if (key == null) return;

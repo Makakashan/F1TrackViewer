@@ -36,15 +36,7 @@ const TrackViewer = dynamic(() => import("@/components/track/track-viewer"), {
   ),
 });
 
-/**
- * Race mode: the circuit as it looks on a race weekend, with the HUD a race
- * needs, and — for now — no race.
- *
- * A separate shell rather than a layer over the viewer. The two show the same
- * scene but answer different questions: the viewer is about a circuit's shape,
- * elevation and sectors, this is about twenty cars on a grid. Sharing one
- * component would mean a flag on every panel in it.
- */
+/** Race mode: the circuit as it looks on a race weekend, with the HUD a race needs, and — for now. */
 export default function RaceApp() {
   const { t, resolvedTheme } = useAppPref();
   const [error, setError] = useState<string | null>(null);
@@ -78,8 +70,7 @@ export default function RaceApp() {
 
   const [gridNonce, setGridNonce] = useState(0);
   const [selectedDriver, setSelectedDriver] = useState(0);
-  // Chase camera vs free flight. Owned here because the toggle button, the
-  // rig, and "picking a driver re-attaches" all have to agree on it.
+  // Chase camera vs free flight.
   const [cameraFollow, setCameraFollow] = useState(true);
   const [showResults, setShowResults] = useState(false);
   const detachCamera = useCallback(() => setCameraFollow(false), []);
@@ -94,8 +85,7 @@ export default function RaceApp() {
     [selectedId, gridNonce],
   );
 
-  // The fleet paints liveries per slot; feeding it the running order is what
-  // makes the car on pole the one the tower lists as P1.
+  // Livery per slot, so the running order decides which car wears which colours.
   const gridEntries = useMemo(
     () =>
       order.map((driver, index) => ({
@@ -114,9 +104,7 @@ export default function RaceApp() {
     [selectedId, gridNonce, order.length],
   );
 
-  // Gaps only mean something once the cars are moving. Through the lights the
-  // field is stationary on a grid whose slots are eight meters apart, and
-  // reporting that spacing as an interval is a number about the tarmac.
+  // Gaps only mean something once the cars are moving.
   const gapsLive = race.phase === "racing" || race.phase === "finished";
 
   const lapLength = geojson?.features[0]?.properties.length ?? 0;
@@ -183,30 +171,23 @@ export default function RaceApp() {
     setRaceMode(false);
   }, [race, setRaceMode]);
 
-  // Everything that changes what is being raced puts the cars back on the
-  // grid: a new circuit or a new order means the race in progress is about a
-  // scene that no longer exists.
+  // Everything that changes what is being raced puts the cars back on the grid.
   const resetRace = race.reset;
   useEffect(() => {
     resetRace();
   }, [resetRace, selectedId, gridNonce]);
 
-  // The classification appears when the flag falls and leaves when the race
-  // state does. Closing it early is allowed; it comes back with the next race.
+  // The classification appears when the flag falls and leaves when the race state does.
   const complete = race.complete;
   useEffect(() => {
     setShowResults(complete);
   }, [complete]);
 
   // Escape leaves the mode — the reflex out of anything that fills the screen.
-  // The arrows walk the order, which is how you compare two cars without
-  // hunting for their rows.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        // A popover is already using this key to close itself; leaving the
-        // mode as well means one press dismisses a menu and the race behind
-        // it. The popper wrapper only exists while something is open.
+        // A popover is already using this key to close itself.
         if (document.querySelector("[data-radix-popper-content-wrapper]")) {
           return;
         }
@@ -356,8 +337,7 @@ export default function RaceApp() {
             compact={isMobile}
             className={cn(
               isMobile ? "absolute left-2 top-2" : "absolute left-4 top-4",
-              // A phone has no room for both; the classification is what the
-              // race was building toward, so the tower steps out of its way.
+              // A phone has no room for both; the classification is what the race was building toward.
               isMobile && showResults && "hidden",
             )}
             order={order}

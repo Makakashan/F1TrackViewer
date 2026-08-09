@@ -12,9 +12,7 @@ const ADMIN_USERNAME = process.env.NEXT_PUBLIC_ADMIN_USERNAME;
 const ADMIN_PASSWORD = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
 const ADMIN_ENABLED = Boolean(ADMIN_USERNAME && ADMIN_PASSWORD);
 
-// sessionStorage fires no event in the tab that wrote it, so the store keeps
-// its own listener set. Without this the snapshot would never be re-read and
-// signing out could not take effect.
+// sessionStorage fires no event in the tab that wrote it, so the store keeps its own listener set.
 const sessionListeners = new Set<() => void>();
 
 function subscribeToSessionStorage(onChange: () => void) {

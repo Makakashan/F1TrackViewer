@@ -1,21 +1,4 @@
-/**
- * The ten teams on the 2025 Formula 1 grid, as flat liveries.
- *
- * Single source of truth for both ends: the build scripts read it to bake
- * per-team .glb files, and the runtime reads it to tint instances of one shared
- * model. Shipping ten files that differ only in two colours would cost ten
- * times the download for nothing.
- *
- * These are approximations, not reproductions. The car model carries no sponsor
- * geometry — scripts/optimize-car-model.ts deletes the logo shells — so a livery
- * here is two colours: the bodywork and the rims. That is enough to tell twenty
- * cars apart at the distance the viewer renders them, which is the requirement.
- *
- * Colours are picked to read against dark asphalt rather than to match a paint
- * code. Several 2025 cars are predominantly black; those use the team's
- * signature colour as bodywork instead, because a black car on a dark track is
- * a silhouette.
- */
+/** The ten teams on the 2025 Formula 1 grid, as flat liveries. */
 
 export interface Livery {
   /** Bodywork — the colour that actually identifies the car. */
@@ -26,26 +9,13 @@ export interface Livery {
 
 export type LiverySlot = keyof Livery;
 
-/**
- * Which materials a livery colour applies to, keyed by material name.
- *
- * Defined here rather than in the build script because both ends need to
- * agree: the script bakes these colours into per-team files, and the runtime
- * overrides the same two slots on instances of one shared model. If the two
- * used different patterns, a car tinted at runtime would not match the same
- * car baked at build time.
- */
+/** Which materials a livery colour applies to, keyed by material name. */
 export const LIVERY_SLOT_PATTERNS: Record<LiverySlot, RegExp> = {
   accent: /rim|wheel_hub/i,
   body: /paint|body|livery/i,
 };
 
-/**
- * The livery slot a material belongs to, or null for fixed hardware.
- *
- * Accent is tested first: a wheel material named "rim_paint" is a rim, not
- * bodywork.
- */
+/** The livery slot a material belongs to, or null for fixed hardware. */
 export function liverySlotFor(materialName: string): LiverySlot | null {
   if (LIVERY_SLOT_PATTERNS.accent.test(materialName)) return "accent";
   if (LIVERY_SLOT_PATTERNS.body.test(materialName)) return "body";
@@ -66,8 +36,7 @@ export const TEAMS_2025: Team[] = [
     id: "ferrari",
     name: "Ferrari",
     code: "FER",
-    // Rosso corsa: deeper and slightly toward crimson, where the project's own
-    // brand red sits noticeably orange. Yellow rims carry the rest of it.
+    // Rosso corsa: deeper and slightly toward crimson.
     livery: { body: "#c8102e", accent: "#f2d600" },
   },
   {
@@ -86,8 +55,7 @@ export const TEAMS_2025: Team[] = [
     id: "mercedes",
     name: "Mercedes",
     code: "MER",
-    // The real car is black with teal; rendered small on dark asphalt that
-    // reads as an absence, so the silver takes the bodywork.
+    // The real car is black with teal; rendered small on dark asphalt that reads as an absence.
     livery: { body: "#b8c2cc", accent: "#00d7b8" },
   },
   {
@@ -142,11 +110,7 @@ export interface GridEntry {
   seat: number;
 }
 
-/**
- * The starting grid, as a flat list. Teams alternate rather than pairing up so
- * that a partial grid — the first eight cars, say — still shows eight
- * different liveries instead of four teams twice.
- */
+/** The starting grid, as a flat list. */
 export function buildGrid(size: number = GRID_SIZE): GridEntry[] {
   const entries: GridEntry[] = [];
   for (let index = 0; index < size; index++) {

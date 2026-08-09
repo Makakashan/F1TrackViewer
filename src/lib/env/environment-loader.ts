@@ -1,10 +1,4 @@
-/**
- * Browser-side loader for pre-generated environment bundles.
- *
- * Files live at `${PUBLIC_BASE_PATH}/environments/${circuitId}/*.json` and
- * are produced by `scripts/generate-environment.ts`. The browser never calls
- * Overpass or Open-Meteo directly — the diorama is fully static.
- */
+/** Browser-side loader for pre-generated environment bundles. */
 
 import type {
   BuildingsFile,
@@ -20,9 +14,7 @@ import type {
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
-/**
- * Fallback for older builds without public/environments/index.json.
- */
+/** Fallback for older builds without public/environments/index.json. */
 export const FALLBACK_ENVIRONMENT_CIRCUIT_IDS = new Set(["mc-1929"]);
 
 let environmentIndexPromise: Promise<Set<string>> | null = null;
@@ -55,12 +47,7 @@ async function fetchJson<T>(url: string): Promise<T | null> {
   }
 }
 
-/**
- * Try to load a complete environment bundle for a circuit.
- * Returns null if any of the manifest or buildings file is missing — those
- * are required for the diorama to render at all. Terrain/water/roads/landuse
- * fall back to empty if absent.
- */
+/** Try to load a complete environment bundle for a circuit. */
 export async function fetchEnvironmentBundle(
   circuitId: string,
 ): Promise<EnvironmentBundle | null> {
@@ -102,10 +89,7 @@ export async function fetchEnvironmentBundle(
   };
 }
 
-/**
- * Check whether a manifest exists for a circuit without downloading the whole
- * bundle. Used to gate the Environment toggle in the UI.
- */
+/** Check whether a manifest exists for a circuit without downloading the whole bundle. */
 export async function hasEnvironment(circuitId: string): Promise<boolean> {
   const circuitIds = await fetchEnvironmentCircuitIds();
   if (!circuitIds.has(circuitId)) return false;

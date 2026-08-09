@@ -16,13 +16,7 @@ export interface StartLightSequence {
   reset: () => void;
 }
 
-/**
- * The start sequence: five columns come up a second apart, hold, then all go
- * out at once.
- *
- * It stops at "racing" and stays there: the sequence's job ends the moment the
- * lights go out, and what happens next belongs to whoever is driving the cars.
- */
+/** The start sequence: five columns come up a second apart, hold, then all go out at once. */
 export function useStartLightSequence(): StartLightSequence {
   const [lit, setLit] = useState(0);
   const [phase, setPhase] = useState<RacePhase>("standby");
@@ -64,8 +58,7 @@ export function useStartLightSequence(): StartLightSequence {
 
   useEffect(() => clearTimers, [clearTimers]);
 
-  // Memoized: callers put these callbacks in effect dependency lists, and a
-  // fresh object every render turns such an effect into a render loop.
+  // Memoized: callers put these callbacks in effect dependency lists.
   return useMemo(
     () => ({ lit, phase, running: phase === "lights", run, reset }),
     [lit, phase, run, reset],

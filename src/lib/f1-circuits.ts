@@ -1,10 +1,4 @@
-/**
- * Helpers for the bacinger/f1-circuits GeoJSON dataset.
- * Source: https://github.com/bacinger/f1-circuits (MIT)
- *
- * Each circuit is a closed LineString of [lon, lat] coordinates.
- * Files are stored under circuits/{country}-{openedYear}.geojson
- */
+/** Helpers for the bacinger/f1-circuits GeoJSON dataset. */
 
 const RAW_BASE =
   "https://raw.githubusercontent.com/bacinger/f1-circuits/master";
@@ -47,26 +41,19 @@ export interface CircuitGeoJSON {
   features: CircuitFeature[];
 }
 
-/**
- * Fetch the lightweight circuit index (~5KB JSON) — id, name, location, lat/lon, zoom
- * for every circuit in the dataset.
- */
+/** Fetch the lightweight circuit index (~5KB JSON). */
 export async function fetchCircuitIndex(): Promise<CircuitLocation[]> {
   const res = await fetch(LOCATIONS_URL, { next: { revalidate: 86400 } });
   if (!res.ok) throw new Error(`Failed to fetch circuit index: ${res.status}`);
   return res.json();
 }
 
-/**
- * Build the raw GitHub URL for a single circuit's GeoJSON file.
- */
+/** Build the raw GitHub URL for a single circuit's GeoJSON file. */
 export function circuitGeoJsonUrl(id: string): string {
   return `${RAW_BASE}/circuits/${id}.geojson`;
 }
 
-/**
- * Fetch a single circuit's GeoJSON by id.
- */
+/** Fetch a single circuit's GeoJSON by id. */
 export async function fetchCircuitGeoJson(
   id: string,
 ): Promise<CircuitGeoJSON> {
@@ -78,9 +65,7 @@ export async function fetchCircuitGeoJson(
   return res.json();
 }
 
-/**
- * ISO-3166-1 alpha-2 → flag emoji. Used in the sidebar list.
- */
+/** ISO-3166-1 alpha-2 → flag emoji. */
 export function countryFlag(iso2: string): string {
   if (!iso2 || iso2.length !== 2) return "🏳️";
   const codePoints = iso2
@@ -90,9 +75,7 @@ export function countryFlag(iso2: string): string {
   return String.fromCodePoint(...codePoints);
 }
 
-/**
- * Parse the country code from a circuit id like "mc-1929" → "mc".
- */
+/** Parse the country code from a circuit id like "mc-1929" → "mc". */
 export function countryFromId(id: string): string {
   return id.split("-")[0].toLowerCase();
 }

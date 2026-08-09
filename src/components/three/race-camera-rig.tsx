@@ -20,10 +20,7 @@ export interface RaceCameraRigProps {
   onDetach?: () => void;
 }
 
-/**
- * How far ahead of the car the camera sits on the grid, and how high — a
- * broadcast establishing shot with the grid behind the car in frame.
- */
+/** How far ahead of the car the camera sits on the grid, and how high. */
 const DISTANCE_M = 35;
 const HEIGHT_M = 16;
 /** Sideways offset, for a three-quarter view rather than a head-on one. */
@@ -32,22 +29,14 @@ const LATERAL_M = 13;
 /** Aim a little above the floor — the car's body, not the tarmac under it. */
 const TARGET_HEIGHT_M = 0.9;
 
-/**
- * How close the camera may be pulled to the car it follows. The default
- * framing is the closest view on offer.
- */
+/** How close the camera may be pulled to the car it follows. */
 export const RACE_FOLLOW_MIN_DISTANCE_M = Math.hypot(
   DISTANCE_M,
   HEIGHT_M - TARGET_HEIGHT_M,
   LATERAL_M,
 );
 
-/**
- * How the follow target catches the car. Two filters: one smooths the car's
- * piecewise-constant step speed, the other closes the remaining error. The
- * velocity feed-forward is what keeps the lag at zero, where a plain error
- * filter trails by meters at racing speed.
- */
+/** How the follow target catches the car. */
 const VELOCITY_RATE = 9;
 const ERROR_RATE = 7;
 
@@ -56,14 +45,7 @@ const PAN_RATE = 1.4;
 const PAN_MIN_M_S = 25;
 /** Free-camera yaw around the target, in radians per second. */
 const YAW_RATE = 1.6;
-/**
- * Longest step a key press may move the camera, in seconds.
- *
- * Between the lights and a key press the loop renders on demand, so the first
- * frame after one arrives carries the whole idle span as its delta — a key
- * tapped after five seconds of stillness moved the camera five seconds' worth
- * before settling into a smooth pan.
- */
+/** Longest step a key press may move the camera, in seconds. */
 const MAX_INPUT_STEP_S = 1 / 30;
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -91,13 +73,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
   );
 }
 
-/**
- * The camera in race mode: glued to a car when `follow` is on, WASD flight
- * when it is off. The rig owns what the camera looks at, the user owns where
- * from — dragging orbits the moving car without breaking the follow. Only
- * WASD or the HUD button let go, and the rig reports that via `onDetach`
- * rather than deciding its own mode.
- */
+/** The camera in race mode: glued to a car when `follow` is on, WASD flight when it is off. */
 export default function RaceCameraRig({
   slots,
   focusIndex,
@@ -111,11 +87,9 @@ export default function RaceCameraRig({
   const invalidate = useThree((state) => state.invalidate);
   const lastKey = useRef<string | null>(null);
   const pressed = useRef<Set<string>>(new Set());
-  // Set when the rig owes the camera a framing: a new car, follow switched
-  // back on, or the race starting.
+  // Set when the rig owes the camera a framing.
   const needsFraming = useRef(true);
   // Where the camera sits in the followed car's own frame — across, up, ahead.
-  // Kept so switching drivers carries the view the user built over.
   const localOffset = useRef<THREE.Vector3 | null>(null);
   const knownSlots = useRef<GridSlot[] | null>(null);
   const scratch = useRef({
@@ -166,9 +140,7 @@ export default function RaceCameraRig({
     );
   }
 
-  // Movement keys are held, not tapped, so they are polled per frame and the
-  // listeners only maintain the set. Keydown also kicks a frame: before the
-  // race the loop is on demand.
+  // Movement keys are held, not tapped, so they are polled per frame.
   useEffect(() => {
     const keys = pressed.current;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -201,21 +173,17 @@ export default function RaceCameraRig({
     if (follow) needsFraming.current = true;
   }, [follow, focusIndex, racing]);
 
-  // Parked framing on the grid. Skipped while racing and while the user has
-  // the camera — it is a default, not an override.
+  // Parked framing on the grid.
   useEffect(() => {
     const slot = slots[focusIndex];
     if (!slot || !controls || racing || !follow) return;
 
-    // Re-framing on every render would undo the user's own orbit; key on the
-    // car and its position so a circuit change reframes but a re-render does
-    // not.
+    // Re-framing on every render would undo the user's own orbit.
     const key = `${focusIndex}:${slot.position.toArray().join(",")}`;
     if (lastKey.current === key) return;
     lastKey.current = key;
 
-    // A different circuit is a different scene, and the view built around the
-    // last one means nothing on it.
+    // A different circuit is a different scene; the old framing means nothing in it.
     if (knownSlots.current !== slots) {
       knownSlots.current = slots;
       localOffset.current = null;
@@ -223,9 +191,7 @@ export default function RaceCameraRig({
 
     const target = slot.position.clone().addScaledVector(UP, TARGET_HEIGHT_M);
 
-    // Offset toward the centerline rather than the verge: the gantry posts and
-    // the barriers live at the edges, and a camera set down beside one frames
-    // the post instead of the car.
+    // Offset toward the centerline rather than the verge.
     const across = slot.across.clone().multiplyScalar(-slot.side);
     placeCamera(slot.position, slot.forward, across, camera.position);
     camera.lookAt(target);
@@ -281,8 +247,7 @@ export default function RaceCameraRig({
       return;
     }
 
-    // Parked on the grid, the car is not moving, so there is nothing to track
-    // — only the angle the user is orbiting to, which is worth keeping.
+    // Parked on the grid, the car is not moving, so there is nothing to track.
     if (follow && !racing) {
       const slot = slots[focusIndex];
       if (slot) {
@@ -292,9 +257,7 @@ export default function RaceCameraRig({
       return;
     }
 
-    // Follow. The target rides the car; the camera rides the target at
-    // whatever offset the user's orbiting has left it — moving both by the
-    // same delta is what preserves the chosen angle while tracking.
+    // Follow.
     if (!follow || !racing) return;
     if (!raceSim || !poseAt) return;
     const state = raceSim.stateRef.current;
@@ -309,8 +272,7 @@ export default function RaceCameraRig({
     s.across.crossVectors(s.forward, UP).normalize();
 
     if (needsFraming.current) {
-      // Whatever view the user last had on a car — the default only until they
-      // have moved the camera themselves.
+      // Whatever view the user last had on a car.
       needsFraming.current = false;
       placeCamera(s.position, s.forward, s.across, camera.position);
       controls.target.copy(s.target);
@@ -321,9 +283,7 @@ export default function RaceCameraRig({
       return;
     }
 
-    // Velocity feed-forward plus error correction: the camera runs at the
-    // car's own speed and only filters the difference, so it neither trails
-    // the car nor passes its step-rate jitter on to the whole view.
+    // Velocity feed-forward plus error correction.
     if (delta > 1e-4) {
       s.step.copy(s.target).sub(s.lastTarget).divideScalar(delta);
       s.velocity.lerp(s.step, 1 - Math.exp(-VELOCITY_RATE * delta));
@@ -342,8 +302,7 @@ export default function RaceCameraRig({
     camera.position.add(s.move);
     controls.update();
 
-    // Read back rather than track the drag: the user orbits through
-    // OrbitControls, which moves the camera behind the rig's back.
+    // Read back rather than track the drag: the user orbits through OrbitControls.
     rememberCamera(s.position, s.forward, s.across);
   });
 

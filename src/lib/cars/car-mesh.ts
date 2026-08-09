@@ -1,18 +1,4 @@
-/**
- * Collapse a loaded car glTF into a handful of instanceable parts.
- *
- * A grid is twenty cars. The model as exported is 76 separate meshes, so drawn
- * naively that is 1520 draw calls a frame before the track itself is
- * considered — not a tuning problem, a structural one. Merging by material
- * takes one car to roughly a dozen parts, and rendering each part as a single
- * InstancedMesh takes the whole grid to the same dozen: twenty cars cost what
- * one costs.
- *
- * Normalization is baked into the merged geometry rather than applied as a
- * parent transform, so an instance matrix is a plain world placement — position,
- * heading, nothing else. That keeps the per-frame work to writing one matrix
- * per car.
- */
+/** Collapse a loaded car glTF into a handful of instanceable parts. */
 
 import * as THREE from "three";
 import { CAR_LENGTH } from "@/lib/cars/car-config";
@@ -48,13 +34,7 @@ interface Bucket {
   vertexCount: number;
 }
 
-/**
- * Merge one mesh into its material's bucket, in world space.
- *
- * Indices are re-based rather than the geometry being converted to
- * non-indexed: a car is heavily indexed, and dropping the index would roughly
- * triple the vertex data for no benefit.
- */
+/** Merge one mesh into its material's bucket, in world space. */
 function appendMesh(bucket: Bucket, mesh: THREE.Mesh) {
   const geometry = mesh.geometry;
   const position = geometry.getAttribute("position");
@@ -67,9 +47,7 @@ function appendMesh(bucket: Bucket, mesh: THREE.Mesh) {
   }
 
   const matrix = mesh.matrixWorld;
-  // Normals transform by the inverse transpose; using the model matrix
-  // directly would skew them wherever a node carries a non-uniform scale, and
-  // these models do.
+  // Normals transform by the inverse transpose.
   const normalMatrix = new THREE.Matrix3().getNormalMatrix(matrix);
 
   const vertex = new THREE.Vector3();
@@ -97,8 +75,7 @@ function appendMesh(bucket: Bucket, mesh: THREE.Mesh) {
 export function buildCarMesh(scene: THREE.Object3D): CarMesh {
   scene.updateWorldMatrix(true, true);
 
-  // Keyed by material name, not identity: the same logical part can arrive as
-  // several material instances, and merging them is the entire point.
+  // Keyed by material name, not identity: one part can arrive as several materials.
   const buckets = new Map<string, Bucket>();
 
   scene.traverse((object) => {
@@ -108,9 +85,7 @@ export function buildCarMesh(scene: THREE.Object3D): CarMesh {
     const materials = Array.isArray(mesh.material)
       ? mesh.material
       : [mesh.material];
-    // A mesh split across several materials would need per-group extraction;
-    // the optimized cars have one material per mesh, so take the first and
-    // stay simple rather than build machinery for a case that does not occur.
+    // A mesh split across several materials would need per-group extraction.
     const material = materials[0] as THREE.MeshStandardMaterial | undefined;
     if (!material) return;
 
@@ -130,8 +105,7 @@ export function buildCarMesh(scene: THREE.Object3D): CarMesh {
     appendMesh(bucket, mesh);
   });
 
-  // One pass over the merged data to find the whole car's bounds, so every
-  // part is normalized by the same transform.
+  // One pass over the merged data to find the whole car's bounds.
   const bounds = new THREE.Box3();
   const point = new THREE.Vector3();
   for (const bucket of buckets.values()) {
@@ -188,8 +162,7 @@ export function buildCarMesh(scene: THREE.Object3D): CarMesh {
     });
   }
 
-  // Largest parts first. Sorting is not required for correctness, but it makes
-  // the part list readable when it is shown in a debug panel.
+  // Largest parts first.
   parts.sort((a, b) => b.triangles - a.triangles);
 
   return {

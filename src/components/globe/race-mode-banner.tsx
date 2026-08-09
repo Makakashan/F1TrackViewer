@@ -13,15 +13,7 @@ export interface RaceModeBannerProps {
   stacked?: boolean;
 }
 
-/**
- * The way into race mode from the globe.
- *
- * A strip rather than a second button on every circuit card: the mode is the
- * thing being advertised, not one more way to open a circuit. It picks a
- * circuit from the current calendar — the grid it puts on track is the 2025
- * one, and standing that on a layout last raced in 1909 is a joke the page
- * cannot explain.
- */
+/** The way into race mode from the globe. */
 export default function RaceModeBanner({
   circuits,
   stacked = false,
@@ -54,9 +46,7 @@ export default function RaceModeBanner({
       type="button"
       onClick={openRandom}
       className={cn(
-        // Fixed rather than absolute: on a phone the page box is taller than
-        // the visible viewport while the browser chrome is up, and anything
-        // pinned to the bottom of that box sits under the fold.
+        // Fixed, not absolute: on a phone the page box outgrows the visible viewport.
         "fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 z-30 flex max-w-[calc(100vw-1.5rem)] -translate-x-1/2 items-center gap-3 rounded-md border border-red-500/25 bg-background/70 px-3 py-2 text-left shadow-2xl shadow-black/40 backdrop-blur-xl transition-colors hover:border-red-500/50 hover:bg-background/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60",
         stacked && "hidden md:flex",
       )}

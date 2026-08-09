@@ -1,15 +1,4 @@
-/**
- * Where do the kerbs actually land?
- *
- * The layout is derived from curvature rather than read from data, so the
- * question "which corners got one" has no answer until something counts them.
- * This walks every circuit, finds the corners the way the renderer does, and
- * reports how many of them ended up with a kerb, how much of the lap is kerbed,
- * and — the failure this was written for — how tight the tightest kerbed corner
- * is against the apron the strip has to lie on.
- *
- *   bun scripts/audit-kerbs.ts [circuitId]
- */
+/** Where do the kerbs actually land? */
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { buildTrackCurve, computeBounds } from "../src/lib/geo-utils";
@@ -114,9 +103,7 @@ async function main() {
     const runs = runsOf(sides);
     const kept = runs.filter((run) => run.count * ds >= MIN_RUN_M);
 
-    // The tightest radius any kept run reaches, and whether that radius is
-    // smaller than the apron the kerb has to sit on — where it is, offsetting
-    // the inner edge outward folds the strip through itself.
+    // The tightest radius any kept run reaches, against the apron under it.
     const room = sampleApronRoom(curve, HALF_WIDTH_M, SAMPLES, null);
 
     let tightest = Infinity;
@@ -132,8 +119,7 @@ async function main() {
       }
       if (localTightest < tightest) tightest = localTightest;
 
-      // What the kerb actually gets to be, once the corner's own geometry has
-      // had its say: the strip can never reach past the turn's centre.
+      // What the kerb actually gets to be, once the corner's own geometry has had its say.
       let widest = 0;
       for (let k = 0; k < run.count; k++) {
         const i = (run.start + k) % SAMPLES;

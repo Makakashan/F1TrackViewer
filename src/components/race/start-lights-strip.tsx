@@ -9,13 +9,7 @@ export interface StartLightsStripProps {
   className?: string;
 }
 
-/**
- * The gantry's lights, repeated in the HUD.
- *
- * The panel itself is a couple of pixels tall from any camera that shows the
- * whole grid, so the signal that matters most in the mode has to exist as UI
- * as well. Same column count, same order, so the two read as one thing.
- */
+/** The gantry's lights, repeated in the HUD. */
 export default function StartLightsStrip({
   lit,
   className,

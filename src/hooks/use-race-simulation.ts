@@ -12,34 +12,20 @@ import {
 import type { RacePhase } from "@/lib/race/race-session";
 import { useStartLightSequence } from "@/hooks/use-start-lights";
 
-/**
- * The race, as the rest of the app sees it: a ref the scene reads every frame
- * and a snapshot the HUD re-renders from a few times a second. One shared path
- * would be twelve hundred React updates a second.
- *
- * The stepper runs inside the Canvas, where the frame clock is. This hook owns
- * the state; the scene owns the heartbeat.
- */
+/** The race as the app sees it: a ref for the scene, a snapshot for the HUD. */
 
 /** Simulation steps per second. Fixed, so frame rate cannot change the race. */
 const STEP_HZ = 30;
 const PERFORMANCE_STEP_HZ = 20;
 /** How often the HUD snapshot is refreshed, in seconds. */
 const SNAPSHOT_INTERVAL_S = 0.2;
-/**
- * Longest span a single frame may advance the race. A backgrounded tab hands
- * back however long it was away, and the first frame on return would hang.
- */
+/** Longest span a single frame may advance the race. */
 const MAX_FRAME_ADVANCE_S = 0.5;
 
 export const RACE_SPEED_OPTIONS = [1, 2, 4, 8, 16] as const;
 export type RaceSpeed = (typeof RACE_SPEED_OPTIONS)[number];
 
-/**
- * The half of the simulation the 3D scene needs. Split out because the HUD
- * half changes five times a second, which would re-reconcile the track tree
- * at the same rate; this one changes when the race starts, pauses or ends.
- */
+/** The half of the simulation the 3D scene needs. */
 export interface RaceController {
   phase: RacePhase;
   racing: boolean;
@@ -77,8 +63,7 @@ export interface RaceSimulation {
 
 export function useRaceSimulation(lowDetail = false): RaceSimulation {
   const lights = useStartLightSequence();
-  // The callbacks, not the object: these land in dependency lists one
-  // component up, where a per-render identity is a loop.
+  // The callbacks, not the object: these land in dependency lists one component up.
   const { run: runLights, reset: resetLights } = lights;
   const [paused, setPaused] = useState(false);
   const [speed, setSpeed] = useState<RaceSpeed>(1);
@@ -156,8 +141,7 @@ export function useRaceSimulation(lowDetail = false): RaceSimulation {
         carryRef.current -= stepSize;
         steps++;
       }
-      // The remainder is time the screen has seen but the simulation has not
-      // consumed — the renderer draws that fraction of the next step.
+      // The remainder is time the screen has seen but the simulation has not consumed.
       alphaRef.current = carryRef.current / stepSize;
       if (!steps) return;
 
@@ -171,11 +155,7 @@ export function useRaceSimulation(lowDetail = false): RaceSimulation {
     [lowDetail, paused, racing, snapshot, speed],
   );
 
-  /**
-   * To the flag: the same stepper without the renderer between steps, since
-   * 78 laps of twenty cars runs in well under a second. The cap is a parachute
-   * against a car that somehow never finishes.
-   */
+  /** To the flag: the same stepper without the renderer between steps. */
   const finish = useCallback(() => {
     const setup = setupRef.current;
     const state = stateRef.current;
@@ -192,8 +172,7 @@ export function useRaceSimulation(lowDetail = false): RaceSimulation {
     setComplete(true);
   }, [racing, snapshot]);
 
-  // Leaving the mode or unmounting must not leave a race running in a ref
-  // that outlives the component tree.
+  // Unmounting must not leave a race running in a ref that outlives the tree.
   useEffect(() => {
     return () => {
       stateRef.current = null;

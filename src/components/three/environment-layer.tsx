@@ -12,13 +12,7 @@ import { DIORAMA_COLORS } from "@/lib/env/diorama-palette";
 import { densifyCoords, xzToLonLat } from "@/lib/geo-utils";
 import { buildTerrainSampler, type TerrainSampler } from "@/lib/env/terrain-sampler";
 
-/**
- * Local-meters projection of a [lon, lat] pair onto the diorama plane.
- * The track, terrain grid, buildings, water, roads and landuse all use the
- * same origin (the manifest center) so they sit in one metric space.
- *
- * Convention matches geo-utils.ts: north → -Z, east → +X, up → +Y.
- */
+/** Local-meters projection of a [lon, lat] pair onto the diorama plane. */
 function lonLatToXZ(
   lon: number,
   lat: number,
@@ -53,10 +47,7 @@ function shapeXYToLonLat(
   return [originLon + point.x / metersPerDegLon, originLat + point.y / metersPerDegLat];
 }
 
-/**
- * Flat-mode offsets between diorama layers, in meters. Terrain mode uses
- * draped geometry with small offsets above the terrain mesh.
- */
+/** Flat-mode offsets between diorama layers, in meters. */
 const LAYER_Y_FLAT = {
   base: 0,
   water: 0.08,
@@ -68,53 +59,25 @@ const LAYER_Y_FLAT = {
 const LAYER_Y_DRAPE = {
   landuse: 0.1,
   water: 0.08,
-  // Enough to win the depth test against the surface the ribbon is sampled
-  // from, and nothing more — see the triangle interpolation in
-  // buildTerrainSampler.
+  // Enough to win the depth test against the surface the ribbon is sampled from, and nothing more.
   roads: 0.05,
   buildings: 0.15,
 } as const;
 
 const MIN_WATER_AREA_SQ_M = 2_500;
 const ROAD_RIBBON_WIDTH_M = 1.2;
-// OSM road ways can have points several hundred meters apart on long straight
-// roads. Each ribbon segment only samples terrain height at its two
-// endpoints, so a hill between sparse points doesn't get "seen" and the road
-// dips below the terrain mesh — same failure mode as the track curve.
+// OSM road ways can have points several hundred meters apart on long straight roads.
 const ROAD_MAX_SEGMENT_M = 25;
 const TERRAIN_BASE_SLAB_DEPTH = 0;
 const BROADCAST_VIEW_PADDING_M = 360;
-// Above what any generated bundle holds, so the budget only bites on a denser
-// dataset than exists today — extruding all 420 Monaco keeps takes 8 ms.
+// Above what any bundle holds: all 605 Monaco keeps extrude in 9 ms.
 const MAX_BROADCAST_BUILDINGS = 900;
 const LOW_DETAIL_MAX_BUILDINGS = 400;
-/**
- * Margin added to the ribbon's half width when deciding a building sits on the
- * track.
- *
- * OSM maps start/finish structures, pit walls and grandstand roofs as plain
- * `building` ways, and some are drawn over the racing surface — Silverstone
- * has a 25 × 3 m, 9 m tall way 4.6 m off the centerline, which extrudes into a
- * wall standing on the start straight. Nothing in the tags separates those
- * from an ordinary building, so position is the only filter available.
- *
- * Keyed to the rendered half width rather than a fixed distance because that
- * is exactly the question being asked: does this footprint overlap the ribbon
- * the scene draws. The margin covers kerbs. Anything further out — a pit
- * complex 26 m away — is a real building beside a real track and stays.
- */
+/** Margin added to the ribbon's half width when deciding a building sits on the track. */
 const TRACK_CORRIDOR_MARGIN_M = 1;
-/**
- * Track vertices can be hundreds of meters apart on a straight, so a building
- * can sit squarely between two of them. Resampling the centerline at this
- * spacing before the corridor test means any crossing structure has a sample
- * inside it.
- */
+/** Track vertices can be hundreds of meters apart on a straight. */
 const TRACK_CORRIDOR_SAMPLE_M = 20;
-/**
- * Share of a footprint's corners that have to be on the track before the whole
- * building is dropped rather than trimmed back to the trackside.
- */
+/** Share of a footprint's corners on the track before it is dropped, not trimmed. */
 const ON_TRACK_VERTEX_SHARE = 0.6;
 
 const THEME_COLORS = {
@@ -269,13 +232,7 @@ interface TrackCorridor {
   measure(point: XY): { distance: number; foot: XY };
 }
 
-/**
- * Distance to the racing surface, for any point in the diorama.
- *
- * The centerline is resampled and hashed into a uniform grid once, so a
- * building measures against the handful of track segments near it rather than
- * the whole lap.
- */
+/** Distance to the racing surface, for any point in the diorama. */
 function buildTrackCorridor(
   trackCoordinates: [number, number][],
   originLon: number,
@@ -361,16 +318,7 @@ function buildTrackCorridor(
   };
 }
 
-/**
- * Move a footprint off the racing surface, or drop it if that is all it is.
- *
- * OSM maps grandstand roofs, pit structures and start/finish gantries as plain
- * `building` ways, some of them drawn straight over the track. Deleting every
- * one leaves a hole in the city where real buildings stand, so a footprint that
- * merely reaches the asphalt keeps its shape and has the overhanging corners
- * pushed back to the trackside instead. Only the ones that are almost entirely
- * on the track go.
- */
+/** Move a footprint off the racing surface, or drop it if that is all it is. */
 function trimFootprintOffTrack(
   footprint: XY[],
   corridor: TrackCorridor,
@@ -429,11 +377,7 @@ export default function EnvironmentLayer({
     return focus ? clampBBox(focus, manifest.bbox) : manifest.bbox;
   }, [trackCoordinates, originLat, manifest.bbox]);
 
-  /**
-   * One sampler, carrying the same flattening and carving the terrain mesh
-   * renders. Every draped layer reads its height from here, so nothing has to
-   * guess at a clearance that keeps it above a surface it cannot see.
-   */
+  /** One sampler, carrying the same flattening and carving the terrain mesh renders. */
   const terrainSampler = useMemo(() => {
     if (!hasTerrain) return null;
     const waterMasks = bundle.water.polygons
@@ -553,8 +497,7 @@ function DioramaBase({
   const halfH =
     ((bbox.maxLat - bbox.minLat) * 111_320) / 2;
 
-  // Grid texture drawn procedurally on a canvas, matching the pale broadcast
-  // map-board outside the circuit grounds.
+  // Grid texture drawn procedurally on a canvas.
   const gridTexture = useMemo(() => {
     const size = 512;
     const canvas = document.createElement("canvas");
@@ -592,8 +535,7 @@ function DioramaBase({
     };
   }, [gridTexture]);
 
-  // Place the base at terrain-bottom level (baseY=0 in terrain mode) so
-  // there is no vertical gap between the platform and the 3-D scene.
+  // Sits at terrain-bottom level, so there is no gap between platform and scene.
   const yPos = baseY;
 
   const material = (
@@ -621,11 +563,7 @@ function DioramaBase({
   );
 }
 
-// ─── TerrainMesh ────────────────────────────────────────────────────────────
-//
-// Volumetric 3D terrain mesh, flat-shaded for the low-poly diorama look.
-// Vertical scale is exaggerated so hills are visible but the city still
-// reads on top.
+// TerrainMesh — volumetric flat-shaded terrain, for the low-poly diorama look.
 
 function TerrainMesh({
   sampler,
@@ -708,9 +646,7 @@ function TerrainMesh({
       }
     }
 
-    // ── Skirt: vertical walls around the terrain perimeter ──
-    // Prevents the "box" effect by adding solid dark faces that extend
-    // below the terrain surface, blending into the scene background.
+    // Skirt: vertical walls around the perimeter, so the terrain is not a floating box.
     const skirtY = -25;
     const baseVertexCount = cols * rows;
     let skirtIdx = 0;
@@ -835,10 +771,7 @@ function RoadLinesMesh({
         const offsetZ = (dx / len) * halfWidth;
         const base = positions.length / 3;
 
-        // Sampled at each corner rather than once on the centreline: a 1.2 m
-        // ribbon laid across a hillside picks up half a meter of drop over its
-        // own width, which is the whole remaining gap once the sampler agrees
-        // with the mesh.
+        // Sampled at each corner rather than once on the centreline.
         const cornerY = (x: number, z: number) => {
           if (!terrainSampler) return baseY + flatY;
           const [lon, lat] = xzToLonLat(x, z, originLon, originLat);
@@ -954,9 +887,7 @@ function BuildingExtrusions({
       placed.push({ footprint, height: b.height, distance });
     }
 
-    // The budget goes to the buildings the camera is pointed at. Taking them
-    // in file order instead punched holes wherever the list happened to run
-    // out — on Monaco that was 360 of 780 dropped at random.
+    // The budget goes to the buildings the camera is pointed at.
     if (corridor && placed.length > maxBuildings) {
       placed.sort((a, b) => a.distance - b.distance);
     }

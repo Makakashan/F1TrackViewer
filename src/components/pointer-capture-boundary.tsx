@@ -28,9 +28,7 @@ function installPointerCapturePatch() {
     pointerId: number,
   ) {
     try {
-      // hasPointerCapture is supported in all modern browsers — if the
-      // element doesn't currently have the capture for this pointer id,
-      // calling the original would throw. We just no-op instead.
+      // hasPointerCapture is supported in all modern browsers.
       if (
         typeof (this as any).hasPointerCapture === "function" &&
         !(this as any).hasPointerCapture(pointerId)
@@ -39,26 +37,14 @@ function installPointerCapturePatch() {
       }
       original.call(this, pointerId);
     } catch (e) {
-      // Swallow "Invalid pointer id" specifically — that's the only error
-      // releasePointerCapture can throw, and it's exactly the one we're
-      // patching around. All other errors (there aren't any in practice)
-      // are also swallowed because the operation is best-effort.
+      // Swallow "Invalid pointer id" specifically.
     }
   };
 
   pointerCapturePatchInstalled = true;
 }
 
-/**
- * Error boundary that catches the spurious
- * "Element.releasePointerCapture: Invalid pointer id" DOMException thrown
- * by drei's OrbitControls under React 19. The boundary swallows ONLY that
- * specific error; all others propagate normally.
- *
- * Combined with the prototype patch above, this gives us defense in depth:
- *   - The patch handles the mobile case (exception outside React).
- *   - The boundary handles the desktop case (exception through React).
- */
+/** Error boundary that catches the spurious "Element.releasePointerCapture. */
 export default class PointerCaptureBoundary extends Component<Props, State> {
   state: State = { hasError: false };
 

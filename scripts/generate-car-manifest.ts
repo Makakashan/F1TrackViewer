@@ -1,19 +1,4 @@
-/**
- * Publish car models from the drop folder and write the manifest the admin
- * model browser reads.
- *
- * Drop a .glb into `cars/` and run this; it lands in `public/cars/` alongside
- * an `index.json` listing every published model with its byte size. The
- * manifest exists because the site is exported statically for GitHub Pages
- * (see next.config.ts) — there is no server to list a directory at runtime, so
- * the listing has to be a file.
- *
- * Sizes are recorded here rather than measured in the browser so the library
- * can show what a model weighs before anyone downloads 25 MB to find out.
- *
- * Usage:
- *   bun scripts/generate-car-manifest.ts
- */
+/** Publish car models from the drop folder and write the manifest the admin model browser reads. */
 
 import {
   mkdir,
@@ -42,14 +27,7 @@ export interface CarModelEntry {
   /** Human-readable name derived from the filename. */
   name: string;
   bytes: number;
-  /**
-   * Size after gzip. What crosses the wire on a host that compresses binary
-   * responses; GitHub Pages does not compress .glb, so there `bytes` is the
-   * real transfer and this is the lower bound a smarter host would reach. For
-   * a textured model the two barely differ (WebP and PNG are already
-   * compressed); for a stripped one gzip is roughly half, a large enough gap
-   * to be worth showing both.
-   */
+  /** Size after gzip. */
   gzipBytes: number;
   modifiedAt: string;
 }

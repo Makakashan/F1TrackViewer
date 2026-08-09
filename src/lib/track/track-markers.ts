@@ -1,7 +1,4 @@
-/**
- * Track markers — sector split positions derived from FastF1 telemetry
- * or entered manually. Stored as static JSON under public/track-markers/.
- */
+/** Track markers — sector split positions derived from FastF1 telemetry or entered manually. */
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -35,33 +32,23 @@ export interface TrackMarkers {
   confidence?: "high" | "medium" | "low";
 }
 
-/**
- * How the circuit is drawn. "realistic" trades the stylised red ribbon for an
- * asphalt surface with its real width and a car on every grid slot.
- */
+/** How the circuit is drawn. */
 export type TrackViewMode = "normal" | "sectors" | "realistic";
 
-/**
- * Sector colors used when painting the track in sector mode.
- */
+/** Sector colors used when painting the track in sector mode. */
 export const SECTOR_COLORS = {
   sector1: "#00A3FF", // blue
   sector2: "#B66DFF", // violet
   sector3: "#00D084", // mint
 } as const;
 
-/**
- * Marker colors for split lines and other overlays.
- */
+/** Marker colors for split lines and other overlays. */
 export const MARKER_COLORS = {
   sectorSplit: "#FFFFFF",
   startFinish: "#FFFFFF",
 } as const;
 
-/**
- * Fetch track markers (sector definitions) for a given circuit.
- * Returns null if markers are not available for this circuit.
- */
+/** Fetch track markers (sector definitions) for a given circuit. */
 export async function fetchTrackMarkers(
   circuitId: string,
 ): Promise<TrackMarkers | null> {
@@ -77,15 +64,7 @@ export async function fetchTrackMarkers(
   }
 }
 
-/**
- * Convert a real-world distance (meters from start/finish) along the track
- * to a normalized curve parameter s ∈ [0, 1).
- *
- * The start/finish line is at startFinishS on the curve. directionSign
- * determines which direction distances increase:
- *   +1 → increasing s (clockwise in typical mapping)
- *   -1 → decreasing s (counter-clockwise)
- */
+/** Convert meters from start/finish into a normalized curve position. */
 export function distanceToCurveS(
   distance: number,
   lapLengthMeters: number,
@@ -100,17 +79,12 @@ export function distanceToCurveS(
   }
 }
 
-/**
- * Wrap a value into [0, 1).
- */
+/** Wrap a value into [0, 1). */
 function wrap01(value: number): number {
   return ((value % 1) + 1) % 1;
 }
 
-/**
- * Compute the "arc length" fraction of a sector in curve-space.
- * Returns the fraction of the full curve that this sector spans.
- */
+/** Compute the "arc length" fraction of a sector in curve-space. */
 export function sectorArcFraction(
   fromS: number,
   toS: number,

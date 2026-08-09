@@ -11,13 +11,7 @@ export interface RaceStatusBarProps {
   className?: string;
 }
 
-/**
- * Lights and session state.
- *
- * The lap counter and the fastest lap both live in the tower now, where the
- * broadcast puts them. Two of anything on one screen only invites the reader
- * to check whether they agree.
- */
+/** Lights and session state. */
 export default function RaceStatusBar({
   lit,
   phase,
@@ -36,10 +30,7 @@ export default function RaceStatusBar({
   return (
     <div
       className={cn(
-        // On a phone the strip competes with the tower for one narrow row, so
-        // it keeps only what changes during a race: the lights and the lap.
-        // The phase is implied by both, and the fastest lap is already the
-        // purple mark in the tower.
+        // On a phone the strip competes with the tower for one narrow row.
         "pointer-events-none flex items-center gap-2 rounded-lg border border-border bg-background/80 px-2 py-1.5 shadow-xl backdrop-blur-md sm:gap-3 sm:px-3 sm:py-2",
         className,
       )}

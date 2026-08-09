@@ -40,14 +40,7 @@ export interface RaceControlsProps {
   className?: string;
 }
 
-/**
- * The bottom bar: start, pause, back to the grid, and how fast time runs.
- *
- * Speed lives here rather than in a panel of its own because it is a control
- * of the simulation, and this is the simulation's panel — a second box in a
- * corner would be one more rectangle over the scene for the sake of three
- * buttons.
- */
+/** The bottom bar: start, pause, back to the grid, and how fast time runs. */
 export default function RaceControls({
   started,
   paused,
@@ -105,9 +98,7 @@ export default function RaceControls({
                 option === speed
                   ? "bg-accent text-foreground"
                   : "text-muted-foreground hover:text-foreground",
-                // A phone gets the three steps that differ enough to be worth
-                // a tap — unless it is already on one of the others, in which
-                // case hiding it would hide the current speed.
+                // A phone gets the three steps that differ enough to be worth a tap.
                 PHONE_SPEEDS.includes(option) || option === speed
                   ? undefined
                   : "hidden sm:block",

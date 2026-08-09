@@ -71,7 +71,6 @@ const COLOR_RED = 0xe10600;
 const COLOR_WHITE = 0xffffff;
 
 // One shared radial-gradient texture → smooth single falloff, no "double halo".
-// White center fading to transparent edge. Material .color tints the glow.
 let glowTextureCache: THREE.Texture | null = null;
 function getGlowTexture(): THREE.Texture {
   if (glowTextureCache) return glowTextureCache;
@@ -85,9 +84,7 @@ function getGlowTexture(): THREE.Texture {
       size / 2, size / 2, 0,
       size / 2, size / 2, size / 2,
     );
-    // Dim center (hidden behind the dot) → peak just outside the dot edge →
-    // smooth fade to transparent. Avoids a bright "white border" at the dot
-    // edge that a center-peaked gradient would produce.
+    // Dim center (hidden behind the dot) → peak just outside the dot edge → smooth fade to transparent.
     g.addColorStop(0.0, "rgba(255,255,255,0.06)");
     g.addColorStop(0.28, "rgba(255,255,255,0.1)");
     g.addColorStop(0.42, "rgba(255,255,255,0.42)");

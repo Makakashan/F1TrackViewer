@@ -1,7 +1,4 @@
-/**
- * Where a circuit's corners are, derived from the centerline. Kerbs and the
- * apron both read from here so they cannot disagree about which bends exist.
- */
+/** Where a circuit's corners are, derived from the centerline. */
 
 /** Radius below which a sample counts as entering a corner. */
 export const CORNER_ENTER_RADIUS_M = 170;
@@ -19,13 +16,7 @@ export interface CornerRun {
   sign: 1 | -1;
 }
 
-/**
- * Mark which side of the track is the inside of a corner, 0 on a straight.
- *
- * Two thresholds rather than one: real corners are not constant-radius, and
- * through a complex like Becketts a single threshold chopped one corner into
- * several runs that each tapered to nothing and back.
- */
+/** Mark which side of the track is the inside of a corner, 0 on a straight. */
 export function resolveCornerSides(
   curvature: number[],
   enter: number,
@@ -60,13 +51,7 @@ export function resolveCornerSides(
   return sides;
 }
 
-/**
- * Contiguous index ranges sharing the same non-zero value in `state`, over a
- * circular array. Runs are split where the turn direction flips, so an S-bend
- * gets one corner per direction instead of a single range stuck on one edge
- * through both halves. A run straddling index 0 is returned as one range whose
- * start is near the end of the array — callers must read indices modulo n.
- */
+/** Contiguous index ranges sharing the same non-zero value in `state`, over a circular array. */
 export function circularRuns(state: number[]): CornerRun[] {
   const n = state.length;
   if (n === 0) return [];
@@ -114,11 +99,7 @@ export interface CornerCoverageOptions {
   exitRadiusMeters?: number;
 }
 
-/**
- * Per-sample "how much of a corner is this", 0 on a straight and 1 through a
- * turn. The ramp is the point: paving width changes over tens of meters rather
- * than at the sample where the threshold happens to be crossed.
- */
+/** Per-sample "how much of a corner is this", 0 on a straight and 1 through a turn. */
 export function sampleCornerCoverage(
   curvature: number[],
   ds: number,

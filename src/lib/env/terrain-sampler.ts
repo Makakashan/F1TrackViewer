@@ -11,11 +11,7 @@ export interface TerrainSampler {
   maxHeight: number;
 }
 
-/**
- * Modifiers the terrain mesh applies on top of the raw elevation grid. Anything
- * draped on the terrain has to see them too, or it sits on a surface that is
- * not the one being drawn.
- */
+/** Modifiers the terrain mesh applies on top of the raw elevation grid. */
 export interface TerrainSurfaceOptions {
   isWater?(lon: number, lat: number): boolean;
 }
@@ -73,13 +69,7 @@ export function buildTerrainSampler(
     return heights[r * n + c];
   }
 
-  /**
-   * Interpolates across the same two triangles the mesh builds per cell —
-   * split along the (row, col+1)–(row+1, col) diagonal — so a draped point
-   * lands on the rendered surface rather than on a bilinear approximation of
-   * it. Bilinear was off by meters on this 40-plus-meter grid, which is what
-   * the old neighbourhood-max plus fixed clearance was papering over.
-   */
+  /** Interpolates across the same two triangles the mesh builds per cell. */
   function heightAt(lon: number, lat: number): number {
     if (n < 2) return 0;
     const u = (lon - minLon) / (maxLon - minLon);

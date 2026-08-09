@@ -56,8 +56,7 @@ function DrawerContent({
       <DrawerPrimitive.Content
         data-slot="drawer-content"
         className={cn(
-          // The gesture bar sits over the bottom of a drawer that reaches the
-          // bottom of the screen, so the drawer pads itself out from under it.
+          // The gesture bar sits over the bottom of a drawer that reaches the bottom of the screen.
           "group/drawer-content bg-background fixed z-50 flex h-auto flex-col",
           "data-[vaul-drawer-direction=bottom]:pb-[env(safe-area-inset-bottom)]",
           "data-[vaul-drawer-direction=top]:inset-x-0 data-[vaul-drawer-direction=top]:top-0 data-[vaul-drawer-direction=top]:mb-24 data-[vaul-drawer-direction=top]:max-h-[80dvh] data-[vaul-drawer-direction=top]:rounded-b-lg data-[vaul-drawer-direction=top]:border-b",

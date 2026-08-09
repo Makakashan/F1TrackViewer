@@ -13,9 +13,7 @@ export default function HomeRouter() {
   const raceMode = useUrlState((state) => state.raceMode);
   const hydrated = useUrlState((state) => state.hydrated);
 
-  // Before hydration the URL is the only thing that knows the mode; after it,
-  // the store is, because entering and leaving race mode is a state change
-  // (the URL follows via replaceState, which does not re-run useSearchParams).
+  // Before hydration the URL is the only thing that knows the mode.
   const showRace = hydrated ? raceMode : raceParam;
 
   if (!track) {

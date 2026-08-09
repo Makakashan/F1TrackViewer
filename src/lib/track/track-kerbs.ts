@@ -10,12 +10,7 @@ import {
   resolveCornerSides,
 } from "@/lib/track/track-corners";
 
-/**
- * Kerbs — the red/white striped strips lining the inside of every corner.
- * Circuit GeoJSON carries no kerb data, so they are derived from the
- * centerline's curvature, which covers all 31 circuits without a per-track
- * table.
- */
+/** Kerbs — the red/white striped strips lining the inside of every corner. */
 
 const KERB_RED = new THREE.Color("#cc1120");
 const KERB_WHITE = new THREE.Color("#f2f4f7");
@@ -25,17 +20,11 @@ export interface KerbOptions {
   maxCornerRadiusMeters?: number;
   /** Lateral width of the strip, measured outward from the track edge. */
   widthMeters?: number;
-  /**
-   * How much paved verge each sample has. The kerb never reaches past it, so
-   * it cannot end up lying on grass or inside a building.
-   */
+  /** How much paved verge each sample has. */
   room?: ApronRoom;
   /** Arc length of one red or white block. */
   stripeMeters?: number;
-  /**
-   * Share of the strip's width to lay on the outside of a corner, where a
-   * circuit's exit kerb goes. Zero draws the apex kerb only.
-   */
+  /** Share of the strip's width to lay on the outside of a corner, where a circuit's exit kerb goes. */
   outerWidthShare?: number;
   /** Corner runs are grown by this much at each end, as real kerbs are. */
   runPaddingMeters?: number;
@@ -53,8 +42,7 @@ const DEFAULTS = {
   maxCornerRadiusMeters: CORNER_ENTER_RADIUS_M,
   widthMeters: 1.9,
   stripeMeters: 1,
-  // Real circuits do carry exit kerbs, but not at every corner: a strip down
-  // the outside of every turn reads as a painted border rather than kerbing.
+  // Real circuits do carry exit kerbs, but not at every corner.
   outerWidthShare: 0,
   runPaddingMeters: 10,
   taperMeters: 14,
@@ -71,12 +59,7 @@ function wrap01(value: number): number {
   return ((value % 1) + 1) % 1;
 }
 
-/**
- * Build the kerb strips for a track. Returns null when the circuit has no
- * corner tight enough to qualify, so callers can skip the mesh entirely.
- *
- * `raise` is the Y offset above the centerline, matching the track surface.
- */
+/** Build the kerb strips for a track. */
 export function buildKerbGeometry(
   curve: THREE.CatmullRomCurve3,
   halfWidth: HalfWidth,
@@ -108,8 +91,7 @@ export function buildKerbGeometry(
   if (!profile) return null;
   const { tangents, curvature } = profile;
 
-  // side = tangent × up, so a turn toward -side reads as a negative cross
-  // product and the inner edge lies at sign(curvature) * halfWidth.
+  // side = tangent × up, so the inner edge lies at sign(curvature) * halfWidth.
   const cornerSide = resolveCornerSides(
     curvature,
     1 / maxCornerRadiusMeters,
@@ -129,8 +111,7 @@ export function buildKerbGeometry(
   const point = new THREE.Vector3();
   const sideVector = new THREE.Vector3();
 
-  // Per quad rather than shared, so each stripe keeps one flat color instead
-  // of gradient-blending into its neighbour.
+  // Per quad rather than shared, so each stripe keeps one flat colour.
   function pushVertex(distance: number, offset: number, lift: number) {
     const u = wrap01(distance / totalLength);
     point.copy(curve.getPointAt(u));
@@ -149,9 +130,7 @@ export function buildKerbGeometry(
   for (const { start, count, sign: innerSign } of circularRuns(cornerSide)) {
     if (count < minRunSamples) continue;
 
-    // Arc length from here on: one quad per curve sample would clamp the
-    // stripe to the sample spacing, 4 m at Monaco. Snapped to the stripe grid
-    // at both ends so no block comes out clipped short.
+    // Arc length from here on: one quad per curve sample would clamp the stripe to the sample spacing.
     const runStart =
       Math.floor(((start - padSamples) * ds) / stripeMeters) * stripeMeters;
     const rawEnd = runStart + Math.min(totalLength, (count + padSamples * 2) * ds);
@@ -165,13 +144,11 @@ export function buildKerbGeometry(
         1,
       );
 
-    // Stripe boundaries sit on a global grid rather than at the run's start,
-    // so the pattern stays put when a threshold changes the run's extent.
+    // Stripe boundaries sit on a global grid rather than at the run's start.
     const firstStripe = Math.floor(runStart / stripeMeters);
     const lastStripe = Math.ceil(runEnd / stripeMeters);
 
-    // A corner is kerbed on both sides — the one facing the apex across the
-    // road is what a driver looks at for most of a lap.
+    // A corner is kerbed on both sides, not only at the apex.
     for (const side of [innerSign, -innerSign as 1 | -1]) {
       const inner = side === innerSign;
       const sideWidth = inner ? widthMeters : widthMeters * outerWidthShare;
@@ -188,9 +165,7 @@ export function buildKerbGeometry(
 
         color.copy(stripe % 2 === 0 ? KERB_RED : KERB_WHITE);
 
-        // Bolted to the outside of the road, not carved out of it: the inner
-        // edge is the white line and the strip reaches out across the apron,
-        // clamped to whatever room that sample has.
+        // Bolted to the outside of the road, not carved out of it.
         const s0 = wrap01(d0 / totalLength);
         const s1 = wrap01(d1 / totalLength);
         const edge0 = halfWidthAt(halfWidth, s0) * side;
@@ -204,8 +179,7 @@ export function buildKerbGeometry(
         const outer0 = edge0 + reach0 * side;
         const outer1 = edge1 + reach1 * side;
 
-        // Kerbs ramp upward away from the racing line. The lift tapers with
-        // the width, or the lip would stop dead like a step in the road.
+        // Kerbs ramp upward away from the racing line.
         const lift0 = liftMeters * (reach0 / Math.max(sideWidth, 1e-6));
         const lift1 = liftMeters * (reach1 / Math.max(sideWidth, 1e-6));
 
@@ -242,10 +216,7 @@ export function buildKerbGeometry(
   return geometry;
 }
 
-/**
- * The continuous white line down both edges of the track. Without it the kerbs
- * are the only marking on the surface and read as decals on a plain ribbon.
- */
+/** The continuous white line down both edges of the track. */
 export function buildTrackEdgeLineGeometry(
   curve: THREE.CatmullRomCurve3,
   halfWidth: HalfWidth,
@@ -280,8 +251,7 @@ export function buildTrackEdgeLineGeometry(
       const j = i + 1;
       const o0 = halfWidthAt(halfWidth, i / n) * edgeSign;
       const o1 = halfWidthAt(halfWidth, j / n) * edgeSign;
-      // Pulled just inside the edge: sitting exactly on it leaves the line
-      // half-hanging off the ribbon wherever the width profile narrows.
+      // Pulled just inside the edge, or the line half-hangs off where the ribbon narrows.
       const outer0 = o0 - lineWidthMeters * 0.25 * edgeSign;
       const outer1 = o1 - lineWidthMeters * 0.25 * edgeSign;
       const inner0 = outer0 - lineWidthMeters * edgeSign;

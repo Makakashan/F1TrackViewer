@@ -2,10 +2,7 @@ import * as THREE from "three";
 import { distanceToCurveS, sectorArcFraction } from "@/lib/track/track-markers";
 import type { SectorDefinition, TrackMarkers } from "@/lib/track/track-markers";
 
-/**
- * Half-width may be a constant (manual slider) or a function of normalized
- * arc position s ∈ [0, 1] for real, per-point track widths.
- */
+/** Half-width may be a constant (manual slider) or a function of normalized arc position s ∈ [0. */
 export type HalfWidth = number | ((s: number) => number);
 export type TrackColorAt = (s: number, target: THREE.Color) => void;
 
@@ -13,23 +10,10 @@ export function halfWidthAt(halfWidth: HalfWidth, s: number): number {
   return typeof halfWidth === "function" ? halfWidth(s) : halfWidth;
 }
 
-/**
- * How much darker the ribbon's side walls are than its driving surface.
- *
- * The walls drop all the way to the stage floor, so under a perspective camera
- * anything away from screen center shows its wall face — a wide skirt in the
- * same color as the road. That made the surface markings look like they sat in
- * the middle of the tarmac rather than along its edge. Shading the walls
- * separates the two without changing the silhouette.
- */
+/** How much darker the ribbon's side walls are than its driving surface. */
 const WALL_SHADE = 0.42;
 
-/**
- * Where the side wall under a track edge ends. Given the edge's position and
- * the road height above it, returns the Y to close the skirt at — see
- * `trackSkirtBottom`, which lands it in the ground rather than at a fixed
- * depth the terrain has no reason to meet.
- */
+/** Where the side wall under a track edge ends. */
 export type TrackBottomYAt = (x: number, z: number, topY: number) => number;
 
 /** Extruded track mesh — top surface + side walls down to groundY. Flat-shaded quads. */
@@ -167,18 +151,13 @@ export function buildExtrudedTrack(
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  // Always present: even without a colorAt the walls carry their own shade, so
-  // the material renders with vertexColors on in every mode.
+  // Always present: even without a colorAt the walls carry their own shade.
   geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geo.setIndex(indices);
   return geo;
 }
 
-/**
- * Build a line-segments geometry tracing both top edges of the ribbon.
- * Used as a thin black outline on top of the track surface for visual
- * definition.
- */
+/** Build a line-segments geometry tracing both top edges of the ribbon. */
 export function buildTrackOutline(
   curve: THREE.CatmullRomCurve3,
   halfWidth: HalfWidth,
@@ -243,11 +222,7 @@ function wrap01(value: number): number {
   return ((value % 1) + 1) % 1;
 }
 
-/**
- * Build an extruded track ribbon for a single sector.
- * Works just like buildExtrudedTrack but only spans the sector's portion
- * of the curve.
- */
+/** Build an extruded track ribbon for a single sector. */
 export function buildSectorMesh(
   curve: THREE.CatmullRomCurve3,
   sector: SectorDefinition,
@@ -405,18 +380,13 @@ export function buildSectorMesh(
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
-  // Grayscale shade multiplied onto the sector's own color by the material,
-  // darkening the side walls the same way the plain ribbon does.
+  // Grayscale shade multiplied onto the sector's own color by the material.
   geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   geo.setIndex(indices);
   return geo;
 }
 
-/**
- * Build a white sector split line — a thin line across the track at a
- * sector boundary distance, similar to start/finish but simpler (no
- * checker pattern).
- */
+/** Build a white sector split line — a thin line across the track at a sector boundary distance. */
 export function buildSectorSplitLineGeometry(
   curve: THREE.CatmullRomCurve3,
   distance: number,

@@ -30,10 +30,7 @@ export interface CarFleetStats {
 
 export interface CarFleetHandle {
   count: number;
-  /**
-   * Place one car. Cheap: writes into a matrix array, uploads nothing.
-   * Follow a batch of these with commit().
-   */
+  /** Place one car. */
   setCar(
     index: number,
     position: THREE.Vector3,
@@ -49,20 +46,12 @@ export interface CarFleetProps {
   count?: number;
   /** Livery assignment per slot; defaults to the 2025 grid. */
   grid?: GridEntry[];
-  /**
-   * Draw order for every part — renderOrder is per object in three.js, so a
-   * caller putting the fleet on painted asphalt cannot set it on the group.
-   */
+  /** Draw order for every part — renderOrder is per object in three.js. */
   renderOrder?: number;
   onStats?: (stats: CarFleetStats) => void;
 }
 
-/**
- * A whole grid of cars, drawn as one InstancedMesh per material, so cost is
- * independent of car count — twenty separate scene graphs would be ~1520 draw
- * calls a frame. Per-car colour rides on instanceColor, so every material is
- * created white and the instance attribute supplies the rest.
- */
+/** A whole grid of cars, drawn as one InstancedMesh per material, so cost is independent of car count. */
 const CarFleet = forwardRef<CarFleetHandle, CarFleetProps>(function CarFleet(
   { url, count = GRID_SIZE, grid, renderOrder = 0, onStats },
   ref,
@@ -96,11 +85,7 @@ const CarFleet = forwardRef<CarFleetHandle, CarFleetProps>(function CarFleet(
 
   const meshRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
 
-  /**
-   * A staggered grid, so the fleet is visible before anything drives it.
-   * Centred on the origin so a caller that has not placed the cars itself can
-   * frame them by looking at 0,0,0.
-   */
+  /** A staggered grid, so the fleet is visible before anything drives it. */
   const matrices = useMemo(() => {
     const list = Array.from({ length: count }, () => new THREE.Matrix4());
     const position = new THREE.Vector3();
@@ -121,11 +106,7 @@ const CarFleet = forwardRef<CarFleetHandle, CarFleetProps>(function CarFleet(
     [count],
   );
 
-  /**
-   * One-time per-instance setup, in the ref callback rather than an effect:
-   * the instance buffers only exist once the mesh does, and a car does not
-   * switch teams afterwards.
-   */
+  /** One-time per-instance setup, in the ref callback rather than an effect. */
   const attachPart = useCallback(
     (mesh: THREE.InstancedMesh | null, partIndex: number) => {
       meshRefs.current[partIndex] = mesh;
@@ -142,8 +123,7 @@ const CarFleet = forwardRef<CarFleetHandle, CarFleetProps>(function CarFleet(
       }
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-      // Covers every instance, so the fleet can be frustum-culled normally —
-      // the geometry's own sphere only describes one car at the origin.
+      // Covers every instance, so the fleet can be frustum-culled normally.
       mesh.computeBoundingSphere();
     },
     [car, count, entries, matrices],
@@ -176,8 +156,7 @@ const CarFleet = forwardRef<CarFleetHandle, CarFleetProps>(function CarFleet(
           if (!mesh) continue;
           for (let i = 0; i < count; i++) mesh.setMatrixAt(i, matrices[i]);
           mesh.instanceMatrix.needsUpdate = true;
-          // Cars move, so the covering sphere is rebuilt — one pass over
-          // `count` matrices, against the fleet blinking out mid-lap.
+          // Cars move, so the covering sphere is rebuilt.
           mesh.computeBoundingSphere();
         }
       },

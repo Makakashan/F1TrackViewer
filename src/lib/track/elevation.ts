@@ -99,21 +99,7 @@ function limitTrackGrade(values: number[], segments: number[]): number[] {
   return cur;
 }
 
-/**
- * Smooth a terrain-sampled track profile.
- *
- * Terrain mode reads a height per densified track vertex straight off the DEM
- * grid, so the ribbon inherits every grid-cell step — a rippled road surface
- * rather than a road. A plain smoothing pass fixes the ripple but sinks the
- * track into the hillside wherever the raw profile has a real local peak, so
- * every pass but the last is followed by an upper-envelope clamp: never end up
- * below the terrain that was actually sampled. The final smoothing pass can
- * still dip a few centimeters under a lone spike; TERRAIN_TRACK_OFFSET
- * clearance absorbs that.
- *
- * `rawY` and `coords` must be index-aligned and share the closed-loop
- * convention (no closing duplicate) — the smoothing window wraps.
- */
+/** Smooth a terrain-sampled track profile. */
 export function smoothTerrainTrackProfile(
   rawY: number[],
   coords: [number, number][],
@@ -251,11 +237,7 @@ export function interpolateElevations(
   return hasClosingDuplicate ? [...values, values[0]] : values;
 }
 
-/**
- * Compute simple stats over an elevation array — min, max, total climb
- * (sum of all uphill deltas between consecutive samples). Used by the info
- * panel.
- */
+/** Compute simple stats over an elevation array. */
 export function elevationStats(elevations: number[]): {
   min: number;
   max: number;

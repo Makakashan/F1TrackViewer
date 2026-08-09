@@ -16,9 +16,7 @@ function getClientIntroSeenSnapshot() {
   return sessionStorage.getItem(SESSION_KEY) === "1";
 }
 
-// Read synchronously (not via useAppPref/useEffect) so the iframe mounts
-// with the right ?theme= on its very first render — changing an iframe's
-// src after mount reloads it, which would restart the whole animation.
+// Read synchronously, so the iframe mounts with the right ?theme= on first paint.
 function resolveIntroTheme(): "light" | "dark" {
   if (typeof window === "undefined") return "dark";
   try {
@@ -33,8 +31,7 @@ function resolveIntroTheme(): "light" | "dark" {
 }
 
 function getServerIntroSeenSnapshot() {
-  // Hide during SSR / the hydration-matching first paint; useSyncExternalStore
-  // re-checks the real value on the client right after mount.
+  // Hide during SSR / the hydration-matching first paint.
   return true;
 }
 
@@ -42,12 +39,7 @@ interface IntroGateProps {
   children: React.ReactNode;
 }
 
-// Gates mounting of the real app behind the intro splash: the app tree
-// below isn't rendered at all while the intro plays, so the heavy
-// Three.js/globe init never runs in parallel with the animation. It only
-// starts mounting (hidden, under the still-fading intro) once the intro's
-// own "Enter Studio" button fires — a brief overlap instead of the full
-// intro duration.
+// Gates mounting of the real app behind the intro splash.
 export default function IntroGate({ children }: IntroGateProps) {
   const pathname = usePathname();
   const seen = useSyncExternalStore(
@@ -60,9 +52,7 @@ export default function IntroGate({ children }: IntroGateProps) {
   const [introTheme] = useState(resolveIntroTheme);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  // The splash sells the product to a first-time visitor. /admin is a tool its
-  // operator opens repeatedly, often to check one number, so making them sit
-  // through a title card first is only friction.
+  // The splash sells the product to a first-time visitor.
   const isTool = pathname?.startsWith("/admin") ?? false;
 
   const showIntro = !isTool && !seen && !introGone;

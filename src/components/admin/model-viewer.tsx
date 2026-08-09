@@ -16,12 +16,7 @@ export interface ModelViewerProps {
   onStats: (stats: GltfStats) => void;
 }
 
-/**
- * Studio rig, built by hand rather than with drei's <Environment>: that pulls
- * an HDR from a CDN, which would make an offline or air-gapped admin session
- * render the car black. Three lights and an ambient fill are enough to read
- * bodywork shape, which is the whole job here.
- */
+/** Studio rig, built by hand rather than with drei's <Environment>. */
 function StudioLights() {
   return (
     <>
@@ -37,19 +32,7 @@ function StudioLights() {
   );
 }
 
-/**
- * Pull the camera back far enough to hold the whole model, once.
- *
- * A fixed starting position cannot serve an inspector: models arrive authored
- * in metres, centimetres or arbitrary units, and with the scale toggle off a
- * hardcoded distance frames one model perfectly and puts the next one either
- * inside the near plane or in the far distance. Deriving it from the bounds and
- * the field of view makes the opening shot the same for every asset.
- *
- * Camera and controls are read from the store rather than useThree() values:
- * mutating a hook's return value is what the immutability lint rule exists to
- * catch, and this genuinely has to write to the live camera.
- */
+/** Pull the camera back far enough to hold the whole model, once. */
 function FrameCamera({ length, height }: { length: number; height: number }) {
   const store = useStore();
 
@@ -60,9 +43,7 @@ function FrameCamera({ length, height }: { length: number; height: number }) {
 
     const radius = Math.max(length, height) * 0.5;
     const fov = (perspective.fov * Math.PI) / 180;
-    // Enough headroom that a three-quarter view of a long, low car never
-    // clips at the corners, without leaving the subject stranded in the middle
-    // of an empty grid.
+    // Enough headroom that a three-quarter view of a long, low car never clips at the corners.
     const distance = (radius / Math.tan(fov / 2)) * 1.25;
 
     perspective.position.set(
@@ -78,8 +59,7 @@ function FrameCamera({ length, height }: { length: number; height: number }) {
       target?: THREE.Vector3;
       update?: () => void;
     } | null;
-    // Aim a little below the midpoint: a car's visual mass sits low, and
-    // centring the bounding box leaves it sinking out of the bottom of frame.
+    // Aim a little below the midpoint: a car's visual mass sits low.
     orbit?.target?.set(0, height * 0.45, 0);
     orbit?.update?.();
   }, [length, height, store]);
@@ -95,9 +75,7 @@ function Model({
 }: Omit<ModelViewerProps, "autoRotate" | "showGrid">) {
   const gltf = useGLTF(url);
 
-  // Clone the scene *and* its materials. useGLTF caches by URL, so mutating
-  // what it returns — which the wireframe toggle does — would leak into every
-  // later mount of the same model, including after switching away and back.
+  // Clone the scene *and* its materials.
   const scene = useMemo(() => {
     const root = gltf.scene.clone(true);
     root.traverse((object) => {
@@ -110,9 +88,7 @@ function Model({
     return root;
   }, [gltf.scene]);
 
-  // Measured on the original scene, never the clone: cloning materials above
-  // gives every mesh its own instance, which would defeat the identity-based
-  // deduplication and report one material and one texture set per mesh.
+  // Measured on the original scene, never the clone.
   const stats = useMemo(
     () => computeGltfStats(gltf.scene, gltf.animations),
     [gltf.scene, gltf.animations],
@@ -133,13 +109,7 @@ function Model({
     });
   }, [scene, wireframe]);
 
-  // Sit the model on the grid and centre it horizontally, so switching models
-  // does not also move the subject out of frame.
-  //
-  // The bounds come from stats, which measured the scene before it was
-  // parented. Re-measuring here would read through this very group's scale —
-  // Box3.setFromObject works in world space — and the offset would compound
-  // every time the scale toggle re-ran the calculation.
+  // Sit the model on the grid and centre it horizontally.
   const { scale, offset } = useMemo(() => {
     const factor = normalize ? stats.scaleToReference : 1;
     return {
@@ -199,8 +169,7 @@ export default function ModelViewer({
   return (
     <div className="relative h-full w-full">
       <Canvas
-        // Keyed by URL so switching models tears the scene down rather than
-        // leaving the previous car's geometry resident.
+        // Keyed by URL, so switching models tears the old scene down.
         key={url}
         camera={{ position: [7, 4.2, 8.5], fov: 42, near: 0.05, far: 500 }}
         dpr={[1, 2]}

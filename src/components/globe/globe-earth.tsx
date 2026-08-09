@@ -16,13 +16,10 @@ interface GlobeEarthProps {
   selectedCircuit: GlobeCircuit | null;
   hoveredCircuit: GlobeCircuit | null;
   focusCircuit: GlobeCircuit | null;
-  /** Rotates the globe to face this point without changing zoom/FOV — used
-   * for the continent filter chips, as opposed to focusCircuit's tight zoom. */
+  /** Rotates the globe to face this point without changing zoom/FOV. */
   focusRegion?: { lat: number; lon: number } | null;
   cardTopPx?: number;
-  /** App light/dark theme — the void/fog/stars/grid/border colors follow it;
-   * the Earth sphere's own day-texture shading does not (a photo of Earth
-   * looks the same regardless of UI theme). */
+  /** App light/dark theme — the void/fog/stars/grid/border colors follow it. */
   theme: "light" | "dark";
   onHoverCircuit: (circuit: GlobeCircuit) => void;
   onSelectCircuit: (circuit: GlobeCircuit | null) => void;
@@ -52,10 +49,7 @@ const SPACE_PALETTE = {
   },
 } as const;
 
-// Borders trace the photographic Earth surface (not the theme-colored void),
-// so — like the sphere's own shading — they stay one fixed color regardless
-// of app theme: white reads over every day-texture region (ocean, land,
-// desert), where a theme-dark variant washed out badly over bright sand.
+// Borders trace the photographic Earth surface (not the theme-colored void), so.
 const BORDER_COLOR = "#ffffff";
 const BORDER_OPACITY = 0.26;
 
@@ -759,9 +753,7 @@ export default function GlobeEarth({
         const fovRad = THREE.MathUtils.degToRad(persp.fov);
         const markerRadius = EARTH_RADIUS + MARKER_SURFACE_OFFSET;
         const dMarker = Math.max(distance - markerRadius, 0.001);
-        // Camera pivots around the globe center (lookAt 0,0,0), so a camera
-        // shift of `s` moves the marker by `s * markerRadius / distance`.
-        // Solve for the camera shift that lifts the marker by `liftPx` px.
+        // Camera pivots around the globe center (lookAt 0,0,0).
         const worldShift =
           (liftPx *
             2 *

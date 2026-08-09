@@ -39,11 +39,7 @@ export default function SettingsMenu() {
   );
 }
 
-/**
- * Language and theme without the popover around them, so a phone's overflow
- * menu can list them next to the other header actions instead of nesting a
- * second popover inside the first.
- */
+/** Language and theme without the popover around them. */
 export function SettingsFields() {
   const { lang, setLang, theme, setTheme, t } = useAppPref();
 

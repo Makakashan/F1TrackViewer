@@ -26,13 +26,7 @@ export interface RaceSceneSettingsProps {
   setQualityMode: (v: QualityMode) => void;
 }
 
-/**
- * Three scene switches, in a popover.
- *
- * Race mode inherits the viewer's saved preferences, and silently inheriting
- * them is how someone arrives with terrain off and concludes the mode is
- * broken. Small and out of the way, but reachable.
- */
+/** Three scene switches, in a popover. */
 export default function RaceSceneSettings(props: RaceSceneSettingsProps) {
   const { t } = useAppPref();
 
@@ -51,11 +45,7 @@ export default function RaceSceneSettings(props: RaceSceneSettingsProps) {
   );
 }
 
-/**
- * The switches without the popover around them, so a phone's single overflow
- * menu can show them inline. A popover nested in a popover closes its parent
- * the moment it takes focus, which is how one tap dismisses both.
- */
+/** The switches without the popover around them. */
 export function RaceSceneFields({
   environmentAvailable,
   environmentEnabled,
@@ -117,8 +107,7 @@ export function RaceSceneFields({
                 type="button"
                 onClick={() => setQualityMode(mode)}
                 className={cn(
-                  // Three words of unequal length in three equal columns:
-                  // without the clamp the long one prints over its neighbour.
+                  // Three words of unequal length in three equal columns.
                   "min-w-0 truncate rounded-md px-2 py-1.5 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   qualityMode === mode
                     ? "bg-muted text-foreground"

@@ -17,12 +17,7 @@ export interface RaceCircuitPickerProps {
   onSelect: (id: string) => void;
 }
 
-/**
- * Switching circuits without leaving race mode.
- *
- * Wraps the sidebar's circuit list rather than reimplementing it — that list
- * already searches by name, location and id, and takes no space while closed.
- */
+/** Switching circuits without leaving race mode. */
 export default function RaceCircuitPicker({
   circuits,
   selectedId,
@@ -37,9 +32,7 @@ export default function RaceCircuitPicker({
         <Button
           variant="outline"
           size="sm"
-          // On a phone this is the only thing in the bar that can give, so it
-          // takes the leftover width and truncates instead of pushing the
-          // buttons beside it off their own row.
+          // On a phone this is the only thing in the bar that can give.
           className="min-w-0 flex-1 gap-2 sm:max-w-[200px] sm:flex-none"
         >
           <span className="truncate">{selected?.name ?? "—"}</span>

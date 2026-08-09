@@ -24,7 +24,6 @@ export interface CircuitMarkerSchema {
 
 export const START_FINISH_OVERRIDES: Record<string, number> = {
   // Position values are normalized along the rendered closed curve.
-  // Add verified entries here as tracks are calibrated.
   "mc-1929": 0.74108,
   "br-1940": 0,
   "be-1925": 0,
@@ -110,14 +109,7 @@ function angleBetween(a: THREE.Vector3, b: THREE.Vector3): number {
   return Math.acos(THREE.MathUtils.clamp(a.dot(b), -1, 1));
 }
 
-/**
- * Estimate the start/finish position from geometry only.
- *
- * This deliberately avoids using the first GeoJSON point: source ordering is
- * not a racing semantic. The marker is placed in the middle of the longest
- * low-curvature run, which is usually a better approximation of the main
- * straight until a circuit-specific override is verified.
- */
+/** Estimate the start/finish position from geometry only. */
 export function estimateStartFinishS(
   curve: THREE.CatmullRomCurve3,
   samples: number,
@@ -299,15 +291,7 @@ export function buildStartFinishGeometry(
 /** Painted width of the start line, along the direction of travel. */
 const START_LINE_DEPTH_M = 0.3;
 
-/**
- * The start line as it is actually painted: one solid white band the exact
- * width of the asphalt.
- *
- * The checkered plate `buildStartFinishGeometry` draws is a map symbol — it is
- * wider than the track it sits on and several meters deep, which reads as a
- * carpet once the surface is asphalt rather than a stylised ribbon. Race view
- * uses this instead; the other view modes keep the symbol.
- */
+/** The start line as it is actually painted: one solid white band the exact width of the asphalt. */
 export function buildStartLineGeometry(
   curve: THREE.CatmullRomCurve3,
   s: number,
@@ -357,13 +341,7 @@ export interface StartFinishGantryGeometries {
   beam: THREE.BufferGeometry;
 }
 
-/**
- * The gantry's local frame and dimensions.
- *
- * Exported because the start lights hang off the same structure: deriving
- * their mount point from the same numbers is what keeps the panel attached to
- * the beam when the track width — and with it the gantry — changes.
- */
+/** The gantry's local frame and dimensions. */
 export interface GantryFrame {
   center: THREE.Vector3;
   tangent: THREE.Vector3;
@@ -378,11 +356,7 @@ export interface GantryFrame {
   beamCenterY: number;
 }
 
-/**
- * "checkered" is the map symbol: a tall beam in start/finish squares, sized to
- * read from the overview camera. "plain" is the structure as built — a slim
- * dark beam that exists to carry the start lights rather than to be seen.
- */
+/** "checkered" is the map symbol: a tall beam in start/finish squares. */
 export type GantryStyle = "checkered" | "plain";
 
 export function gantryFrame(
@@ -411,12 +385,7 @@ export function gantryFrame(
     tangent,
     across,
     up,
-    // The built gantry stands its posts on the asphalt, outer face flush with
-    // the edge. Straddling the edge instead leaves a post hanging in the air
-    // wherever the ribbon floats over terrain, and the ribbon's own width is
-    // the only ground the scene has. The map symbol keeps spanning wider than
-    // the ribbon it labels — it is read from above, where a gantry inside the
-    // line looks like part of the track.
+    // The built gantry stands its posts on the asphalt, outer face flush with the edge.
     span:
       style === "plain"
         ? Math.max(halfWidth, 2 * halfWidth - postWidth)
@@ -555,8 +524,7 @@ export function buildStartFinishGantryGeometry(
   const beamGeometries: THREE.BufferGeometry[] = [];
   for (let i = 0; i < beamCellCount; i++) {
     const offset = -(span + postWidth) / 2 + beamCellWidth * (i + 0.5);
-    // Colours are always written so both styles share one material; the plain
-    // beam is simply a single dark cell.
+    // Colours are always written so both styles share one material.
     const color: [number, number, number] =
       style === "plain"
         ? [0.05, 0.05, 0.058]

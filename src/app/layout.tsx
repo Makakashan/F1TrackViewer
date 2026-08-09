@@ -2,12 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Titillium_Web } from "next/font/google";
 import "./globals.css";
 
-/**
- * The timing overlay's typeface, and only its typeface — the rest of the app
- * keeps the system stack. A broadcast tower is set in a squarish humanist sans
- * with very heavy weights, and the system font at weight 900 is a different
- * letter shape, not a bolder one.
- */
+/** The timing overlay's typeface, and only its typeface — the rest of the app keeps the system stack. */
 const timingFont = Titillium_Web({
   subsets: ["latin", "latin-ext"],
   weight: ["400", "600", "700", "900"],
@@ -34,21 +29,12 @@ export const metadata: Metadata = {
   },
 };
 
-/**
- * The page runs edge to edge, and the interface keeps clear of the cutouts.
- *
- * `viewportFit: "cover"` is what makes `env(safe-area-inset-*)` report anything
- * other than zero — without it a phone letterboxes the page inside the safe
- * area, the insets are all 0, and any code reading them is decoration. With it
- * the 3D scene fills the screen, notch to gesture bar, and every panel drawn
- * over the scene pays for its own inset.
- */
+/** The page runs edge to edge, and the interface keeps clear of the cutouts. */
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  // Matched to the app's own background in each theme, because with `cover`
-  // the strip behind the status bar is the browser's colour, not the page's.
+  // Matched to the app's own background in each theme.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f9fafb" },
     { media: "(prefers-color-scheme: dark)", color: "#060809" },
@@ -60,9 +46,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  // The actual theme class (.dark / .light) is applied at runtime by
-  // AppPrefProvider based on localStorage / system preference. We default to
-  // "dark" here so the very first paint (before hydration) is sane.
+  // The theme class is applied at runtime by AppPrefProvider.
   return (
     <html
       lang="en"

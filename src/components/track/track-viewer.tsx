@@ -147,25 +147,12 @@ export default function TrackViewer({
           <Canvas
             eventSource={canvasEventSource}
             shadows={false}
-            // Nothing in this scene animates on its own — no useFrame outside
-            // the globe's own canvas — so a still camera over a still track was
-            // re-rendering the whole circuit every frame for an identical
-            // image. On demand it draws when something actually changes;
-            // OrbitControls invalidates while it is being dragged, and damping
-            // decays through the frames that follow. Auto-rotate is the one
-            // thing that does move by itself, so it keeps the continuous loop.
-            // A running race is the one thing in the app that changes without
-            // React being told, so it is the one thing that needs every frame.
+            // Nothing in this scene animates on its own — no useFrame outside the globe's own canvas.
             frameloop={autoRotate || raceSim?.racing ? "always" : "demand"}
             dpr={[1, 1.5]}
             camera={{
               fov: 50,
-              // Race mode parks the camera a few meters from a car, so the near
-              // plane has to clear the bodywork rather than the circuit. It is
-              // not pushed lower than this: depth precision falls off with the
-              // near/far ratio, and against a far plane of 20 km every halving
-              // of `near` costs a bit of precision that the painted markings
-              // pay for in z-fighting.
+              // Race mode parks the camera a few meters from a car.
               near: raceMode ? 1 : isMobile ? 8 : 2,
               far: 20000,
               position: [400, 300, 400],
@@ -173,13 +160,7 @@ export default function TrackViewer({
             gl={{
               antialias: true,
               alpha: true,
-              // Added to stop z-fighting flicker on phones, where the depth
-              // buffer is often 16-bit. It costs real performance to keep on
-              // everywhere: writing depth per fragment disables the GPU's early
-              // depth rejection, so every triangle of the grid gets shaded even
-              // where it is hidden behind another car. Desktop has a 24-bit
-              // buffer and a near/far range of 2..20000, which it resolves
-              // without help.
+              // Added to stop z-fighting flicker on phones, where the depth buffer is often 16-bit.
               logarithmicDepthBuffer: isMobile,
               powerPreference: "high-performance",
             }}

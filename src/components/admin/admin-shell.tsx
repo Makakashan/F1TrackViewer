@@ -93,10 +93,7 @@ export default function AdminShell({ onSignOut }: { onSignOut: () => void }) {
           <FleetLab />
         </div>
       ) : (
-        // F1TrackApp sizes itself to the viewport (h-screen) because it owns
-        // the whole page on the public route. Inside the admin shell it has to
-        // fit under the header instead, so its root is pinned to this box
-        // rather than editing the shared component.
+        // F1TrackApp sizes itself to the viewport, so the admin page gives it a fixed box.
         <div className="min-h-0 flex-1 overflow-hidden [&>div]:h-full! [&>div]:w-full!">
           <F1TrackApp startFinishCalibration />
         </div>

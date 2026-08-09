@@ -1,10 +1,6 @@
 import * as THREE from "three";
 
-/**
- * Signed curvature of a closed track centerline, sampled at even arc length.
- * Shared by the kerbs, the racing line and the speed profile, so all three
- * agree on where a corner is.
- */
+/** Signed curvature of a closed track centerline, sampled at even arc length. */
 export interface CurvatureProfile {
   /** Number of samples; sample i sits at s = i / samples. */
   samples: number;
@@ -14,10 +10,7 @@ export interface CurvatureProfile {
   totalLength: number;
   /** Unit tangents at each sample. */
   tangents: THREE.Vector3[];
-  /**
-   * Signed curvature in 1/m, smoothed. Positive and negative distinguish left
-   * from right; the magnitude's reciprocal is the corner radius.
-   */
+  /** Signed curvature in 1/m, smoothed. */
   curvature: number[];
 }
 

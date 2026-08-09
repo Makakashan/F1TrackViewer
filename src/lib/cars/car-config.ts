@@ -1,8 +1,4 @@
-/**
- * Physical dimensions of a current-generation F1 car, in meters — which are
- * also Three.js units, since the scene is 1:1 metric. Loaded models are
- * normalized to CAR_LENGTH rather than trusted to be authored in meters.
- */
+/** Physical dimensions of a current-generation F1 car, in meters. */
 
 export const CAR_LENGTH = 5.6;
 export const CAR_WIDTH = 2.0;

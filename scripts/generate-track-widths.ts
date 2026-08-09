@@ -1,24 +1,4 @@
-/**
- * Generate static real-track-width profiles from the TUMFTM racetrack-database.
- * Source: https://github.com/TUMFTM/racetrack-database (LGPL-3.0)
- *
- * Each TUMFTM track CSV is a centerline of `x_m,y_m,w_tr_right_m,w_tr_left_m`
- * rows. The full track width at a point is `w_tr_right_m + w_tr_left_m`.
- *
- * The TUMFTM centerline lives in its own arbitrary local metric frame, so it
- * cannot be matched to bacinger/f1-circuits by coordinates. Instead we align
- * the two loops by *shape*: both are resampled uniformly by arc length, their
- * per-vertex turning angles (a rotation/translation/scale-invariant proxy for
- * curvature) are cross-correlated to recover the circular offset + traversal
- * direction, and the TUMFTM width profile is then mapped onto bacinger's
- * normalized arc length starting from bacinger coordinate[0].
- *
- * Output: public/track-widths/<id>.json
- *
- * Usage:
- *   bun run widths:generate                  # all mapped circuits
- *   bun run widths:generate -- it-1922 gb-1948
- */
+/** Generate static real-track-width profiles from the TUMFTM racetrack-database. */
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -35,10 +15,7 @@ const SAMPLES = 600;
 /** Resolution used for the curvature cross-correlation alignment. */
 const ALIGN_RES = 720;
 
-/**
- * Map bacinger circuit id → TUMFTM track CSV stem. Only current/modern layouts
- * that exist in both datasets are mapped.
- */
+/** Map bacinger circuit id → TUMFTM track CSV stem. */
 const CIRCUIT_TO_TUMFTM: Record<string, string> = {
   "ae-2009": "YasMarina", // Abu Dhabi
   "at-1969": "Spielberg", // Red Bull Ring
@@ -139,10 +116,7 @@ function dist(a: Vec2, b: Vec2): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-/**
- * Resample a closed polyline to `n` points uniformly spaced by arc length.
- * `values` (optional, parallel to pts) are linearly interpolated alongside.
- */
+/** Resample a closed polyline to `n` points uniformly spaced by arc length. */
 function resampleClosed(
   pts: Vec2[],
   n: number,
@@ -200,11 +174,7 @@ function zNormalize(a: number[]): number[] {
   return a.map((v) => (v - mean) / std);
 }
 
-/**
- * Find the circular offset + direction that best aligns TUMFTM curvature to
- * bacinger curvature. Returns the mapping bacinger index j → tumftm index, plus
- * a normalized correlation score in [-1, 1].
- */
+/** Find the circular offset + direction that best aligns TUMFTM curvature to bacinger curvature. */
 function alignByCurvature(
   baseCurv: number[],
   tumCurv: number[],
@@ -250,7 +220,6 @@ async function generate(id: string, tumName: string) {
   );
 
   // Build the aligned, normalized-arc-length width profile in bacinger order.
-  // tumAlign.values is forward-ordered; reversed direction reads it backwards.
   const tw = tumAlign.values;
   const m = tw.length;
   const aligned: number[] = [];

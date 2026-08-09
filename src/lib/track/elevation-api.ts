@@ -55,8 +55,7 @@ function writeElevationCache(
       JSON.stringify({ elevations }),
     );
   } catch {
-    // Best-effort cache. Browsers can reject localStorage in private mode or
-    // when storage quota is full; the viewer still works without persistence.
+    // Best-effort cache.
   }
 }
 

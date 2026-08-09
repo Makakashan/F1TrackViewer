@@ -1,9 +1,4 @@
-/**
- * Color palette for the F1 TV style low-poly diorama.
- *
- * Reference look: pale map-board outside the venue, saturated green circuit
- * grounds, white architectural blocks and a strongly legible red track.
- */
+/** Color palette for the F1 TV style low-poly diorama. */
 export const DIORAMA_COLORS = {
   base: "#D8DCE2",
   grid: "#AEB5C0",
@@ -24,9 +19,7 @@ export const DIORAMA_COLORS = {
   track: "#D90416",
 } as const;
 
-/**
- * Returns the diorama landuse color for a given landuse kind.
- */
+/** Returns the diorama landuse color for a given landuse kind. */
 export function landuseColor(kind: string): string {
   switch (kind) {
     case "park":

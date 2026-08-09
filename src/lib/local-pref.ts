@@ -1,6 +1,4 @@
-// Try/catch-guarded localStorage JSON read/write — SSR-safe (no-ops if
-// localStorage is unavailable, e.g. during server rendering or in private
-// browsing modes that block storage access).
+// Try/catch-guarded localStorage JSON read/write.
 
 export function readPref<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;

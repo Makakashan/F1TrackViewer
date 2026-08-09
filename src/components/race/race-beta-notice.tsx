@@ -5,14 +5,7 @@ import { FlaskConical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAppPref } from "@/components/app-pref-provider";
 
-/**
- * Shown once, the first time someone enters race mode.
- *
- * The key carries a version because the warning will change meaning: right now
- * it says "the cars do not move yet", and when the simulation lands it will say
- * something about approximate physics. Bumping the version shows the new
- * warning to everyone, including the people who dismissed the old one.
- */
+/** Shown once, the first time someone enters race mode. */
 const SEEN_KEY = "f1tv:raceBeta:v1";
 
 export default function RaceBetaNotice() {

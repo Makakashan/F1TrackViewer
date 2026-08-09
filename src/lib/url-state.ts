@@ -19,9 +19,7 @@ interface TrackPrefs {
 
 function readTrackPrefs(): Partial<TrackPrefs> {
   const prefs = readPref<Partial<TrackPrefs>>(TRACK_PREFS_KEY, {});
-  // "realistic" used to be a layer toggle. It is now the race mode's own
-  // rendering, entered through `race`, so a stored one would put the viewer in
-  // a mode its settings panel can no longer switch out of.
+  // "realistic" used to be a layer toggle.
   if (prefs.viewMode === "realistic") prefs.viewMode = "normal";
   return prefs;
 }
@@ -122,8 +120,7 @@ export const useUrlState = create<UrlState>((set, get) => ({
     writeTrackPref("viewMode", m);
     set({ viewMode: m });
   },
-  // Deliberately not persisted: race mode is a place you go, not a display
-  // preference, and landing back in it on the next visit would be a surprise.
+  // Deliberately not persisted: race mode is a place you go, not a display preference.
   setRaceMode: (v) => set({ raceMode: v }),
   setEnvironmentEnabled: (v) => {
     writeTrackPref("environmentEnabled", v);
@@ -146,8 +143,7 @@ export const useUrlState = create<UrlState>((set, get) => ({
     const s = get();
     if (s.hydrated) return;
 
-    // Stored preferences become the new baseline defaults; URL params
-    // (below) still win over them so shareable links keep working.
+    // Stored preferences become the new baseline defaults.
     const patch: Partial<UrlState> = { hydrated: true, ...readTrackPrefs() };
 
     const url = readUrlParams();

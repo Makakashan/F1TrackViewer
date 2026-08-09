@@ -1,15 +1,8 @@
 import { driversWithTeams, type DriverWithTeam } from "@/lib/race/f1-drivers";
 
-/**
- * The parts of a race that exist before there is a simulation: who lines up
- * where, and how many laps the thing would run.
- */
+/** The parts of a race that exist before there is a simulation. */
 
-/**
- * A grand prix runs the smallest number of laps exceeding 305 km, which
- * reproduces the real number on almost every circuit with no table to keep in
- * sync.
- */
+/** A grand prix runs the smallest number of laps exceeding 305 km. */
 const RACE_DISTANCE_M = 305_000;
 
 /** Monaco is the exception in the regulations themselves: 260 km. */
@@ -45,10 +38,7 @@ export function randomFrom(seed: number): () => number {
   };
 }
 
-/**
- * The starting order. Random until there is a qualifying session, but seeded
- * by circuit so a shared link and a screenshot describe the same grid.
- */
+/** The starting order. */
 export function raceGridOrder(
   circuitId: string,
   nonce = 0,
@@ -67,10 +57,7 @@ export type TyreCompound = "S" | "M" | "H";
 
 const COMPOUNDS: TyreCompound[] = ["S", "M", "H"];
 
-/**
- * What each car starts on. Cosmetic — there is no tyre model — but a timing
- * tower without the column looks wrong. Seeded like the grid.
- */
+/** What each car starts on. */
 export function raceTyreChoices(
   circuitId: string,
   nonce = 0,

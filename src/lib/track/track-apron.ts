@@ -3,12 +3,7 @@ import { sampleCurvature } from "@/lib/track/track-curvature";
 import { sampleCornerCoverage } from "@/lib/track/track-corners";
 import type { HalfWidth } from "@/lib/track/track-geometry";
 
-/**
- * The apron — the paved strip just outside the white line, which the kerb is
- * bolted to. Laid only where there is room for it: nothing knows where the
- * run-off really is, so a building standing on it or a hillside under it takes
- * the strip out and the kerb fades with it.
- */
+/** The apron — the paved strip just outside the white line, which the kerb is bolted to. */
 
 /** How far the paving reaches past the white line through a corner. */
 export const APRON_WIDTH_M = 4;
@@ -16,24 +11,17 @@ export const APRON_WIDTH_M = 4;
 /** And down a straight, where a circuit has a verge rather than run-off. */
 export const APRON_STRAIGHT_WIDTH_M = 1;
 
-// Generous next to the kerb's own 10 m / 14 m: the kerb has to stay on the
-// paving for its whole length, taper included.
+// Generous next to the kerb's own 10 m / 14 m.
 const CORNER_PADDING_M = 26;
 const CORNER_TAPER_M = 30;
 
-/**
- * How far the ground may sit from the track surface before the apron gives up.
- * Loose enough to pass a graded verge and still catch a cutting.
- */
+/** How far the ground may sit from the track surface before the apron gives up. */
 export const APRON_GROUND_TOLERANCE_M = 1.6;
 
 /** Distance over which a blocked stretch fades back to full width. */
 const ROOM_SMOOTH_M = 12;
 
-/**
- * How much of the room left inside a corner the apron may take. Under one so
- * the innermost ring of a hairpin never collapses through itself.
- */
+/** How much of the room left inside a corner the apron may take. */
 const CORNER_ROOM_SHARE = 0.7;
 
 export interface ApronRoom {
@@ -45,11 +33,7 @@ export interface ApronRoom {
   minus: Float32Array;
 }
 
-/**
- * Whether the apron may be paved at a point. `point` is the outer lip, `centre`
- * the centreline beside it: the terrain test has to compare ground against
- * ground, since the rendered surface sits well clear of the terrain under it.
- */
+/** Whether the apron may be paved at a point. */
 export type ApronClearance = (
   point: THREE.Vector3,
   centre: THREE.Vector3,
@@ -69,11 +53,7 @@ export function fullApronRoom(
   return { widthMeters, plus, minus };
 }
 
-/**
- * Walk both edges and ask `clearance` whether the strip fits, then blur the
- * answer along the lap — the raw test flickers wherever a footprint clips the
- * strip.
- */
+/** Walk both edges and ask `clearance` whether the strip fits, then blur the answer along the lap. */
 export function sampleApronRoom(
   curve: THREE.CatmullRomCurve3,
   halfWidth: HalfWidth,
@@ -107,8 +87,7 @@ export function sampleApronRoom(
     side.normalize();
     const edge = halfWidthAt(halfWidth, s);
 
-    // Positive curvature turns toward -side, so the inside of the corner is
-    // the side whose sign matches it.
+    // Positive curvature turns toward -side, which is the inside of the corner.
     const curvature = profile ? profile.curvature[i] : 0;
     const radius = 1 / Math.max(Math.abs(curvature), 1e-9);
     const insideSign = Math.sign(curvature);
@@ -171,11 +150,7 @@ export function apronRoomAt(
   return (a + (b - a) * t) * room.widthMeters;
 }
 
-/**
- * One quad per sample per side, from the white line out to whatever room the
- * sample has. Flat and level with the surface: this is the paved verge, not the
- * run-off.
- */
+/** One quad per sample per side, from the white line out to whatever room the sample has. */
 export function buildTrackApronGeometry(
   curve: THREE.CatmullRomCurve3,
   halfWidth: HalfWidth,
@@ -257,11 +232,7 @@ export function buildTrackApronGeometry(
   return geometry;
 }
 
-/**
- * "Is this point inside a building?", asked a few thousand times — a uniform
- * grid over footprint bounding boxes, because the brute-force version is felt
- * when the environment is switched on.
- */
+/** "Is this point inside a building?", asked a few thousand times. */
 export function buildFootprintIndex(
   footprints: [number, number][][],
 ): (x: number, z: number) => boolean {

@@ -33,14 +33,7 @@ export interface TimingTowerProps {
 
 /** How long a row shows its arrow after its car changes position. */
 const MOVE_FLASH_MS = 2200;
-/**
- * How long a row takes to slide to its new place, and on what curve.
- *
- * Long enough to read as a car moving past another rather than as a cut, and
- * eased so that it leaves and arrives slowly — a linear slide of this length
- * reads as a scroll. Two rows crossing overlap for the whole slide, which is
- * the cost of making the swap legible at sixteen times speed.
- */
+/** How long a row takes to slide to its new place, and on what curve. */
 const SLIDE_MS = 460;
 
 /** Row heights, in pixels. The marker layer positions itself off these. */
@@ -56,12 +49,7 @@ const TYRE_COLOUR: Record<TyreCompound, string> = {
 };
 
 
-/**
- * Gaps the way a broadcast writes them: tenths under a minute, m:ss.t over it.
- *
- * Two cars alongside each other are "+0.0" and not a dash — nought point nought
- * is a fact about the race, a dash reads as missing data.
- */
+/** Gaps the way a broadcast writes them: tenths under a minute, m:ss.t over it. */
 function formatGap(seconds: number): string {
   if (!Number.isFinite(seconds)) return "+0.0";
   if (seconds >= 60) {
@@ -71,18 +59,7 @@ function formatGap(seconds: number): string {
   return `+${Math.max(0, seconds).toFixed(1)}`;
 }
 
-/**
- * The running order, drawn as the television tower it is imitating: a lap band
- * on top, then one row per car — position, the team's colour, the driver's
- * code, the gap and the compound.
- *
- * Two sizes, one component, and neither carries surnames: the code is the name
- * on a timing screen, and the column those surnames took is the scene's.
- *
- * What the tower cannot copy from the broadcast is the constructor badges —
- * those are trademarks, and the liveries in this app are deliberately
- * approximations. The colour block does that job instead.
- */
+/** The running order, drawn as the television tower it is imitating. */
 export default function TimingTower({
   order,
   standings,
@@ -98,12 +75,10 @@ export default function TimingTower({
   className,
 }: TimingTowerProps) {
   const { t } = useAppPref();
-  // Which gap the column reports. Local to the tower: it is a way of reading
-  // the same race, not a fact about it, so it does not belong in race state.
+  // Which gap the column reports.
   const [gapMode, setGapMode] = useState<"leader" | "ahead">("ahead");
   const [moved, setMoved] = useState<Record<number, "up" | "down">>({});
-  // Only read when the list actually scrolls, which it does on viewports too
-  // short for the field.
+  // Only read when the list actually scrolls, which it does on viewports too short for the field.
   const [scrollTop, setScrollTop] = useState(0);
   const lastPlaces = useRef<Map<number, number>>(new Map());
   const timers = useRef<Set<number>>(new Set());
@@ -124,14 +99,7 @@ export default function TimingTower({
           entry.row ? entry.row.index === fastestLapIndex : false,
         );
 
-  // A position change is worth calling out: twenty rows reshuffling silently is
-  // the one thing a timing tower must not do. The row says which way it went
-  // rather than lighting up — a colour that means "something happened" is
-  // worth less than an arrow that means "this car gained a place".
-  //
-  // The arrow is scheduled rather than set outright: standings arrive from the
-  // simulation, and turning one arrival straight into a render inside an
-  // effect is the cascading-render pattern React warns about.
+  // A position change is worth calling out; a silent reshuffle is easy to miss.
   useEffect(() => {
     if (!standings?.length) {
       lastPlaces.current.clear();
@@ -154,11 +122,7 @@ export default function TimingTower({
         return next;
       });
     });
-    // The expiry timer must outlive this effect run. Standings arrive five
-    // times a second, so a timer cancelled by the effect's own cleanup would
-    // never fire — which is how every row ends up marked and none of the marks
-    // ever clear. Only unmount cancels them, and only this batch expires:
-    // clearing the whole map would cut short a swap from half a second ago.
+    // The expiry timer must outlive this effect run.
     const timer = window.setTimeout(() => {
       timers.current.delete(timer);
       setMoved((current) => {
@@ -178,14 +142,9 @@ export default function TimingTower({
     };
   }, []);
 
-  // Rows slide to their new place instead of teleporting: measure where each
-  // one was, let React reorder them, then animate the difference away. Without
-  // it a swap is a single frame in which two codes trade cells, which reads as
-  // a glitch rather than as an overtake.
+  // Rows slide to their new place instead of teleporting.
   useLayoutEffect(() => {
-    // Reading a row's offset forces layout, and standings arrive five times a
-    // second — so the measuring only happens on the renders that can possibly
-    // have moved anything.
+    // Reading a row's offset forces layout, and standings arrive five times a second.
     const key = rows.map((entry) => entry.driver?.code ?? "").join(",");
     if (key === rowOrder.current) return;
     rowOrder.current = key;
@@ -207,9 +166,7 @@ export default function TimingTower({
     rowTops.current = tops;
   });
 
-  // When the list is shorter than the grid, the selected car has to be the row
-  // you can see. Keyed on the selection alone: following it as it changes
-  // position would fight the user's own scrolling every few seconds.
+  // When the list is shorter than the grid, the selected car has to be the row you can see.
   useEffect(() => {
     const row = list.current?.querySelector<HTMLElement>('[data-selected="true"]');
     row?.scrollIntoView({ block: "nearest" });
@@ -219,9 +176,7 @@ export default function TimingTower({
     <div
       style={{ fontFamily: "var(--font-timing), system-ui, sans-serif" }}
       className={cn(
-        // Broadcast graphics are dark in every theme: the tower is styled after
-        // the television overlay, not after the app. Chips hang off the right
-        // edge, so the panel cannot clip its own children.
+        // Broadcast graphics are dark in every theme.
         "pointer-events-auto rounded-sm bg-[#14161a]/92 text-white shadow-[0_8px_24px_rgba(0,0,0,0.4)]",
         compact ? "w-[142px]" : "w-[210px]",
         className,
@@ -340,9 +295,7 @@ export default function TimingTower({
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
         className={cn(
           "f1tv-scroll overflow-y-auto",
-          // Leaves the control bar its own room at the bottom of the screen —
-          // dvh rather than vh because a phone browser's chrome eats into the
-          // viewport without changing what vh reports.
+          // Leaves the control bar its own room at the bottom of the screen.
           compact ? "max-h-[calc(100dvh-17rem)]" : "max-h-[calc(100dvh-15rem)]",
         )}
       >
@@ -353,11 +306,7 @@ export default function TimingTower({
           const selected = index === selectedIndex;
           const direction = moved[index];
           const leader = position === 0;
-          // A lapped car's gap in seconds is a lie by omission — the honest
-          // number is how many laps down it is. Before the cars move there is
-          // no gap at all, so the column carries the car number instead of a
-          // figure the race has not produced yet. The leader's own cell names
-          // the mode, because the leader has no gap to report in either.
+          // A lapped car's gap in seconds is a lie by omission — the honest number is how many laps down it is.
           const gap = !started || !entry.row
             ? `${driver.number}`
             : leader
@@ -388,11 +337,7 @@ export default function TimingTower({
                 aria-current={selected}
                 data-selected={selected}
                 className={cn(
-                  // Fixed height, not padding: the arrow and the number are
-                  // different glyphs at different sizes, and a row that
-                  // measures itself from its content changes height the moment
-                  // a car moves — which makes the whole tower jump every time
-                  // it has something to report.
+                  // Fixed height, not padding: the arrow and the number are different glyphs at different sizes.
                   "relative flex w-full items-center border-b border-white/[0.04] text-left transition-colors duration-500",
                   compact ? "h-[22px] pr-1" : "h-[30px] pr-1.5",
                   selected
@@ -491,8 +436,7 @@ export default function TimingTower({
           }}
           className={cn(
             "pointer-events-none absolute flex items-center justify-center rounded-[2px] bg-[#c400ff] text-white",
-            // Flush with the panel, so it reads as bolted to the tower rather
-            // than floating beside it.
+            // Flush with the panel, so it reads as bolted to the tower rather than floating beside it.
             compact ? "-right-2.5 h-3.5 w-2.5" : "-right-[13px] h-5 w-[13px]",
           )}
         >

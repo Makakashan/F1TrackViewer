@@ -13,13 +13,7 @@ export interface FleetViewportProps {
   onFps: (fps: number) => void;
 }
 
-/**
- * Samples the real frame rate once a second.
- *
- * The whole point of the fleet is that cost does not scale with car count, and
- * a claim like that is worth nothing without a number attached — dragging the
- * slider from one car to twenty should barely move this.
- */
+/** Samples the real frame rate once a second. */
 function FpsProbe({ onFps }: { onFps: (fps: number) => void }) {
   const frames = useRef(0);
   const since = useRef(performance.now());
@@ -37,13 +31,7 @@ function FpsProbe({ onFps }: { onFps: (fps: number) => void }) {
   return null;
 }
 
-/**
- * Frame the formation from its own extent.
- *
- * The fleet grows along the grid as cars are added, so a fixed camera that
- * suits twenty leaves a single car as a speck, and one that suits a single car
- * puts most of a full grid off-screen.
- */
+/** Frame the formation from its own extent. */
 function FrameFormation({ radius }: { radius: number }) {
   const store = useStore();
 
@@ -56,9 +44,7 @@ function FrameFormation({ radius }: { radius: number }) {
 
     perspective.position.set(distance * 0.55, distance * 0.42, distance * 0.72);
     perspective.near = Math.max(distance / 200, 0.5);
-    // Kept tight. drei's infinite grid sizes itself against the far plane, so
-    // a generous far value quietly turns the floor into a kilometres-wide
-    // screen-filling shader for no visible gain.
+    // Kept tight.
     perspective.far = distance * 6;
     perspective.updateProjectionMatrix();
 
@@ -93,10 +79,7 @@ export default function FleetViewport({
     <div className="h-full w-full">
       <Canvas
         camera={{ position: [34, 20, 34], fov: 42, near: 0.5, far: 400 }}
-        // Capped at 1.5 rather than the usual 2. A full grid is millions of
-        // triangles; on a HiDPI screen the last half-step of resolution
-        // multiplies fragment work for a difference nobody can see on cars
-        // this small in frame.
+        // Capped at 1.5 rather than the usual 2.
         dpr={[1, 1.5]}
         gl={{ antialias: true, powerPreference: "high-performance" }}
       >
@@ -123,8 +106,7 @@ export default function FleetViewport({
           sectionSize={10}
           sectionThickness={1.1}
           sectionColor="#454d5c"
-          // Bounded by the formation rather than a constant, so the floor never
-          // outgrows the subject.
+          // Bounded by the formation rather than a constant, so the floor never outgrows the subject.
           fadeDistance={Math.max(radius * 3, 60)}
           fadeStrength={1.2}
           infiniteGrid

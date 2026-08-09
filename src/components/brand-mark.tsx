@@ -1,17 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/**
- * The project's mark: a racing F, and a banana standing where the numeral goes.
- *
- * Deliberately not a copy of the championship's own logo — that is a trademark
- * and this app is unofficial. What it borrows is the idea every motorsport mark
- * uses: letterforms sheared into their own slipstream. The banana is both the
- * joke and the one, and it curves the same way the F leans.
- *
- * One colour throughout, taken from `currentColor`: the mark has to sit on the
- * dark overlay and on a light page, and a two-tone banana turns to mud at the
- * size a tab icon gets.
- */
+/** The project's mark: a racing F, and a banana standing where the numeral goes. */
 /** The banana on its own, for setting inside a line of text as the numeral. */
 export function BananaGlyph({ className }: { className?: string }) {
   return (

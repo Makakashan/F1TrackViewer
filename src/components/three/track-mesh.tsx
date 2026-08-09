@@ -116,10 +116,7 @@ export interface TrackMeshProps {
   gridEntries?: GridEntry[];
   /** Race view only: the running simulation, if there is one. */
   raceSim?: RaceController | null;
-  /**
-   * Seeds the race. Shares the grid order's nonce, so re-rolling the grid
-   * re-rolls the pace and reaction times with it — one shuffle, one new race.
-   */
+  /** Seeds the race. */
   raceSeed?: string;
   /** Race view only: race distance in laps. */
   raceLaps?: number;
@@ -160,9 +157,7 @@ export default function TrackMesh({
   const coords = feature.geometry.coordinates;
   const hasEnvironment = !!environmentBundle;
 
-  // Race view is the "what it actually looks like" mode: asphalt instead of
-  // the stylised red ribbon, the circuit's real width wherever the dataset
-  // has it, and a car in every grid box.
+  // Race view is the "what it actually looks like" mode.
   const raceView = viewMode === "realistic";
 
   const realWidthActive = (raceView || !!realWidthEnabled) && !!widthProfile;
@@ -208,8 +203,7 @@ export default function TrackMesh({
       let min = Infinity;
       let max = -Infinity;
       const denseCoords = densifyCoords(coords, TERRAIN_TRACK_MAX_SEGMENT_M);
-      // Smooth the raw per-vertex terrain heights before they become curve Y:
-      // sampled straight off the DEM the ribbon ripples with every grid cell.
+      // Smooth the raw per-vertex terrain heights before they become curve Y.
       const profileCoords = stripClosingDuplicate(denseCoords);
       const rawY = profileCoords.map(([lon, lat]) =>
         trackTerrainHeightNear(lon, lat),
@@ -258,8 +252,7 @@ export default function TrackMesh({
     () => (hasEnvironment ? minY - 1 : -peakY - trackWidth * 2 - 1),
     [hasEnvironment, minY, peakY, trackWidth],
   );
-  // In terrain mode the terrain bottom sits at baseY=0; place the stage floor
-  // just below it to eliminate the visible gap between platform and scene.
+  // In terrain mode the terrain bottom sits at baseY=0.
   const stageFloorY = hasEnvironment
     ? terrainSampler
       ? -1
@@ -271,8 +264,7 @@ export default function TrackMesh({
     return Math.max(400, Math.min(2000, Math.round(length / 4)));
   }, [feature.properties.length]);
 
-  // The narrow/wide gradient is a diagnostic overlay, not part of the scene —
-  // race view wants plain asphalt even though it uses the same real widths.
+  // The narrow/wide gradient is a diagnostic overlay, not part of the scene.
   const widthColorAt = useMemo(() => {
     if (raceView || !realWidthActive || !widthProfile) return undefined;
     const narrow = new THREE.Color("#F59E0B");
@@ -310,10 +302,7 @@ export default function TrackMesh({
     [curve, halfWidth, samples],
   );
 
-  // Where the paved verge may go. With no environment loaded there is nothing
-  // to bump into, so the strip runs the whole lap; with one, a building
-  // standing on it or ground that has walked away from the road takes it out,
-  // and the smoothing turns each gap into a taper.
+  // Where the paved verge may go.
   const apronClearance = useMemo<ApronClearance | null>(() => {
     if (!environmentBundle) return null;
     const { centerLon, centerLat } = bounds;
@@ -329,9 +318,7 @@ export default function TrackMesh({
     return (point, centre) => {
       if (index(point.x, point.z)) return false;
       if (!terrainSampler) return true;
-      // Ground against ground: the rendered surface sits above the terrain by
-      // a clearance that varies along the lap, so comparing the verge to the
-      // road would reject the whole circuit.
+      // Ground against ground: the rendered surface sits well clear of the terrain.
       const [lon, lat] = xzToLonLat(point.x, point.z, centerLon, centerLat);
       const [centreLon, centreLat] = xzToLonLat(
         centre.x,
@@ -345,17 +332,13 @@ export default function TrackMesh({
     };
   }, [bounds, environmentBundle, terrainSampler]);
 
-  // Always sampled, even with nothing to bump into: the curvature limit on the
-  // inside of a corner is a fact about the curve, and skipping it is what folded
-  // the strip through itself at a hairpin.
+  // Always sampled, even with nothing to bump into.
   const apronRoom = useMemo(
     () => sampleApronRoom(curve, halfWidth, samples, apronClearance),
     [apronClearance, curve, halfWidth, samples],
   );
 
-  // Asphalt beyond the white line, so the kerb has something to lie on. Drawn
-  // just under the surface raise, which keeps the ribbon on top wherever the
-  // two overlap by a hair.
+  // Asphalt beyond the white line, so the kerb has something to lie on.
   const apronGeometry = useMemo(
     () =>
       buildTrackApronGeometry(
@@ -368,9 +351,7 @@ export default function TrackMesh({
     [curve, halfWidth, samples, apronRoom],
   );
 
-  // Kerbs sit a couple of centimeters above the surface and take a deeper
-  // polygon offset than it, so they never z-fight with the ribbon they border;
-  // overlay markers still draw on top via TRACK_OVERLAY_RENDER_ORDER.
+  // Kerbs sit a couple of centimeters above the surface and take a deeper polygon offset than it.
   const kerbGeometry = useMemo(
     () =>
       buildKerbGeometry(
@@ -410,8 +391,7 @@ export default function TrackMesh({
     onStartFinishPlacement?.(startFinishPlacement);
   }, [onStartFinishPlacement, onStartFinishResolved, startFinishPlacement]);
 
-  // Race view paints the line the way it exists on the circuit; the other
-  // modes keep the checkered map symbol.
+  // Race view paints the line the way it exists on the circuit.
   const startFinishGeometry = useMemo(
     () =>
       raceView
@@ -456,14 +436,10 @@ export default function TrackMesh({
     [raceView, curve, startFinishPlacement.s, halfWidth, markers?.directionSign],
   );
 
-  // `raceEnabled` rather than the simulation object itself: the setup must not
-  // be rebuilt every time the race reports a new position, or attaching it
-  // would feed a loop of attach, re-render, attach.
+  // `raceEnabled` rather than the simulation object itself.
   const raceEnabled = !!raceSim;
 
-  // Hand the simulation the track it runs on. Built here because this is
-  // where the curve already exists — rebuilding it beside the HUD would mean
-  // two curves that can disagree about where the circuit is.
+  // Hand the simulation the track it runs on.
   const raceSetup = useMemo(() => {
     if (!raceView || !raceEnabled || gridSlots.length === 0) return null;
     const speedProfile = buildSpeedProfile(curve, samples);
@@ -495,13 +471,7 @@ export default function TrackMesh({
     attachRace?.(raceSetup);
   }, [attachRace, raceSetup]);
 
-  /**
-   * Where a car sits and which way it points, given how far round it is and
-   * how far off the centerline.
-   *
-   * The scene asks this twenty times a frame, so it writes into vectors the
-   * caller owns rather than returning new ones.
-   */
+  /** Where a car sits and which way it points, given how far round it is and how far off the centerline. */
   const poseAt = useCallback(
     (
       s: number,
@@ -549,9 +519,7 @@ export default function TrackMesh({
       buildStartFinishGantryGeometry(
         curve,
         startFinishPlacement.s,
-        // Race view builds the real structure, so it takes the width the
-        // asphalt actually has under it — the lap mean puts the posts off the
-        // edge wherever the start straight is narrower than average.
+        // Race view builds the real structure, so it takes the width the asphalt actually has under it.
         raceView ? halfWidth : markerHalfWidth,
         TRACK_OVERLAY_RAISE,
         raceView ? "plain" : "checkered",
@@ -596,8 +564,7 @@ export default function TrackMesh({
     return () => {
       trackGeometry.dispose();
       outlineGeometry.dispose();
-      // Built beside the kerb and rebuilt on the same inputs, but never freed
-      // with it — one lap's worth of paving left behind per circuit switch.
+      // Built beside the kerb and rebuilt on the same inputs, but never freed with it.
       apronGeometry?.dispose();
       kerbGeometry?.dispose();
       edgeLineGeometry.dispose();
@@ -627,15 +594,7 @@ export default function TrackMesh({
     };
   }, [sectorGeometries, splitLineGeometries]);
 
-  /**
-   * Undefined unless the calibration tool is open.
-   *
-   * An r3f mesh with any pointer handler joins the interaction list, and every
-   * pointer move then raycasts it — the whole track ribbon, triangle by
-   * triangle, on each event of a drag. The handler only ever does anything for
-   * the admin calibration page, so outside it the mesh should not be
-   * interactive at all rather than interactive-and-returning-early.
-   */
+  /** Undefined unless the calibration tool is open. */
   const calibrateOnPointerDown = useMemo(() => {
     if (!calibrationEnabled) return undefined;
     return (event: { stopPropagation: () => void; point: THREE.Vector3 }) => {
@@ -659,19 +618,13 @@ export default function TrackMesh({
     [radius, hasEnvironment],
   );
 
-  // Deliberately excludes `peakY` from the deps: peakY is recomputed whenever
-  // the terrain toggle flips (same circuit, different elevation source), and
-  // resetting the camera on that toggle would discard the user's orbit. It
-  // only needs to reset when the circuit itself changes (tracked via radius
-  // and hasEnvironment), reading the latest peakY via ref at that point.
+  // Deliberately excludes `peakY` from the deps.
   const peakYRef = useRef(peakY);
   useEffect(() => {
     peakYRef.current = peakY;
   });
   useEffect(() => {
-    // Race view frames the grid, not the circuit — RaceCameraRig owns the
-    // camera there. Child effects run before the parent's, so without this the
-    // overview would land on top of the rig's framing on every mount.
+    // Race view frames the grid, not the circuit — RaceCameraRig owns the camera there.
     if (raceView) return;
     const currentPeakY = peakYRef.current;
     const verticalFudge = 1 + Math.min(1, currentPeakY / Math.max(radius, 1));
@@ -685,10 +638,7 @@ export default function TrackMesh({
     }
   }, [raceView, camera, controls, radius, cameraFraming]);
 
-  // Excludes `peakY` from the deps for the same reason as above: cameraPreset
-  // persists (it's URL state, not a one-shot trigger), so reacting to peakY
-  // here would re-snap the camera on every terrain toggle once any preset had
-  // ever been clicked.
+  // Excludes `peakY` from the deps for the same reason as above.
   useEffect(() => {
     if (!cameraPreset) return;
     const { baseDistance: distance, yOffset } = cameraFraming(peakYRef.current);
@@ -936,8 +886,7 @@ export default function TrackMesh({
             />
           </mesh>
           {startLights.lamps.map((lamp, index) => {
-            // Lamps are emitted column-major, so the first `lit` columns are
-            // the first `lit * rows` lamps.
+            // Lamps are emitted column-major, so the first `lit` columns are the first `lit * rows` lamps.
             const on = index < startLightsLit * START_LIGHT_ROWS;
             return (
               <mesh

@@ -1,11 +1,7 @@
 import * as THREE from "three";
 import type { HalfWidth } from "@/lib/track/track-geometry";
 
-/**
- * Starting grid markings — the staggered boxes behind the start/finish line.
- * Every circuit uses the same FIA geometry, so the only per-circuit inputs are
- * where the line is, which way the cars face, and how wide the track is.
- */
+/** Starting grid markings — the staggered boxes behind the start/finish line. */
 
 const GRID_SLOTS = 20;
 /** Longitudinal gap between consecutive (staggered) boxes. Same-side rows end up 16 m apart. */
@@ -27,10 +23,7 @@ function halfWidthAt(halfWidth: HalfWidth, s: number): number {
   return typeof halfWidth === "function" ? halfWidth(s) : halfWidth;
 }
 
-/**
- * How far behind the start line a grid box sits. The simulation measures
- * progress from the line, or pole and P20 both start at zero meters covered.
- */
+/** How far behind the start line a grid box sits. */
 export function gridSetbackMeters(place: number): number {
   return FIRST_SLOT_SETBACK_M + (place - 1) * SLOT_PITCH_M;
 }
@@ -52,11 +45,7 @@ export interface GridSlot {
   place: number;
 }
 
-/**
- * Where each car stands on the grid — shared by the painted boxes and by
- * whatever is placed in them. `halfWidth` is sampled per slot, since a lap
- * mean puts the outer wheels off the asphalt where the track is tighter.
- */
+/** Where each car stands on the grid — shared by the painted boxes and by whatever is placed in them. */
 export function startGridSlots(
   curve: THREE.CatmullRomCurve3,
   startFinishS: number,
@@ -103,10 +92,7 @@ export function startGridSlots(
   return result;
 }
 
-/**
- * The grid boxes as flat white quads. `directionSign` follows TrackMarkers:
- * +1 when lap distance increases with s.
- */
+/** The grid boxes as flat white quads. */
 export function buildStartGridGeometry(
   curve: THREE.CatmullRomCurve3,
   startFinishS: number,
@@ -117,8 +103,7 @@ export function buildStartGridGeometry(
   const totalLength = curve.getLength();
   if (!(totalLength > 0)) return null;
 
-  // Grid needs ~170 m of track behind the line; on a circuit shorter than the
-  // grid itself the boxes would wrap past the line and overlap the front row.
+  // Grid needs ~170 m of track behind the line.
   const gridLength = FIRST_SLOT_SETBACK_M + GRID_SLOTS * SLOT_PITCH_M;
   if (totalLength < gridLength * 1.5) return null;
 
@@ -163,8 +148,7 @@ export function buildStartGridGeometry(
     halfWidth,
     directionSign,
   )) {
-    // Paint sits on the asphalt: a physical lift reads as levitating markings
-    // from inside the car. Polygon offset keeps it out of the surface.
+    // Paint sits on the asphalt: a physical lift reads as levitating markings from inside the car.
     const y = position.y + topRaise;
 
     // Front transverse line plus two longitudinal sides — an open-backed box.

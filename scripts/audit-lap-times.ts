@@ -1,22 +1,4 @@
-/**
- * Does the speed model produce plausible lap times?
- *
- * Builds each circuit's curve exactly as the scene does, runs the speed
- * profile over it, and prints the ideal lap time next to a real qualifying
- * lap. The four constants in speed-profile.ts are the entire model, so this
- * is the only check that tells us they are wrong before a user sees a car
- * take Eau Rouge at 40 km/h.
- *
- * Reference times are pole laps from recent races, in seconds. They live here
- * rather than in public/track-markers because the marker files only record
- * which session a lap came from, not how long it took.
- *
- * Historic layouts (Reims, Riverside, the 1909 Brickyard…) have no reference:
- * the geometry is real but no F1 car of this era ever drove it, so there is
- * nothing to compare against and they are reported without a verdict.
- *
- *   bun scripts/audit-lap-times.ts
- */
+/** Does the speed model produce plausible lap times? */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { buildTrackCurve, computeBounds } from "../src/lib/geo-utils";

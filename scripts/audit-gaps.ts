@@ -1,15 +1,4 @@
-/**
- * Do the intervals hold still when the cars do?
- *
- * A gap of "distance between us over my speed" is a function of where on the
- * lap a pair happens to be: hold station through a hairpin and the number
- * triples, then falls back on the straight without either car gaining a meter.
- * This measures that directly — for every pair of cars whose separation in
- * meters barely changes over a window, how much the reported gap in seconds
- * moves, timed against the estimate it replaced.
- *
- *   bun scripts/audit-gaps.ts [circuitId]
- */
+/** Do the intervals hold still when the cars do? */
 import { readFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { buildTrackCurve, computeBounds } from "../src/lib/geo-utils";
@@ -22,11 +11,7 @@ const CACHE_DIR = ".cache/circuit-geojson";
 const RAW_BASE = "https://raw.githubusercontent.com/bacinger/f1-circuits/master";
 const STEP_HZ = 30;
 const SAMPLE_S = 0.5;
-/**
- * How much a pair's separation may drift and still count as holding station,
- * as a share of the separation itself. A relative bound is the only fair one:
- * cars a hundred meters apart breathe more than cars in a train.
- */
+/** How much a pair's separation may drift and still count as holding station. */
 const HOLDING_STATION_SHARE = 0.12;
 /** Pairs closer than this are nose-to-tail, where both formulas agree anyway. */
 const MIN_SEPARATION_M = 20;
@@ -128,9 +113,7 @@ for (const circuit of index.circuits) {
     }
   }
 
-  // Windows, not whole runs: a pair drifts over four minutes no matter what,
-  // and the question is what the number does over the few seconds it takes to
-  // go from a straight into a corner and back.
+  // Windows, not whole runs: a pair drifts over four minutes no matter what.
   const WINDOW = 12;
   let timedWorst = 0;
   let estimateWorst = 0;

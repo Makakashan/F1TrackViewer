@@ -22,13 +22,7 @@ export interface RaceHeaderMenuProps extends RaceSceneSettingsProps {
   className?: string;
 }
 
-/**
- * Everything on the right of the race header, folded into one button.
- *
- * Four separate controls next to a circuit name is more than a phone header
- * has room for — they were landing on top of each other. The circuit is what
- * the header is for, so it keeps the bar and the rest moves in here.
- */
+/** Everything on the right of the race header, folded into one button. */
 export default function RaceHeaderMenu({
   onBackToGlobe,
   onExit,

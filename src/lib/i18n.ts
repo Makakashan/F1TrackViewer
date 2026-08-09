@@ -1,15 +1,4 @@
-/**
- * Lightweight i18n dictionary — no library, no server. Just a flat key-value
- * map per language, with a small client-side hook to pick the active one.
- *
- * Default language is resolved from (in order):
- *   1. localStorage["f1tv:lang"]
- *   2. navigator.language (anything starting with "ru" → ru, otherwise en)
- *   3. "en" as a safe fallback
- *
- * English is the canonical source of truth — every key MUST exist in `en`.
- * Russian is a parallel set; if a key is missing it falls back to English.
- */
+/** Lightweight i18n dictionary — no library, no server. */
 
 export type Lang = "ru" | "en";
 

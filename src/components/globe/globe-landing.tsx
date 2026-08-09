@@ -80,9 +80,7 @@ export default function GlobeLanding() {
 	const [query, setQuery] = useState("");
 	const [filterChip, setFilterChip] = useState<FilterChip>("all");
 	const [sortMode, setSortMode] = useState<SortMode>("name");
-	// Where the globe faces — defaults to Europe and only changes when the
-	// user picks a continent chip. "All"/"Classic" narrow the list without
-	// moving the camera.
+	// Where the globe faces — defaults to Europe and only changes when the user picks a continent chip.
 	const [cameraContinent, setCameraContinent] = useState<Continent>(
 		DEFAULT_CAMERA_CONTINENT,
 	);
@@ -363,8 +361,7 @@ export default function GlobeLanding() {
 			{!mobileMenuOpen && (
 				<RaceModeBanner
 					circuits={circuits}
-					// On a phone the circuit card owns the bottom of the screen;
-					// two things stacked there is the overlap this had before.
+					// On a phone the circuit card owns the bottom of the screen.
 					stacked={selectedCircuit != null}
 				/>
 			)}

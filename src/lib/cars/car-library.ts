@@ -1,11 +1,4 @@
-/**
- * Index of car models published under public/cars/.
- *
- * Written by scripts/generate-car-manifest.ts. The site is exported statically
- * for GitHub Pages, so a directory cannot be listed at runtime — the manifest
- * is how the admin model browser knows what exists and what it weighs before
- * downloading anything.
- */
+/** Index of car models published under public/cars/. */
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
@@ -31,11 +24,7 @@ export function carModelUrl(entry: CarModelEntry): string {
   return `${PUBLIC_BASE_PATH}/cars/${entry.file}`;
 }
 
-/**
- * Returns an empty library rather than throwing when no manifest is published.
- * A missing manifest is the normal state of a fresh checkout — `cars/` is
- * gitignored — and the browser should say "nothing here" rather than error.
- */
+/** Returns an empty library rather than throwing when no manifest is published. */
 export async function fetchCarLibrary(): Promise<CarLibrary> {
   const empty: CarLibrary = {
     version: 1,

@@ -2,12 +2,7 @@ import * as THREE from "three";
 import { sampleCurvature } from "@/lib/track/track-curvature";
 import { halfWidthAt, type HalfWidth } from "@/lib/track/track-geometry";
 
-/**
- * The line the cars drive: lateral offsets from the centerline, one per
- * sample. Enter wide, clip the apex, exit wide — but the smoothing is the
- * interesting part, since a raw per-sample offset snaps sideways at the corner
- * entry and reads as a car changing its mind.
- */
+/** The line the cars drive: lateral offsets from the centerline, one per sample. */
 export interface RacingLine {
   /** Lateral offset in meters at sample i; positive is toward `across`. */
   offsets: number[];
@@ -15,19 +10,13 @@ export interface RacingLine {
   totalLength: number;
 }
 
-/**
- * How much of the available half width the line may use. Not all of it: a car
- * placed on the white line looks about to leave the circuit.
- */
+/** How much of the available half width the line may use. */
 const USABLE_FRACTION = 0.55;
 /** Kept clear between the car's own edge and the track edge, in meters. */
 const EDGE_MARGIN_M = 0.6;
 /** Half the car's width, in meters. */
 const CAR_HALF_WIDTH_M = 1;
-/**
- * Curvature at which the line commits to the full offset, in 1/m. Anything
- * gentler gets a proportional share, so a sweeper is not treated as a hairpin.
- */
+/** Curvature at which the line commits to the full offset, in 1/m. */
 const FULL_OFFSET_CURVATURE = 1 / 120;
 /** Distance over which the line eases out and back, in meters. */
 const EASE_LENGTH_M = 70;
@@ -37,8 +26,7 @@ export function buildRacingLine(
   samples: number,
   halfWidth: HalfWidth,
 ): RacingLine | null {
-  // Wider smoothing than the kerbs use: the line responds to a corner as a
-  // whole, not to every wobble in the trace.
+  // Wider smoothing than the kerbs use: the line responds to a corner as a whole.
   const profile = sampleCurvature(curve, samples, 12);
   if (!profile) return null;
 
@@ -54,8 +42,7 @@ export function buildRacingLine(
       hw * USABLE_FRACTION - CAR_HALF_WIDTH_M - EDGE_MARGIN_M,
     );
     const amount = Math.min(1, Math.abs(k) / FULL_OFFSET_CURVATURE);
-    // `across` is tangent × up, so a left-hand turn (positive curvature) has
-    // its apex on the -across side and the car leans that way.
+    // `across` is tangent × up, so a left-hand turn apexes on the -across side.
     target[i] = -Math.sign(k) * amount * room;
   }
 

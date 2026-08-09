@@ -38,11 +38,7 @@ const ModelViewer = dynamic(() => import("./model-viewer"), {
   ),
 });
 
-/**
- * Models arrive authored in metres, centimetres or arbitrary units, so a fixed
- * two decimals renders a 0.0234-unit car as "0.02" — three identical-looking
- * numbers that say nothing. Precision follows magnitude instead.
- */
+/** Models arrive authored in metres, centimetres or arbitrary units. */
 function formatUnit(value: number): string {
   if (!Number.isFinite(value)) return "—";
   const magnitude = Math.abs(value);
@@ -371,10 +367,7 @@ export default function CarModelLab() {
     [models, selectedId],
   );
 
-  // Stats are tagged with the model that produced them and matched against the
-  // current selection, rather than cleared on change. While the next model is
-  // still downloading the ids disagree and the panel reads as "measuring",
-  // so the previous car's numbers can never be shown under a new car's name.
+  // Stats are tagged with the model that produced them and matched against the current selection.
   const handleStats = useCallback(
     (next: GltfStats) => {
       if (selectedId) setMeasured({ id: selectedId, stats: next });

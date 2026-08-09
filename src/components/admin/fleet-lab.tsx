@@ -26,16 +26,7 @@ const FleetViewport = dynamic(() => import("./fleet-viewport"), {
   ),
 });
 
-/**
- * Where a grid stops being a rendering question and becomes a hardware one.
- * Roughly a million triangles: comfortable on a discrete GPU, already heavy on
- * integrated graphics, and the point at which the base model needs simplifying
- * rather than the renderer needing tuning.
- *
- * This is a hard cap on the slider, not a warning. A warning was tried first;
- * an advisory label does nothing when the full-detail base at grid size can
- * hang a GPU outright — on Linux that takes the whole desktop session with it.
- */
+/** Where a grid stops being a rendering question and becomes a hardware one. */
 const TRIANGLE_BUDGET = 1_000_000;
 
 function Metric({
@@ -74,10 +65,7 @@ function Metric({
 export default function FleetLab() {
   const [models, setModels] = useState<CarModelEntry[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // Opens small on purpose. The base models are full-detail — 227k triangles
-  // each — so a tab that defaulted to a twenty-car grid would put four and a
-  // half million triangles on screen the instant it was clicked, which is
-  // enough to hang a GPU rather than merely run slowly. Raise it deliberately.
+  // Opens small on purpose.
   const [count, setCount] = useState(4);
   const [stats, setStats] = useState<CarFleetStats | null>(null);
   const [fps, setFps] = useState(0);
@@ -90,12 +78,7 @@ export default function FleetLab() {
       setSelectedId(
         (current) =>
           current ??
-          // Prefer a painted team car: the runtime overrides bodywork and rims
-          // only, so everything else keeps whatever the base model was built
-          // with. An unpainted base would give twenty cars with white floors.
-          // Among those, prefer the simplified LOD — this tab exists to preview
-          // a full grid, and the full-detail base at grid size is what hangs
-          // weaker GPUs.
+          // Prefer a painted team car: the runtime overrides bodywork and rims only.
           library.models.find(
             (model) => model.id.startsWith("f1_") && model.id.endsWith("_lod"),
           )?.id ??
@@ -117,9 +100,7 @@ export default function FleetLab() {
   const handleStats = useCallback((next: CarFleetStats) => setStats(next), []);
   const handleFps = useCallback((next: number) => setFps(next), []);
 
-  // How many of this model fit in the budget. Until the model is measured the
-  // cap stays at the small default — better to briefly under-offer than to let
-  // a heavy model render at twenty for a frame.
+  // How many of this model fit in the budget.
   const maxCars = stats
     ? Math.max(
         1,
@@ -129,13 +110,11 @@ export default function FleetLab() {
         ),
       )
     : 4;
-  // The slider keeps its raw value across model switches; the fleet renders
-  // the clamped count so selecting a heavier base immediately sheds cars.
+  // The slider keeps its raw value across model switches.
   const shownCount = Math.min(count, maxCars);
 
   const totalTriangles = stats ? stats.trianglesPerCar * shownCount : 0;
-  // What the same fleet would cost drawn as individual scene graphs — the
-  // number this whole approach exists to avoid.
+  // What the same fleet would cost drawn as individual scene graphs.
   const naiveDrawCalls = stats ? stats.drawCalls * shownCount : 0;
 
   return (

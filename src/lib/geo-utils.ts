@@ -14,9 +14,7 @@ export interface GeoBounds {
   centerLat: number;
 }
 
-/**
- * Compute the bounding box of a list of [lon, lat] coordinates.
- */
+/** Compute the bounding box of a list of [lon, lat] coordinates. */
 export function computeBounds(coords: [number, number][]): GeoBounds {
   let minLon = Infinity,
     minLat = Infinity,
@@ -38,10 +36,7 @@ export function computeBounds(coords: [number, number][]): GeoBounds {
   };
 }
 
-/**
- * Convert a [lon, lat] pair to local metric-space coordinates.
- * The track is centered on its bbox center, north points to -Z, east to +X.
- */
+/** Convert a [lon, lat] pair to local metric-space coordinates. */
 export function lonLatToXZ(
   lon: number,
   lat: number,
@@ -67,9 +62,7 @@ export function xzToLonLat(
   return [centerLon + x / metersPerDegLon, centerLat - z / metersPerDegLat];
 }
 
-/**
- * Distance in meters between two [lon, lat] points.
- */
+/** Distance in meters between two [lon, lat] points. */
 export function distanceMeters(a: [number, number], b: [number, number]): number {
   const meanLat = ((a[1] + b[1]) / 2) * (Math.PI / 180);
   const metersPerDegLat = 111_320;
@@ -79,15 +72,7 @@ export function distanceMeters(a: [number, number], b: [number, number]): number
   return Math.hypot(dx, dz);
 }
 
-/**
- * Insert evenly-spaced intermediate points into long segments so no gap
- * exceeds `maxSegmentMeters`. Real circuit GeoJSON can have straights spanning
- * several hundred meters between two points — a Catmull-Rom curve only
- * samples terrain height at the original vertices, so a smooth interpolation
- * across a long, sparse segment can miss a hill in between and dip the track
- * below the terrain mesh. Densifying first gives the curve enough elevation
- * samples to track the real profile.
- */
+/** Insert evenly-spaced intermediate points into long segments so no gap exceeds `maxSegmentMeters`. */
 export function densifyCoords(
   coords: [number, number][],
   maxSegmentMeters: number,
@@ -108,20 +93,7 @@ export function densifyCoords(
   return result;
 }
 
-/**
- * Rebuild a curve's arc-length table at roughly one division per meter.
- *
- * `getPointAt` / `getTangentAt` map distance to curve parameter through a
- * lookup table with linear interpolation between entries, and three.js
- * defaults to 200 entries no matter how long the curve is — 16 m per entry on
- * a Monaco-sized lap. Anything that steps along the curve by real distance
- * then lands unevenly: asking for 4.16 m steps returns spacings between
- * 0.59 m and 9.91 m, which is why evenly sized markings came out ragged.
- * The table has to be finer than the steps taken through it: at one division
- * per meter, meter-long kerb blocks still came out between 0.49 m and 1.52 m.
- * Four divisions per meter holds them inside a few percent, and building the
- * table costs one cheap curve evaluation per division, once per circuit.
- */
+/** Rebuild a curve's arc-length table at roughly one division per meter. */
 export function refineArcLengths(curve: THREE.CatmullRomCurve3): void {
   const divisions = THREE.MathUtils.clamp(
     Math.round(curve.getLength() * 4),
@@ -133,11 +105,7 @@ export function refineArcLengths(curve: THREE.CatmullRomCurve3): void {
   curve.updateArcLengths();
 }
 
-/**
- * Drop the repeated final point of a closed ring. A CatmullRomCurve3 built
- * with `closed: true` adds the wrap segment itself, and callers that compute a
- * per-vertex profile need their arrays index-aligned with the same points.
- */
+/** Drop the repeated final point of a closed ring. */
 export function stripClosingDuplicate(
   coords: [number, number][],
 ): [number, number][] {
@@ -199,9 +167,7 @@ export function buildTrackCurveWithY(
   return curve;
 }
 
-/**
- * Estimate a sensible scene radius (in meters) from the bbox.
- */
+/** Estimate a sensible scene radius (in meters) from the bbox. */
 export function sceneRadiusFromBounds(bounds: GeoBounds): number {
   const widthMeters =
     (bounds.maxLon - bounds.minLon) *

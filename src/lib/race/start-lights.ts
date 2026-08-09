@@ -2,15 +2,7 @@ import * as THREE from "three";
 import { gantryFrame } from "@/lib/track/start-finish";
 import type { HalfWidth } from "@/lib/track/track-geometry";
 
-/**
- * The FIA start lights, hung under the start/finish gantry.
- *
- * Five columns of two lamps, which is the real signal: the columns light left
- * to right one per second, then all ten go out together and the race is on.
- * The geometry is built here; what colour each lamp shows at a given moment is
- * the caller's business, so every lamp is its own geometry rather than one
- * merged mesh.
- */
+/** The FIA start lights, hung under the start/finish gantry. */
 
 const COLUMNS = 5;
 const ROWS = 2;
@@ -25,11 +17,7 @@ const PANEL_DEPTH_M = 0.25;
 export interface StartLights {
   /** Dark backing panel the lamps are set into. */
   panel: THREE.BufferGeometry;
-  /**
-   * One disc per lamp, ordered column-major: index = column * ROWS + row, so
-   * `lamps.slice(0, lit * ROWS)` is exactly the set that is on after `lit`
-   * columns have come up.
-   */
+  /** One disc per lamp, ordered column-major: index = column ROWS + row, so `lamps.slice(0. */
   lamps: THREE.BufferGeometry[];
   columns: number;
   rows: number;
@@ -38,11 +26,7 @@ export interface StartLights {
 export const START_LIGHT_COLUMNS = COLUMNS;
 export const START_LIGHT_ROWS = ROWS;
 
-/**
- * `directionSign` follows the TrackMarkers convention (+1 when lap distance
- * increases with s). The lamps face the oncoming cars, which is against the
- * direction of travel.
- */
+/** `directionSign` follows the TrackMarkers convention (+1 when lap distance increases with s). */
 export function buildStartLightsGeometry(
   curve: THREE.CatmullRomCurve3,
   s: number,
@@ -55,8 +39,7 @@ export function buildStartLightsGeometry(
 
   const panelWidth = COLUMN_PITCH_M * COLUMNS + PANEL_PADDING_M;
   const panelHeight = ROW_PITCH_M * ROWS + PANEL_PADDING_M;
-  // Hang the panel just under the beam, on the side the cars approach from so
-  // it is never read through the beam itself.
+  // Hung under the beam, on the side the cars approach from.
   const facing = tangent.clone().multiplyScalar(-directionSign);
   const panelCenter = center
     .clone()

@@ -1,16 +1,6 @@
 import { TEAMS_2025, teamById, type Team } from "@/lib/race/f1-teams";
 
-/**
- * The twenty drivers of the 2025 Formula 1 season.
- *
- * Names, numbers and codes are facts about the season, and a timing tower
- * without them is a mockup rather than a UI. Nothing here is a trademark of a
- * team or of the championship; the liveries those drivers race in live in
- * f1-teams.ts, deliberately as approximations.
- *
- * Where a seat changed hands mid-season the driver who finished the year in it
- * is the one listed, so the grid is one consistent snapshot rather than a mix.
- */
+/** The twenty drivers of the 2025 Formula 1 season. */
 
 export interface Driver {
   /** Car number. */

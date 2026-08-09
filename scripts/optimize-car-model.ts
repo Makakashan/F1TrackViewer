@@ -1,36 +1,4 @@
-/**
- * Shrink a car .glb to something a browser can reasonably download.
- *
- * Marketplace car models are authored for offline renders, and the Sketchfab
- * exporter adds its own overhead on top. The Ferrari SF-25 that prompted this
- * arrived at 25.7 MB with 316k triangles, 40 materials and — the real culprit —
- * up to six TEXCOORD sets per mesh where the materials read exactly one. Five
- * dead UV sets across 230k vertices is roughly 9 MB of nothing.
- *
- * Every step below is chosen so the result still loads through a plain
- * GLTFLoader with no side-car decoder:
- *
- *   dedup + prune    Drop unreferenced accessors, materials and textures, and
- *                    the unused vertex attributes that dominate this file.
- *   simplify         Optional. The viewer frames the car from ~20 m, where a
- *                    third of the triangles are smaller than a pixel.
- *   weld             Merge coincident vertices so simplification and
- *                    quantization have a clean topology to work on.
- *   textureCompress  PNG -> WebP and a resolution cap. Several of these maps
- *                    are flat colours stored at 1024x1024.
- *   quantize         Pack attributes into integers via KHR_mesh_quantization,
- *                    which three.js supports natively. Draco and Meshopt
- *                    compress harder but each needs a decoder shipped and
- *                    wired into the loader; that trade is not worth it until
- *                    quantization alone stops being enough.
- *
- * Usage:
- *   bun scripts/optimize-car-model.ts cars/ferrari_sf_25.glb
- *   bun scripts/optimize-car-model.ts cars/ferrari_sf_25.glb --texture-size 256 --ratio 0.35
- *
- * Writes <name>.opt.glb next to the input, so the original stays put and both
- * can be compared side by side in the admin model lab.
- */
+/** Shrink a car .glb to something a browser can reasonably download. */
 
 import { NodeIO, type Document, type Texture } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
@@ -55,14 +23,7 @@ function srgbToLinear(channel: number): number {
   return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
 }
 
-/**
- * Average colour of a texture, in linear space.
- *
- * Downsampled to 16x16 first: the mean of a livery is the same at that size,
- * and it avoids decoding a full 1024x1024 per material. Averaging is done
- * after the transfer function, not before — mixing sRGB values directly
- * biases every result toward the light end.
- */
+/** Average colour of a texture, in linear space. */
 async function averageColor(
   texture: Texture,
 ): Promise<[number, number, number] | null> {
@@ -117,19 +78,7 @@ interface PaintRule {
   roughness: number;
 }
 
-/**
- * Flat-colour scheme applied by material name.
- *
- * An untextured car exports as uniform white: every material carries a
- * baseColorFactor of 1,1,1 and there is nothing else to tell the parts apart.
- * The geometry does distinguish them — models of this kind name their materials
- * after the part — so a name-keyed palette restores the read without any maps,
- * and survives re-exporting the model because it is applied at build time
- * rather than baked in.
- *
- * Order matters: the first pattern that matches wins, so the narrow rules
- * (steering-wheel carbon, tyre sidewalls) sit above the broad ones.
- */
+/** Flat-colour scheme applied by material name. */
 const PAINT_RULES: PaintRule[] = [
   // Rubber first — "TYRE_SIDES" must not fall through to a generic rule.
   { pattern: /tyre.*(thread|tread)/i, color: "#141519", metalness: 0, roughness: 0.95 },
@@ -143,24 +92,11 @@ const PAINT_RULES: PaintRule[] = [
   { pattern: /carbon/i, color: "#1a1c21", metalness: 0.3, roughness: 0.45 },
   { pattern: /detail/i, color: "#23262c", metalness: 0.35, roughness: 0.5 },
   { pattern: /generic/i, color: "#4a4f58", metalness: 0.2, roughness: 0.6 },
-  // Bodywork last: "paint" is the broadest term and would otherwise swallow
-  // anything named e.g. "sw_paint".
+  // Bodywork last: "paint" is the broadest term and would swallow narrower matches.
   { pattern: LIVERY_SLOT_PATTERNS.body, slot: "body", metalness: 0.25, roughness: 0.32 },
 ];
 
-/**
- * Materials whose geometry exists only to carry a logo.
- *
- * Liveries are not painted onto the bodywork; they are separate shells laid a
- * fraction of a millimetre above it, cut to the outline of each sponsor mark
- * and textured with it. Strip the textures and those shells do not go away —
- * they become flat patches in the shape of the logos they used to hold, which
- * is why colouring them produced white blobs scattered over the car.
- *
- * Deleting the geometry is the fix, and it pays three ways at once: the car
- * reads as painted bodywork, the file loses the decal meshes, and the last
- * trace of anyone else's trademarks goes with them.
- */
+/** Materials whose geometry exists only to carry a logo. */
 const DECAL_PATTERNS = [/decal/i, /number/i, /logo/i, /sponsor/i, /badge/i];
 
 function dropDecals(document: Document): string[] {
@@ -178,22 +114,17 @@ function dropDecals(document: Document): string[] {
     if (mesh.listPrimitives().length === 0) mesh.dispose();
   }
 
-  // Materials, accessors and now-childless nodes are cleared by the prune that
-  // follows in the transform chain.
+  // Materials, accessors and childless nodes are cleared by the prune that follows.
   return [...dropped];
 }
 
-/**
- * Paint materials by name, filling the livery slots from `livery`.
- */
+/** Paint materials by name, filling the livery slots from `livery`. */
 function paintByName(document: Document, livery: Livery) {
   const painted: string[] = [];
   const skipped: string[] = [];
 
   for (const material of document.getRoot().listMaterials()) {
-    // Dropping the decal shells leaves their materials orphaned until the next
-    // prune. Reporting those as "unmatched, left as-is" would read as if they
-    // were still on the car.
+    // Dropping the decal shells leaves their materials orphaned until the next prune.
     const inUse = material
       .listParents()
       .some((parent) => parent.propertyType === "Primitive");
@@ -216,20 +147,7 @@ function paintByName(document: Document, livery: Livery) {
   return { painted, skipped };
 }
 
-/**
- * Strip every texture, keeping each material's identity as a flat colour.
- *
- * Wanted for two unrelated reasons at once. It removes the livery — team
- * marks, sponsor logos, driver numbers — which is the part of a marketplace
- * car that carries somebody else's trademarks. And it deletes the entire
- * texture budget, which on this asset is most of the file and all of the
- * texture VRAM.
- *
- * Materials keep the average colour of the map they lose, so tyres stay black,
- * carbon stays dark and paint keeps its hue. Without that every material falls
- * back to its baseColorFactor, which for a texture-driven material is white —
- * a single white blob with no readable parts.
- */
+/** Strip every texture, keeping each material's identity as a flat colour. */
 async function stripCosmetics(document: Document): Promise<number> {
   let recoloured = 0;
 
@@ -284,8 +202,7 @@ export interface Options {
 function parseArgs(argv: string[]): Options | null {
   const positional: string[] = [];
   const flags = new Map<string, string>();
-  // Boolean flags take no value; treating them like the rest would swallow the
-  // next argument.
+  // Boolean flags take no value; treating them like the rest would swallow the next argument.
   const booleans = new Set([
     "strip-textures",
     "gzip",
@@ -309,8 +226,7 @@ function parseArgs(argv: string[]): Options | null {
     ratio: Number(flags.get("ratio") ?? 1),
     error: Number(flags.get("error") ?? 0.001),
     stripTextures: flags.has("strip-textures"),
-    // --body implies --paint: asking for a colour and getting a white car
-    // would be a surprising way to spend a build.
+    // --body implies --paint: a colour request that yields a white car is a surprise.
     paint: flags.has("paint") || flags.has("body") || flags.has("accent"),
     livery: {
       body: flags.get("body") || DEFAULT_LIVERY.body,
@@ -362,21 +278,18 @@ export async function optimizeModel(
     recoloured = await stripCosmetics(document);
   }
 
-  // Before painting: there is no point colouring geometry about to be deleted,
-  // and dropping it first keeps it out of the "unmatched" report.
+  // Before painting: there is no point colouring geometry about to be deleted.
   const droppedDecals = options.keepDecals ? [] : dropDecals(document);
 
   let paintReport: { painted: string[]; skipped: string[] } | null = null;
   if (options.paint) {
-    // After stripCosmetics, so an explicit palette wins over colours averaged
-    // out of the maps it removed.
+    // After stripCosmetics, so an explicit palette wins over colours averaged out of the maps it removed.
     paintReport = paintByName(document, options.livery);
   }
 
   const transforms = [
     dedup(),
-    // keepAttributes: false is what removes TEXCOORD_1..5 and unreferenced
-    // TANGENT data. It is the single largest win on Sketchfab exports.
+    // keepAttributes: false is what removes TEXCOORD_1..5 and unreferenced TANGENT data.
     prune({ keepAttributes: false, keepLeaves: false }),
     weld(),
   ];
@@ -408,8 +321,7 @@ export async function optimizeModel(
       quantizeTexcoord: 12,
       quantizeColor: 8,
     }),
-    // A second prune: simplification and dedup can strand accessors that were
-    // referenced when the pipeline started.
+    // A second prune: simplification and dedup can strand accessors.
     prune({ keepAttributes: false, keepLeaves: false }),
   );
 
@@ -428,11 +340,7 @@ export async function optimizeModel(
   const trianglesAfter = countTriangles();
   const texturesAfter = document.getRoot().listTextures().length;
 
-  // Report the gzipped size whether or not a .gz is written: that is what
-  // actually crosses the wire, since both Next's dev/standalone server and
-  // GitHub Pages compress responses. Textured GLBs barely move — WebP and PNG
-  // are already compressed — but a stripped model is quantized integers and
-  // vertex data, which gzip does very well on.
+  // Report the gzipped size whether or not a .gz is written.
   const gzipped = gzipSync(bytes, { level: 9 });
 
   if (options.gzip) {
@@ -496,6 +404,5 @@ async function main() {
   await optimizeModel(options);
 }
 
-// Only run as a CLI; importing this module for optimizeModel must not execute
-// a build.
+// Only run as a CLI; importing this module for optimizeModel must not execute a build.
 if (import.meta.main) main();

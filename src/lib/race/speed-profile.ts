@@ -1,15 +1,7 @@
 import * as THREE from "three";
 import { sampleCurvature } from "@/lib/track/track-curvature";
 
-/**
- * How fast a car can be at every point of a circuit: a cornering limit from
- * the local radius, then a backward pass that brakes into every corner and a
- * forward pass that accelerates out of it.
- *
- * Not telemetry, on purpose — a recorded lap is one driver on one day, twenty
- * cars would need it scaled by an invented factor, and half the circuits here
- * predate telemetry entirely.
- */
+/** How fast a car can be at every point of a circuit. */
 export interface SpeedProfile {
   /** Speed limit in m/s at sample i, which sits at s = i / samples. */
   speeds: number[];
@@ -25,23 +17,13 @@ export interface SpeedProfile {
 
 const G = 9.81;
 
-/**
- * Limits of a modern F1 car, in g — the whole model. Conservative ends of the
- * real ranges, since the geometry is a GeoJSON trace rather than a survey.
- *
- * `LATERAL_G` came from measurement: at 4.0 the ideal lap sits 2% under a real
- * pole lap averaged over the 23 current-calendar circuits, worst case 8%
- * (scripts/audit-lap-times.ts).
- */
+/** Limits of a modern F1 car, in g — the whole model. */
 export const LATERAL_G = 4.0;
 export const BRAKING_G = 5;
 export const ACCEL_G = 1.5;
 /** Top speed in m/s (~340 km/h). */
 export const MAX_SPEED_MS = 94.4;
-/**
- * Slowest a car is ever allowed to be, in m/s (~68 km/h). A traced centerline
- * can kink hard enough that one bad vertex stops the whole field dead.
- */
+/** Slowest a car is ever allowed to be, in m/s (~68 km/h). */
 export const MIN_SPEED_MS = 19;
 /** Radius above which a sample counts as straight, in meters. */
 const STRAIGHT_RADIUS_M = 4000;
@@ -65,8 +47,7 @@ export function buildSpeedProfile(
     speeds[i] = clampSpeed(Math.sqrt(LATERAL_G * G * radius));
   }
 
-  // A car cannot arrive at a corner faster than it can brake from. Two laps of
-  // it, because the start of the array depends on the end of it.
+  // A car cannot arrive at a corner faster than it can brake from.
   const brakeStep = 2 * BRAKING_G * G * ds;
   for (let pass = 0; pass < 2; pass++) {
     for (let i = n - 1; i >= 0; i--) {
@@ -105,10 +86,7 @@ export function speedAt(profile: SpeedProfile, s: number): number {
   return a + (b - a) * t;
 }
 
-/**
- * Time to drive one lap at the profile's own limits — the check on the whole
- * model, comparable to a real lap time without opening a browser.
- */
+/** Time to drive one lap at the profile's own limits. */
 export function idealLapTime(profile: SpeedProfile): number {
   let time = 0;
   for (let i = 0; i < profile.samples; i++) {

@@ -1,20 +1,4 @@
-/**
- * Build one car per 2025 team from a single base model.
- *
- * The base model is shared geometry — a generic current-generation car with no
- * livery — and each team differs only by the three colours in
- * scripts/f1-teams-2025.ts. Generating them here rather than shipping ten
- * authored assets means a change to the palette, the optimizer or the base
- * model propagates to the whole grid with one command.
- *
- * The optimizer runs in-process rather than as ten subprocesses: each run
- * parses and rewrites a 14 MB glTF, and paying the startup and parse cost ten
- * times over adds up for no benefit.
- *
- * Usage:
- *   bun scripts/generate-team-cars.ts cars/apx_gp.glb
- *   bun scripts/generate-team-cars.ts cars/apx_gp.glb --ratio 0.15 --error 0.05
- */
+/** Build one car per 2025 team from a single base model. */
 
 import { join } from "node:path";
 import { TEAMS_2025 } from "./f1-teams-2025";
@@ -32,8 +16,7 @@ async function main() {
   const ratioIndex = argv.indexOf("--ratio");
   const ratio = ratioIndex >= 0 ? Number(argv[ratioIndex + 1]) : 1;
   const errorIndex = argv.indexOf("--error");
-  // The default is tight enough that simplification barely bites on this model
-  // (76 meshes, boundaries everywhere); LOD runs want a looser tolerance.
+  // The default is tight enough that simplification barely bites on this model (76 meshes.
   const error = errorIndex >= 0 ? Number(argv[errorIndex + 1]) : 0.001;
   const suffix = ratio < 1 ? "_lod" : "";
 

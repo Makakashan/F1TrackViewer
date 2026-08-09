@@ -32,13 +32,7 @@ function formatResultGap(row: RaceStanding): string {
   return `+${gap.toFixed(3)}`;
 }
 
-/**
- * The classification, shown once the flag has fallen.
- *
- * Same broadcast styling as the timing tower — this is the graphic the race
- * was building toward, not another app panel. Closing it only hides it; the
- * result stays in the tower until the next reset.
- */
+/** The classification, shown once the flag has fallen. */
 export default function RaceResults({
   order,
   standings,

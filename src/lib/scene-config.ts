@@ -1,39 +1,21 @@
-/**
- * Shared constants, helpers, and theme colors for the Three.js track scene.
- */
+/** Shared constants, helpers, and theme colors for the Three.js track scene. */
 
 export const TRACK_SURFACE_RAISE = 1.1;
 export const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.18;
-/**
- * Painted markings sit on the asphalt: just enough clearance to beat depth
- * precision, with polygon offset on the material doing the rest.
- */
+/** Painted markings sit on the asphalt: just enough clearance to beat depth precision. */
 export const TRACK_PAINT_RAISE = TRACK_SURFACE_RAISE + 0.02;
 export const TRACK_RENDER_ORDER = 100;
 export const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
-/**
- * Solid things standing on the track: cars, gantry, start lights. They draw
- * after the paint, whose polygon offset is measured in depth-buffer units and
- * from a distant camera is taller than a car.
- */
+/** Solid things standing on the track: cars, gantry, start lights. */
 export const TRACK_PROP_RENDER_ORDER = TRACK_OVERLAY_RENDER_ORDER + 1;
 export const TERRAIN_TRACK_OFFSET = 4.5;
-/**
- * How far the track's side wall is buried in the ground it reaches. The road
- * runs on a smoothed profile and the ground it crosses does not, so a wall of
- * any fixed depth is left hanging over one stretch and sunk in the next; this
- * is the margin on a wall that ends where the terrain under it actually is.
- */
+/** How far the track's side wall is buried in the ground it reaches. */
 export const TERRAIN_TRACK_WALL_DIG_M = 1.5;
 /** Shortest the wall may get, so a road on flat ground still has an edge. */
 export const TERRAIN_TRACK_MIN_WALL_M = 1.2;
-// GeoJSON straights can span 400 m between two points, and the terrain-mode
-// curve only samples elevation at each one, so anything longer is subdivided.
+// GeoJSON straights can span 400 m between two points.
 export const TERRAIN_TRACK_MAX_SEGMENT_M = 40;
-// Wide enough to erase DEM cell steps (per-vertex wobble drops ~58%), short
-// enough that the smoothed line never dips more than ~2.6 m under the terrain
-// it was sampled from. At 160 m Spa's worst dip reaches 4.05 m and the ribbon
-// starts to bury itself in the hillside.
+// Wide enough to erase DEM cell steps (per-vertex wobble drops ~58%).
 export const TERRAIN_TRACK_SMOOTH_RADIUS_M = 120;
 export const START_FINISH_STORAGE_KEY = "f1tv:start-finish-overrides:v1";
 

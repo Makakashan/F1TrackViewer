@@ -1,13 +1,4 @@
-/**
- * Does the race simulation behave?
- *
- * Runs a full lap of twenty cars headless on every circuit and reports what
- * would otherwise take a browser and a careful eye: whether anyone finished,
- * how long it took, whether cars ended up inside each other, whether they
- * stayed on the asphalt, and whether the order changed at all.
- *
- *   bun scripts/audit-race-sim.ts [circuitId]
- */
+/** Does the race simulation behave? */
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { buildTrackCurve, computeBounds } from "../src/lib/geo-utils";
@@ -68,9 +59,7 @@ for (const circuit of index.circuits) {
   const startFinishS = markers?.startFinish?.s ?? 0;
   const directionSign = (markers?.directionSign ?? 1) as 1 | -1;
 
-  // The audit runs the flat-width path: the only circuits with a real width
-  // profile are the ones whose file happens to exist, and the narrow case is
-  // the one worth stressing.
+  // The audit runs the flat-width path; real width profiles are fetched at runtime.
   const halfWidth = 7;
   const speedProfile = buildSpeedProfile(curve, samples);
   const racingLine = buildRacingLine(curve, samples, halfWidth);
