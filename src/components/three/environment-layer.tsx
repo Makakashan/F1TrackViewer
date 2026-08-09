@@ -43,6 +43,16 @@ function lonLatToShapeXY(
   return { x, y: -z };
 }
 
+function shapeXYToLonLat(
+  point: XY,
+  originLon: number,
+  originLat: number,
+): [number, number] {
+  const metersPerDegLat = 111_320;
+  const metersPerDegLon = 111_320 * Math.cos((originLat * Math.PI) / 180);
+  return [originLon + point.x / metersPerDegLon, originLat + point.y / metersPerDegLat];
+}
+
 /**
  * Flat-mode offsets between diorama layers, in meters. Terrain mode uses
  * draped geometry with small offsets above the terrain mesh.
@@ -74,12 +84,10 @@ const ROAD_RIBBON_WIDTH_M = 1.2;
 const ROAD_MAX_SEGMENT_M = 25;
 const TERRAIN_BASE_SLAB_DEPTH = 0;
 const BROADCAST_VIEW_PADDING_M = 360;
-const MAX_BROADCAST_BUILDINGS = 420;
-// Building extrusion runs ExtrudeGeometry synchronously per building on the
-// main thread (~1-1.5ms each on a mid-tier mobile CPU) — profiled at ~500ms+
-// of blocked main thread when enabling 3D mode on a dense city circuit. This
-// cap keeps that rebuild well under a frame budget on weaker devices.
-const LOW_DETAIL_MAX_BUILDINGS = 150;
+// Above what any generated bundle holds, so the budget only bites on a denser
+// dataset than exists today — extruding all 420 Monaco keeps takes 8 ms.
+const MAX_BROADCAST_BUILDINGS = 900;
+const LOW_DETAIL_MAX_BUILDINGS = 400;
 /**
  * Margin added to the ribbon's half width when deciding a building sits on the
  * track.
@@ -103,6 +111,11 @@ const TRACK_CORRIDOR_MARGIN_M = 1;
  * inside it.
  */
 const TRACK_CORRIDOR_SAMPLE_M = 20;
+/**
+ * Share of a footprint's corners that have to be on the track before the whole
+ * building is dropped rather than trimmed back to the trackside.
+ */
+const ON_TRACK_VERTEX_SHARE = 0.6;
 
 const THEME_COLORS = {
   light: {
@@ -248,40 +261,27 @@ function polygonArea2D(points: { x: number; y: number }[]): number {
   return Math.abs(area) / 2;
 }
 
-function distanceToSegmentSq2D(
-  point: { x: number; y: number },
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): number {
-  const vx = b.x - a.x;
-  const vy = b.y - a.y;
-  const wx = point.x - a.x;
-  const wy = point.y - a.y;
-  const lenSq = vx * vx + vy * vy;
-  const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, (wx * vx + wy * vy) / lenSq));
-  const x = a.x + vx * t;
-  const y = a.y + vy * t;
-  const dx = point.x - x;
-  const dy = point.y - y;
-  return dx * dx + dy * dy;
-}
 
 type XY = { x: number; y: number };
 
+interface TrackCorridor {
+  /** Distance from a point to the centerline, and the foot of that measure. */
+  measure(point: XY): { distance: number; foot: XY };
+}
+
 /**
- * A test for "does this footprint sit on the track".
+ * Distance to the racing surface, for any point in the diorama.
  *
- * The centerline is resampled and hashed into a uniform grid once, so each
- * building only measures against the handful of track samples near it rather
- * than the whole lap — the naive form is 400 buildings × a few thousand
- * samples, which is long enough to be felt when 3D mode is switched on.
+ * The centerline is resampled and hashed into a uniform grid once, so a
+ * building measures against the handful of track segments near it rather than
+ * the whole lap.
  */
-function buildTrackCorridorTest(
+function buildTrackCorridor(
   trackCoordinates: [number, number][],
   originLon: number,
   originLat: number,
-  clearance: number,
-): ((footprint: XY[]) => boolean) | null {
+  reach: number,
+): TrackCorridor | null {
   if (trackCoordinates.length < 2) return null;
 
   const samples: XY[] = [];
@@ -311,61 +311,86 @@ function buildTrackCorridorTest(
     previous = next;
   }
 
-  const cellSize = Math.max(clearance, TRACK_CORRIDOR_SAMPLE_M) * 2;
-  const grid = new Map<string, XY[]>();
+  const cellSize = Math.max(reach, TRACK_CORRIDOR_SAMPLE_M) * 2;
+  const grid = new Map<string, number[]>();
   const key = (cx: number, cy: number) => `${cx}:${cy}`;
-  for (const sample of samples) {
-    const cx = Math.floor(sample.x / cellSize);
-    const cy = Math.floor(sample.y / cellSize);
+  for (let i = 0; i < samples.length; i++) {
+    const cx = Math.floor(samples[i].x / cellSize);
+    const cy = Math.floor(samples[i].y / cellSize);
     const bucket = grid.get(key(cx, cy));
-    if (bucket) bucket.push(sample);
-    else grid.set(key(cx, cy), [sample]);
+    if (bucket) bucket.push(i);
+    else grid.set(key(cx, cy), [i]);
   }
 
-  const clearanceSq = clearance * clearance;
-
-  return (footprint: XY[]) => {
-    if (footprint.length < 3) return false;
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-    for (const point of footprint) {
-      if (point.x < minX) minX = point.x;
-      if (point.y < minY) minY = point.y;
-      if (point.x > maxX) maxX = point.x;
-      if (point.y > maxY) maxY = point.y;
-    }
-
-    const cx0 = Math.floor((minX - clearance) / cellSize);
-    const cx1 = Math.floor((maxX + clearance) / cellSize);
-    const cy0 = Math.floor((minY - clearance) / cellSize);
-    const cy1 = Math.floor((maxY + clearance) / cellSize);
-
-    for (let cx = cx0; cx <= cx1; cx++) {
-      for (let cy = cy0; cy <= cy1; cy++) {
-        const bucket = grid.get(key(cx, cy));
-        if (!bucket) continue;
-        for (const sample of bucket) {
-          if (
-            sample.x < minX - clearance ||
-            sample.x > maxX + clearance ||
-            sample.y < minY - clearance ||
-            sample.y > maxY + clearance
-          ) {
-            continue;
-          }
-          if (isPointInPolygon(sample, footprint)) return true;
-          for (let i = 0, j = footprint.length - 1; i < footprint.length; j = i++) {
-            if (distanceToSegmentSq2D(sample, footprint[j], footprint[i]) < clearanceSq) {
-              return true;
+  return {
+    measure(point: XY) {
+      let bestSq = Infinity;
+      let foot = point;
+      const cx = Math.floor(point.x / cellSize);
+      const cy = Math.floor(point.y / cellSize);
+      for (let gx = cx - 1; gx <= cx + 1; gx++) {
+        for (let gy = cy - 1; gy <= cy + 1; gy++) {
+          for (const i of grid.get(key(gx, gy)) ?? []) {
+            const a = samples[i];
+            const b = samples[(i + 1) % samples.length];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const lengthSq = dx * dx + dy * dy;
+            const t =
+              lengthSq > 0
+                ? Math.max(
+                    0,
+                    Math.min(
+                      1,
+                      ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq,
+                    ),
+                  )
+                : 0;
+            const px = a.x + dx * t;
+            const py = a.y + dy * t;
+            const distSq = (point.x - px) ** 2 + (point.y - py) ** 2;
+            if (distSq < bestSq) {
+              bestSq = distSq;
+              foot = { x: px, y: py };
             }
           }
         }
       }
-    }
-    return false;
+      return { distance: Math.sqrt(bestSq), foot };
+    },
   };
+}
+
+/**
+ * Move a footprint off the racing surface, or drop it if that is all it is.
+ *
+ * OSM maps grandstand roofs, pit structures and start/finish gantries as plain
+ * `building` ways, some of them drawn straight over the track. Deleting every
+ * one leaves a hole in the city where real buildings stand, so a footprint that
+ * merely reaches the asphalt keeps its shape and has the overhanging corners
+ * pushed back to the trackside instead. Only the ones that are almost entirely
+ * on the track go.
+ */
+function trimFootprintOffTrack(
+  footprint: XY[],
+  corridor: TrackCorridor,
+  clearance: number,
+): XY[] | null {
+  let inside = 0;
+  const trimmed = footprint.map((point) => {
+    const { distance, foot } = corridor.measure(point);
+    if (distance >= clearance) return point;
+    inside++;
+    if (distance < 1e-3) return point;
+    const scale = clearance / distance;
+    return {
+      x: foot.x + (point.x - foot.x) * scale,
+      y: foot.y + (point.y - foot.y) * scale,
+    };
+  });
+  if (inside === 0) return footprint;
+  if (inside >= footprint.length * ON_TRACK_VERTEX_SHARE) return null;
+  return trimmed;
 }
 
 export interface EnvironmentLayerProps {
@@ -904,24 +929,38 @@ function BuildingExtrusions({
       });
     }
 
-    const onTrack = buildTrackCorridorTest(
+    const clearance = trackHalfWidthM + TRACK_CORRIDOR_MARGIN_M;
+    const corridor = buildTrackCorridor(
       trackCoordinates,
       originLon,
       originLat,
-      trackHalfWidthM + TRACK_CORRIDOR_MARGIN_M,
+      Math.max(clearance, TRACK_CORRIDOR_SAMPLE_M),
     );
-    if (onTrack) {
-      filtered = filtered.filter(
-        (b) =>
-          !onTrack(
-            b.footprint.map(([lon, lat]) =>
-              lonLatToShapeXY(lon, lat, originLon, originLat),
-            ),
-          ),
+
+    const placed: { footprint: XY[]; height: number; distance: number }[] = [];
+    for (const b of filtered) {
+      let footprint = b.footprint.map(([lon, lat]) =>
+        lonLatToShapeXY(lon, lat, originLon, originLat),
       );
+      let distance = 0;
+      if (corridor) {
+        const trimmed = trimFootprintOffTrack(footprint, corridor, clearance);
+        if (!trimmed) continue;
+        footprint = trimmed;
+        distance = Math.min(
+          ...footprint.map((point) => corridor.measure(point).distance),
+        );
+      }
+      placed.push({ footprint, height: b.height, distance });
     }
 
-    return filtered.slice(0, maxBuildings);
+    // The budget goes to the buildings the camera is pointed at. Taking them
+    // in file order instead punched holes wherever the list happened to run
+    // out — on Monaco that was 360 of 780 dropped at random.
+    if (corridor && placed.length > maxBuildings) {
+      placed.sort((a, b) => a.distance - b.distance);
+    }
+    return placed.slice(0, maxBuildings);
   }, [
     buildings,
     bbox,
@@ -933,50 +972,82 @@ function BuildingExtrusions({
   ]);
 
   const geometry = useMemo(() => {
-    const geos: THREE.BufferGeometry[] = [];
-    for (const b of capped) {
-      if (b.footprint.length < 3) continue;
-      const shape = new THREE.Shape();
-      b.footprint.forEach(([lon, lat], i) => {
-        const { x, y } = lonLatToShapeXY(lon, lat, originLon, originLat);
-        if (i === 0) shape.moveTo(x, y);
-        else shape.lineTo(x, y);
-      });
-      shape.closePath();
-      // Clamp building height so no single tower pokes through the track
-      // ribbon (which floats above the city).
-      const rawHeight = Math.max(2, b.height);
-      const height = Math.min(rawHeight, 34);
-      const extrude = new THREE.ExtrudeGeometry(shape, {
-        depth: height,
-        bevelEnabled: false,
-        steps: 1,
-      });
-      // ExtrudeGeometry extrudes along +Z. Rotate so depth maps to +Y.
-      extrude.rotateX(-Math.PI / 2);
+    const positions: number[] = [];
+    const normals: number[] = [];
 
-      // When terrain is on, sample the terrain height at the building's
-      // centroid and lift the whole building onto the terrain.
-      if (terrainSampler) {
-        let sumLon = 0;
-        let sumLat = 0;
-        for (const [lon, lat] of b.footprint) {
-          sumLon += lon;
-          sumLat += lat;
-        }
-        const centroidLon = sumLon / b.footprint.length;
-        const centroidLat = sumLat / b.footprint.length;
-        const h = terrainSampler.heightAt(centroidLon, centroidLat);
-        extrude.translate(0, baseY + h + drapeY, 0);
-      } else {
-        extrude.translate(0, baseY + flatY, 0);
+    for (const b of capped) {
+      const ring = b.footprint;
+      if (ring.length < 3) continue;
+
+      // Roof triangles need the contour wound counter-clockwise to face up.
+      const contour = polygonArea2D(ring) < 0 ? [...ring].reverse() : ring;
+      const faces = THREE.ShapeUtils.triangulateShape(
+        contour.map((p) => new THREE.Vector2(p.x, p.y)),
+        [],
+      );
+
+      let sumX = 0;
+      let sumY = 0;
+      for (const point of contour) {
+        sumX += point.x;
+        sumY += point.y;
       }
-      geos.push(extrude);
+      const centroid = { x: sumX / contour.length, y: sumY / contour.length };
+      const [centroidLon, centroidLat] = shapeXYToLonLat(
+        centroid,
+        originLon,
+        originLat,
+      );
+
+      const groundY = terrainSampler
+        ? baseY + terrainSampler.heightAt(centroidLon, centroidLat) + drapeY
+        : baseY + flatY;
+      // Clamped so no single tower pokes through the ribbon above the city.
+      const roofY = groundY + Math.min(Math.max(2, b.height), 34);
+
+      for (const [a, c, d] of faces) {
+        for (const i of [a, c, d]) {
+          positions.push(contour[i].x, roofY, -contour[i].y);
+          normals.push(0, 1, 0);
+        }
+      }
+
+      for (let i = 0, j = contour.length - 1; i < contour.length; j = i++) {
+        const from = contour[j];
+        const to = contour[i];
+        const dx = to.x - from.x;
+        const dz = -(to.y - from.y);
+        const length = Math.hypot(dx, dz);
+        if (length < 1e-6) continue;
+        const nx = dz / length;
+        const nz = -dx / length;
+        const ax = from.x;
+        const az = -from.y;
+        const bx = to.x;
+        const bz = -to.y;
+        for (const [x, y, z] of [
+          [ax, groundY, az],
+          [bx, groundY, bz],
+          [ax, roofY, az],
+          [ax, roofY, az],
+          [bx, groundY, bz],
+          [bx, roofY, bz],
+        ]) {
+          positions.push(x, y, z);
+          normals.push(nx, 0, nz);
+        }
+      }
     }
-    if (!geos.length) return null;
-    const merged = mergeGeometries(geos);
-    for (const g of geos) g.dispose();
-    return merged;
+
+    if (!positions.length) return null;
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normals, 3));
+    geometry.computeBoundingSphere();
+    return geometry;
   }, [capped, originLon, originLat, terrainSampler, baseY, drapeY, flatY]);
 
   useEffect(() => {
@@ -1004,55 +1075,3 @@ function BuildingExtrusions({
   );
 }
 
-/**
- * Minimal BufferGeometry merger — Three.js ships BufferGeometryUtils.mergeGeometries
- * but importing it from three/examples breaks Next.js SSR. This handles only
- * what we need: position + normal + index, no groups.
- */
-function mergeGeometries(geos: THREE.BufferGeometry[]): THREE.BufferGeometry {
-  const merged = new THREE.BufferGeometry();
-  let totalVerts = 0;
-  let totalIdx = 0;
-  let hasIndex = false;
-  for (const g of geos) {
-    totalVerts += (g.getAttribute("position").count) ?? 0;
-    if (g.getIndex()) {
-      hasIndex = true;
-      totalIdx += g.getIndex()!.count;
-    }
-  }
-
-  const positions = new Float32Array(totalVerts * 3);
-  let vOff = 0;
-  const normals = new Float32Array(totalVerts * 3);
-  let nOff = 0;
-  let vCount = 0;
-
-  const indices = hasIndex ? new Uint32Array(totalIdx) : null;
-  let iOff = 0;
-
-  for (const g of geos) {
-    const pos = g.getAttribute("position") as THREE.BufferAttribute;
-    positions.set(pos.array as Float32Array, vOff);
-    vOff += pos.array.length;
-
-    const nrm = g.getAttribute("normal") as THREE.BufferAttribute | undefined;
-    if (nrm) {
-      normals.set(nrm.array as Float32Array, nOff);
-    }
-    nOff += pos.count * 3;
-
-    const idx = g.getIndex();
-    if (idx && indices) {
-      for (let i = 0; i < idx.count; i++) {
-        indices[iOff++] = idx.getX(i) + vCount;
-      }
-    }
-    vCount += pos.count;
-  }
-
-  merged.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  merged.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
-  if (indices) merged.setIndex(new THREE.BufferAttribute(indices, 1));
-  return merged;
-}
