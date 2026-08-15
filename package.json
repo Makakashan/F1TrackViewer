@@ -15,6 +15,7 @@
     "race:audit": "bun scripts/audit-race-sim.ts",
     "race:laptimes": "bun scripts/audit-lap-times.ts",
     "start": "next start -p 4000",
+    "typecheck": "tsc --noEmit",
     "widths:generate": "bun scripts/generate-track-widths.ts",
     "race:kerbs": "bun scripts/audit-kerbs.ts",
     "race:gaps": "bun scripts/audit-gaps.ts"
