@@ -41,6 +41,15 @@ const ROW_H = 30;
 const ROW_H_COMPACT = 22;
 const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 
+/** The keyline that keeps a coloured number crisp, selected row included. */
+const NUMBER_OUTLINE = [
+  "0 1px 0 rgba(0,0,0,0.7)",
+  "0 -1px 0 rgba(0,0,0,0.7)",
+  "1px 0 0 rgba(0,0,0,0.7)",
+  "-1px 0 0 rgba(0,0,0,0.7)",
+  "0 1px 3px rgba(0,0,0,0.55)",
+].join(", ");
+
 /** Compound colours, as the tyre walls are marked. */
 const TYRE_COLOUR: Record<TyreCompound, string> = {
   S: "#e10600",
@@ -308,7 +317,7 @@ export default function TimingTower({
           const leader = position === 0;
           // A lapped car's gap in seconds is a lie by omission — the honest number is how many laps down it is.
           const gap = !started || !entry.row
-            ? `${driver.number}`
+            ? ""
             : leader
               ? gapMode === "leader"
                 ? t.raceLeaderGap
@@ -375,25 +384,22 @@ export default function TimingTower({
                   className={cn("h-full shrink-0", compact ? "w-1" : "w-1.5")}
                   style={{ backgroundColor: driver.team.livery.body }}
                 />
-                {/* Where the constructor badge goes on television. That badge
-                    is a trademark and the liveries here are approximations, so
-                    the disc carries the team's colour and nothing else. */}
+                {/* The car number, where the broadcast puts it: its own column
+                    ahead of the driver, italic, and in the team's colour, so
+                    the number says who this is before the code does. */}
                 <span
                   className={cn(
-                    "flex shrink-0 justify-center",
-                    compact ? "w-3.5" : "w-6",
+                    "shrink-0 text-right font-black italic leading-none tabular-nums",
+                    compact ? "w-[18px] pl-1 text-[10px]" : "w-[26px] pl-1.5 text-[14px]",
                   )}
+                  style={{ color: driver.team.numberColour, textShadow: NUMBER_OUTLINE }}
                 >
-                  <span
-                    aria-hidden
-                    className={cn("rounded-full opacity-85", compact ? "h-2 w-2" : "h-3.5 w-3.5")}
-                    style={{ backgroundColor: driver.team.livery.body }}
-                  />
+                  {driver.number}
                 </span>
                 <span
                   className={cn(
                     "shrink-0 font-bold",
-                    compact ? "w-[26px] pl-px text-[11px] tracking-[0.3px]" : "w-9 pl-0.5 text-[14px] tracking-[0.5px]",
+                    compact ? "w-[26px] pl-1 text-[11px] tracking-[0.3px]" : "w-9 pl-2 text-[14px] tracking-[0.5px]",
                   )}
                 >
                   {driver.code}
@@ -401,9 +407,8 @@ export default function TimingTower({
                 <span className="flex-1" />
                 <span
                   className={cn(
-                    "whitespace-nowrap text-right font-semibold leading-none tabular-nums",
+                    "whitespace-nowrap text-right font-semibold leading-none tabular-nums text-white",
                     compact ? "text-[11px] tracking-[0.3px]" : "text-[15px] tracking-[0.5px]",
-                    started ? "text-white" : "text-[#75787d]",
                   )}
                 >
                   {gap}

@@ -29,6 +29,15 @@ export interface Team {
   /** Three-letter code, for standings and timing-style labels. */
   code: string;
   livery: Livery;
+  /**
+   * The car number, in the team's own colour. It is the livery colour taken
+   * to the lightness a small glyph needs on a dark timing row — Ferrari's
+   * number is red, not the red the bodywork is painted, which at this size
+   * on this background is a smudge. Every one of these clears 4.5:1 against
+   * the row, and the numbers carry a dark keyline for the selected row,
+   * which is lighter than the rest.
+   */
+  numberColour: string;
 }
 
 export const TEAMS_2025: Team[] = [
@@ -38,18 +47,21 @@ export const TEAMS_2025: Team[] = [
     code: "FER",
     // Rosso corsa: deeper and slightly toward crimson.
     livery: { body: "#c8102e", accent: "#f2d600" },
+    numberColour: "#ff3345",
   },
   {
     id: "mclaren",
     name: "McLaren",
     code: "MCL",
     livery: { body: "#ff8000", accent: "#3d4046" },
+    numberColour: "#ff8000",
   },
   {
     id: "red-bull",
     name: "Red Bull Racing",
     code: "RBR",
     livery: { body: "#1b2a63", accent: "#e8c23a" },
+    numberColour: "#6b84ff",
   },
   {
     id: "mercedes",
@@ -57,42 +69,49 @@ export const TEAMS_2025: Team[] = [
     code: "MER",
     // The real car is black with teal; rendered small on dark asphalt that reads as an absence.
     livery: { body: "#b8c2cc", accent: "#00d7b8" },
+    numberColour: "#c3ced9",
   },
   {
     id: "aston-martin",
     name: "Aston Martin",
     code: "AST",
     livery: { body: "#00594f", accent: "#cedc00" },
+    numberColour: "#12b8a0",
   },
   {
     id: "alpine",
     name: "Alpine",
     code: "ALP",
     livery: { body: "#0058c8", accent: "#ff6fa8" },
+    numberColour: "#2f8dff",
   },
   {
     id: "williams",
     name: "Williams",
     code: "WIL",
     livery: { body: "#1868db", accent: "#e8eef6" },
+    numberColour: "#57c8ff",
   },
   {
     id: "racing-bulls",
     name: "Racing Bulls",
     code: "RB",
     livery: { body: "#2b4bd8", accent: "#e8302a" },
+    numberColour: "#b9c9ff",
   },
   {
     id: "kick-sauber",
     name: "Kick Sauber",
     code: "SAU",
     livery: { body: "#38e04a", accent: "#2a2d33" },
+    numberColour: "#38e04a",
   },
   {
     id: "haas",
     name: "Haas",
     code: "HAA",
     livery: { body: "#e9ecf1", accent: "#c8102e" },
+    numberColour: "#eef1f6",
   },
 ];
 
