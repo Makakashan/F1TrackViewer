@@ -57,6 +57,40 @@ const TYRE_COLOUR: Record<TyreCompound, string> = {
   H: "#f2f2f2",
 };
 
+/** The Pirelli marking: a coloured sidewall ring, black tread, the letter inside. */
+function TyreBadge({ compound, size }: { compound: TyreCompound; size: number }) {
+  const colour = TYRE_COLOUR[compound];
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      role="img"
+      aria-label={compound}
+      style={{ display: "block" }}
+    >
+      <circle cx="12" cy="12" r="11" fill="#0e0e10" />
+      <circle cx="12" cy="12" r="9.4" fill="none" stroke={colour} strokeWidth="3.2" />
+      <circle cx="12" cy="12" r="7.6" fill="#0e0e10" />
+      {/* The ring is cut top and bottom, as the marking splits it. */}
+      <rect x="10.7" y="0" width="2.6" height="5.4" fill="#0e0e10" />
+      <rect x="10.7" y="18.6" width="2.6" height="5.4" fill="#0e0e10" />
+      <text
+        x="12"
+        y="12"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill="#ffffff"
+        fontSize="10"
+        fontWeight="700"
+        fontFamily="inherit"
+      >
+        {compound}
+      </text>
+    </svg>
+  );
+}
+
 
 /** Gaps the way a broadcast writes them: tenths under a minute, m:ss.t over it. */
 function formatGap(seconds: number): string {
@@ -413,18 +447,17 @@ export default function TimingTower({
                 >
                   {gap}
                 </span>
-                {/* The compound is the letter in its own colour, which is how
-                    the tower prints it — a drawn tyre at this size is a blob
-                    with something illegible inside it. */}
+                {/* The compound wears its Pirelli marking rather than a bare
+                    letter: the ring carries the colour at a glance, the letter
+                    inside keeps it readable where the colour cannot be told. */}
                 <span
                   className={cn(
-                    "shrink-0 text-right font-black leading-none",
-                    compact ? "ml-1 mt-px w-3 text-[10px]" : "ml-1.5 mt-0.5 w-[15px] text-[13px]",
+                    "flex shrink-0 items-center justify-center",
+                    compact ? "ml-1 w-[14px]" : "ml-1.5 w-[18px]",
                   )}
-                  style={tyre ? { color: TYRE_COLOUR[tyre] } : undefined}
                   title={tyre}
                 >
-                  {tyre ?? ""}
+                  {tyre ? <TyreBadge compound={tyre} size={compact ? 14 : 18} /> : null}
                 </span>
               </button>
             </li>
