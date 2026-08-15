@@ -327,19 +327,30 @@ export default function RaceApp() {
             edge, so the insets belong here once rather than on each of them.
             The scene underneath keeps the whole screen; only the overlay
             steps back from the cutouts. */}
-        <div className="pointer-events-none absolute inset-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]">
+        <div
+          data-tower-space
+          className="pointer-events-none absolute inset-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]"
+        >
           {/* One tower, sized by the viewport rather than two towers hidden
               from each other by a media query: the second copy still mounts,
               still re-renders five times a second and still measures its rows
               for the slide animation, and it pays that out of the frame budget
               the race is drawn with. */}
-          <TimingTower
-            compact={isMobile}
+          {/* The tower scales itself about its own centre, so its placement
+              lives out here: an absolutely positioned child resolves against
+              the padding box, which is why the overlay's padding is repeated
+              as an inset. */}
+          <div
             className={cn(
-              isMobile ? "absolute left-2 top-2" : "absolute left-4 top-4",
+              isMobile
+                ? "absolute left-2 top-2"
+                : "absolute left-4 top-1/2 -translate-y-1/2",
               // A phone has no room for both; the classification is what the race was building toward.
               isMobile && showResults && "hidden",
             )}
+          >
+          <TimingTower
+            compact={isMobile}
             order={order}
             standings={race.standings}
             selectedIndex={selectedDriver}
@@ -351,6 +362,7 @@ export default function RaceApp() {
             totalLaps={totalLaps}
             started={gapsLive}
           />
+          </div>
 
           <RaceStatusBar
             className="absolute right-2 top-2 sm:left-1/2 sm:right-auto sm:top-4 sm:-translate-x-1/2"

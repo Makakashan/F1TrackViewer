@@ -36,9 +36,18 @@ const MOVE_FLASH_MS = 2200;
 /** How long a row takes to slide to its new place, and on what curve. */
 const SLIDE_MS = 460;
 
-/** Row heights, in pixels. The marker layer positions itself off these. */
+/** Row height, in design pixels. The tower is drawn at broadcast proportions
+    and then scaled as a whole, so this never changes with the viewport. */
 const ROW_H = 30;
 const ROW_H_COMPACT = 22;
+/** What the tower leaves free above and below itself. */
+const EDGE_GAP = 56;
+const EDGE_GAP_COMPACT = 24;
+/** How far the whole graphic may be scaled to reach the edges of the screen. */
+const SCALE_MIN = 0.7;
+const SCALE_MAX = 1.5;
+/** Room the phone layout keeps for the control bar under the tower. */
+const CONTROLS_RESERVE_COMPACT = 128;
 const SLIDE_EASING = "cubic-bezier(0.32, 0.72, 0, 1)";
 
 /** The keyline that keeps a coloured number crisp, selected row included. */
@@ -49,6 +58,16 @@ const NUMBER_OUTLINE = [
   "-1px 0 0 rgba(0,0,0,0.7)",
   "0 1px 3px rgba(0,0,0,0.55)",
 ].join(", ");
+
+/** The slanted highlights across the header: two broad streaks over the mark,
+    a narrow one hard against each edge. */
+const HEADER_SHEEN = [
+  "linear-gradient(105deg,",
+  "transparent 0%, rgba(255,255,255,0.045) 1.5%, transparent 4%,",
+  "transparent 16%, rgba(255,255,255,0.075) 20%, transparent 25%,",
+  "transparent 30%, rgba(255,255,255,0.06) 34%, transparent 39%,",
+  "transparent 86%, rgba(255,255,255,0.05) 89%, transparent 92%)",
+].join(" ");
 
 /** Compound colours, as the tyre walls are marked. */
 const TYRE_COLOUR: Record<TyreCompound, string> = {
@@ -69,20 +88,20 @@ function TyreBadge({ compound, size }: { compound: TyreCompound; size: number })
       aria-label={compound}
       style={{ display: "block" }}
     >
-      <circle cx="12" cy="12" r="11" fill="#0e0e10" />
-      <circle cx="12" cy="12" r="9.4" fill="none" stroke={colour} strokeWidth="3.2" />
-      <circle cx="12" cy="12" r="7.6" fill="#0e0e10" />
+      <circle cx="12" cy="12" r="11" fill="#0b0d12" />
+      <circle cx="12" cy="12" r="9.6" fill="none" stroke={colour} strokeWidth="2.8" />
+      <circle cx="12" cy="12" r="8.2" fill="#0b0d12" />
       {/* The ring is cut top and bottom, as the marking splits it. */}
-      <rect x="10.7" y="0" width="2.6" height="5.4" fill="#0e0e10" />
-      <rect x="10.7" y="18.6" width="2.6" height="5.4" fill="#0e0e10" />
+      <rect x="10.7" y="0" width="2.6" height="5.4" fill="#0b0d12" />
+      <rect x="10.7" y="18.6" width="2.6" height="5.4" fill="#0b0d12" />
       <text
         x="12"
         y="12"
         textAnchor="middle"
         dominantBaseline="central"
         fill="#ffffff"
-        fontSize="10"
-        fontWeight="700"
+        fontSize="11"
+        fontWeight="800"
         fontFamily="inherit"
       >
         {compound}
@@ -129,18 +148,72 @@ export default function TimingTower({
   const rowRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const rowTops = useRef<Map<string, number>>(new Map());
   const rowOrder = useRef("");
+  // The chrome above the list is measured, not guessed: its height decides how
+  // much screen the field has left to divide between itself.
+  const panel = useRef<HTMLDivElement>(null);
+  const chrome = useRef<HTMLDivElement>(null);
+  const [chromeHeight, setChromeHeight] = useState(0);
+  // How much screen is left under the tower's own top edge, which sits below
+  // whatever bar the page puts above it.
+  const [spaceBelow, setSpaceBelow] = useState(0);
 
   const rows = standings?.length
     ? standings.map((row) => ({ row, driver: order[row.index] }))
     : order.map((driver, index) => ({ row: null, driver, index }));
 
+  // The row height is whatever divides the screen between the twenty cars,
+  // so the tower reaches top to bottom as the broadcast one does. Below the
+  // floor the list goes back to scrolling.
+  const edgeGap = compact ? EDGE_GAP_COMPACT : EDGE_GAP;
   const rowHeight = compact ? ROW_H_COMPACT : ROW_H;
+  // The broadcast tower reaches both edges of the screen, and everything in it
+  // — type, plates, tyres — grows together to do that. So does this one: it is
+  // drawn once at its design size and scaled as a whole.
+  const roomForTower = Math.max(
+    0,
+    spaceBelow - edgeGap * 2 - (compact ? CONTROLS_RESERVE_COMPACT : 0),
+  );
+  const naturalHeight = chromeHeight + rows.length * rowHeight;
+  const scale =
+    roomForTower && naturalHeight
+      ? Math.min(SCALE_MAX, Math.max(SCALE_MIN, roomForTower / naturalHeight))
+      : 1;
+  // Only a screen too short even at the smallest scale sends the list back to scrolling.
+  const listHeight = roomForTower
+    ? Math.min(
+        rows.length * rowHeight,
+        Math.max(rowHeight * 3, roomForTower / scale - chromeHeight),
+      )
+    : undefined;
   const fastestRow =
     fastestLapIndex == null
       ? -1
       : rows.findIndex((entry) =>
           entry.row ? entry.row.index === fastestLapIndex : false,
         );
+
+  useEffect(() => {
+    // The box the tower is scaled to fit, marked by whoever places it. Its own
+    // wrapper hugs it, so measuring that would feed the answer back in.
+    const box =
+      (panel.current?.closest("[data-tower-space]") as HTMLElement | null) ??
+      panel.current?.parentElement;
+    if (!box) return;
+    const measure = () => setSpaceBelow(box.getBoundingClientRect().height);
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const element = chrome.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => setChromeHeight(element.offsetHeight));
+    observer.observe(element);
+    setChromeHeight(element.offsetHeight);
+    return () => observer.disconnect();
+  }, []);
 
   // A position change is worth calling out; a silent reshuffle is easy to miss.
   useEffect(() => {
@@ -217,23 +290,36 @@ export default function TimingTower({
 
   return (
     <div
-      style={{ fontFamily: "var(--font-timing), system-ui, sans-serif" }}
+      ref={panel}
+      style={{
+        fontFamily: "var(--font-timing), system-ui, sans-serif",
+        transform: `scale(${scale})`,
+        transformOrigin: compact ? "left top" : "left center",
+      }}
       className={cn(
         // Broadcast graphics are dark in every theme.
-        "pointer-events-auto rounded-sm bg-[#14161a]/92 text-white shadow-[0_8px_24px_rgba(0,0,0,0.4)]",
-        compact ? "w-[142px]" : "w-[210px]",
+        "pointer-events-auto rounded-sm bg-[#0f1219]/78 text-white shadow-[0_8px_24px_rgba(0,0,0,0.4)] backdrop-blur-[2px]",
+        "w-fit",
         className,
       )}
     >
+      <div ref={chrome}>
       {/* The mark and the series, set to the left the way the graphic sets
           them — a logo centred over a column of numbers reads as a title, and
-          this is a header. */}
+          this is a header. The header is the one solid part of the tower, lit
+          by the same slanted streaks the broadcast graphic carries: two broad
+          ones over the mark and a narrow one at each edge. */}
       <div
         className={cn(
-          "flex items-center border-b-2 border-[#2a2d33] bg-linear-to-b from-[#1c1f24] to-[#0f1114]",
+          "relative flex items-center overflow-hidden border-b border-white/20 bg-[#181c24]",
           compact ? "gap-1.5 px-2 pb-2 pt-2.5" : "gap-2.5 px-4 pb-3 pt-4",
         )}
       >
+        <span
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{ background: HEADER_SHEEN }}
+        />
         <BrandMark
           className={compact ? "h-[13px] w-auto shrink-0" : "h-[16px] w-auto shrink-0"}
           title={t.appName}
@@ -257,7 +343,7 @@ export default function TimingTower({
               RUI
             </span>
             {!compact && (
-              <span className="whitespace-nowrap text-[8.5px] font-semibold tracking-[0.4px] text-[#9aa0a8]">
+              <span className="whitespace-nowrap text-[8.5px] font-semibold tracking-[0.4px] text-[#9299a5]">
                 {t.brandSanction}
               </span>
             )}
@@ -267,13 +353,13 @@ export default function TimingTower({
 
       <div
         className={cn(
-          "relative flex items-baseline justify-center border-b border-[#2a2d33] bg-[#16181c]",
+          "relative flex items-baseline justify-center border-b border-white/10 bg-[#181c24]",
           compact ? "gap-1.5 px-2 py-1" : "gap-2 px-4 py-1",
         )}
       >
         <span
           className={cn(
-            "font-semibold uppercase text-[#e8eaed]",
+            "font-semibold uppercase text-[#eef1f6]",
             compact ? "text-[13px] tracking-[0.6px]" : "text-[19px] tracking-[1px]",
           )}
         >
@@ -286,7 +372,7 @@ export default function TimingTower({
         </span>
         <span
           className={cn(
-            "font-semibold tabular-nums text-[#9aa0a8]",
+            "font-semibold tabular-nums text-[#9299a5]",
             compact ? "text-[11px]" : "text-[15px]",
           )}
         >
@@ -315,13 +401,14 @@ export default function TimingTower({
         onClick={() => setGapMode(gapMode === "leader" ? "ahead" : "leader")}
         aria-pressed={gapMode === "ahead"}
         className={cn(
-          "flex w-full items-center justify-center border-b border-[#2a2d33] bg-[#101216] font-bold uppercase text-[#9aa0a8] transition-colors hover:bg-[#1b1e23] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#e10600]",
+          "flex w-full items-center justify-center border-b border-white/10 bg-[#141821] font-bold uppercase text-[#9299a5] transition-colors hover:bg-[#1b1f27] hover:text-white focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-[#e10600]",
           compact ? "gap-1 py-[3px] text-[7px] tracking-[0.6px]" : "gap-1.5 py-1 text-[9px] tracking-[1px]",
         )}
       >
         <ArrowLeftRight className={compact ? "h-2 w-2" : "h-2.5 w-2.5"} />
         {gapMode === "leader" ? t.raceLeaderGap : t.raceInterval}
       </button>
+      </div>
 
       {/* The full grid, unscrolled: twenty rows is the content, not a slice of
           it, and a tower that cuts off at P19 makes the reader wonder who is
@@ -336,11 +423,8 @@ export default function TimingTower({
       <ol
         ref={list}
         onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
-        className={cn(
-          "f1tv-scroll overflow-y-auto",
-          // Leaves the control bar its own room at the bottom of the screen.
-          compact ? "max-h-[calc(100dvh-17rem)]" : "max-h-[calc(100dvh-15rem)]",
-        )}
+        className="f1tv-scroll overflow-y-auto"
+        style={{ height: listHeight }}
       >
         {rows.map((entry, position) => {
           const driver = entry.driver;
@@ -381,11 +465,13 @@ export default function TimingTower({
                 data-selected={selected}
                 className={cn(
                   // Fixed height, not padding: the arrow and the number are different glyphs at different sizes.
-                  "relative flex w-full items-center border-b border-white/[0.04] text-left transition-colors duration-500",
-                  compact ? "h-[22px] pr-1" : "h-[30px] pr-1.5",
-                  selected
-                    ? "bg-white/20"
-                    : "odd:bg-[#1a1d22] even:bg-[#15171b] hover:bg-white/10",
+                  // The rows carry no rule and no banding: the field reads as
+                  // one block, and the only breaks in it are the gaps between
+                  // the position plates.
+                  "relative flex w-full items-center text-left transition-colors duration-500",
+                  "pr-[2px]",
+                  compact ? "h-[22px]" : "h-[30px]",
+                  selected ? "bg-white/15" : "hover:bg-white/[0.07]",
                 )}
               >
                 {/* The place fills its own cell rather than sitting in a plate:
@@ -394,15 +480,15 @@ export default function TimingTower({
                     change is news, and everyone else is grey on the row. */}
                 <span
                   className={cn(
-                    "flex h-full shrink-0 items-center justify-center font-black tabular-nums transition-colors duration-500",
-                    compact ? "w-[22px] text-[11px]" : "w-[34px] text-[15px]",
+                    "flex shrink-0 items-center justify-center font-black tabular-nums transition-colors duration-500",
+                    compact ? "h-[calc(100%-2px)] w-[20px] text-[11px]" : "h-[calc(100%-2px)] w-[26px] text-[15px]",
                     direction === "up"
-                      ? "bg-[#00b04f] text-white"
+                      ? "bg-[#00c46a] text-white"
                       : direction === "down"
                         ? "bg-[#e10600] text-white"
                         : leader
                           ? "bg-[#e10600] text-white"
-                          : "text-[#b6babd]",
+                          : "bg-[#0b0d12] text-[#d0d3d8]",
                   )}
                 >
                   {direction ? (
@@ -415,7 +501,7 @@ export default function TimingTower({
                 </span>
                 <span
                   aria-hidden
-                  className={cn("h-full shrink-0", compact ? "w-1" : "w-1.5")}
+                  className={cn("h-full shrink-0", compact ? "w-[3px]" : "w-1")}
                   style={{ backgroundColor: driver.team.livery.body }}
                 />
                 {/* The car number, where the broadcast puts it: its own column
@@ -438,11 +524,15 @@ export default function TimingTower({
                 >
                   {driver.code}
                 </span>
-                <span className="flex-1" />
+                {/* The gap sits in a column of its own right after the code,
+                    as the broadcast sets it: pushed to the far edge it leaves
+                    a hole across every row that no number ever fills. */}
                 <span
                   className={cn(
-                    "whitespace-nowrap text-right font-semibold leading-none tabular-nums text-white",
-                    compact ? "text-[11px] tracking-[0.3px]" : "text-[15px] tracking-[0.5px]",
+                    "shrink-0 whitespace-nowrap text-right font-semibold leading-none tabular-nums text-white",
+                    compact ? "w-[46px] text-[11px] tracking-[0.3px]" : "w-[64px] text-[15px] tracking-[0.5px]",
+                    // The leader's word is longer than any number under it.
+                    leader && (compact ? "text-[9px]" : "text-[13px]"),
                   )}
                 >
                   {gap}
