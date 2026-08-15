@@ -35,14 +35,21 @@ export const RACE_FOLLOW_MIN_DISTANCE_M = Math.hypot(
   HEIGHT_M - TARGET_HEIGHT_M,
   LATERAL_M,
 );
+/** Off the car, the framing is the user's: a car length, not the follow shot's 40 m. */
+export const RACE_FREE_MIN_DISTANCE_M = 5;
 
 /** How the follow target catches the car. */
 const VELOCITY_RATE = 9;
 const ERROR_RATE = 7;
 
-/** Free-camera pan, as a share of the camera-to-target distance per second. */
-const PAN_RATE = 1.4;
-const PAN_MIN_M_S = 25;
+/**
+ * Free-camera pan speed, in meters per second, and the Shift multiplier.
+ * Flat rather than a share of the orbit distance: in free flight the target
+ * rides along with the camera, so that distance is a leftover of the last
+ * zoom, and scaling by it made WASD crawl the moment the user zoomed in.
+ */
+const PAN_M_S = 30;
+const PAN_BOOST = 5;
 /** Free-camera yaw around the target, in radians per second. */
 const YAW_RATE = 1.6;
 /** Longest step a key press may move the camera, in seconds. */
@@ -55,6 +62,8 @@ const NOSE = new THREE.Vector3(0, 0, 1);
 const PAN_KEYS = new Set(["KeyW", "KeyA", "KeyS", "KeyD"]);
 /** Keys that spin the view in place — they work in both modes. */
 const YAW_KEYS = new Set(["KeyQ", "KeyE"]);
+/** Held for a faster pan. Tracked, but never enough on its own to detach. */
+const BOOST_KEYS = new Set(["ShiftLeft", "ShiftRight"]);
 
 type OrbitLike = {
   target: THREE.Vector3;
@@ -146,7 +155,8 @@ export default function RaceCameraRig({
     const onKeyDown = (event: KeyboardEvent) => {
       const pan = PAN_KEYS.has(event.code);
       const yaw = YAW_KEYS.has(event.code);
-      if ((!pan && !yaw) || isTypingTarget(event.target)) return;
+      const boost = BOOST_KEYS.has(event.code);
+      if ((!pan && !yaw && !boost) || isTypingTarget(event.target)) return;
       keys.add(event.code);
       if (pan) onDetach?.();
       invalidate();
@@ -232,10 +242,8 @@ export default function RaceCameraRig({
       if (keys.has("KeyD")) s.move.add(s.across);
       if (keys.has("KeyA")) s.move.sub(s.across);
       if (s.move.lengthSq() > 0) {
-        const span = Math.max(
-          PAN_MIN_M_S,
-          camera.position.distanceTo(controls.target) * PAN_RATE,
-        );
+        const boost = keys.has("ShiftLeft") || keys.has("ShiftRight");
+        const span = PAN_M_S * (boost ? PAN_BOOST : 1);
         s.move.normalize().multiplyScalar(span * inputStep);
         camera.position.add(s.move);
         controls.target.add(s.move);
