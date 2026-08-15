@@ -79,6 +79,16 @@ const TRACK_CORRIDOR_MARGIN_M = 1;
 const TRACK_CORRIDOR_SAMPLE_M = 20;
 /** Share of a footprint's corners on the track before it is dropped, not trimmed. */
 const ON_TRACK_VERTEX_SHARE = 0.6;
+/** Per-building roof lift that keeps overlapping buildings out of each other. */
+const ROOF_TIE_BREAK_M = 0.01;
+const ROOF_TIE_BREAK_STEPS = 64;
+
+/** A building's lift, in steps, from where it stands rather than its index. */
+function roofTieBreak(centroid: XY): number {
+  const x = Math.round(centroid.x * 10);
+  const y = Math.round(centroid.y * 10);
+  return Math.abs(Math.imul(x, 73856093) ^ Math.imul(y, 19349663)) % ROOF_TIE_BREAK_STEPS;
+}
 
 const THEME_COLORS = {
   light: {
@@ -934,7 +944,13 @@ function BuildingExtrusions({
         ? baseY + terrainSampler.heightAt(centroidLon, centroidLat) + drapeY
         : baseY + flatY;
       // Clamped so no single tower pokes through the ribbon above the city.
-      const roofY = groundY + Math.min(Math.max(2, b.height), 34);
+      // The centimetres on the end break the tie between overlapping buildings
+      // filed at the same OSM height, whose roofs otherwise z-fight. Keyed on
+      // where the building is, so two that overlap cannot draw the same lift.
+      const roofY =
+        groundY +
+        Math.min(Math.max(2, b.height), 34) +
+        roofTieBreak(centroid) * ROOF_TIE_BREAK_M;
 
       for (const [a, c, d] of faces) {
         for (const i of [a, c, d]) {
