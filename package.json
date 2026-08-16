@@ -10,15 +10,19 @@
     "cars:teams": "bun scripts/generate-team-cars.ts cars/apx_gp.glb",
     "dev": "next dev -p 4000",
     "elevations:generate": "bun scripts/generate-elevations.ts",
+    "env:bake": "bun scripts/env/bake.ts",
+    "env:field": "bun scripts/env/heightfield.ts",
+    "env:preview": "bun scripts/env/preview.ts",
+    "env:raster": "bun scripts/env/raster.ts",
     "environment:generate": "bun scripts/generate-environment.ts",
     "lint": "eslint .",
     "race:audit": "bun scripts/audit-race-sim.ts",
+    "race:gaps": "bun scripts/audit-gaps.ts",
+    "race:kerbs": "bun scripts/audit-kerbs.ts",
     "race:laptimes": "bun scripts/audit-lap-times.ts",
     "start": "next start -p 4000",
     "typecheck": "tsc --noEmit",
-    "widths:generate": "bun scripts/generate-track-widths.ts",
-    "race:kerbs": "bun scripts/audit-kerbs.ts",
-    "race:gaps": "bun scripts/audit-gaps.ts"
+    "widths:generate": "bun scripts/generate-track-widths.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.14",

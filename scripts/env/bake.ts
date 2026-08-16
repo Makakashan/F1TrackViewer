@@ -77,6 +77,29 @@ function bakeTerrain(field: HeightField, plane: ScenePlane, corridor: Corridor):
   const minZ = plane.z(field.bbox.maxLat); // north edge is the smaller Z
   const maxZ = plane.z(field.bbox.minLat);
 
+  // Which belt owns a patch is decided once, on the coarsest grid, and the finer
+  // grids divide into it exactly. Deciding per cell instead leaves a strip that
+  // no belt claims — the 8 m cell is outside its belt by its own centre while
+  // the 16 m cell covering it is inside by its own, and the gap shows as a
+  // hairline of sea along the boundary.
+  const blockM = BELT_CELL_M.far;
+  const blockCols = Math.ceil((maxX - minX) / blockM);
+  const blockRows = Math.ceil((maxZ - minZ) / blockM);
+  const blockBelt = new Uint8Array(blockRows * blockCols);
+  for (let row = 0; row < blockRows; row++) {
+    for (let col = 0; col < blockCols; col++) {
+      const belt = beltAtDistance(
+        corridor.distance(minX + (col + 0.5) * blockM, minZ + (row + 0.5) * blockM),
+      );
+      blockBelt[row * blockCols + col] = BELT_ORDER.indexOf(belt);
+    }
+  }
+  const beltOfCell = (row: number, col: number, cell: number): Belt => {
+    const blockRow = Math.min(blockRows - 1, Math.floor((row * cell) / blockM));
+    const blockCol = Math.min(blockCols - 1, Math.floor((col * cell) / blockM));
+    return BELT_ORDER[blockBelt[blockRow * blockCols + blockCol]];
+  };
+
   for (const belt of BELT_ORDER) {
     const cell = BELT_CELL_M[belt];
     const cols = Math.floor((maxX - minX) / cell);
@@ -100,9 +123,7 @@ function bakeTerrain(field: HeightField, plane: ScenePlane, corridor: Corridor):
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
-        const centreX = minX + (col + 0.5) * cell;
-        const centreZ = minZ + (row + 0.5) * cell;
-        if (beltAtDistance(corridor.distance(centreX, centreZ)) !== belt) continue;
+        if (beltOfCell(row, col, cell) !== belt) continue;
 
         const h00 = heightAt(row, col);
         const h10 = heightAt(row, col + 1);
@@ -114,14 +135,15 @@ function bakeTerrain(field: HeightField, plane: ScenePlane, corridor: Corridor):
         const b = vertexAt(row, col + 1);
         const c = vertexAt(row + 1, col + 1);
         const d = vertexAt(row + 1, col);
-        grid.triangle(a, b, c);
-        grid.triangle(a, c, d);
+        // Counter-clockwise seen from above, so the normal points at the sky.
+        grid.triangle(a, c, b);
+        grid.triangle(a, d, c);
         cellsByBelt[belt]++;
       }
     }
 
     const mesh = grid.finish();
-    addTerrainSkirts(mesh, field, plane, corridor, belt, minX, minZ, cell, rows, cols);
+    addTerrainSkirts(mesh, field, plane, beltOfCell, belt, minX, minZ, cell, rows, cols);
     meshes[belt] = mesh;
   }
 
@@ -133,7 +155,7 @@ function addTerrainSkirts(
   mesh: Mesh,
   field: HeightField,
   plane: ScenePlane,
-  corridor: Corridor,
+  beltOfCell: (row: number, col: number, cell: number) => Belt,
   belt: Belt,
   minX: number,
   minZ: number,
@@ -143,9 +165,7 @@ function addTerrainSkirts(
 ): void {
   const built = (row: number, col: number): boolean => {
     if (row < 0 || col < 0 || row >= rows || col >= cols) return false;
-    const centreX = minX + (col + 0.5) * cell;
-    const centreZ = minZ + (row + 0.5) * cell;
-    if (beltAtDistance(corridor.distance(centreX, centreZ)) !== belt) return false;
+    if (beltOfCell(row, col, cell) !== belt) return false;
     for (const [dr, dc] of [[0, 0], [0, 1], [1, 0], [1, 1]] as const) {
       const h = field.heightAt(
         plane.lon(minX + (col + dc) * cell),
@@ -201,7 +221,7 @@ function bakeWater(field: HeightField, plane: ScenePlane): Mesh {
   const x1 = plane.x(field.bbox.maxLon);
   const z0 = plane.z(field.bbox.maxLat);
   const z1 = plane.z(field.bbox.minLat);
-  addFlatQuad(mesh, x0, 0, z0, x1, 0, z0, x1, 0, z1, x0, 0, z1);
+  addFlatQuad(mesh, x0, 0, z0, x0, 0, z1, x1, 0, z1, x1, 0, z0);
   return mesh;
 }
 

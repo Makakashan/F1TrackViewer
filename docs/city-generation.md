@@ -505,7 +505,15 @@ exists to prove the joints hold before any effort goes into how it looks.
       World bounds read back at 2736 x 2974 m with terrain to 452 m, so quantisation
       keeps the placement. Belt seams are hidden with a 3 m skirt rather than stitched;
       water is one quad at the datum, since the terrain edge already is the coastline.
-      The manifest is `city-manifest.json` (v2), beside the belt files.
+      The manifest is `city-manifest.json` (v2), beside the belt files. Run it with
+      `bun run env:bake mc-1929`, look at it with `bun run env:preview`.
+
+      Two bugs the preview caught and the numbers did not: terrain and water were
+      wound clockwise, so both were back-faces and invisible from above; and belt
+      membership decided per cell left a hairline of unclaimed ground along each
+      boundary, since an 8 m cell and the 16 m cell over it disagree about which
+      side of the radius they are on. Ownership is now decided once on the coarsest
+      grid and the finer grids divide into it exactly.
 
       Still runtime, not baked, contrary to D13: kerbs, apron and painted markings. The
       ribbon is baked; the rest follow once the loader proves the joint holds.
