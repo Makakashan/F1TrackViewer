@@ -271,11 +271,21 @@ function markFlatWater(
 }
 
 /**
- * Erode the valid mask by one cell: a pixel touching nodata was averaged with
- * it, whatever it now claims. Costs a 4 m strip of coast, which is one cell —
- * below anything the scene resolves.
+ * Erode the valid mask, one cell per pass: a pixel touching nodata was averaged
+ * with it, whatever it now claims. Runs at the fetched pitch, so two passes cost
+ * one output cell of open coast and leave harbour edges — which are not nodata
+ * at this point — untouched.
  */
-function erodeNodata(values: Float32Array, width: number, height: number): void {
+function erodeNodata(
+  values: Float32Array,
+  width: number,
+  height: number,
+  passes = 1,
+): void {
+  for (let pass = 0; pass < passes; pass++) erodeOnce(values, width, height);
+}
+
+function erodeOnce(values: Float32Array, width: number, height: number): void {
   const wasValid = new Uint8Array(values.length);
   for (let i = 0; i < values.length; i++) wasValid[i] = Number.isNaN(values[i]) ? 0 : 1;
 
@@ -441,22 +451,29 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
   // Erode at the fetched pitch first: a contaminated pixel that survives into a
   // block average drags the whole output cell below sea level, and the coast is
   // where that shows.
-  erodeNodata(fetched, fetchWidth, fetchHeight);
-  const reduced = downsample(fetched, fetchWidth, fetchHeight, supersample);
-  const data = reduced.data;
-  erodeNodata(data, reduced.width, reduced.height);
-  // Runs at the output pitch: averaging keeps a fill constant in its interior
-  // and blurs only its edge, which costs half a cell of basin.
-  const flatWaterCells =
+  // Two passes: the sentinel bleeds two pixels deep in places, and what the
+  // first pass leaves behind is what dragged the coast to -13 m when the
+  // output-pitch erosion was dropped.
+  erodeNodata(fetched, fetchWidth, fetchHeight, 2);
+  // Order matters at the shore. Water is marked at the fetched pitch, before
+  // any averaging: a block straddling the quay would otherwise mix the basin's
+  // fill into the wall and leave a low ramp where a vertical face belongs.
+  // Averaging then skips those cells, so a half-water block takes the quay's
+  // own height. One erosion, at the fetched pitch, is enough — the second at
+  // the output pitch only ate another 3.9 m of coast.
+  const flatWaterFetched =
     kind === "mnh" || options.flatWater === false
       ? 0
       : markFlatWater(
-          data,
-          reduced.width,
-          reduced.height,
-          FLAT_WATER_MIN_CELLS,
+          fetched,
+          fetchWidth,
+          fetchHeight,
+          FLAT_WATER_MIN_CELLS * supersample * supersample,
           FLAT_WATER_MAX_ELEVATION_M,
         );
+  const flatWaterCells = Math.round(flatWaterFetched / (supersample * supersample));
+  const reduced = downsample(fetched, fetchWidth, fetchHeight, supersample);
+  const data = reduced.data;
 
   const size = bboxSizeMeters(bbox);
   const raster: Raster = {
