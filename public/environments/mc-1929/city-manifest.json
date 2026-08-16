@@ -24,9 +24,9 @@
     },
     "city": {
       "file": "city.glb",
-      "bytes": 423732,
-      "triangles": 61505,
-      "drawCalls": 2,
+      "bytes": 439724,
+      "triangles": 62527,
+      "drawCalls": 3,
       "radiusM": 600,
       "cellM": 8
     },
@@ -41,8 +41,8 @@
   },
   "counts": {
     "buildings": 785,
-    "triangles": 153148,
-    "drawCalls": 9
+    "triangles": 154170,
+    "drawCalls": 10
   },
   "track": {
     "elevations": [

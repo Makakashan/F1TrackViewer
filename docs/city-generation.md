@@ -581,8 +581,21 @@ belt an order of magnitude inside its byte budget.
       The headwall gets its own mesh rather than riding the buildings' material: it
       stands over the road on purpose, and merged in it made `env:audit` report 360
       walls in the track corridor. One extra draw call, and the check stays honest.
-- [ ] **P2.3** Quay walls from `man_made=quay` and the harbour splines; Piscine as its
-      own object; the breakwater. This is where §1.3's coastline fix becomes visible.
+- [x] **P2.3** Quay walls from OSM's `natural=coastline`, `man_made=quay` and
+      `man_made=breakwater` (`scripts/env/shore.ts`). **511 wall segments built, 313
+      skipped, 41 piers skipped.**
+
+      The rule is agreement, and it is what keeps D15 intact: a segment is built only
+      where the raster has water on one side of the line and ground on the other. An
+      OSM line running across dry ground or out in open water is a line the DEM
+      disagrees with, and a wall there would be a slab in a street or a fence in the
+      sea. The first pass probed 5 m either side and skipped 82% of segments; the two
+      surveys are simply drawn a few metres apart, so the probe now widens to 12 m —
+      OSM gives the wall its direction, the raster gives it its position.
+
+      Piers are skipped by kind: the line runs down the middle of the deck, so both
+      sides are the same thing and the water test says nothing. Piscine is not modelled
+      yet.
 - [ ] **P2.4** Overrides file format and loader (D10) — data edits, masks, splines.
 - [ ] **P2.5** Monaco's first hand-override pass: Le Rocher, Port Hercule, the tunnel
       run, and whatever `env:audit` still flags.

@@ -37,8 +37,9 @@ import {
   type Mesh,
 } from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
-import { fetchStructureWays } from "./overpass";
+import { fetchShoreWays, fetchStructureWays } from "./overpass";
 import { fetchElevationRaster } from "./raster";
+import { bakeShoreWalls, type ShoreResult } from "./shore";
 import { buildTunnelMask, type TunnelMask } from "./tunnels";
 import { circuitBBox, loadCircuitCoords } from "./circuit";
 
@@ -56,7 +57,7 @@ const SKIRT_M = 3;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
 
-type MeshKind = "terrain" | "building" | "water" | "tunnel" | "portal";
+type MeshKind = "terrain" | "building" | "water" | "tunnel" | "portal" | "shore";
 
 const MESH_COLOR: Record<MeshKind, string> = {
   terrain: DIORAMA_COLORS.terrain,
@@ -64,6 +65,7 @@ const MESH_COLOR: Record<MeshKind, string> = {
   water: DIORAMA_COLORS.water,
   tunnel: "#14161A",
   portal: DIORAMA_COLORS.buildingSide,
+  shore: DIORAMA_COLORS.buildingSide,
 };
 
 // ─── terrain ───────────────────────────────────────────────────────────────
@@ -627,6 +629,7 @@ export interface BakeReport {
   cellsByBelt: Record<Belt, number>;
   trackVertices: number;
   portalTriangles: number;
+  shore: ShoreResult;
   tunnels: TunnelMask;
 }
 
@@ -636,6 +639,7 @@ export interface BakeReport {
  * document exists to stop, so neither of them builds it alone.
  */
 export interface CircuitGround {
+  circuitId: string;
   coords: [number, number][];
   bbox: ReturnType<typeof circuitBBox>;
   plane: ScenePlane;
@@ -662,11 +666,15 @@ export async function buildCircuitGround(
       buried: tunnels.buried,
     },
   });
-  return { coords, bbox, plane, field, corridor: buildCorridor(coords, plane), tunnels };
+  return { circuitId, coords, bbox, plane, field, corridor: buildCorridor(coords, plane), tunnels };
 }
 
 export async function bakeCircuit(circuitId: string, refresh = false): Promise<BakeReport> {
-  const { coords, plane, field, corridor, tunnels } = await buildCircuitGround(circuitId, refresh);
+  const { coords, bbox, plane, field, corridor, tunnels } = await buildCircuitGround(
+    circuitId,
+    refresh,
+  );
+  const shore = bakeShoreWalls(await fetchShoreWays(circuitId, bbox, refresh), field, plane);
 
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(tunnels, field, plane);
@@ -694,6 +702,9 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     city: [
       { kind: "terrain", mesh: terrain.meshes.city },
       { kind: "building", mesh: buildings.meshes.city },
+      // The waterfront is one thing wherever it runs, so it ships whole rather
+      // than split across belts by distance.
+      { kind: "shore", mesh: shore.walls },
     ],
     far: [
       { kind: "terrain", mesh: terrain.meshes.far },
@@ -720,6 +731,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     cellsByBelt: terrain.cellsByBelt,
     trackVertices: elevations.length,
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
+    shore,
     tunnels,
   };
   await writeManifest(outDir, circuitId, field, plane, report, elevations);
@@ -808,6 +820,11 @@ async function main() {
   );
   console.log(`  track profile ${report.trackVertices} vertices`);
   console.log(`  portals ${report.portalTriangles} tris`);
+  console.log(
+    `  shore ${report.shore.built} wall segments, ` +
+      `${report.shore.skippedDisagreement} skipped where OSM and the raster disagree, ` +
+      `${report.shore.skippedKind} piers skipped`,
+  );
   if (report.tunnels.runs.length) {
     console.log(`  tunnels ${report.tunnels.runs.length} run(s), ${report.tunnels.buriedLengthM} m buried`);
     for (const run of report.tunnels.runs) {

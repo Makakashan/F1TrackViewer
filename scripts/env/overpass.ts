@@ -22,6 +22,13 @@ const RETRY_DELAY_MS = 5_000;
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 const CACHE_DIR = join(REPO_ROOT, "data", "cache", "overpass-structures");
 
+export interface ShoreWay {
+  id: string;
+  points: [number, number][];
+  kind: "coastline" | "quay" | "pier" | "breakwater" | "groyne";
+  name?: string;
+}
+
 export interface StructureWay {
   id: string;
   points: [number, number][];
@@ -72,6 +79,56 @@ async function run(body: string): Promise<{ elements: OverpassWay[] } | null> {
     }
   }
   return null;
+}
+
+function shoreQuery(bbox: RasterBBox): string {
+  const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
+  return `[out:json][timeout:90];
+(
+  way["natural"="coastline"](${box});
+  way["man_made"~"^(quay|pier|breakwater|groyne)$"](${box});
+);
+out geom tags;`;
+}
+
+/** Where the built edge of the water is: coastline, quays, piers, breakwaters. */
+export async function fetchShoreWays(
+  circuitId: string,
+  bbox: RasterBBox,
+  refresh = false,
+): Promise<ShoreWay[]> {
+  const cachePath = join(CACHE_DIR, `${circuitId}-shore.json`);
+  if (!refresh) {
+    try {
+      return JSON.parse(await readFile(cachePath, "utf8")) as ShoreWay[];
+    } catch {
+      // not cached yet
+    }
+  }
+
+  const response = await run(shoreQuery(bbox));
+  if (!response) throw new Error(`overpass: no endpoint answered for ${circuitId} shore`);
+
+  const ways: ShoreWay[] = [];
+  for (const element of response.elements) {
+    if (element.type !== "way" || !element.geometry?.length) continue;
+    const tags = element.tags ?? {};
+    const kind =
+      tags.natural === "coastline"
+        ? "coastline"
+        : (tags.man_made as ShoreWay["kind"] | undefined);
+    if (!kind) continue;
+    ways.push({
+      id: `way/${element.id}`,
+      points: element.geometry.map((p) => [p.lon, p.lat] as [number, number]),
+      kind,
+      name: tags.name,
+    });
+  }
+
+  await mkdir(CACHE_DIR, { recursive: true });
+  await writeFile(cachePath, JSON.stringify(ways));
+  return ways;
 }
 
 /** Ways in the bbox that are tunnelled, bridged or covered, with their tags. */
