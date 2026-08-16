@@ -34,6 +34,8 @@ export interface RasterHeader {
   /** Ground distance one pixel covers, for sanity-checking against the native cell. */
   pixelSizeM: { x: number; y: number };
   nativeCellM: number;
+  /** How many source pixels were averaged per output pixel, per axis. */
+  supersample: number;
   validCount: number;
   nodataCount: number;
   minValue: number;
@@ -149,15 +151,64 @@ export function providerFor(bbox: RasterBBox): ElevationProvider | null {
 const NODATA_FLOOR_M = -20;
 
 /**
- * Drop the sentinel and its blend, then erode the valid mask by one cell: a
- * pixel touching nodata was averaged with it, whatever it now claims. Costs a
- * 4 m strip of coast, which is one cell — below anything the scene resolves.
+ * Two source pixels per output pixel per axis. Enough to break the beat in §5.6
+ * at four times the bytes, all of which stay in the cache.
  */
-function cleanNodata(values: Float32Array, width: number, height: number): void {
+const DEFAULT_SUPERSAMPLE = 2;
+
+/** The sentinel and everything it was blended into. */
+function maskNodata(values: Float32Array): void {
   for (let i = 0; i < values.length; i++) {
     if (!(values[i] > NODATA_FLOOR_M)) values[i] = Number.NaN; // NaN-safe form
   }
+}
 
+/**
+ * Average `factor`×`factor` blocks down to the target grid, ignoring nodata.
+ *
+ * The service's grid is 3.90 m across and 4.35 m down — not square, and not
+ * aligned to anything we can ask for. Sampling it at one pixel per cell beats
+ * against that mismatch and lays periodic ridges across the raster every fourth
+ * row, which would read as terraces on a hillside. Fetching at twice the pitch
+ * and averaging removes the beat without touching real relief.
+ */
+function downsample(
+  values: Float32Array,
+  width: number,
+  height: number,
+  factor: number,
+): { data: Float32Array; width: number; height: number } {
+  if (factor <= 1) return { data: values, width, height };
+  const outWidth = Math.floor(width / factor);
+  const outHeight = Math.floor(height / factor);
+  const out = new Float32Array(outWidth * outHeight);
+
+  for (let row = 0; row < outHeight; row++) {
+    for (let col = 0; col < outWidth; col++) {
+      let sum = 0;
+      let n = 0;
+      for (let dr = 0; dr < factor; dr++) {
+        for (let dc = 0; dc < factor; dc++) {
+          const v = values[(row * factor + dr) * width + col * factor + dc];
+          if (Number.isNaN(v)) continue;
+          sum += v;
+          n++;
+        }
+      }
+      // A block that is mostly sea stays sea: half-covered cells on the
+      // shoreline are the ones §5.5 says not to trust.
+      out[row * outWidth + col] = n * 2 >= factor * factor ? sum / n : Number.NaN;
+    }
+  }
+  return { data: out, width: outWidth, height: outHeight };
+}
+
+/**
+ * Erode the valid mask by one cell: a pixel touching nodata was averaged with
+ * it, whatever it now claims. Costs a 4 m strip of coast, which is one cell —
+ * below anything the scene resolves.
+ */
+function erodeNodata(values: Float32Array, width: number, height: number): void {
   const wasValid = new Uint8Array(values.length);
   for (let i = 0; i < values.length; i++) wasValid[i] = Number.isNaN(values[i]) ? 0 : 1;
 
@@ -256,9 +307,11 @@ async function throttle(intervalMs: number): Promise<void> {
 export interface FetchRasterOptions {
   kind: RasterKind;
   bbox: RasterBBox;
-  /** Defaults to one pixel per native cell. */
+  /** Defaults to one pixel per native cell, before supersampling. */
   width?: number;
   height?: number;
+  /** Fetch this many times finer and average back down. 1 disables it. */
+  supersample?: number;
   refresh?: boolean;
   provider?: ElevationProvider;
 }
@@ -277,8 +330,14 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
   const native = nativeGridSize(bbox, provider.nativeCellM, provider.maxPixels);
   const width = options.width ?? native.width;
   const height = options.height ?? native.height;
-  if (width > provider.maxPixels || height > provider.maxPixels) {
-    throw new Error(`${provider.id} renders at most ${provider.maxPixels} px per side`);
+  const supersample = Math.max(1, Math.round(options.supersample ?? DEFAULT_SUPERSAMPLE));
+  const fetchWidth = width * supersample;
+  const fetchHeight = height * supersample;
+  if (fetchWidth > provider.maxPixels || fetchHeight > provider.maxPixels) {
+    throw new Error(
+      `${provider.id} renders at most ${provider.maxPixels} px per side ` +
+        `(asked ${fetchWidth} x ${fetchHeight} at ${supersample}x)`,
+    );
   }
 
   const key = cacheKey(provider, kind, bbox, width, height);
@@ -288,7 +347,7 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
   }
 
   await throttle(provider.minRequestIntervalMs);
-  const url = provider.url(layer, bbox, width, height);
+  const url = provider.url(layer, bbox, fetchWidth, fetchHeight);
   const res = await fetch(url);
   if (!res.ok) throw new Error(`${provider.id} ${kind}: HTTP ${res.status}`);
 
@@ -299,16 +358,24 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
   }
 
   const body = await res.arrayBuffer();
-  if (body.byteLength !== width * height * 4) {
+  if (body.byteLength !== fetchWidth * fetchHeight * 4) {
     throw new Error(
-      `${provider.id} ${kind}: expected ${width * height * 4} bytes, got ${body.byteLength}`,
+      `${provider.id} ${kind}: expected ${fetchWidth * fetchHeight * 4} bytes, ` +
+        `got ${body.byteLength}`,
     );
   }
 
   // The payload is little-endian float32 and every platform this runs on is
   // little-endian, so the buffer is the array.
-  const data = new Float32Array(body);
-  cleanNodata(data, width, height);
+  const fetched = new Float32Array(body);
+  maskNodata(fetched);
+  // Erode at the fetched pitch first: a contaminated pixel that survives into a
+  // block average drags the whole output cell below sea level, and the coast is
+  // where that shows.
+  erodeNodata(fetched, fetchWidth, fetchHeight);
+  const reduced = downsample(fetched, fetchWidth, fetchHeight, supersample);
+  const data = reduced.data;
+  erodeNodata(data, reduced.width, reduced.height);
 
   const size = bboxSizeMeters(bbox);
   const raster: Raster = {
@@ -317,10 +384,11 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
       kind,
       provider: provider.id,
       layer,
-      width,
-      height,
+      width: reduced.width,
+      height: reduced.height,
       bbox,
-      pixelSizeM: { x: size.width / width, y: size.height / height },
+      supersample,
+      pixelSizeM: { x: size.width / reduced.width, y: size.height / reduced.height },
       nativeCellM: provider.nativeCellM,
       fetchedAt: new Date().toISOString().slice(0, 10),
       ...summarise(data),

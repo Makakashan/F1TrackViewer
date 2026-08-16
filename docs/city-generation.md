@@ -281,11 +281,21 @@ This is the heart of D2/D3/D15. Four steps, in order:
    subdivides one extra level regardless of distance — that is what keeps Le Rocher's
    cliff from being a staircase.
 3. **Constraint burn-in.** The centreline (with its cleaned elevation profile) is a
-   hard constraint polyline. Within a corridor of half-width `w = trackWidth/2 + 6 m`,
-   set the field to the track's elevation. From `w` to `w + 25 m`, blend with a
-   smoothstep so the ground meets the track tangentially instead of stepping. Quay
-   splines and terrain override points burn in the same way, after the track.
-4. **Consistency pass.** Re-derive nothing. Everything else — building bases, road
+   hard constraint polyline. Within a corridor of half-width `w = trackWidth/2 + 2 m`,
+   set the field to the track's elevation. From `w` to `w + 6 m`, blend with a
+   smoothstep so the ground meets the track without a one-cell cliff. Quay splines and
+   terrain override points burn in the same way, after the track.
+
+   The 6 m verge and 25 m blend this section first specified were measured and thrown
+   out: they moved ground cells by up to 24 m, because a street circuit's road is a
+   shelf cut into a slope with a wall at its edge, not an embankment. A wide corridor
+   flattens the hillside the buildings stand on. Both are options on the constraint, so
+   a parkland circuit can ask for the wider ramp.
+4. **Storage.** Uniform at the provider's native cell, not the adaptive quadtree this
+   section first sketched. Monaco is 2 MB at 3.9 m — a build-time array that is never
+   shipped, so an adaptive layout would add a lookup per sample and save nothing. D3's
+   belt resolutions still govern how finely the *mesh* is built.
+5. **Consistency pass.** Re-derive nothing. Everything else — building bases, road
    drape, water clipping, prop placement — *reads* this field. No module is allowed to
    compute a height from a DEM again.
 
@@ -403,7 +413,22 @@ The raster reader must therefore:
 - **erode the valid mask by one cell** before the height field consumes it,
 
 or the harbour edge gets a ring of pixels diving hundreds of metres — a new and worse
-version of the bug in §1.3.
+version of the bug in §1.3. The erosion has to run **before** any averaging: a single
+contaminated pixel that survives into a block average drags the whole output cell
+below sea level.
+
+### 5.6 Trap: the source grid is not square
+
+The service's cell is **3.90 m across and 4.35 m down**. Requesting a grid at one pixel
+per cell therefore beats against the source, and the mismatch lays a periodic ridge
+across the raster **every fourth row**: measured, the mean row-to-row step was 1.169 m
+against 0.733 m column-to-column, with 64 of 80 spike-gaps exactly 4 rows apart. On a
+hillside that reads as terracing — the "bent landscape" all over again, from a new
+cause.
+
+The fix is to fetch at twice the pitch and average 2 × 2 blocks down (`supersample`,
+default 2). After it, the row step is 0.735 m against 0.721 m for columns and the
+period is gone. Four times the bytes, all of which stay in the disk cache.
 
 ---
 
@@ -433,10 +458,17 @@ exists to prove the joints hold before any effort goes into how it looks.
       returns 702 × 763 at exactly 3.90 m/px; after the nodata pass the minimum
       is −0.23 m instead of −498.6 m. Landmark samples verified against §5.2.
       `bun scripts/env/raster.ts --bbox=… --kind=dtm` prints the coverage map.
-- [ ] **P1.2** `scripts/env/heightfield.ts`: adaptive resample, MSL datum with
-      negatives preserved, track constraint burn-in (§3.4). Rewrite
-      `terrain-sampler.ts` as a reader over it; delete the clamp and the `isWater`
-      flattening.
+- [x] **P1.2** `scripts/env/heightfield.ts`: MSL datum, track constraint burn-in
+      (§3.4), uniform native-cell storage. **Done.** Monaco builds 702 × 763 at 3.90 m,
+      ground −0.23…452.52 m, water 39.6% of cells, track profile 1.12…42.96 m over
+      1184 samples. Burn-in touches 1.1% of cells; 73 cells (0.014%) move more than
+      8 m, all of them on the cut sections below Casino where a retaining wall stands
+      in reality — those arrive with the props in P3.4. Verified against a hillshade
+      render: harbour basin, Le Rocher and the amphitheatre all read correctly, and the
+      §5.6 terracing is gone.
+- [ ] **P1.2b** Rewrite `src/lib/env/terrain-sampler.ts` as a reader over the baked
+      field; delete the `Math.max(0, …)` clamp and the `isWater` flattening. Deferred
+      to P1.3, which is what first produces a baked field for the runtime to read.
 - [ ] **P1.3** Bake: terrain mesh + extruded building boxes + track visual + water
       plane at `y = 0`, split by belt, meshopt-compressed, three GLBs + manifest v2.
 - [ ] **P1.4** `city-loader.ts` and `city-layer.tsx`: fetch far → city → core, mount
