@@ -46,12 +46,11 @@ const SKIRT_M = 3;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
 
-type MeshKind = "terrain" | "building" | "track" | "water";
+type MeshKind = "terrain" | "building" | "water";
 
 const MESH_COLOR: Record<MeshKind, string> = {
   terrain: DIORAMA_COLORS.terrain,
   building: DIORAMA_COLORS.building,
-  track: "#3B3F45",
   water: DIORAMA_COLORS.water,
 };
 
@@ -129,16 +128,26 @@ function bakeTerrain(field: HeightField, plane: ScenePlane, corridor: Corridor):
         const h10 = heightAt(row, col + 1);
         const h01 = heightAt(row + 1, col);
         const h11 = heightAt(row + 1, col + 1);
-        if (Number.isNaN(h00) || Number.isNaN(h10) || Number.isNaN(h01) || Number.isNaN(h11)) continue;
+        const land00 = !Number.isNaN(h00);
+        const land10 = !Number.isNaN(h10);
+        const land01 = !Number.isNaN(h01);
+        const land11 = !Number.isNaN(h11);
+        if (!land00 && !land10 && !land01 && !land11) continue;
 
-        const a = vertexAt(row, col);
-        const b = vertexAt(row, col + 1);
-        const c = vertexAt(row + 1, col + 1);
-        const d = vertexAt(row + 1, col);
+        // Per triangle, not per cell. Dropping the whole cell when one corner
+        // is water costs a full cell of coast — 16 m in the far belt — and the
+        // shoreline comes out as teeth of sea biting into the city.
         // Counter-clockwise seen from above, so the normal points at the sky.
-        grid.triangle(a, c, b);
-        grid.triangle(a, d, c);
-        cellsByBelt[belt]++;
+        let built = false;
+        if (land00 && land11 && land10) {
+          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col + 1), vertexAt(row, col + 1));
+          built = true;
+        }
+        if (land00 && land01 && land11) {
+          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col), vertexAt(row + 1, col + 1));
+          built = true;
+        }
+        if (built) cellsByBelt[belt]++;
       }
     }
 
@@ -166,14 +175,15 @@ function addTerrainSkirts(
   const built = (row: number, col: number): boolean => {
     if (row < 0 || col < 0 || row >= rows || col >= cols) return false;
     if (beltOfCell(row, col, cell) !== belt) return false;
+    let land = 0;
     for (const [dr, dc] of [[0, 0], [0, 1], [1, 0], [1, 1]] as const) {
       const h = field.heightAt(
         plane.lon(minX + (col + dc) * cell),
         plane.lat(minZ + (row + dr) * cell),
       );
-      if (Number.isNaN(h)) return false;
+      if (!Number.isNaN(h)) land++;
     }
-    return true;
+    return land >= 3;
   };
 
   const heightAt = (row: number, col: number): number =>
@@ -190,6 +200,9 @@ function addTerrainSkirts(
       const h10 = heightAt(row, col + 1);
       const h01 = heightAt(row + 1, col);
       const h11 = heightAt(row + 1, col + 1);
+      if (Number.isNaN(h00) || Number.isNaN(h10) || Number.isNaN(h01) || Number.isNaN(h11)) {
+        continue; // a shoreline cell: its own edge is the coast, and needs no skirt
+      }
 
       if (!built(row - 1, col)) {
         addFlatQuad(mesh, x0, h00, z0, x1, h10, z0, x1, h10 - SKIRT_M, z0, x0, h00 - SKIRT_M, z0);
@@ -368,43 +381,30 @@ function extrude(
 // ─── track ─────────────────────────────────────────────────────────────────
 
 /**
- * The racing surface as a ribbon on the field it was burned into. Kerbs, apron
- * and painted markings still come from the runtime for now; D13 moves them here
- * once this holds.
+ * The track's height along its own centreline, in the field's datum.
+ *
+ * The ribbon itself is not baked yet. The runtime still owns the whole track
+ * visual — ribbon, kerbs, apron, markings — and splitting it would put two
+ * ribbons in the same place fighting over depth. What the runtime cannot know
+ * is where the ground ended up, so it gets that here and builds its curve on
+ * it; D13 moves the geometry across once the joint has proven itself.
+ *
+ * One value per centreline vertex, with the closing duplicate dropped, which is
+ * what `buildTrackCurveWithY` indexes against.
  */
-function bakeTrack(field: HeightField, plane: ScenePlane, halfWidthM: number): Mesh {
-  const mesh = createMesh();
-  const { coords } = field.trackProfile;
-  const points = coords.map(([lon, lat]) => {
-    const x = plane.x(lon);
-    const z = plane.z(lat);
+function trackElevations(field: HeightField, coords: [number, number][]): number[] {
+  const points = coords.slice();
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (first && last && first[0] === last[0] && first[1] === last[1]) points.pop();
+
+  let lastValid = 0;
+  return points.map(([lon, lat]) => {
     const y = field.heightAt(lon, lat);
-    return { x, y: Number.isNaN(y) ? 0 : y + TRACK_RAISE_M, z };
+    if (Number.isNaN(y)) return lastValid; // a vertex over the harbour edge
+    lastValid = y;
+    return Number.parseFloat(y.toFixed(2));
   });
-
-  for (let i = 0; i < points.length; i++) {
-    const previous = points[(i - 1 + points.length) % points.length];
-    const next = points[(i + 1) % points.length];
-    const dx = next.x - previous.x;
-    const dz = next.z - previous.z;
-    const length = Math.hypot(dx, dz) || 1;
-    (points[i] as { nx?: number; nz?: number }).nx = (-dz / length) * halfWidthM;
-    (points[i] as { nx?: number; nz?: number }).nz = (dx / length) * halfWidthM;
-  }
-
-  for (let i = 0; i < points.length; i++) {
-    const a = points[i] as { x: number; y: number; z: number; nx: number; nz: number };
-    const b = points[(i + 1) % points.length] as typeof a;
-    addFlatQuad(
-      mesh,
-      a.x - a.nx, a.y, a.z - a.nz,
-      b.x - b.nx, b.y, b.z - b.nz,
-      b.x + b.nx, b.y, b.z + b.nz,
-      a.x + a.nx, a.y, a.z + a.nz,
-    );
-  }
-
-  return mesh;
 }
 
 // ─── GLB ───────────────────────────────────────────────────────────────────
@@ -468,7 +468,7 @@ export interface BakeReport {
   belts: Record<Belt, { bytes: number; triangles: number; drawCalls: number }>;
   buildings: BuildingResult;
   cellsByBelt: Record<Belt, number>;
-  trackTriangles: number;
+  trackVertices: number;
 }
 
 export async function bakeCircuit(circuitId: string, refresh = false): Promise<BakeReport> {
@@ -482,9 +482,9 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   });
   const corridor = buildCorridor(coords, plane);
 
+  const elevations = trackElevations(field, coords);
   const terrain = bakeTerrain(field, plane, corridor);
   const water = bakeWater(field, plane);
-  const track = bakeTrack(field, plane, DEFAULT_TRACK_HALF_WIDTH_M);
 
   const buildingsFile = JSON.parse(
     await readFile(join(OUTPUT_ROOT, circuitId, "buildings.json"), "utf8"),
@@ -498,7 +498,6 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     core: [
       { kind: "terrain", mesh: terrain.meshes.core },
       { kind: "building", mesh: buildings.meshes.core },
-      { kind: "track", mesh: track },
     ],
     city: [
       { kind: "terrain", mesh: terrain.meshes.city },
@@ -527,9 +526,9 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     belts,
     buildings,
     cellsByBelt: terrain.cellsByBelt,
-    trackTriangles: triangleCount(track),
+    trackVertices: elevations.length,
   };
-  await writeManifest(outDir, circuitId, field, plane, report);
+  await writeManifest(outDir, circuitId, field, plane, report, elevations);
   return report;
 }
 
@@ -539,6 +538,7 @@ async function writeManifest(
   field: HeightField,
   plane: ScenePlane,
   report: BakeReport,
+  trackElevationProfile: number[],
 ): Promise<void> {
   const manifest = {
     schemaVersion: 2,
@@ -564,6 +564,11 @@ async function writeManifest(
       buildings: report.buildings.built,
       triangles: BELT_ORDER.reduce((sum, belt) => sum + report.belts[belt].triangles, 0),
       drawCalls: BELT_ORDER.reduce((sum, belt) => sum + report.belts[belt].drawCalls, 0),
+    },
+    track: {
+      /** One height per centreline vertex, closing duplicate dropped. */
+      elevations: trackElevationProfile,
+      halfWidthM: DEFAULT_TRACK_HALF_WIDTH_M,
     },
     sources: {
       elevation: "ign-geoplateforme",
@@ -607,7 +612,7 @@ async function main() {
       `dropped: ${b.droppedOnTrack} on track, ${b.droppedOverWater} over water, ` +
       `${b.droppedTooLow} too low`,
   );
-  console.log(`  track ${report.trackTriangles} tris`);
+  console.log(`  track profile ${report.trackVertices} vertices`);
 }
 
 if (import.meta.main) {

@@ -505,6 +505,9 @@ exists to prove the joints hold before any effort goes into how it looks.
       World bounds read back at 2736 x 2974 m with terrain to 452 m, so quantisation
       keeps the placement. Belt seams are hidden with a 3 m skirt rather than stitched;
       water is one quad at the datum, since the terrain edge already is the coastline.
+      Terrain is emitted per triangle, not per cell: dropping a whole cell when one
+      corner is water costs up to 16 m of coast in the far belt and reads as teeth of
+      sea biting into the city.
       The manifest is `city-manifest.json` (v2), beside the belt files. Run it with
       `bun run env:bake mc-1929`, look at it with `bun run env:preview`.
 
@@ -517,9 +520,21 @@ exists to prove the joints hold before any effort goes into how it looks.
 
       Still runtime, not baked, contrary to D13: kerbs, apron and painted markings. The
       ribbon is baked; the rest follow once the loader proves the joint holds.
-- [ ] **P1.4** `city-loader.ts` and `city-layer.tsx`: fetch far → city → core, mount
+- [x] **P1.4** `city-loader.ts` and `city-layer.tsx`: fetch far → city → core, mount
       beside the existing layer, gated so a circuit without GLB keeps the old path
-      (D17).
+      (D17). **Done.** Monaco loads **354 KB** over the wire (54 + 185 + 115 KB
+      gzipped) against 2.1 MB of diorama JSON before, which is no longer fetched at
+      all when a city manifest exists.
+
+      The datum is the joint: the manifest carries one height per centreline vertex,
+      and the runtime builds its curve from those with no offset, so the ribbon lands
+      on the ground the bake burned it into. `terrain-sampler` is bypassed entirely in
+      city mode — the field already decided where the ground is.
+
+      Two leftovers: the ribbon still sits `TRACK_SURFACE_RAISE` (1.1 m) above the
+      curve, which P1.5 should measure and P1.2b should remove; and the info panel's
+      elevation profile still reads the old SRTM array, so it disagrees with the scene
+      it describes.
 - [ ] **P1.5** `scripts/audit-environment.ts` with the §4 checks; wire `env:audit` into
       `package.json` and `AGENTS.md`.
 

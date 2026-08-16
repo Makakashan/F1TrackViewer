@@ -8,6 +8,7 @@ import type { TrackWidthProfile } from "@/lib/track/track-width";
 import type { StartFinishPlacement } from "@/lib/track/start-finish";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import type { TrackMarkers, TrackViewMode } from "@/lib/track/track-markers";
+import type { CityManifest } from "@/lib/env/city-loader";
 import type { EnvironmentBundle } from "@/lib/env/environment-types";
 import type { QualityMode } from "@/lib/url-state";
 import type { GridEntry } from "@/lib/race/f1-teams";
@@ -39,6 +40,7 @@ export interface TrackViewerProps {
   viewMode?: TrackViewMode;
   markers?: TrackMarkers | null;
   environmentBundle?: EnvironmentBundle | null;
+  cityManifest?: CityManifest | null;
   environmentTerrain?: boolean;
   widthProfile?: TrackWidthProfile | null;
   realWidthEnabled?: boolean;
@@ -79,6 +81,7 @@ export default function TrackViewer({
   viewMode = "normal",
   markers,
   environmentBundle,
+  cityManifest,
   environmentTerrain = true,
   widthProfile,
   realWidthEnabled = true,
@@ -215,6 +218,7 @@ export default function TrackViewer({
                 viewMode={viewMode}
                 markers={markers}
                 environmentBundle={environmentBundle}
+                cityManifest={cityManifest}
                 environmentTerrain={environmentTerrain}
                 widthProfile={widthProfile}
                 realWidthEnabled={realWidthEnabled}

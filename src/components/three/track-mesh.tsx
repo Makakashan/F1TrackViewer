@@ -61,6 +61,8 @@ import {
 import type { EnvironmentBundle } from "@/lib/env/environment-types";
 import { buildTerrainSampler } from "@/lib/env/terrain-sampler";
 import EnvironmentLayer from "@/components/three/environment-layer";
+import CityLayer from "@/components/three/city-layer";
+import type { CityManifest } from "@/lib/env/city-loader";
 import StudioStage from "@/components/three/studio-stage";
 import type { CameraPreset } from "@/components/track/track-viewer";
 import {
@@ -104,6 +106,8 @@ export interface TrackMeshProps {
   markers?: TrackMarkers | null;
   environmentBundle?: EnvironmentBundle | null;
   environmentTerrain?: boolean;
+  /** A baked city replaces the runtime diorama for this circuit (D17). */
+  cityManifest?: CityManifest | null;
   widthProfile?: TrackWidthProfile | null;
   realWidthEnabled?: boolean;
   /** Reduces environment diorama detail (building count) for weaker devices. */
@@ -141,6 +145,7 @@ export default function TrackMesh({
   markers,
   environmentBundle,
   environmentTerrain,
+  cityManifest,
   widthProfile,
   realWidthEnabled,
   lowDetail,
@@ -155,7 +160,9 @@ export default function TrackMesh({
 }: TrackMeshProps) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
-  const hasEnvironment = !!environmentBundle;
+  // A baked city and the runtime diorama are the same job; only one may run.
+  const cityActive = !!cityManifest;
+  const hasEnvironment = cityActive || !!environmentBundle;
 
   // Race view is the "what it actually looks like" mode.
   const raceView = viewMode === "realistic";
@@ -176,11 +183,12 @@ export default function TrackMesh({
   const radius = useMemo(() => sceneRadiusFromBounds(bounds), [bounds]);
 
   const terrainSampler = useMemo(() => {
+    if (cityActive) return null; // the baked field already decided the ground
     if (!environmentBundle || !environmentTerrain || environmentBundle.terrain.gridSize < 2) {
       return null;
     }
     return buildTerrainSampler(environmentBundle.terrain, environmentBundle.manifest);
-  }, [environmentBundle, environmentTerrain]);
+  }, [cityActive, environmentBundle, environmentTerrain]);
 
   const trackTerrainHeightNear = useCallback(
     (lon: number, lat: number): number => terrainSampler?.heightAt(lon, lat) ?? 0,
@@ -199,6 +207,25 @@ export default function TrackMesh({
   }, [terrainSampler, bounds]);
 
   const { curve, peakY, minY } = useMemo(() => {
+    // The bake burned the track into the ground it shipped, so its own profile
+    // is the only Y that lands on it. No offset: the field is the road surface.
+    if (cityManifest?.track?.elevations?.length) {
+      const cityY = cityManifest.track.elevations;
+      let min = Infinity;
+      let max = -Infinity;
+      const c = buildTrackCurveWithY(coords, bounds, (_lon, _lat, i) => {
+        const y = cityY[i] ?? cityY[cityY.length - 1] ?? 0;
+        if (y < min) min = y;
+        if (y > max) max = y;
+        return y;
+      });
+      return {
+        curve: c,
+        peakY: Math.max(Math.abs(min), Math.abs(max)),
+        minY: Number.isFinite(min) ? min : 0,
+      };
+    }
+
     if (terrainSampler) {
       let min = Infinity;
       let max = -Infinity;
@@ -246,15 +273,24 @@ export default function TrackMesh({
       minCurveY = min - mean;
     }
     return { curve: c, peakY: peak, minY: minCurveY };
-  }, [bounds, coords, elevations, hasEnvironment, trackTerrainHeightNear, terrainSampler]);
+  }, [
+    bounds,
+    cityManifest,
+    coords,
+    elevations,
+    hasEnvironment,
+    trackTerrainHeightNear,
+    terrainSampler,
+  ]);
 
   const groundY = useMemo(
     () => (hasEnvironment ? minY - 1 : -peakY - trackWidth * 2 - 1),
     [hasEnvironment, minY, peakY, trackWidth],
   );
-  // In terrain mode the terrain bottom sits at baseY=0.
+  // In terrain mode the terrain bottom sits at baseY=0. A baked city brings its
+  // own sea at y=0, so the stage floor goes just under it.
   const stageFloorY = hasEnvironment
-    ? terrainSampler
+    ? terrainSampler || cityActive
       ? -1
       : groundY - 2
     : groundY - 0.5;
@@ -675,7 +711,9 @@ export default function TrackMesh({
         />
       )}
 
-      {hasEnvironment && (
+      {cityActive && <CityLayer manifest={cityManifest!} lowDetail={lowDetail} />}
+
+      {hasEnvironment && !cityActive && (
         <EnvironmentLayer
           bundle={environmentBundle!}
           trackCoordinates={coords}
