@@ -613,6 +613,18 @@ belt an order of magnitude inside its byte budget.
 
       A 7 m median move is the difference between a grey block model and a skyline:
       compare `images/bake-harbour.png` with `images/heights.png`.
+- [x] **P3.1b** The bake takes its buildings from Overpass directly, with tags, instead
+      of the old pipeline's `buildings.json`. That file held **800 footprints**; the
+      query returns **4 792**, so the old generator was dropping five buildings in six.
+      Baked: 4 776 buildings, **1.87 MB** total and 226 k triangles, still an order of
+      magnitude inside D5. It also removes a dependency on the path D17 will delete,
+      and brings the tags — `roof:shape`, `building:levels`, `height` — that roofs need.
+
+      One trap on the way: Overpass answers a refusal with **HTTP 200, an empty element
+      list and a `remark`**. Taken at face value that cached an empty city, so the
+      client now treats an empty-with-remark answer as a failure and moves to the next
+      endpoint.
+
 - [ ] **P3.2** Roof archetypes: flat-with-parapet, gabled, hipped, mansard, stepped
       terrace, shed, sawtooth, domed. Selection by `roof:shape` where tagged, else by
       footprint area / elongation / height heuristic.

@@ -29,6 +29,21 @@ export interface ShoreWay {
   name?: string;
 }
 
+export interface BuildingWay {
+  id: string;
+  footprint: [number, number][];
+  /** Only what the roof and the height need; the rest of OSM is noise here. */
+  tags: {
+    building?: string;
+    height?: string;
+    "building:levels"?: string;
+    "roof:shape"?: string;
+    "roof:height"?: string;
+    "roof:levels"?: string;
+    name?: string;
+  };
+}
+
 export interface StructureWay {
   id: string;
   points: [number, number][];
@@ -39,6 +54,12 @@ export interface StructureWay {
   /** Negative below ground, positive above. */
   layer: number;
   name?: string;
+}
+
+interface OverpassResponse {
+  elements: OverpassWay[];
+  /** Overpass reports a refusal in the body, under HTTP 200. */
+  remark?: string;
 }
 
 interface OverpassWay {
@@ -61,7 +82,7 @@ function query(bbox: RasterBBox): string {
 out geom tags;`;
 }
 
-async function run(body: string): Promise<{ elements: OverpassWay[] } | null> {
+async function run(body: string): Promise<OverpassResponse | null> {
   for (const endpoint of ENDPOINTS) {
     try {
       const res = await fetch(endpoint, {
@@ -73,12 +94,62 @@ async function run(body: string): Promise<{ elements: OverpassWay[] } | null> {
         await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
         continue;
       }
-      return (await res.json()) as { elements: OverpassWay[] };
+      const json = (await res.json()) as OverpassResponse;
+      // A rate-limited or timed-out query comes back as HTTP 200 with an empty
+      // result and a remark. Taking that as an answer caches an empty city.
+      if (json.remark && !json.elements?.length) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        continue;
+      }
+      return json;
     } catch {
       await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
     }
   }
   return null;
+}
+
+function buildingQuery(bbox: RasterBBox): string {
+  const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
+  // Ways only. A multipolygon building is a courtyard block whose outer ring is
+  // what the city silhouette needs, and Overpass returns those rings as ways.
+  return `[out:json][timeout:180];
+way["building"](${box});
+out geom tags;`;
+}
+
+/** Building footprints with the tags a roof and a height are decided from. */
+export async function fetchBuildingWays(
+  circuitId: string,
+  bbox: RasterBBox,
+  refresh = false,
+): Promise<BuildingWay[]> {
+  const cachePath = join(CACHE_DIR, `${circuitId}-buildings.json`);
+  if (!refresh) {
+    try {
+      return JSON.parse(await readFile(cachePath, "utf8")) as BuildingWay[];
+    } catch {
+      // not cached yet
+    }
+  }
+
+  const response = await run(buildingQuery(bbox));
+  if (!response) throw new Error(`overpass: no endpoint answered for ${circuitId} buildings`);
+
+  const ways: BuildingWay[] = [];
+  for (const element of response.elements) {
+    if (element.type !== "way" || !element.geometry || element.geometry.length < 4) continue;
+    const tags = (element.tags ?? {}) as BuildingWay["tags"];
+    ways.push({
+      id: `way/${element.id}`,
+      footprint: element.geometry.map((p) => [p.lon, p.lat] as [number, number]),
+      tags,
+    });
+  }
+
+  await mkdir(CACHE_DIR, { recursive: true });
+  await writeFile(cachePath, JSON.stringify(ways));
+  return ways;
 }
 
 function shoreQuery(bbox: RasterBBox): string {

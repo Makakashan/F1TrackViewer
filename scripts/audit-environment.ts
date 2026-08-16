@@ -18,7 +18,8 @@ import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 
 import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types";
-import { buildCircuitGround } from "./env/bake";
+import { buildCircuitGround, fromOverpass } from "./env/bake";
+import { fetchBuildingWays } from "./env/overpass";
 import { BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
 import type { HeightField } from "./env/heightfield";
 import type { ScenePlane } from "./env/plane";
@@ -231,7 +232,8 @@ async function audit(circuitId: string): Promise<Check[]> {
   const manifest = JSON.parse(await readFile(join(dir, "city-manifest.json"), "utf8")) as {
     track: { elevations: number[] };
   };
-  const buildings = JSON.parse(await readFile(join(dir, "buildings.json"), "utf8")) as BuildingsFile;
+  // The same source the bake used, not the old pipeline's file.
+  const buildings = fromOverpass(await fetchBuildingWays(circuitId, field.bbox));
   const water = JSON.parse(await readFile(join(dir, "water.json"), "utf8")) as WaterFile;
 
   const checks: Check[] = [];

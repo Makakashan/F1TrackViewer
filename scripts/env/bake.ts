@@ -37,7 +37,7 @@ import {
   type Mesh,
 } from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
-import { fetchShoreWays, fetchStructureWays } from "./overpass";
+import { fetchBuildingWays, fetchShoreWays, fetchStructureWays, type BuildingWay } from "./overpass";
 import { fetchElevationRaster, sampleRaster } from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
 import { bakeShoreWalls, type ShoreResult } from "./shore";
@@ -264,6 +264,38 @@ function bakeWater(field: HeightField, plane: ScenePlane): Mesh {
 }
 
 // ─── buildings ─────────────────────────────────────────────────────────────
+
+/** Fallback storey height where a building says how many it has but not how tall. */
+const STOREY_M = 3.1;
+/** Last resort: a building that says nothing about its height at all. */
+const DEFAULT_HEIGHT_M = 9;
+
+/**
+ * OSM ways as the bake wants them. The tag height is only a fallback — MNH
+ * measures the real one (D8) — but it has to be there for the handful of
+ * footprints the raster cannot see.
+ */
+export function fromOverpass(ways: BuildingWay[]): BuildingsFile {
+  return {
+    schemaVersion: 1,
+    circuitId: "",
+    buildings: ways.map((way) => {
+      const tagged = Number.parseFloat(way.tags.height ?? "");
+      const levels = Number.parseFloat(way.tags["building:levels"] ?? "");
+      const height = Number.isFinite(tagged)
+        ? tagged
+        : Number.isFinite(levels)
+          ? levels * STOREY_M
+          : DEFAULT_HEIGHT_M;
+      return {
+        id: way.id,
+        kind: "building" as const,
+        height,
+        footprint: way.footprint,
+      };
+    }),
+  };
+}
 
 interface BuildingResult {
   meshes: Record<Belt, Mesh>;
@@ -739,7 +771,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const water = bakeWater(field, plane);
 
   const buildingsFile = applyBuildingOverrides(
-    JSON.parse(await readFile(join(OUTPUT_ROOT, circuitId, "buildings.json"), "utf8")) as BuildingsFile,
+    fromOverpass(await fetchBuildingWays(circuitId, bbox, refresh)),
     overrides,
     overrideStats,
   );
