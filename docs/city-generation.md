@@ -663,7 +663,21 @@ belt an order of magnitude inside its byte budget.
 
       Colour is still the palette: glTF multiplies vertex colour into the base colour,
       so this shades the palette rather than replacing it, and there are no textures.
-- [ ] **P3.4** Core-belt props, instanced: barriers, debris fences, grandstands (D16).
+- [x] **P3.4** Barriers down both sides of the circuit in the core belt — **12 324
+      triangles**, one mesh, nothing built through the tunnel. They are a thin box
+      rather than two faces back to back: coincident quads fight over depth and the
+      face turned away from the sun wins half the time, which draws a black line down
+      the circuit. They are also left out of the AO pass, since a thin object at street
+      level comes back from it nearly black.
+
+      **Not done: grandstands.** Monaco's are temporary and OSM does not carry them, so
+      there is nothing to place them from. That wants either an override (D10) or the
+      authored props of P4.2, and guessing at their positions would be inventing a
+      racetrack rather than modelling one.
+
+      Debris fences are skipped for the same reason a fence is hard without textures:
+      a solid panel is wrong and a transparent one costs a sorted draw. It waits for
+      the material work that P4 can carry.
 
 ### P4 — Deferred on purpose
 

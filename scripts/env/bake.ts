@@ -70,7 +70,7 @@ const SKIRT_M = 3;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
 
-type MeshKind = "terrain" | "building" | "water" | "tunnel" | "portal" | "shore";
+type MeshKind = "terrain" | "building" | "water" | "tunnel" | "portal" | "shore" | "barrier";
 
 const MESH_COLOR: Record<MeshKind, string> = {
   terrain: DIORAMA_COLORS.terrain,
@@ -79,6 +79,7 @@ const MESH_COLOR: Record<MeshKind, string> = {
   tunnel: "#14161A",
   portal: DIORAMA_COLORS.buildingSide,
   shore: DIORAMA_COLORS.buildingSide,
+  barrier: "#C9CFD6",
 };
 
 // ─── terrain ───────────────────────────────────────────────────────────────
@@ -600,6 +601,88 @@ function trackHeightNear(field: HeightField, plane: ScenePlane, x: number, z: nu
   return best;
 }
 
+// ─── barriers ──────────────────────────────────────────────────────────────
+
+/** Clear of the racing surface, where a barrier actually stands. */
+const BARRIER_OFFSET_M = 1.2;
+const BARRIER_HEIGHT_M = 1.05;
+const BARRIER_THICKNESS_M = 0.3;
+
+/**
+ * The steel that lines a street circuit (D16). Absence of it reads as a bug —
+ * a road through a city with nothing between it and the buildings — so it ships
+ * in the core belt, as one mesh rather than one object per panel.
+ *
+ * Nothing is built through the tunnel: the barrier there is inside the hill.
+ */
+function bakeBarriers(
+  field: HeightField,
+  plane: ScenePlane,
+  tunnels: TunnelMask,
+  halfWidthM: number,
+): Mesh {
+  const mesh = createMesh();
+  const { coords, elevations } = field.trackProfile;
+  const offset = halfWidthM + BARRIER_OFFSET_M;
+
+  for (let i = 0; i < coords.length; i++) {
+    const next = (i + 1) % coords.length;
+    if (tunnels.buried(coords[i][0], coords[i][1])) continue;
+    if (tunnels.buried(coords[next][0], coords[next][1])) continue;
+
+    const ax = plane.x(coords[i][0]);
+    const az = plane.z(coords[i][1]);
+    const bx = plane.x(coords[next][0]);
+    const bz = plane.z(coords[next][1]);
+    const length = Math.hypot(bx - ax, bz - az);
+    if (length < 0.5 || length > 40) continue; // the closing jump back to the line's start
+    const nx = (-(bz - az) / length) * offset;
+    const nz = ((bx - ax) / length) * offset;
+    const ay = elevations[i];
+    const by = elevations[next];
+
+    // A thin box, not two coincident faces: coincident quads fight over depth
+    // and the one facing away from the sun wins half the time, which reads as a
+    // black line down the circuit.
+    const half = BARRIER_THICKNESS_M / 2;
+    const tx = (-(bz - az) / length) * half;
+    const tz = ((bx - ax) / length) * half;
+    for (const side of [1, -1]) {
+      const cx0 = ax + nx * side;
+      const cz0 = az + nz * side;
+      const cx1 = bx + nx * side;
+      const cz1 = bz + nz * side;
+      const top0 = ay + BARRIER_HEIGHT_M;
+      const top1 = by + BARRIER_HEIGHT_M;
+
+      // Outer face, inner face, and the cap between them.
+      addFlatQuad(
+        mesh,
+        cx0 + tx, ay, cz0 + tz,
+        cx1 + tx, by, cz1 + tz,
+        cx1 + tx, top1, cz1 + tz,
+        cx0 + tx, top0, cz0 + tz,
+      );
+      addFlatQuad(
+        mesh,
+        cx1 - tx, by, cz1 - tz,
+        cx0 - tx, ay, cz0 - tz,
+        cx0 - tx, top0, cz0 - tz,
+        cx1 - tx, top1, cz1 - tz,
+      );
+      addFlatQuad(
+        mesh,
+        cx0 - tx, top0, cz0 - tz,
+        cx0 + tx, top0, cz0 + tz,
+        cx1 + tx, top1, cz1 + tz,
+        cx1 - tx, top1, cz1 - tz,
+      );
+    }
+  }
+
+  return mesh;
+}
+
 // ─── track ─────────────────────────────────────────────────────────────────
 
 /**
@@ -714,6 +797,7 @@ export interface BakeReport {
   cellsByBelt: Record<Belt, number>;
   trackVertices: number;
   portalTriangles: number;
+  barrierTriangles: number;
   shore: ShoreResult;
   heights: HeightStats;
   tunnels: TunnelMask;
@@ -802,6 +886,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
 
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(tunnels, field, plane);
+  const barriers = bakeBarriers(field, plane, tunnels, DEFAULT_TRACK_HALF_WIDTH_M);
   const terrain = bakeTerrain(field, plane, corridor);
   const water = bakeWater(field, plane);
 
@@ -826,6 +911,8 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     buildings.meshes.far,
     portals.surround,
   ];
+  // Barriers occlude nothing worth the trouble and, being thin and at ground
+  // level in a street canyon, they come back from the AO pass nearly black.
   const occluders = buildOccluders(field, plane, standing);
   for (const mesh of [
     terrain.meshes.core,
@@ -849,6 +936,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
       // road on purpose, and the corridor check would read it as a wall in the
       // way.
       { kind: "portal", mesh: portals.surround },
+      { kind: "barrier", mesh: barriers },
     ],
     city: [
       { kind: "terrain", mesh: terrain.meshes.city },
@@ -882,6 +970,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     cellsByBelt: terrain.cellsByBelt,
     trackVertices: elevations.length,
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
+    barrierTriangles: triangleCount(barriers),
     shore,
     heights: heightStats.value,
     tunnels,
@@ -983,6 +1072,7 @@ async function main() {
       `${roofs.pyramidal} pyramidal, ${roofs.skillion} skillion`,
   );
   console.log(`  portals ${report.portalTriangles} tris`);
+  console.log(`  barriers ${report.barrierTriangles} tris`);
   console.log(
     `  shore ${report.shore.built} wall segments, ` +
       `${report.shore.skippedDisagreement} skipped where OSM and the raster disagree, ` +
