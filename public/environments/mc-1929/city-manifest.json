@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 2,
+  "circuitId": "mc-1929",
+  "style": "city",
+  "datum": "msl",
+  "origin": {
+    "lon": 7.4257895000000005,
+    "lat": 43.736738
+  },
+  "bbox": {
+    "minLon": 7.408783040405454,
+    "minLat": 43.72337888825009,
+    "maxLon": 7.442795959594546,
+    "maxLat": 43.750097111749916
+  },
+  "belts": {
+    "core": {
+      "file": "core.glb",
+      "bytes": 342220,
+      "triangles": 69384,
+      "drawCalls": 3,
+      "radiusM": 150,
+      "cellM": 4
+    },
+    "city": {
+      "file": "city.glb",
+      "bytes": 446464,
+      "triangles": 62397,
+      "drawCalls": 2,
+      "radiusM": 600,
+      "cellM": 8
+    },
+    "far": {
+      "file": "far.glb",
+      "bytes": 132192,
+      "triangles": 24873,
+      "drawCalls": 3,
+      "radiusM": null,
+      "cellM": 16
+    }
+  },
+  "counts": {
+    "buildings": 785,
+    "triangles": 156654,
+    "drawCalls": 8
+  },
+  "sources": {
+    "elevation": "ign-geoplateforme",
+    "buildings": "openstreetmap",
+    "centreline": "bacinger/f1-circuits"
+  },
+  "attribution": "© OpenStreetMap contributors",
+  "generatedAt": "2026-08-16"
+}

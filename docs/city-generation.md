@@ -496,8 +496,19 @@ exists to prove the joints hold before any effort goes into how it looks.
 - [ ] **P1.2b** Rewrite `src/lib/env/terrain-sampler.ts` as a reader over the baked
       field; delete the `Math.max(0, …)` clamp and the `isWater` flattening. Deferred
       to P1.3, which is what first produces a baked field for the runtime to read.
-- [ ] **P1.3** Bake: terrain mesh + extruded building boxes + track visual + water
+- [x] **P1.3** Bake: terrain mesh + extruded building boxes + track visual + water
       plane at `y = 0`, split by belt, meshopt-compressed, three GLBs + manifest v2.
+      **Done** (`scripts/env/bake.ts`, `belts.ts`, `mesh.ts`, `plane.ts`). Monaco bakes
+      in 3.3 s to **0.92 MB** across the three belts — 5.87 MB before meshopt —
+      156 654 triangles and **8 draw calls**, against budgets of 15 MB, 920 k and 120.
+      785 buildings placed, 19 footprints pushed off the corridor, none left inside it.
+      World bounds read back at 2736 x 2974 m with terrain to 452 m, so quantisation
+      keeps the placement. Belt seams are hidden with a 3 m skirt rather than stitched;
+      water is one quad at the datum, since the terrain edge already is the coastline.
+      The manifest is `city-manifest.json` (v2), beside the belt files.
+
+      Still runtime, not baked, contrary to D13: kerbs, apron and painted markings. The
+      ribbon is baked; the rest follow once the loader proves the joint holds.
 - [ ] **P1.4** `city-loader.ts` and `city-layer.tsx`: fetch far → city → core, mount
       beside the existing layer, gated so a circuit without GLB keeps the old path
       (D17).
