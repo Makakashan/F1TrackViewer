@@ -29,7 +29,9 @@ import {
 import { buildHeightField, type HeightField } from "./heightfield";
 import { addFlatQuad, addFlatTriangle, createMesh, GridMesh, isEmpty, triangleCount, type Mesh } from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
+import { fetchStructureWays } from "./overpass";
 import { fetchElevationRaster } from "./raster";
+import { buildTunnelMask, type TunnelMask } from "./tunnels";
 import { circuitBBox, loadCircuitCoords } from "./circuit";
 
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
@@ -392,18 +394,30 @@ function extrude(
  * One value per centreline vertex, with the closing duplicate dropped, which is
  * what `buildTrackCurveWithY` indexes against.
  */
-function trackElevations(field: HeightField, coords: [number, number][]): number[] {
+function trackElevations(field: HeightField, coords: [number, number][], plane: ScenePlane): number[] {
   const points = coords.slice();
   const first = points[0];
   const last = points[points.length - 1];
   if (first && last && first[0] === last[0] && first[1] === last[1]) points.pop();
 
-  let lastValid = 0;
+  // Read the field's own track profile, not the ground: in a tunnel the ground
+  // is the hill overhead, and the profile is the only thing that knows where
+  // the road runs between the portals.
+  const profile = field.trackProfile;
   return points.map(([lon, lat]) => {
-    const y = field.heightAt(lon, lat);
-    if (Number.isNaN(y)) return lastValid; // a vertex over the harbour edge
-    lastValid = y;
-    return Number.parseFloat(y.toFixed(2));
+    const x = plane.x(lon);
+    const z = plane.z(lat);
+    let best = 0;
+    let bestDistance = Infinity;
+    for (let i = 0; i < profile.coords.length; i++) {
+      const distance =
+        (plane.x(profile.coords[i][0]) - x) ** 2 + (plane.z(profile.coords[i][1]) - z) ** 2;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = profile.elevations[i];
+      }
+    }
+    return Number.parseFloat(best.toFixed(2));
   });
 }
 
@@ -469,20 +483,48 @@ export interface BakeReport {
   buildings: BuildingResult;
   cellsByBelt: Record<Belt, number>;
   trackVertices: number;
+  tunnels: TunnelMask;
 }
 
-export async function bakeCircuit(circuitId: string, refresh = false): Promise<BakeReport> {
+/**
+ * Everything the bake and the audit both need, built once from one recipe.
+ * Two callers building the field with different inputs is the bug this whole
+ * document exists to stop, so neither of them builds it alone.
+ */
+export interface CircuitGround {
+  coords: [number, number][];
+  bbox: ReturnType<typeof circuitBBox>;
+  plane: ScenePlane;
+  field: HeightField;
+  corridor: ReturnType<typeof buildCorridor>;
+  tunnels: TunnelMask;
+}
+
+export async function buildCircuitGround(
+  circuitId: string,
+  refresh = false,
+): Promise<CircuitGround> {
   const coords = await loadCircuitCoords(circuitId);
   const bbox = circuitBBox(coords);
   const plane = scenePlaneFor(coords);
   const dtm = await fetchElevationRaster({ kind: "dtm", bbox, refresh });
+  const structures = await fetchStructureWays(circuitId, bbox, refresh);
+  const tunnels = buildTunnelMask(coords, structures, plane);
   const field = buildHeightField({
     dtm,
-    track: { coords, halfWidthM: DEFAULT_TRACK_HALF_WIDTH_M },
+    track: {
+      coords,
+      halfWidthM: DEFAULT_TRACK_HALF_WIDTH_M,
+      buried: tunnels.buried,
+    },
   });
-  const corridor = buildCorridor(coords, plane);
+  return { coords, bbox, plane, field, corridor: buildCorridor(coords, plane), tunnels };
+}
 
-  const elevations = trackElevations(field, coords);
+export async function bakeCircuit(circuitId: string, refresh = false): Promise<BakeReport> {
+  const { coords, plane, field, corridor, tunnels } = await buildCircuitGround(circuitId, refresh);
+
+  const elevations = trackElevations(field, coords, plane);
   const terrain = bakeTerrain(field, plane, corridor);
   const water = bakeWater(field, plane);
 
@@ -527,6 +569,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     buildings,
     cellsByBelt: terrain.cellsByBelt,
     trackVertices: elevations.length,
+    tunnels,
   };
   await writeManifest(outDir, circuitId, field, plane, report, elevations);
   return report;
@@ -613,6 +656,14 @@ async function main() {
       `${b.droppedTooLow} too low`,
   );
   console.log(`  track profile ${report.trackVertices} vertices`);
+  if (report.tunnels.runs.length) {
+    console.log(`  tunnels ${report.tunnels.runs.length} run(s), ${report.tunnels.buriedLengthM} m buried`);
+    for (const run of report.tunnels.runs) {
+      console.log(`    ${run.name ?? run.wayId} — ${run.lengthM} m`);
+    }
+  } else {
+    console.log("  tunnels none on the racing line");
+  }
 }
 
 if (import.meta.main) {

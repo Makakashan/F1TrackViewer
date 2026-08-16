@@ -18,11 +18,10 @@ import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 
 import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types";
+import { buildCircuitGround } from "./env/bake";
 import { BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
-import { circuitBBox, loadCircuitCoords } from "./env/circuit";
-import { buildHeightField, type HeightField } from "./env/heightfield";
-import { scenePlaneFor, type ScenePlane } from "./env/plane";
-import { fetchElevationRaster } from "./env/raster";
+import type { HeightField } from "./env/heightfield";
+import type { ScenePlane } from "./env/plane";
 
 const REPO_ROOT = new URL("..", import.meta.url).pathname;
 const ENVIRONMENTS = join(REPO_ROOT, "public", "environments");
@@ -225,12 +224,8 @@ function checkCoastline(water: WaterFile, field: HeightField): { agree: number; 
 // ─── run ───────────────────────────────────────────────────────────────────
 
 async function audit(circuitId: string): Promise<Check[]> {
-  const coords = await loadCircuitCoords(circuitId);
-  const bbox = circuitBBox(coords);
-  const plane = scenePlaneFor(coords);
-  const dtm = await fetchElevationRaster({ kind: "dtm", bbox });
-  const field = buildHeightField({ dtm, track: { coords, halfWidthM: 6 } });
-  const corridor = buildCorridor(coords, plane);
+  // The same recipe the bake used, so a disagreement here is a real one.
+  const { coords, plane, field, corridor, tunnels } = await buildCircuitGround(circuitId);
 
   const dir = join(ENVIRONMENTS, circuitId);
   const manifest = JSON.parse(await readFile(join(dir, "city-manifest.json"), "utf8")) as {
@@ -319,7 +314,14 @@ async function audit(circuitId: string): Promise<Check[]> {
   const first = stripped[0];
   const last = stripped[stripped.length - 1];
   if (first && last && first[0] === last[0] && first[1] === last[1]) stripped.pop();
+  let buriedVertices = 0;
   for (let i = 0; i < Math.min(profile.length, stripped.length); i++) {
+    // Under a hill the ground is the hill. The profile is carried between the
+    // portals there and has nothing to agree with.
+    if (tunnels.buried(stripped[i][0], stripped[i][1])) {
+      buriedVertices++;
+      continue;
+    }
     const ground = field.heightAt(stripped[i][0], stripped[i][1]);
     if (Number.isNaN(ground)) continue;
     worstTrack = Math.max(worstTrack, Math.abs(profile[i] - ground));
@@ -327,9 +329,21 @@ async function audit(circuitId: string): Promise<Check[]> {
   checks.push(
     check(
       "track profile matches the field",
-      `worst ${worstTrack.toFixed(3)} m`,
+      `worst ${worstTrack.toFixed(3)} m, ${buriedVertices} vertices in tunnel`,
       `${TRACK_TOLERANCE_M} m`,
       worstTrack <= TRACK_TOLERANCE_M,
+    ),
+  );
+
+  checks.push(
+    check(
+      "tunnel runs found",
+      tunnels.runs.length
+        ? `${tunnels.runs.length}, ${tunnels.buriedLengthM} m buried`
+        : "none",
+      "reported",
+      true,
+      false,
     ),
   );
 

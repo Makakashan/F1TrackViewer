@@ -39,15 +39,17 @@ export interface TrackConstraint {
   /** Distance over which the ground eases back to its own level. */
   blendM?: number;
   /**
-   * Sections that run under the ground rather than on it — the Monaco tunnel.
-   * Burning those in would carve a canyon through the hill they pass under.
-   * Detection needs the OSM `tunnel` tag, which arrives with P2.1; until then
-   * nothing sets this and the tunnel stretch is knowingly wrong.
+   * Where the track runs under the ground rather than on it — the Monaco
+   * tunnel. Burning those stretches in would carve a canyon through the hill
+   * the road passes under, so the ground there keeps its own height and the
+   * portals in the bake are what show the road going in.
    */
-  buriedRanges?: { from: number; to: number }[];
+  buried?(lon: number, lat: number): boolean;
 }
 
 export interface HeightFieldStats {
+  /** Centreline samples skipped because the track is under the ground there. */
+  buriedSamples: number;
   cellsBurned: number;
   maxLiftM: number;
   maxCutM: number;
@@ -141,17 +143,36 @@ function densify(coords: [number, number][], stepM: number, plane: Plane): [numb
  * put through the scene's existing profile cleanup, so the constraint the field
  * relaxes to is a drivable line rather than raw DEM noise.
  */
-function trackElevationProfile(dtm: Raster, coords: [number, number][]): number[] {
-  const raw = coords.map(([lon, lat]) => sampleRaster(dtm, lon, lat));
+function trackElevationProfile(
+  dtm: Raster,
+  coords: [number, number][],
+  buried?: (lon: number, lat: number) => boolean,
+): number[] {
+  // Inside a tunnel the raster describes the hill, not the road under it, so
+  // those samples are thrown away and the road is carried between the portals
+  // instead. Nothing else knows where a tunnelled road runs.
+  const raw = coords.map(([lon, lat]) =>
+    buried?.(lon, lat) ? Number.NaN : sampleRaster(dtm, lon, lat),
+  );
 
-  // A point over water (the harbour wall) or off-raster has no ground reading;
-  // carry the last real one across so the smoother sees a continuous line.
-  let lastValid = raw.find((v) => !Number.isNaN(v)) ?? 0;
-  const filled = raw.map((v) => {
-    if (Number.isNaN(v)) return lastValid;
-    lastValid = v;
-    return v;
-  });
+  const filled = raw.slice();
+  for (let i = 0; i < filled.length; i++) {
+    if (!Number.isNaN(filled[i])) continue;
+    let before = i - 1;
+    while (before >= 0 && Number.isNaN(raw[before])) before--;
+    let after = i + 1;
+    while (after < raw.length && Number.isNaN(raw[after])) after++;
+    if (before < 0 && after >= raw.length) {
+      filled[i] = 0;
+    } else if (before < 0) {
+      filled[i] = raw[after];
+    } else if (after >= raw.length) {
+      filled[i] = raw[before];
+    } else {
+      const t = (i - before) / (after - before);
+      filled[i] = raw[before] + (raw[after] - raw[before]) * t;
+    }
+  }
 
   return smoothTerrainTrackProfile(filled, coords, TRACK_SMOOTH_RADIUS_M);
 }
@@ -161,11 +182,6 @@ function trackElevationProfile(dtm: Raster, coords: [number, number][]): number[
 function smoothstep(t: number): number {
   const c = Math.min(1, Math.max(0, t));
   return c * c * (3 - 2 * c);
-}
-
-function isBuried(index: number, ranges: { from: number; to: number }[] | undefined): boolean {
-  if (!ranges?.length) return false;
-  return ranges.some((r) => index >= r.from && index <= r.to);
 }
 
 /**
@@ -185,7 +201,7 @@ function burnTrack(
   halfWidthM: number,
   vergeM: number,
   blendM: number,
-  buriedRanges: { from: number; to: number }[] | undefined,
+  buried: ((lon: number, lat: number) => boolean) | undefined,
 ): HeightFieldStats {
   const cellX = bboxSizeMeters(bbox).width / (width - 1);
   const cellZ = bboxSizeMeters(bbox).height / (height - 1);
@@ -198,8 +214,12 @@ function burnTrack(
   const bestDist = new Float32Array(width * height).fill(Infinity);
   const bestElev = new Float32Array(width * height);
 
+  let buriedSamples = 0;
   for (let i = 0; i < coords.length - 1; i++) {
-    if (isBuried(i, buriedRanges)) continue;
+    if (buried?.(coords[i][0], coords[i][1])) {
+      buriedSamples++;
+      continue;
+    }
     const ax = plane.toX(coords[i][0]);
     const az = plane.toZ(coords[i][1]);
     const bx = plane.toX(coords[i + 1][0]);
@@ -277,6 +297,7 @@ function burnTrack(
     if (v > trackMaxM) trackMaxM = v;
   }
   return {
+    buriedSamples,
     cellsBurned,
     maxLiftM,
     maxCutM,
@@ -300,7 +321,7 @@ export function buildHeightField(options: BuildHeightFieldOptions): HeightField 
 
   const data = new Float32Array(dtm.data); // the raster stays untouched
   const coords = densify(track.coords, TRACK_SAMPLE_M, plane);
-  const elevations = trackElevationProfile(dtm, coords);
+  const elevations = trackElevationProfile(dtm, coords, track.buried);
   const stats = burnTrack(
     data,
     width,
@@ -312,7 +333,7 @@ export function buildHeightField(options: BuildHeightFieldOptions): HeightField 
     track.halfWidthM,
     track.vergeM ?? DEFAULT_VERGE_M,
     track.blendM ?? DEFAULT_BLEND_M,
-    track.buriedRanges,
+    track.buried,
   );
 
   const cellSizeM = {
