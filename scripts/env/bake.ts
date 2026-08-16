@@ -37,6 +37,7 @@ import {
   type Mesh,
 } from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
+import { applyAmbientOcclusion, buildOccluders } from "./ao";
 import { buildRoof, PARAPET_M, planRoof, type RoofKind, type RoofTags } from "./roofs";
 import { fetchBuildingWays, fetchShoreWays, fetchStructureWays, type BuildingWay } from "./overpass";
 import { fetchElevationRaster, sampleRaster } from "./raster";
@@ -677,6 +678,16 @@ async function writeGlb(path: string, parts: { kind: MeshKind; mesh: Mesh }[]): 
         "NORMAL",
         document.createAccessor().setType("VEC3").setArray(new Float32Array(mesh.normals)).setBuffer(buffer),
       )
+      .setAttribute(
+        "COLOR_0",
+        mesh.colors
+          ? document
+              .createAccessor()
+              .setType("VEC3")
+              .setArray(new Float32Array(mesh.colors))
+              .setBuffer(buffer)
+          : null,
+      )
       .setIndices(
         document.createAccessor().setType("SCALAR").setArray(new Uint32Array(mesh.indices)).setBuffer(buffer),
       );
@@ -807,6 +818,24 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     buildingWays.map((way) => [way.id, way.tags as RoofTags]),
   );
   const buildings = bakeBuildings(buildingsFile, field, plane, corridor, measured, roofTags);
+
+  // Occlusion last: everything that casts it has to exist first.
+  const standing = [
+    buildings.meshes.core,
+    buildings.meshes.city,
+    buildings.meshes.far,
+    portals.surround,
+  ];
+  const occluders = buildOccluders(field, plane, standing);
+  for (const mesh of [
+    terrain.meshes.core,
+    terrain.meshes.city,
+    terrain.meshes.far,
+    ...standing,
+    shore.walls,
+  ]) {
+    applyAmbientOcclusion(mesh, occluders);
+  }
 
   const outDir = join(OUTPUT_ROOT, circuitId);
   await mkdir(outDir, { recursive: true });

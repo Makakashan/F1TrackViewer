@@ -11,6 +11,8 @@ export interface Mesh {
   positions: number[];
   normals: number[];
   indices: number[];
+  /** Baked shade per vertex, written by the AO pass (D9). */
+  colors?: number[];
 }
 
 export function createMesh(): Mesh {

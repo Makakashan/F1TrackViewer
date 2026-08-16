@@ -75,6 +75,14 @@
             draws++;
             triangles += node.geometry.index.count / 3;
             node.material.flatShading = false;
+            // ?shading=ao shows the baked vertex colour alone, with no light in
+            // the way, which is the only way to tell an AO bug from a lighting one.
+            if (params.get("shading") === "ao") {
+              node.material = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                vertexColors: !!node.geometry.getAttribute("color"),
+              });
+            }
           });
           scene.add(gltf.scene);
           resolve();

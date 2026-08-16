@@ -645,7 +645,24 @@ belt an order of magnitude inside its byte budget.
       track corridor. Eaves over a road are what buildings do; walls in a road are not.
       The check now separates them by height above the ground rather than banning
       both.
-- [ ] **P3.3** Vertex AO bake (D9) and the palette pass over `diorama-palette.ts`.
+- [x] **P3.3** Ambient occlusion baked into vertex colours (`scripts/env/ao.ts`).
+      Monaco: **3.40 MB total, 10 draw calls**, and the bake still runs in under two
+      seconds.
+
+      What is computed is sky visibility — from each vertex, how much of the sky the
+      surroundings block — sampled over 8 azimuths and 8 distances against a 4 m grid
+      holding the terrain with everything standing on it stamped on top.
+
+      Two things had to be fixed before it showed at all. The grid was first stamped
+      per **vertex**, and a wall carries vertices only where its footprint turns, so a
+      40 m block occluded two cells and left the street beside it in full sun; every
+      triangle is now rasterised. And raw sky visibility is a gentle quantity — a
+      street with towers either side still sees three quarters of the sky — so it read
+      as no shading at all until the openness was put through a curve. Both are
+      recorded in the module.
+
+      Colour is still the palette: glTF multiplies vertex colour into the base colour,
+      so this shades the palette rather than replacing it, and there are no textures.
 - [ ] **P3.4** Core-belt props, instanced: barriers, debris fences, grandstands (D16).
 
 ### P4 — Deferred on purpose
