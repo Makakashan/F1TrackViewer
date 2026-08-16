@@ -23,6 +23,13 @@ const MIN_LAYER = -1;
 const MIN_DIRECTION_AGREEMENT = 0.8;
 /** Portals are placed this far back from the first buried sample. */
 const PORTAL_SETBACK_M = 4;
+/**
+ * A tunnel has something over it. Where the ground along a candidate run is no
+ * higher than the ground at its mouths, nothing covers the road and the tag
+ * describes a short underpass or a neighbouring bore, not a tunnel the circuit
+ * drives through.
+ */
+const MIN_COVER_M = 4;
 
 export interface TunnelRun {
   wayId: string;
@@ -69,6 +76,29 @@ function distanceToSegment(
   return Math.hypot(x - (segment.ax + dx * t), z - (segment.az + dz * t));
 }
 
+/** Is there ground over the run that is not there at its mouths? */
+function hasCover(
+  samples: { lon: number; lat: number }[],
+  start: number,
+  end: number,
+  groundAt: (lon: number, lat: number) => number,
+): boolean {
+  const mouthA = groundAt(samples[start].lon, samples[start].lat);
+  const mouthB = groundAt(samples[end].lon, samples[end].lat);
+  if (Number.isNaN(mouthA) || Number.isNaN(mouthB)) return true;
+
+  const covers: number[] = [];
+  for (let i = start; i <= end; i++) {
+    const ground = groundAt(samples[i].lon, samples[i].lat);
+    if (Number.isNaN(ground)) continue;
+    const t = end === start ? 0 : (i - start) / (end - start);
+    covers.push(ground - (mouthA + (mouthB - mouthA) * t));
+  }
+  if (!covers.length) return true;
+  covers.sort((a, b) => a - b);
+  return covers[Math.floor(covers.length / 2)] >= MIN_COVER_M;
+}
+
 /**
  * Walks the centreline and asks, at each step, whether a tunnelled way runs
  * along it. Consecutive hits become a run, which is what the portals are built
@@ -78,11 +108,22 @@ export function buildTunnelMask(
   coords: [number, number][],
   ways: StructureWay[],
   plane: ScenePlane,
-  stepM = 5,
+  options: {
+    ignoreWays?: string[];
+    stepM?: number;
+    /** Bare ground height, used to check that a candidate run is covered. */
+    groundAt?: (lon: number, lat: number) => number;
+  } = {},
 ): TunnelMask {
+  const stepM = options.stepM ?? 5;
+  const groundAt = options.groundAt;
+  const ignored = new Set(options.ignoreWays ?? []);
   const segments: Segment[] = [];
   for (const way of ways) {
     if (!way.tunnel) continue;
+    // A run the matcher found that a human says is not a tunnel the circuit
+    // drives through (D10).
+    if (ignored.has(way.id)) continue;
     // A building passage is a road running through a building, not under a
     // hill: the ground above it is the building, which is already modelled.
     if (way.tunnel === "building_passage") continue;
@@ -146,7 +187,8 @@ export function buildTunnelMask(
       const lengthM = (end - start) * stepM;
       // A couple of samples is a way passing under a junction, not a tunnel the
       // track drives through.
-      if (lengthM >= 40) {
+      const covered = !groundAt || hasCover(samples, start, end, groundAt);
+      if (lengthM >= 40 && covered) {
         runs.push({
           wayId: way.id,
           name: way.name,

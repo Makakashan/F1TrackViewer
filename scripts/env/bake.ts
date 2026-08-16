@@ -38,8 +38,18 @@ import {
 } from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
 import { fetchShoreWays, fetchStructureWays } from "./overpass";
-import { fetchElevationRaster } from "./raster";
+import { fetchElevationRaster, sampleRaster } from "./raster";
 import { bakeShoreWalls, type ShoreResult } from "./shore";
+import {
+  applyBuildingOverrides,
+  applyTerrainOverrides,
+  emptyOverrideStats,
+  loadOverrides,
+  overrideShoreWays,
+  pointInPolygon,
+  type CityOverrides,
+  type OverrideStats,
+} from "./overrides";
 import { buildTunnelMask, type TunnelMask } from "./tunnels";
 import { circuitBBox, loadCircuitCoords } from "./circuit";
 
@@ -308,18 +318,22 @@ function bakeBuildings(
     // Fontvieille stands on reclaimed land and Monaco's quays are built to the
     // water, so a footprint with a corner over a water cell is normal. Only a
     // footprint with no ground under it at all is not a building we can place.
-    let base = Infinity;
-    let grounded = 0;
+    const grounds: number[] = [];
     for (const point of pushed.ring) {
       const h = field.heightAt(plane.lon(point.x), plane.lat(point.z));
-      if (Number.isNaN(h)) continue;
-      grounded++;
-      if (h < base) base = h;
+      if (!Number.isNaN(h)) grounds.push(h);
     }
-    if (grounded === 0 || !Number.isFinite(base)) {
+    if (!grounds.length) {
       result.droppedOverWater++;
       continue;
     }
+    grounds.sort((a, b) => a - b);
+    // The floor sits at the middle of the ground it covers and the walls run
+    // down to the lowest corner. Standing everything on its lowest corner turns
+    // a terraced block on a Monaco hillside into a cliff of wall, and standing
+    // it on the middle alone would leave the downhill side in the air.
+    const base = grounds[Math.floor(grounds.length / 2)];
+    const foot = grounds[0];
 
     let centreX = 0;
     let centreZ = 0;
@@ -331,7 +345,7 @@ function bakeBuildings(
     centreZ /= pushed.ring.length;
     const belt = beltAtDistance(corridor.distance(centreX, centreZ));
 
-    extrude(meshes[belt], pushed.ring, base, base + building.height);
+    extrude(meshes[belt], pushed.ring, foot, base + building.height);
     result.built++;
   }
 
@@ -631,6 +645,7 @@ export interface BakeReport {
   portalTriangles: number;
   shore: ShoreResult;
   tunnels: TunnelMask;
+  overrides: OverrideStats;
 }
 
 /**
@@ -640,6 +655,8 @@ export interface BakeReport {
  */
 export interface CircuitGround {
   circuitId: string;
+  overrides: CityOverrides | null;
+  overrideStats: OverrideStats;
   coords: [number, number][];
   bbox: ReturnType<typeof circuitBBox>;
   plane: ScenePlane;
@@ -657,7 +674,26 @@ export async function buildCircuitGround(
   const plane = scenePlaneFor(coords);
   const dtm = await fetchElevationRaster({ kind: "dtm", bbox, refresh });
   const structures = await fetchStructureWays(circuitId, bbox, refresh);
-  const tunnels = buildTunnelMask(coords, structures, plane);
+  const overrides = await loadOverrides(circuitId);
+  const overrideStats = emptyOverrideStats();
+
+  const found = buildTunnelMask(coords, structures, plane, {
+    ignoreWays: overrides?.tunnels?.ignoreWays,
+    groundAt: (lon, lat) => sampleRaster(dtm, lon, lat),
+  });
+  overrideStats.ignoredTunnelWays = overrides?.tunnels?.ignoreWays?.length ?? 0;
+
+  const tunnelMasks = (overrides?.masks ?? []).filter((mask) => mask.kind === "tunnel");
+  overrideStats.tunnelMasks = tunnelMasks.length;
+  const tunnels: TunnelMask = tunnelMasks.length
+    ? {
+        ...found,
+        buried: (lon, lat) =>
+          found.buried(lon, lat) ||
+          tunnelMasks.some((mask) => pointInPolygon(lon, lat, mask.polygon)),
+      }
+    : found;
+
   const field = buildHeightField({
     dtm,
     track: {
@@ -666,24 +702,42 @@ export async function buildCircuitGround(
       buried: tunnels.buried,
     },
   });
-  return { circuitId, coords, bbox, plane, field, corridor: buildCorridor(coords, plane), tunnels };
+  // Applied after the burn-in: a hand-set height is the last word, over both
+  // the raster and the road.
+  applyTerrainOverrides(field, overrides, plane, overrideStats);
+
+  return {
+    circuitId,
+    overrides,
+    overrideStats,
+    coords,
+    bbox,
+    plane,
+    field,
+    corridor: buildCorridor(coords, plane),
+    tunnels,
+  };
 }
 
 export async function bakeCircuit(circuitId: string, refresh = false): Promise<BakeReport> {
-  const { coords, bbox, plane, field, corridor, tunnels } = await buildCircuitGround(
-    circuitId,
-    refresh,
+  const { coords, bbox, plane, field, corridor, tunnels, overrides, overrideStats } =
+    await buildCircuitGround(circuitId, refresh);
+  const shore = bakeShoreWalls(
+    overrideShoreWays(await fetchShoreWays(circuitId, bbox, refresh), overrides, overrideStats),
+    field,
+    plane,
   );
-  const shore = bakeShoreWalls(await fetchShoreWays(circuitId, bbox, refresh), field, plane);
 
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(tunnels, field, plane);
   const terrain = bakeTerrain(field, plane, corridor);
   const water = bakeWater(field, plane);
 
-  const buildingsFile = JSON.parse(
-    await readFile(join(OUTPUT_ROOT, circuitId, "buildings.json"), "utf8"),
-  ) as BuildingsFile;
+  const buildingsFile = applyBuildingOverrides(
+    JSON.parse(await readFile(join(OUTPUT_ROOT, circuitId, "buildings.json"), "utf8")) as BuildingsFile,
+    overrides,
+    overrideStats,
+  );
   const buildings = bakeBuildings(buildingsFile, field, plane, corridor);
 
   const outDir = join(OUTPUT_ROOT, circuitId);
@@ -733,6 +787,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
     shore,
     tunnels,
+    overrides: overrideStats,
   };
   await writeManifest(outDir, circuitId, field, plane, report, elevations);
   return report;
@@ -833,6 +888,18 @@ async function main() {
   } else {
     console.log("  tunnels none on the racing line");
   }
+  const o = report.overrides;
+  const applied =
+    o.buildingsRemoved + o.buildingsRetimed + o.buildingsAdded + o.buildingsMasked +
+    o.terrainPoints + o.waterMasks + o.tunnelMasks + o.ignoredTunnelWays + o.shoreSplines;
+  console.log(
+    applied
+      ? `  overrides ${applied} applied — ${o.buildingsRemoved} removed, ${o.buildingsRetimed} re-heighted, ` +
+          `${o.buildingsAdded} added, ${o.buildingsMasked} masked, ${o.terrainPoints} terrain points, ` +
+          `${o.waterMasks} water masks, ${o.tunnelMasks} tunnel masks, ${o.ignoredTunnelWays} tunnel ways ignored, ` +
+          `${o.shoreSplines} shore splines`
+      : "  overrides none",
+  );
 }
 
 if (import.meta.main) {
