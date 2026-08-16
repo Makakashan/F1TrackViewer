@@ -112,7 +112,7 @@ scene can draw.
 | **D12** | ~~GDAL/PDAL CLI~~ **Superseded by P0.3.** Elevation comes from the IGN Géoplateforme WMS as `image/x-bil;bits=32` — a raw little-endian float32 raster in EPSG:4326, at whatever grid we ask for. TypeScript reads the response body straight into a `Float32Array`. No GDAL, no PDAL, no Python. | Nothing to reproject, clip or convert. The whole raster step is one `fetch` and a `DataView`. A provider interface keeps the door open for non-French circuits. |
 | **D13** | The track's visual mesh (ribbon, kerbs, apron, markings) is baked into the GLB. The centreline curve stays live for the simulation, camera and start/finish calibration — both produced by one pass. | The heaviest runtime build in the scene is static; the curve that must stay live, stays live. |
 | **D14** | Three files per circuit: `far.glb`, `city.glb`, `core.glb`. Loaded far → city → core. No 3D Tiles streaming. | Fast first frame; per-belt byte budgets. 3 km² does not repay a streaming runtime. |
-| **D15** | Heights are metres above sea level as the DEM reports them. Water is a plane at `y = 0` in that datum. **The coastline is the DEM's nodata boundary** — IGN carries no bathymetry, so the sea is nodata rather than negative depth (P0.1). OSM water polygons are used only for inland water and as an audit assertion — never to decide the coast. | One source for the boundary means it cannot disagree with itself. The implementation is the nodata mask, not a zero crossing, but the principle is unchanged. |
+| **D15** | Heights are metres above sea level as the DEM reports them. Water is a plane at `y = 0` in that datum. **The coastline is the DEM's nodata boundary for open sea, and the flat-constant rule of §5.6 for enclosed basins** — IGN carries no bathymetry, so the sea is nodata rather than negative depth (P0.1), while a harbour arrives stamped with one repeated value. OSM water polygons are used only for inland water and as an audit assertion — never to decide the coast. | One source for the boundary means it cannot disagree with itself. The implementation is the nodata mask, not a zero crossing, but the principle is unchanged. |
 | **D16** | Props whose absence reads as a bug — barriers, fences, grandstands, tunnel portals — ship in the core belt, instanced, one draw call per type. Trees and yachts follow via D10 props. | Detail without spending the draw-call budget. |
 | **D17** | Both paths live side by side while circuits migrate: a baked GLB is used when present, otherwise the old runtime path. The last migrated circuit deletes `environment-layer.tsx`. | A safety net with a written termination condition, so the dead branch actually dies. |
 
@@ -417,7 +417,33 @@ version of the bug in §1.3. The erosion has to run **before** any averaging: a 
 contaminated pixel that survives into a block average drags the whole output cell
 below sea level.
 
-### 5.6 Trap: the source grid is not square
+### 5.6 Enclosed water is stamped, not left empty
+
+The open sea is nodata, but a harbour is not. The service fills sheltered water with a
+single constant, and each basin gets its own:
+
+| Value | Area | Centre | What it is |
+|---|---|---|---|
+| 1.20 m | 22.5 ha | 43.7353, 7.4261 | Port Hercule |
+| 0.68 m | 8.1 ha | 43.7244, 7.4147 | Cap d'Ail marina |
+| 0.61 m | 7.0 ha | 43.7293, 7.4209 | Fontvieille |
+| −0.23 m | 4.3 ha | 43.7461, 7.4353 | Larvotto bay |
+
+Left alone, all four render as flat grey land — the harbour Monaco is famous for,
+paved over. The quay beside Port Hercule reads 1.20 m as well, so no elevation
+threshold can separate basin from quayside.
+
+What separates them is **constancy**: real ground is never bit-identical over hectares.
+A connected region of one repeated value, at least 0.46 ha (300 cells at 3.9 m) and
+below 50 m, is the source saying it filled water there. Marking those NaN keeps the
+coastline decided by the DEM alone, exactly as D15 requires, instead of borrowing an
+OSM polygon that would not line up with it. On Monaco the rule finds all four basins
+and nothing else, taking water from 39.6% to 44.7% of cells.
+
+The elevation cap is a safety valve against a man-made flat surface, not a claim about
+water; a mountain lake above it would be missed, and an override (D10) is the fix.
+
+### 5.7 Trap: the source grid is not square
 
 The service's cell is **3.90 m across and 4.35 m down**. Requesting a grid at one pixel
 per cell therefore beats against the source, and the mismatch lays a periodic ridge
@@ -465,7 +491,8 @@ exists to prove the joints hold before any effort goes into how it looks.
       8 m, all of them on the cut sections below Casino where a retaining wall stands
       in reality — those arrive with the props in P3.4. Verified against a hillshade
       render: harbour basin, Le Rocher and the amphitheatre all read correctly, and the
-      §5.6 terracing is gone.
+      §5.7 terracing is gone. Port Hercule, Fontvieille, Larvotto and the Cap d'Ail
+      marina read as water rather than pavement, found by the §5.6 rule.
 - [ ] **P1.2b** Rewrite `src/lib/env/terrain-sampler.ts` as a reader over the baked
       field; delete the `Math.max(0, …)` clamp and the `isWater` flattening. Deferred
       to P1.3, which is what first produces a baked field for the runtime to read.
@@ -521,6 +548,7 @@ its byte budget.
 | ~~No high-res data over Monaco~~ | **Retired by P0.1** — 3.9 m coverage confirmed across the bbox. |
 | IGN is a single point of failure, and covers France only | The raster step sits behind a provider interface (P1.1). Rasters are cached on disk and the cache is what the bake reads, so a generation run does not depend on IGN being up. Circuits outside France need a provider before they migrate (P4.4). |
 | Nodata contamination at the shoreline (§5.5) | Threshold and one-cell erosion in the raster reader; `env:audit`'s coastline check catches a regression. |
+| The flat-constant water rule fires on a man-made surface | Needs 0.46 ha of one bit-identical value below 50 m, which no natural or paved ground produces. `env:audit` reports the count and centroid of every region it marks, so a wrong one is visible rather than silent. |
 | 15 MB is not enough at 2 m core terrain | Core terrain is the largest single consumer. Lever order: reduce core radius 150 → 120 m, then core resolution 2 → 3 m, then far-belt building silhouettes. Measured by `env:audit`, not guessed. |
 | Bake time makes iteration painful | Cache every stage (raster, OSM, height field) as the Overpass cache already is. A geometry-only rebake must not refetch anything. |
 | The two paths (D17) drift and both rot | P4.4 is in the plan with an explicit deletion. `env:audit` runs only on the new path, so the old one gains no new work. |

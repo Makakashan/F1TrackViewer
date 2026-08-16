@@ -36,6 +36,8 @@ export interface RasterHeader {
   nativeCellM: number;
   /** How many source pixels were averaged per output pixel, per axis. */
   supersample: number;
+  /** Cells the flat-constant rule turned into water. */
+  flatWaterCells: number;
   validCount: number;
   nodataCount: number;
   minValue: number;
@@ -151,10 +153,18 @@ export function providerFor(bbox: RasterBBox): ElevationProvider | null {
 const NODATA_FLOOR_M = -20;
 
 /**
- * Two source pixels per output pixel per axis. Enough to break the beat in §5.6
+ * Two source pixels per output pixel per axis. Enough to break the beat in §5.7
  * at four times the bytes, all of which stay in the cache.
  */
 const DEFAULT_SUPERSAMPLE = 2;
+
+/** Smallest constant-value region taken for water: 0.46 ha at a 3.9 m cell. */
+const FLAT_WATER_MIN_CELLS = 300;
+/**
+ * Safety valve on the flat-water rule, not a statement about water: above this
+ * a constant plateau is more likely a man-made surface than a basin.
+ */
+const FLAT_WATER_MAX_ELEVATION_M = 50;
 
 /** The sentinel and everything it was blended into. */
 function maskNodata(values: Float32Array): void {
@@ -201,6 +211,63 @@ function downsample(
     }
   }
   return { data: out, width: outWidth, height: outHeight };
+}
+
+/**
+ * Enclosed water — a harbour, a marina, a sheltered bay — does not arrive as
+ * nodata the way the open sea does. The service stamps it with a single
+ * constant: Port Hercule is 22.5 ha of exactly 1.20 m, Fontvieille 7.0 ha of
+ * 0.61 m, Larvotto 4.3 ha of -0.23 m. Ground is never bit-identical over
+ * hectares, so a large connected run of one value is the source telling us it
+ * filled water, and marking it NaN keeps the coastline decided by the DEM alone
+ * (D15) instead of borrowing an OSM polygon that would not line up.
+ */
+function markFlatWater(
+  values: Float32Array,
+  width: number,
+  height: number,
+  minCells: number,
+  maxElevationM: number,
+): number {
+  const seen = new Uint8Array(values.length);
+  const stack: number[] = [];
+  const region: number[] = [];
+  let marked = 0;
+
+  for (let start = 0; start < values.length; start++) {
+    if (seen[start]) continue;
+    const value = values[start];
+    if (Number.isNaN(value) || value > maxElevationM) continue;
+
+    seen[start] = 1;
+    stack.length = 0;
+    region.length = 0;
+    stack.push(start);
+
+    while (stack.length) {
+      const i = stack.pop() as number;
+      region.push(i);
+      const row = (i / width) | 0;
+      const col = i % width;
+      if (row > 0) pushIfSame(i - width);
+      if (row < height - 1) pushIfSame(i + width);
+      if (col > 0) pushIfSame(i - 1);
+      if (col < width - 1) pushIfSame(i + 1);
+    }
+
+    if (region.length < minCells) continue;
+    for (const i of region) values[i] = Number.NaN;
+    marked += region.length;
+
+    function pushIfSame(j: number) {
+      if (seen[j] || Number.isNaN(values[j])) return;
+      if (Math.abs(values[j] - value) > 0.005) return;
+      seen[j] = 1;
+      stack.push(j);
+    }
+  }
+
+  return marked;
 }
 
 /**
@@ -312,6 +379,8 @@ export interface FetchRasterOptions {
   height?: number;
   /** Fetch this many times finer and average back down. 1 disables it. */
   supersample?: number;
+  /** Detect enclosed water stamped as a flat constant. On by default. */
+  flatWater?: boolean;
   refresh?: boolean;
   provider?: ElevationProvider;
 }
@@ -376,6 +445,18 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
   const reduced = downsample(fetched, fetchWidth, fetchHeight, supersample);
   const data = reduced.data;
   erodeNodata(data, reduced.width, reduced.height);
+  // Runs at the output pitch: averaging keeps a fill constant in its interior
+  // and blurs only its edge, which costs half a cell of basin.
+  const flatWaterCells =
+    kind === "mnh" || options.flatWater === false
+      ? 0
+      : markFlatWater(
+          data,
+          reduced.width,
+          reduced.height,
+          FLAT_WATER_MIN_CELLS,
+          FLAT_WATER_MAX_ELEVATION_M,
+        );
 
   const size = bboxSizeMeters(bbox);
   const raster: Raster = {
@@ -388,6 +469,7 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
       height: reduced.height,
       bbox,
       supersample,
+      flatWaterCells,
       pixelSizeM: { x: size.width / reduced.width, y: size.height / reduced.height },
       nativeCellM: provider.nativeCellM,
       fetchedAt: new Date().toISOString().slice(0, 10),
