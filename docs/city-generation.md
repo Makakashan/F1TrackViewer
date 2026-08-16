@@ -425,11 +425,14 @@ version of the bug in §1.3.
 Deliberately ugly. Terrain, boxes, track, water — baked, loaded, audited. This phase
 exists to prove the joints hold before any effort goes into how it looks.
 
-- [ ] **P1.1** `scripts/env/raster.ts`: a `fetchElevationRaster(bbox, layer, size)`
+- [x] **P1.1** `scripts/env/raster.ts`: a `fetchElevationRaster(bbox, layer, size)`
       over the IGN WMS (§5.1) returning a `Float32Array` plus a header, with the nodata
       handling from §5.5 (threshold at −20 m, erode the valid mask by one cell), cached
       on disk like the existing Overpass cache. Behind a provider interface, so a
-      non-French circuit can supply a different source later.
+      non-French circuit can supply a different source later. **Done.** Monaco
+      returns 702 × 763 at exactly 3.90 m/px; after the nodata pass the minimum
+      is −0.23 m instead of −498.6 m. Landmark samples verified against §5.2.
+      `bun scripts/env/raster.ts --bbox=… --kind=dtm` prints the coverage map.
 - [ ] **P1.2** `scripts/env/heightfield.ts`: adaptive resample, MSL datum with
       negatives preserved, track constraint burn-in (§3.4). Rewrite
       `terrain-sampler.ts` as a reader over it; delete the clamp and the `isWater`
