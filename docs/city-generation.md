@@ -602,7 +602,17 @@ belt an order of magnitude inside its byte budget.
 
 ### P3 — The look
 
-- [ ] **P3.1** Building heights from DSM − DTM (D8), with the OSM-tag fallback.
+- [x] **P3.1** Building heights measured from IGN MNH (`scripts/env/building-heights.ts`).
+      **794 of 800 measured, 6 left on OSM tags, median move 7.0 m, tallest 114.6 m.**
+
+      MNH is sampled on its own grid *inside* each footprint — sampling the outline
+      would read the street the building stands beside — and the height is the 75th
+      percentile of those readings, so a block reads as its main mass rather than as
+      its tallest aerial. A footprint smaller than a raster cell falls between the
+      sample points, so it gets its centroid as its one reading.
+
+      A 7 m median move is the difference between a grey block model and a skyline:
+      compare `images/bake-harbour.png` with `images/heights.png`.
 - [ ] **P3.2** Roof archetypes: flat-with-parapet, gabled, hipped, mansard, stepped
       terrace, shed, sawtooth, domed. Selection by `roof:shape` where tagged, else by
       footprint area / elongation / height heuristic.

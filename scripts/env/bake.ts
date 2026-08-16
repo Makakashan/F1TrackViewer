@@ -39,6 +39,7 @@ import {
 import { scenePlaneFor, type ScenePlane } from "./plane";
 import { fetchShoreWays, fetchStructureWays } from "./overpass";
 import { fetchElevationRaster, sampleRaster } from "./raster";
+import { measureBuildingHeights, type HeightStats } from "./building-heights";
 import { bakeShoreWalls, type ShoreResult } from "./shore";
 import {
   applyBuildingOverrides,
@@ -283,6 +284,7 @@ function bakeBuildings(
   field: HeightField,
   plane: ScenePlane,
   corridor: Corridor,
+  measured: Map<string, { measured: number }>,
 ): BuildingResult {
   const meshes = { core: createMesh(), city: createMesh(), far: createMesh() } as Record<Belt, Mesh>;
   const result: BuildingResult = {
@@ -295,7 +297,9 @@ function bakeBuildings(
   };
 
   for (const building of buildings.buildings) {
-    if (building.height < MIN_BUILDING_HEIGHT_M) {
+    // The measurement wins where there is one; the tag is the fallback (D8).
+    const height = measured.get(building.id)?.measured ?? building.height;
+    if (height < MIN_BUILDING_HEIGHT_M) {
       result.droppedTooLow++;
       continue;
     }
@@ -345,7 +349,7 @@ function bakeBuildings(
     centreZ /= pushed.ring.length;
     const belt = beltAtDistance(corridor.distance(centreX, centreZ));
 
-    extrude(meshes[belt], pushed.ring, foot, base + building.height);
+    extrude(meshes[belt], pushed.ring, foot, base + height);
     result.built++;
   }
 
@@ -644,6 +648,7 @@ export interface BakeReport {
   trackVertices: number;
   portalTriangles: number;
   shore: ShoreResult;
+  heights: HeightStats;
   tunnels: TunnelMask;
   overrides: OverrideStats;
 }
@@ -738,7 +743,10 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     overrides,
     overrideStats,
   );
-  const buildings = bakeBuildings(buildingsFile, field, plane, corridor);
+  const heightStats = { value: { measured: 0, fellBack: 0, medianDeltaM: 0, tallest: 0 } };
+  const mnh = await fetchElevationRaster({ kind: "mnh", bbox, refresh });
+  const measured = measureBuildingHeights(buildingsFile.buildings, mnh, heightStats);
+  const buildings = bakeBuildings(buildingsFile, field, plane, corridor, measured);
 
   const outDir = join(OUTPUT_ROOT, circuitId);
   await mkdir(outDir, { recursive: true });
@@ -786,6 +794,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     trackVertices: elevations.length,
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
     shore,
+    heights: heightStats.value,
     tunnels,
     overrides: overrideStats,
   };
@@ -874,6 +883,11 @@ async function main() {
       `${b.droppedTooLow} too low`,
   );
   console.log(`  track profile ${report.trackVertices} vertices`);
+  const h = report.heights;
+  console.log(
+    `  heights ${h.measured} measured from MNH, ${h.fellBack} on OSM tags, ` +
+      `median move ${h.medianDeltaM.toFixed(1)} m, tallest ${h.tallest.toFixed(1)} m`,
+  );
   console.log(`  portals ${report.portalTriangles} tris`);
   console.log(
     `  shore ${report.shore.built} wall segments, ` +
