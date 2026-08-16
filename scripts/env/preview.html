@@ -36,6 +36,9 @@
       const elevation = Number(params.get("el") ?? 38) * Math.PI / 180;
       const distance = Number(params.get("dist") ?? 2400);
       const targetY = Number(params.get("y") ?? 0);
+      // Aim somewhere other than the circuit's centre — a portal, a quay.
+      const targetX = Number(params.get("tx") ?? 0);
+      const targetZ = Number(params.get("tz") ?? 0);
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
       renderer.setSize(innerWidth, innerHeight);
@@ -54,11 +57,11 @@
 
       const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 12000);
       camera.position.set(
-        Math.cos(elevation) * Math.sin(azimuth) * distance,
+        targetX + Math.cos(elevation) * Math.sin(azimuth) * distance,
         Math.sin(elevation) * distance,
-        Math.cos(elevation) * Math.cos(azimuth) * distance,
+        targetZ + Math.cos(elevation) * Math.cos(azimuth) * distance,
       );
-      camera.lookAt(0, targetY, 0);
+      camera.lookAt(targetX, targetY, targetZ);
 
       const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
       const hud = document.getElementById("hud");

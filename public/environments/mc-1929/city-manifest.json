@@ -16,9 +16,9 @@
   "belts": {
     "core": {
       "file": "core.glb",
-      "bytes": 285724,
-      "triangles": 66654,
-      "drawCalls": 2,
+      "bytes": 294284,
+      "triangles": 67054,
+      "drawCalls": 4,
       "radiusM": 150,
       "cellM": 4
     },
@@ -41,8 +41,8 @@
   },
   "counts": {
     "buildings": 785,
-    "triangles": 152748,
-    "drawCalls": 7
+    "triangles": 153148,
+    "drawCalls": 9
   },
   "track": {
     "elevations": [

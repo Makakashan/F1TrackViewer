@@ -31,9 +31,10 @@ export interface TunnelRun {
   from: number;
   to: number;
   lengthM: number;
-  /** Scene-space mouths, in the order the track passes them. */
-  entry: { x: number; z: number };
-  exit: { x: number; z: number };
+  /** Scene-space mouths, in the order the track passes them, each with the
+   *  direction pointing into the hill. */
+  entry: { x: number; z: number; ux: number; uz: number };
+  exit: { x: number; z: number; ux: number; uz: number };
 }
 
 export interface TunnelMask {
@@ -152,8 +153,13 @@ export function buildTunnelMask(
           from: start,
           to: end,
           lengthM,
-          entry: samples[Math.max(0, start)],
-          exit: samples[Math.min(samples.length - 1, end)],
+          // Into the hill at the entry, and out of it at the exit, so a portal
+          // built along the direction always points the same way as the road.
+          entry: { ...samples[Math.max(0, start)] },
+          exit: (() => {
+            const sample = samples[Math.min(samples.length - 1, end)];
+            return { ...sample, ux: -sample.ux, uz: -sample.uz };
+          })(),
         });
       }
       start = -1;

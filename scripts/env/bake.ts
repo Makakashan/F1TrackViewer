@@ -27,7 +27,15 @@ import {
   type Corridor,
 } from "./belts";
 import { buildHeightField, type HeightField } from "./heightfield";
-import { addFlatQuad, addFlatTriangle, createMesh, GridMesh, isEmpty, triangleCount, type Mesh } from "./mesh";
+import {
+  addFlatQuad,
+  addFlatTriangle,
+  createMesh,
+  GridMesh,
+  isEmpty,
+  triangleCount,
+  type Mesh,
+} from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
 import { fetchStructureWays } from "./overpass";
 import { fetchElevationRaster } from "./raster";
@@ -48,12 +56,14 @@ const SKIRT_M = 3;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
 
-type MeshKind = "terrain" | "building" | "water";
+type MeshKind = "terrain" | "building" | "water" | "tunnel" | "portal";
 
 const MESH_COLOR: Record<MeshKind, string> = {
   terrain: DIORAMA_COLORS.terrain,
   building: DIORAMA_COLORS.building,
   water: DIORAMA_COLORS.water,
+  tunnel: "#14161A",
+  portal: DIORAMA_COLORS.buildingSide,
 };
 
 // ─── terrain ───────────────────────────────────────────────────────────────
@@ -380,6 +390,139 @@ function extrude(
   }
 }
 
+// ─── tunnel portals ────────────────────────────────────────────────────────
+
+/** Half the opening. Wider than the road, the way a real portal is. */
+const PORTAL_HALF_WIDTH_M = 7;
+/** Springing height of the arch, and the crown above it. */
+const PORTAL_WALL_M = 3;
+const PORTAL_ARCH_M = 3.5;
+/** Width of the headwall around the opening — what makes it read as a portal. */
+const PORTAL_SURROUND_M = 2.5;
+/** How far the sleeve stands out of the hillside, and how far it reaches in. */
+const PORTAL_OUT_M = 1;
+const PORTAL_IN_M = 8;
+const PORTAL_ARCH_SEGMENTS = 8;
+
+/**
+ * A portal is a short arched sleeve standing out of the hillside at each mouth
+ * (D4). The hill itself is untouched — a height field cannot hold a cavity — so
+ * what sells the tunnel is the opening: the sleeve's faces point inward, which
+ * leaves the near side invisible and the dark far side facing the camera.
+ * Excavating the hill properly is P4.1.
+ */
+function bakePortals(
+  tunnels: TunnelMask,
+  field: HeightField,
+  plane: ScenePlane,
+): { sleeve: Mesh; surround: Mesh } {
+  const mesh = createMesh();
+  const surround = createMesh();
+
+  /** Half an arch section: up the wall, then over the crown. */
+  const profile: { offset: number; height: number }[] = [];
+  profile.push({ offset: -PORTAL_HALF_WIDTH_M, height: 0 });
+  profile.push({ offset: -PORTAL_HALF_WIDTH_M, height: PORTAL_WALL_M });
+  for (let i = 0; i <= PORTAL_ARCH_SEGMENTS; i++) {
+    const angle = Math.PI * (i / PORTAL_ARCH_SEGMENTS);
+    profile.push({
+      offset: -PORTAL_HALF_WIDTH_M * Math.cos(angle),
+      height: PORTAL_WALL_M + PORTAL_ARCH_M * Math.sin(angle),
+    });
+  }
+  profile.push({ offset: PORTAL_HALF_WIDTH_M, height: PORTAL_WALL_M });
+  profile.push({ offset: PORTAL_HALF_WIDTH_M, height: 0 });
+
+  for (const run of tunnels.runs) {
+    for (const mouth of [run.entry, run.exit]) {
+      const roadY = trackHeightNear(field, plane, mouth.x, mouth.z);
+      if (Number.isNaN(roadY)) continue;
+      // Right-hand normal of the direction: the arch spans across the road.
+      const nx = -mouth.uz;
+      const nz = mouth.ux;
+
+      const at = (index: number, along: number) => {
+        const point = profile[index];
+        return {
+          x: mouth.x + nx * point.offset + mouth.ux * along,
+          y: roadY + point.height,
+          z: mouth.z + nz * point.offset + mouth.uz * along,
+        };
+      };
+
+      const outside = -PORTAL_OUT_M;
+      const inside = PORTAL_IN_M;
+      for (let i = 0; i < profile.length - 1; i++) {
+        const a = at(i, outside);
+        const b = at(i + 1, outside);
+        const c = at(i + 1, inside);
+        const d = at(i, inside);
+        // Wound so the faces look in at the road: the near side of the sleeve
+        // is culled and the camera sees the dark far side through the opening.
+        addFlatQuad(mesh, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
+      }
+
+      // A headwall around the opening. Without it the sleeve reads as a pipe
+      // lying on the ground rather than a mouth in a hillside — the arch has to
+      // be a hole in something.
+      const archCentreHeight = PORTAL_WALL_M;
+      const outward = (index: number) => {
+        const point = profile[index];
+        const dx = point.offset;
+        const dy = point.height - archCentreHeight;
+        const length = Math.hypot(dx, dy) || 1;
+        return {
+          offset: point.offset + (dx / length) * PORTAL_SURROUND_M,
+          height: point.height + (dy / length) * PORTAL_SURROUND_M,
+        };
+      };
+      const face = (offset: number, height: number) => ({
+        x: mouth.x + nx * offset + mouth.ux * outside,
+        y: roadY + height,
+        z: mouth.z + nz * offset + mouth.uz * outside,
+      });
+      for (let i = 0; i < profile.length - 1; i++) {
+        const a = face(profile[i].offset, profile[i].height);
+        const b = face(profile[i + 1].offset, profile[i + 1].height);
+        const oa = outward(i);
+        const ob = outward(i + 1);
+        const c = face(ob.offset, ob.height);
+        const d = face(oa.offset, oa.height);
+        addFlatQuad(surround, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
+      }
+
+      // The far end is capped, or the sleeve is a hole through the hill.
+      const centre = {
+        x: mouth.x + mouth.ux * inside,
+        y: roadY,
+        z: mouth.z + mouth.uz * inside,
+      };
+      for (let i = 0; i < profile.length - 1; i++) {
+        const a = at(i, inside);
+        const b = at(i + 1, inside);
+        addFlatTriangle(mesh, centre.x, centre.y, centre.z, a.x, a.y, a.z, b.x, b.y, b.z);
+      }
+    }
+  }
+
+  return { sleeve: mesh, surround };
+}
+
+/** The road's own height at a point, which under a hill only the profile knows. */
+function trackHeightNear(field: HeightField, plane: ScenePlane, x: number, z: number): number {
+  const { coords, elevations } = field.trackProfile;
+  let best = Number.NaN;
+  let bestDistance = Infinity;
+  for (let i = 0; i < coords.length; i++) {
+    const distance = (plane.x(coords[i][0]) - x) ** 2 + (plane.z(coords[i][1]) - z) ** 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = elevations[i];
+    }
+  }
+  return best;
+}
+
 // ─── track ─────────────────────────────────────────────────────────────────
 
 /**
@@ -483,6 +626,7 @@ export interface BakeReport {
   buildings: BuildingResult;
   cellsByBelt: Record<Belt, number>;
   trackVertices: number;
+  portalTriangles: number;
   tunnels: TunnelMask;
 }
 
@@ -525,6 +669,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const { coords, plane, field, corridor, tunnels } = await buildCircuitGround(circuitId, refresh);
 
   const elevations = trackElevations(field, coords, plane);
+  const portals = bakePortals(tunnels, field, plane);
   const terrain = bakeTerrain(field, plane, corridor);
   const water = bakeWater(field, plane);
 
@@ -540,6 +685,11 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     core: [
       { kind: "terrain", mesh: terrain.meshes.core },
       { kind: "building", mesh: buildings.meshes.core },
+      { kind: "tunnel", mesh: portals.sleeve },
+      // Its own mesh, not merged into the buildings: a headwall stands over the
+      // road on purpose, and the corridor check would read it as a wall in the
+      // way.
+      { kind: "portal", mesh: portals.surround },
     ],
     city: [
       { kind: "terrain", mesh: terrain.meshes.city },
@@ -569,6 +719,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     buildings,
     cellsByBelt: terrain.cellsByBelt,
     trackVertices: elevations.length,
+    portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
     tunnels,
   };
   await writeManifest(outDir, circuitId, field, plane, report, elevations);
@@ -656,6 +807,7 @@ async function main() {
       `${b.droppedTooLow} too low`,
   );
   console.log(`  track profile ${report.trackVertices} vertices`);
+  console.log(`  portals ${report.portalTriangles} tris`);
   if (report.tunnels.runs.length) {
     console.log(`  tunnels ${report.tunnels.runs.length} run(s), ${report.tunnels.buriedLengthM} m buried`);
     for (const run of report.tunnels.runs) {

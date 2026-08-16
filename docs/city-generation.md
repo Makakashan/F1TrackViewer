@@ -571,8 +571,16 @@ belt an order of magnitude inside its byte budget.
 
 - [ ] **P2.1** Overpass query gains `tunnel`, `bridge`, `layer`; `RoadLine` and the
       building schema carry them.
-- [ ] **P2.2** Tunnel portals and a short vault (D4). The hill stays solid; the portal
-      reads as an opening with a local light inside.
+- [x] **P2.2** Tunnel portals (D4): an arched sleeve standing 1 m out of the hillside
+      at each mouth, 8 m of dark vault behind it, capped at the far end, with a 2.5 m
+      headwall around the opening. **400 triangles for eight mouths.** The sleeve's
+      faces point inward, so its near side is culled and the camera sees the dark far
+      side through the arch. The hill is untouched — a height field cannot hold a
+      cavity — and P4.1 still owns the real excavation.
+
+      The headwall gets its own mesh rather than riding the buildings' material: it
+      stands over the road on purpose, and merged in it made `env:audit` report 360
+      walls in the track corridor. One extra draw call, and the check stays honest.
 - [ ] **P2.3** Quay walls from `man_made=quay` and the harbour splines; Piscine as its
       own object; the breakwater. This is where §1.3's coastline fix becomes visible.
 - [ ] **P2.4** Overrides file format and loader (D10) — data edits, masks, splines.
