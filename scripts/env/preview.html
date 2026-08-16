@@ -58,7 +58,7 @@
       const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 12000);
       camera.position.set(
         targetX + Math.cos(elevation) * Math.sin(azimuth) * distance,
-        Math.sin(elevation) * distance,
+        targetY + Math.sin(elevation) * distance,
         targetZ + Math.cos(elevation) * Math.cos(azimuth) * distance,
       );
       camera.lookAt(targetX, targetY, targetZ);

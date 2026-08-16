@@ -53,6 +53,8 @@ const TRACK_CLEARANCE_M = 8;
  * past this is a footprint the push did not move.
  */
 const QUANTISATION_SLACK_M = 0.5;
+/** Above the ground by this much, geometry over the road is an eave, not a wall. */
+const EAVE_CLEARANCE_M = 3;
 
 // ─── checks ────────────────────────────────────────────────────────────────
 
@@ -274,11 +276,17 @@ async function audit(circuitId: string): Promise<Check[]> {
     for (const mesh of meshes) {
       if (mesh.name !== "building") continue;
       for (let i = 0; i < mesh.positions.length / 3; i++) {
-        const distance = corridor.distance(mesh.positions[i * 3], mesh.positions[i * 3 + 2]);
-        if (distance < TRACK_CLEARANCE_M - QUANTISATION_SLACK_M) {
-          buildingVerticesOnTrack++;
-          worstIntrusionM = Math.max(worstIntrusionM, TRACK_CLEARANCE_M - distance);
-        }
+        const x = mesh.positions[i * 3];
+        const y = mesh.positions[i * 3 + 1];
+        const z = mesh.positions[i * 3 + 2];
+        const distance = corridor.distance(x, z);
+        if (distance >= TRACK_CLEARANCE_M - QUANTISATION_SLACK_M) continue;
+        // An eave leaning over the road is a building; a wall standing in it is
+        // a bug. What separates them is how high above the ground it is.
+        const ground = field.heightAt(plane.lon(x), plane.lat(z));
+        if (!Number.isNaN(ground) && y - ground > EAVE_CLEARANCE_M) continue;
+        buildingVerticesOnTrack++;
+        worstIntrusionM = Math.max(worstIntrusionM, TRACK_CLEARANCE_M - distance);
       }
     }
 

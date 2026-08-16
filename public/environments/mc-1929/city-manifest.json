@@ -16,24 +16,24 @@
   "belts": {
     "core": {
       "file": "core.glb",
-      "bytes": 294016,
-      "triangles": 66895,
+      "bytes": 343860,
+      "triangles": 70013,
       "drawCalls": 4,
       "radiusM": 150,
       "cellM": 4
     },
     "city": {
       "file": "city.glb",
-      "bytes": 762460,
-      "triangles": 84386,
+      "bytes": 1100352,
+      "triangles": 106696,
       "drawCalls": 3,
       "radiusM": 600,
       "cellM": 8
     },
     "far": {
       "file": "far.glb",
-      "bytes": 811772,
-      "triangles": 74819,
+      "bytes": 986948,
+      "triangles": 87297,
       "drawCalls": 3,
       "radiusM": null,
       "cellM": 16
@@ -41,7 +41,7 @@
   },
   "counts": {
     "buildings": 4776,
-    "triangles": 226100,
+    "triangles": 264006,
     "drawCalls": 10
   },
   "track": {

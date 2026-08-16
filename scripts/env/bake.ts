@@ -37,6 +37,7 @@ import {
   type Mesh,
 } from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
+import { buildRoof, PARAPET_M, planRoof, type RoofKind, type RoofTags } from "./roofs";
 import { fetchBuildingWays, fetchShoreWays, fetchStructureWays, type BuildingWay } from "./overpass";
 import { fetchElevationRaster, sampleRaster } from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
@@ -299,6 +300,7 @@ export function fromOverpass(ways: BuildingWay[]): BuildingsFile {
 
 interface BuildingResult {
   meshes: Record<Belt, Mesh>;
+  roofs: Record<RoofKind, number>;
   built: number;
   droppedOnTrack: number;
   droppedOverWater: number;
@@ -317,10 +319,12 @@ function bakeBuildings(
   plane: ScenePlane,
   corridor: Corridor,
   measured: Map<string, { measured: number }>,
+  tags: Map<string, RoofTags>,
 ): BuildingResult {
   const meshes = { core: createMesh(), city: createMesh(), far: createMesh() } as Record<Belt, Mesh>;
   const result: BuildingResult = {
     meshes,
+    roofs: { flat: 0, gabled: 0, hipped: 0, pyramidal: 0, skillion: 0 },
     built: 0,
     droppedOnTrack: 0,
     droppedOverWater: 0,
@@ -381,7 +385,21 @@ function bakeBuildings(
     centreZ /= pushed.ring.length;
     const belt = beltAtDistance(corridor.distance(centreX, centreZ));
 
-    extrude(meshes[belt], pushed.ring, foot, base + height);
+    const top = base + height;
+    const plan = planRoof(pushed.ring, tags.get(building.id) ?? {}, height);
+    result.roofs[plan.kind]++;
+
+    if (plan.kind === "flat") {
+      // The rim is what makes a flat roof read as a roof rather than a lid, so
+      // the walls run past the roof plane and turn back down inside it. Only
+      // where it can be seen: the far belt is silhouettes.
+      const parapet = belt === "far" ? 0 : PARAPET_M;
+      extrude(meshes[belt], pushed.ring, foot, top - plan.heightM, parapet);
+    } else {
+      const eaveY = top - plan.heightM;
+      extrude(meshes[belt], pushed.ring, foot, eaveY, 0);
+      buildRoof(meshes[belt], plan, eaveY);
+    }
     result.built++;
   }
 
@@ -420,16 +438,22 @@ function extrude(
   ring: { x: number; z: number }[],
   base: number,
   top: number,
+  parapetM = 0,
 ): void {
   const contour = ring.map((point) => new Vector2(point.x, -point.z));
   const clockwise = ShapeUtils.area(contour) < 0;
   const ordered = clockwise ? [...ring].reverse() : ring;
   const orderedContour = clockwise ? [...contour].reverse() : contour;
 
+  const wallTop = top + parapetM;
   for (let i = 0; i < ordered.length; i++) {
     const a = ordered[i];
     const b = ordered[(i + 1) % ordered.length];
-    addFlatQuad(mesh, a.x, base, a.z, b.x, base, b.z, b.x, top, b.z, a.x, top, a.z);
+    addFlatQuad(mesh, a.x, base, a.z, b.x, base, b.z, b.x, wallTop, b.z, a.x, wallTop, a.z);
+    if (parapetM > 0) {
+      // Inside face of the rim, seen from anywhere above the roof.
+      addFlatQuad(mesh, b.x, top, b.z, a.x, top, a.z, a.x, wallTop, a.z, b.x, wallTop, b.z);
+    }
   }
 
   for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
@@ -770,15 +794,19 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const terrain = bakeTerrain(field, plane, corridor);
   const water = bakeWater(field, plane);
 
+  const buildingWays = await fetchBuildingWays(circuitId, bbox, refresh);
   const buildingsFile = applyBuildingOverrides(
-    fromOverpass(await fetchBuildingWays(circuitId, bbox, refresh)),
+    fromOverpass(buildingWays),
     overrides,
     overrideStats,
   );
   const heightStats = { value: { measured: 0, fellBack: 0, medianDeltaM: 0, tallest: 0 } };
   const mnh = await fetchElevationRaster({ kind: "mnh", bbox, refresh });
   const measured = measureBuildingHeights(buildingsFile.buildings, mnh, heightStats);
-  const buildings = bakeBuildings(buildingsFile, field, plane, corridor, measured);
+  const roofTags = new Map<string, RoofTags>(
+    buildingWays.map((way) => [way.id, way.tags as RoofTags]),
+  );
+  const buildings = bakeBuildings(buildingsFile, field, plane, corridor, measured, roofTags);
 
   const outDir = join(OUTPUT_ROOT, circuitId);
   await mkdir(outDir, { recursive: true });
@@ -919,6 +947,11 @@ async function main() {
   console.log(
     `  heights ${h.measured} measured from MNH, ${h.fellBack} on OSM tags, ` +
       `median move ${h.medianDeltaM.toFixed(1)} m, tallest ${h.tallest.toFixed(1)} m`,
+  );
+  const roofs = report.buildings.roofs;
+  console.log(
+    `  roofs ${roofs.flat} flat, ${roofs.gabled} gabled, ${roofs.hipped} hipped, ` +
+      `${roofs.pyramidal} pyramidal, ${roofs.skillion} skillion`,
   );
   console.log(`  portals ${report.portalTriangles} tris`);
   console.log(

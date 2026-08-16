@@ -625,9 +625,26 @@ belt an order of magnitude inside its byte budget.
       client now treats an empty-with-remark answer as a failure and moves to the next
       endpoint.
 
-- [ ] **P3.2** Roof archetypes: flat-with-parapet, gabled, hipped, mansard, stepped
-      terrace, shed, sawtooth, domed. Selection by `roof:shape` where tagged, else by
-      footprint area / elongation / height heuristic.
+- [x] **P3.2** Roof archetypes (`scripts/env/roofs.ts`): flat with a parapet, gabled,
+      hipped, pyramidal, skillion. Monaco comes out **1 614 flat, 655 gabled, 2 503
+      hipped, 4 pyramidal**, at 2.43 MB and 264 k triangles.
+
+      Only 72 of 4 792 buildings carry `roof:shape`, so the tag decides where it exists
+      and size, height and elongation decide everywhere else. A pitch needs to know
+      which way the building faces, which a ring of coordinates does not say, so the
+      direction comes from the footprint's **minimum-area bounding rectangle** (convex
+      hull, then rotating calipers). A footprint that fills less than 72% of its own
+      rectangle — an L, a courtyard block — keeps a flat roof, because a ridge across a
+      plan like that lands in mid-air.
+
+      The measured height is the top of the roof, not the top of the walls: the roof
+      takes its height off the eaves, so measuring and shaping do not fight.
+
+      The audit found the one real consequence: a roof built on the bounding rectangle
+      can overhang the pushed footprint, and three vertices leaned 1.37 m over the
+      track corridor. Eaves over a road are what buildings do; walls in a road are not.
+      The check now separates them by height above the ground rather than banning
+      both.
 - [ ] **P3.3** Vertex AO bake (D9) and the palette pass over `diorama-palette.ts`.
 - [ ] **P3.4** Core-belt props, instanced: barriers, debris fences, grandstands (D16).
 
