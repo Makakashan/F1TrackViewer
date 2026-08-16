@@ -78,5 +78,6 @@ thrown away later.
 - `bun run typecheck` and `bun run lint` are clean.
 - The audit for what you touched has run: `bun run race:kerbs` for corner detection
   and kerbs, `bun run race:gaps` for timing-tower gaps, `bun run race:audit` for the
-  field over a full race, `bun run race:laptimes` for the speed model.
+  field over a full race, `bun run race:laptimes` for the speed model,
+  `bun run env:audit <circuitId>` for a baked city.
 - You say which of those you ran and what they reported.
