@@ -10,6 +10,7 @@
     "cars:teams": "bun scripts/generate-team-cars.ts cars/apx_gp.glb",
     "dev": "next dev -p 4000",
     "elevations:generate": "bun scripts/generate-elevations.ts",
+    "env:audit": "bun scripts/audit-environment.ts",
     "env:bake": "bun scripts/env/bake.ts",
     "env:field": "bun scripts/env/heightfield.ts",
     "env:preview": "bun scripts/env/preview.ts",

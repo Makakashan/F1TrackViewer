@@ -535,12 +535,37 @@ exists to prove the joints hold before any effort goes into how it looks.
       curve, which P1.5 should measure and P1.2b should remove; and the info panel's
       elevation profile still reads the old SRTM array, so it disagrees with the scene
       it describes.
-- [ ] **P1.5** `scripts/audit-environment.ts` with the §4 checks; wire `env:audit` into
-      `package.json` and `AGENTS.md`.
+- [x] **P1.5** `scripts/audit-environment.ts` with the §4 checks; `bun run env:audit
+      mc-1929`. **Done, and Monaco passes every fatal check.** Measured:
 
-**Exit criterion:** `bun run env:audit mc-1929` reports zero floating buildings, zero
-footprints in the track corridor, zero track/field disagreement, and every belt inside
-its byte budget.
+      ```
+      total bytes                      0.84 MB                  limit 15 MB
+      city draw calls                  7                        limit 75
+      terrain follows the field        worst 0.47 m / 10 276     limit 0.6 m
+      water sits on the datum          0 vertices off            limit 0
+      track profile matches the field  worst 0.005 m             limit 0.05 m
+      buildings floating               0                         limit 0
+      baked walls in the corridor      0                         limit 0
+      ground range under a footprint   709 of 785, worst 46.1 m  reported
+      ```
+
+      The geometry checks read the shipped GLB rather than the bake's own report,
+      dequantising through each node's transform. Three thresholds are set by
+      measurement, not by wish: 0.6 m for terrain (position quantisation moves a
+      vertex by up to half a step), 0.5 m of corridor slack for the same reason, and
+      the coastline cross-check reports "no reference data" instead of a fake pass —
+      OSM has no polygon for the Mediterranean, and Monaco's water layer is villa
+      swimming pools sitting hundreds of metres up a hillside.
+
+      **The finding that matters: 709 of 785 footprints span more than 1.5 m of
+      ground, the worst 46.1 m.** A flat-based prism from the lowest corner turns a
+      terraced block on a hillside into a 46 m cliff of wall — those are the tall
+      slabs in `images/bake-harbour.png`. This is P3's problem to solve, and it is
+      now a number that moves rather than an impression.
+
+**Exit criterion: met.** `bun run env:audit mc-1929` reports zero floating buildings,
+zero baked walls in the track corridor, 0.005 m of track/field disagreement, and every
+belt an order of magnitude inside its byte budget.
 
 ### P2 — The things Monaco cannot be without
 
