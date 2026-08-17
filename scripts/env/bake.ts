@@ -1132,13 +1132,19 @@ function buriedSpans(
   const total = distances[distances.length - 1] + closing;
   if (total <= 0) return [];
 
-  // Hidden where there is ground overhead, not merely where OSM says tunnel.
-  // The two differ by 85 m at Monaco's entry and 27 m at its exit, where the
-  // thing over the road is the Fairmont rather than a hill — hiding by the tag
-  // took the ribbon away while the car is still out in the open, which reads as
-  // missing road before the tunnel. This is the same test the bore is built on,
-  // so the gap now begins exactly at the portal.
-  const clearance = BORE_MIN_HEIGHT_M + BORE_COVER_M;
+  // Hidden where there is ground over the road, however little.
+  //
+  // Not the tag: OSM marks the whole 455 m, but under the Fairmont and the
+  // waterfront the thing overhead is a building, the field reads ground at road
+  // level, and hiding there took the ribbon away while the car is still out in
+  // the open — missing road before the tunnel.
+  //
+  // Nor the bore's own test, which needs 3.7 m of cover to fit a vault: between
+  // those two there is a stretch with a metre or two of ground over the road,
+  // where the ribbon is genuinely buried and showed through the hillside as red
+  // dashes. Anything the ground covers is hidden; whether a vault fits there is
+  // a different question.
+  const clearance = 0.3;
   const spans: [number, number][] = [];
   let start = -1;
   for (let i = 0; i < points.length; i++) {

@@ -844,8 +844,14 @@ belt an order of magnitude inside its byte budget.
       is 431 m of 3 337 — and then narrowed again to the stretch that actually
       has a hill over it, the same test the bore is built on, because hiding by
       the tag took the ribbon away while the car is still out in the open under
-      the Fairmont and read as missing road *before* the tunnel. **264 m**, and
-      the gap now begins at the portal.
+      the Fairmont and read as missing road *before* the tunnel. **264 m** —
+      and then widened again to **365 m**, because that test needs 3.7 m of cover
+      to fit a vault while the ground starts covering the road well before that:
+      over the metre or two in between the ribbon was genuinely buried and showed
+      through the hillside as red dashes. Two questions were riding on one
+      number. Whether the ribbon is visible is *is there ground over it*, at
+      0.3 m; whether a vault fits is the bore's own test, answered separately.
+      Verified: **0 centreline vertices with ground over them are still drawn**.
 
       What was still showing from above was not the road at all but the portal:
       a mouth sits where the cover first reaches the bore's headroom, which is
