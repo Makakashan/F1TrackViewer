@@ -841,7 +841,11 @@ belt an order of magnitude inside its byte budget.
       Monaco's hairpins carry a vertex every few metres and its straights every
       twenty — so the gap landed a couple of hundred metres past the tunnel and
       ate live road. They are fractions of lap length now: `0.167–0.297`, which
-      is 431 m of 3 337. And the ribbon is not the only thing drawn along the
+      is 431 m of 3 337 — and then narrowed again to the stretch that actually
+      has a hill over it, the same test the bore is built on, because hiding by
+      the tag took the ribbon away while the car is still out in the open under
+      the Fairmont and read as missing road *before* the tunnel. **264 m**, and
+      the gap now begins at the portal. And the ribbon is not the only thing drawn along the
       lap: its outline, apron, kerbs and edge lines were still there, showing
       through the hillside as thin red lines. All of them take the same spans.
 

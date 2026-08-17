@@ -1073,6 +1073,7 @@ function bakeBarriers(
 function buriedSpans(
   coords: [number, number][],
   plane: ScenePlane,
+  field: HeightField,
   tunnels: TunnelMask,
 ): [number, number][] {
   const points = coords.slice();
@@ -1101,10 +1102,21 @@ function buriedSpans(
   const total = distances[distances.length - 1] + closing;
   if (total <= 0) return [];
 
+  // Hidden where there is ground overhead, not merely where OSM says tunnel.
+  // The two differ by 85 m at Monaco's entry and 27 m at its exit, where the
+  // thing over the road is the Fairmont rather than a hill — hiding by the tag
+  // took the ribbon away while the car is still out in the open, which reads as
+  // missing road before the tunnel. This is the same test the bore is built on,
+  // so the gap now begins exactly at the portal.
+  const clearance = BORE_MIN_HEIGHT_M + BORE_COVER_M;
   const spans: [number, number][] = [];
   let start = -1;
   for (let i = 0; i < points.length; i++) {
-    const buried = tunnels.buried(points[i][0], points[i][1]);
+    const ground = tunnels.buried(points[i][0], points[i][1])
+      ? field.heightAt(points[i][0], points[i][1])
+      : Number.NaN;
+    const road = trackHeightNear(field, plane, plane.x(points[i][0]), plane.z(points[i][1]));
+    const buried = !Number.isNaN(ground) && !Number.isNaN(road) && ground - road >= clearance;
     if (buried && start < 0) start = i;
     if (!buried && start >= 0) {
       spans.push([distances[start] / total, distances[i - 1] / total]);
@@ -1402,7 +1414,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     tunnels,
     overrides: overrideStats,
   };
-  await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(coords, plane, tunnels));
+  await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(coords, plane, field, tunnels));
   return report;
 }
 
