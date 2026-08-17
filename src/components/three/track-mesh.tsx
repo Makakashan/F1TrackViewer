@@ -322,11 +322,10 @@ export default function TrackMesh({
   // Under a hill there is a bore to look at; the ribbon there is inside the
   // terrain, and from far enough away it shows through it.
   const hiddenAt = useMemo(() => {
+    // Fractions of lap length, matching how the curve is sampled.
     const spans = cityManifest?.track?.buried;
-    const count = cityManifest?.track?.elevations?.length ?? 0;
-    if (!spans?.length || count < 2) return undefined;
-    const ranges = spans.map(([from, to]) => [from / count, (to + 1) / count]);
-    return (s: number) => ranges.some(([from, to]) => s >= from && s <= to);
+    if (!spans?.length) return undefined;
+    return (s: number) => spans.some(([from, to]) => s >= from && s <= to);
   }, [cityManifest]);
 
   const trackGeometry = useMemo(
@@ -394,8 +393,9 @@ export default function TrackMesh({
         TRACK_SURFACE_RAISE - 0.01,
         samples,
         apronRoom,
+        hiddenAt,
       ),
-    [curve, halfWidth, samples, apronRoom],
+    [curve, halfWidth, samples, apronRoom, hiddenAt],
   );
 
   // Kerbs sit a couple of centimeters above the surface and take a deeper polygon offset than it.
@@ -407,8 +407,9 @@ export default function TrackMesh({
         TRACK_SURFACE_RAISE + 0.02,
         samples,
         { room: apronRoom },
+        hiddenAt,
       ),
-    [curve, halfWidth, samples, apronRoom],
+    [curve, halfWidth, samples, apronRoom, hiddenAt],
   );
 
   const edgeLineGeometry = useMemo(
@@ -418,8 +419,10 @@ export default function TrackMesh({
         halfWidth,
         TRACK_SURFACE_RAISE + 0.02,
         samples,
+        undefined,
+        hiddenAt,
       ),
-    [curve, halfWidth, samples],
+    [curve, halfWidth, samples, hiddenAt],
   );
 
   const startFinishPlacement = useMemo(

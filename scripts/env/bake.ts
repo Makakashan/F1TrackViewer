@@ -553,11 +553,15 @@ function bakeBuildings(
     // a terraced block on a Monaco hillside into a cliff of wall, and standing
     // it on the middle alone would leave the downhill side in the air.
     const base = grounds[Math.floor(grounds.length / 2)];
-    // ...but only so far down. On the lip of a cliff the lowest corner is the
-    // foot of the cliff, and a block there grew a 40 m stilt that stood in the
-    // bay once the coast was cut back to the waterline. Past this the ground is
-    // not the building's plot any more, it is the drop beside it.
-    const foot = Math.max(grounds[0], base - MAX_UNDERCUT_M);
+    // Each wall vertex meets the ground where it stands, so a block on a slope
+    // is neither buried on its uphill side nor left on stilts downhill. It may
+    // only dig so far: past MAX_UNDERCUT_M the ground under a footprint on the
+    // lip of a cliff is the drop beside it, not the plot it stands on.
+    const footAt = pushed.ring.map((point) => {
+      const ground = field.heightAt(plane.lon(point.x), plane.lat(point.z));
+      const solid = Number.isNaN(ground) ? base : ground;
+      return Math.max(base - MAX_UNDERCUT_M, Math.min(solid, base));
+    });
 
     let centreX = 0;
     let centreZ = 0;
@@ -578,10 +582,10 @@ function bakeBuildings(
       // the walls run past the roof plane and turn back down inside it. Only
       // where it can be seen: the far belt is silhouettes.
       const parapet = belt === "far" ? 0 : PARAPET_M;
-      extrude(meshes[belt], pushed.ring, foot, top - plan.heightM, parapet);
+      extrude(meshes[belt], pushed.ring, footAt, top - plan.heightM, parapet);
     } else {
       const eaveY = top - plan.heightM;
-      extrude(meshes[belt], pushed.ring, foot, eaveY, 0);
+      extrude(meshes[belt], pushed.ring, footAt, eaveY, 0);
       buildRoof(meshes[belt], plan, eaveY);
     }
     result.built++;
@@ -620,20 +624,29 @@ function pushOffTrack(
 function extrude(
   mesh: Mesh,
   ring: { x: number; z: number }[],
-  base: number,
+  /**
+   * Where each wall vertex meets the ground, one per ring point. A single
+   * base plane either buries the uphill side or leaves the downhill side on
+   * stilts — on the lip of Le Rocher that was a row of slabs hanging over the
+   * bay. Following the ground per vertex does neither.
+   */
+  baseAt: number[],
   top: number,
   parapetM = 0,
 ): void {
   const contour = ring.map((point) => new Vector2(point.x, -point.z));
   const clockwise = ShapeUtils.area(contour) < 0;
-  const ordered = clockwise ? [...ring].reverse() : ring;
+  const order = ring.map((_, i) => i);
+  const ordered = clockwise ? [...order].reverse().map((i) => ring[i]) : ring;
+  const orderedBase = clockwise ? [...order].reverse().map((i) => baseAt[i]) : baseAt;
   const orderedContour = clockwise ? [...contour].reverse() : contour;
 
   const wallTop = top + parapetM;
   for (let i = 0; i < ordered.length; i++) {
+    const j = (i + 1) % ordered.length;
     const a = ordered[i];
-    const b = ordered[(i + 1) % ordered.length];
-    addFlatQuad(mesh, a.x, base, a.z, b.x, base, b.z, b.x, wallTop, b.z, a.x, wallTop, a.z);
+    const b = ordered[j];
+    addFlatQuad(mesh, a.x, orderedBase[i], a.z, b.x, orderedBase[j], b.z, b.x, wallTop, b.z, a.x, wallTop, a.z);
     if (parapetM > 0) {
       // Inside face of the rim, seen from anywhere above the roof.
       addFlatQuad(mesh, b.x, top, b.z, a.x, top, a.z, a.x, wallTop, a.z, b.x, wallTop, b.z);
@@ -1059,12 +1072,34 @@ function bakeBarriers(
  */
 function buriedSpans(
   coords: [number, number][],
+  plane: ScenePlane,
   tunnels: TunnelMask,
 ): [number, number][] {
   const points = coords.slice();
   const first = points[0];
   const last = points[points.length - 1];
   if (first && last && first[0] === last[0] && first[1] === last[1]) points.pop();
+  if (points.length < 2) return [];
+
+  // Fractions of lap length, not of vertex count. The runtime samples its curve
+  // evenly by distance while the centreline's own vertices are spaced by
+  // whoever drew it — on Monaco the hairpins carry vertices every few metres and
+  // the straights every twenty, so an index fraction points somewhere else
+  // entirely and the ribbon vanishes well past the tunnel.
+  const distances = [0];
+  for (let i = 1; i < points.length; i++) {
+    const step = Math.hypot(
+      plane.x(points[i][0]) - plane.x(points[i - 1][0]),
+      plane.z(points[i][1]) - plane.z(points[i - 1][1]),
+    );
+    distances.push(distances[i - 1] + step);
+  }
+  const closing = Math.hypot(
+    plane.x(points[0][0]) - plane.x(points[points.length - 1][0]),
+    plane.z(points[0][1]) - plane.z(points[points.length - 1][1]),
+  );
+  const total = distances[distances.length - 1] + closing;
+  if (total <= 0) return [];
 
   const spans: [number, number][] = [];
   let start = -1;
@@ -1072,11 +1107,13 @@ function buriedSpans(
     const buried = tunnels.buried(points[i][0], points[i][1]);
     if (buried && start < 0) start = i;
     if (!buried && start >= 0) {
-      spans.push([start, i - 1]);
+      spans.push([distances[start] / total, distances[i - 1] / total]);
       start = -1;
     }
   }
-  if (start >= 0) spans.push([start, points.length - 1]);
+  if (start >= 0) {
+    spans.push([distances[start] / total, distances[points.length - 1] / total]);
+  }
   return spans;
 }
 
@@ -1267,8 +1304,8 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     overrides,
     overrideStats,
   );
-  const shore = bakeShoreWalls(shoreWays, field, plane);
   const coast = buildCoastline(shoreWays, field, plane);
+  const shore = bakeShoreWalls(shoreWays, field, plane, coast);
 
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(tunnels, field, plane);
@@ -1365,7 +1402,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     tunnels,
     overrides: overrideStats,
   };
-  await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(coords, tunnels));
+  await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(coords, plane, tunnels));
   return report;
 }
 
@@ -1407,7 +1444,7 @@ async function writeManifest(
       /** One height per centreline vertex, closing duplicate dropped. */
       elevations: trackElevationProfile,
       halfWidthM: DEFAULT_TRACK_HALF_WIDTH_M,
-      /** Inclusive index spans where the road runs under the ground. */
+      /** Fractions of lap length where the road runs under the ground. */
       buried,
     },
     sources: {
@@ -1474,7 +1511,8 @@ async function main() {
     `  shore ${report.shore.built} wall segments, ` +
       `${report.shore.skippedDisagreement} skipped where OSM and the raster disagree, ` +
       `${report.shore.skippedKind} piers skipped, ` +
-      `${report.shore.skippedCliff} against cliffs`,
+      `${report.shore.skippedCliff} against cliffs, ` +
+      `${report.shore.skippedOffCut} off the cut edge`,
   );
   if (report.tunnels.runs.length) {
     console.log(`  tunnels ${report.tunnels.runs.length} run(s), ${report.tunnels.buriedLengthM} m buried`);
