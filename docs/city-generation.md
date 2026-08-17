@@ -798,6 +798,20 @@ belt an order of magnitude inside its byte budget.
       not an excavation — the bore is only ever seen down its own axis — and P4.1
       still owns cutting the hill open for real.
 
+      **Geometry follows the cover, not the tag.** Built along the whole tagged
+      455 m, the bore stood *on* the surface for a quarter of its length —
+      measured **549 of 2 652 tunnel vertices above ground, worst 6.7 m**, showing
+      as a black strip over the hill. The tag is not wrong: Monaco's tunnel runs
+      under the Fairmont for its first 85 m and under the waterfront for its last
+      27, and a DTM measures the ground *beneath* a building rather than its roof,
+      so the field reads no cover there at all. `coveredRuns` picks the stretch
+      with real ground over the road, and both the bore and the mouths follow it:
+      the vault is built where something is holding it up, and the portals sit
+      where the hill starts. **51 vertices above ground, worst 2.9 m**, and those
+      are the headwalls, which are meant to stand proud. The lap is still buried
+      for the full tagged length — that is what the profile and the audit read —
+      it simply has no vault where the data says there is no hill.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).
