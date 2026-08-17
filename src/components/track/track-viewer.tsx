@@ -222,16 +222,22 @@ export default function TrackViewer({
               />
             </Suspense>
 
-            {/* Camera limits are off while the city rebuild is being looked at:
-                inspecting the ground means getting under the eaves and down to
-                street level, which every one of the old bounds forbade. They
-                come back once there is something to tune them against. */}
+            {/* Distance limits are off while the city rebuild is being looked
+                at: inspecting the ground means getting under the eaves and down
+                to street level, which every one of the old bounds forbade.
+
+                The floor stays. Terrain is a surface, not a solid, and its
+                back faces are culled, so from below the whole city is
+                see-through — the road shows through the hillside and the water
+                shows through the ground. Stopping just short of the horizon
+                keeps the camera above the surface it is looking at. */}
             <OrbitControls
               makeDefault
               enableDamping
               dampingFactor={0.08}
               autoRotate={autoRotate}
               autoRotateSpeed={0.5}
+              maxPolarAngle={Math.PI / 2 - 0.02}
             />
           </Canvas>
         ) : null}
