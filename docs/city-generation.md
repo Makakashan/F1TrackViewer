@@ -747,6 +747,20 @@ belt an order of magnitude inside its byte budget.
       runs before the speck filter, so flakes it cuts loose are then removed
       rather than left floating.
 
+      The radius is measured, not guessed, and the first attempt got it wrong:
+      at 5 m the erosion is three cells, which leaves nothing of a five-cell
+      jetty but a chewed remnant — the quays came back gnawed. A marina pontoon
+      is 3–4 m across and Monaco's quays are 10–20 m, so the cut belongs between
+      them: one cell, deleting strips up to about 4 m wide and leaving anything
+      wider untouched.
+
+      **A block the water runs through is drawn at the city belt's cell**, however
+      far it is from the circuit. The cut is only ever as fine as the grid it is
+      sampled on, so a 16 m cell left the far-belt coast as 16 m steps no matter
+      how smooth the line behind it. A coastline is looked at from anywhere,
+      unlike the ground behind it. Cost: **+2 959 triangles in the city belt,
+      −471 in the far**, 3.65 → 3.69 MB.
+
       *Islets speckled the harbour.* A LiDAR return off a moored boat or a pontoon
       leaves a few dry cells in the middle of a basin and the terrain dutifully
       built an island there. `despeckleLand` in `raster.ts` returns any enclosed

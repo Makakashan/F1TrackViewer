@@ -171,10 +171,15 @@ const FLAT_WATER_MAX_ELEVATION_M = 50;
  */
 const MIN_ISLAND_M2 = 150;
 /**
- * Half the narrowest strip of land kept, in metres. A pontoon is a couple of
- * metres wide and a quay is tens, so this separates them cleanly.
+ * Half the narrowest strip of land kept, in metres.
+ *
+ * Measured, not guessed: a marina pontoon is 3–4 m across and Monaco's quays
+ * are 10–20 m, so the cut has to fall between them. Set at 5 m it took the
+ * quays with it — erosion by three cells leaves nothing of a five-cell jetty
+ * but a chewed remnant — so it sits at one cell instead, which deletes strips
+ * up to about 4 m wide and leaves anything wider untouched.
  */
-const MIN_LAND_HALF_WIDTH_M = 5;
+const MIN_LAND_HALF_WIDTH_M = 2;
 
 /** The sentinel and everything it was blended into. */
 function maskNodata(values: Float32Array): void {
