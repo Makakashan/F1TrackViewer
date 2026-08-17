@@ -112,6 +112,28 @@ interface TerrainResult {
   cellsByBelt: Record<Belt, number>;
 }
 
+/** Does this block have both land and water in it? */
+function straddlesWater(
+  field: HeightField,
+  plane: ScenePlane,
+  centreX: number,
+  centreZ: number,
+  sizeM: number,
+): boolean {
+  let land = false;
+  let water = false;
+  const half = sizeM / 2;
+  for (const dx of [-half, 0, half]) {
+    for (const dz of [-half, 0, half]) {
+      const value = field.heightAt(plane.lon(centreX + dx), plane.lat(centreZ + dz));
+      if (Number.isNaN(value)) water = true;
+      else land = true;
+      if (land && water) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * One grid per belt, each at its own cell size, each covering only the cells
  * whose centre falls in that belt. Where a cell has no neighbour — the coast,
@@ -151,9 +173,15 @@ function bakeTerrain(
   const blockBelt = new Uint8Array(blockRows * blockCols);
   for (let row = 0; row < blockRows; row++) {
     for (let col = 0; col < blockCols; col++) {
-      const belt = beltAtDistance(
-        corridor.distance(minX + (col + 0.5) * blockM, minZ + (row + 0.5) * blockM),
-      );
+      const x = minX + (col + 0.5) * blockM;
+      const z = minZ + (row + 0.5) * blockM;
+      let belt = beltAtDistance(corridor.distance(x, z));
+      // A block the water's edge runs through is drawn at the city belt's cell
+      // however far from the circuit it is. The cut is only as fine as the grid
+      // it is sampled on, so a 16 m cell leaves the coast as 16 m steps no
+      // matter how smooth the line behind it — and a coastline is looked at
+      // from anywhere, unlike the ground behind it.
+      if (belt === "far" && straddlesWater(field, plane, x, z, blockM)) belt = "city";
       blockBelt[row * blockCols + col] = BELT_ORDER.indexOf(belt);
     }
   }
