@@ -845,7 +845,18 @@ belt an order of magnitude inside its byte budget.
       has a hill over it, the same test the bore is built on, because hiding by
       the tag took the ribbon away while the car is still out in the open under
       the Fairmont and read as missing road *before* the tunnel. **264 m**, and
-      the gap now begins at the portal. And the ribbon is not the only thing drawn along the
+      the gap now begins at the portal.
+
+      What was still showing from above was not the road at all but the portal:
+      a mouth sits where the cover first reaches the bore's headroom, which is
+      less than the arch plus its headwall needs, so the crown and the outer
+      corners of the surround stood out through the slope — **63 portal and 42
+      bore vertices above ground, worst 5.5 m**, reading as two bright slivers
+      lying in the hill. The arch now scales to the lowest cover along its own
+      sleeve, and every point of the headwall is clamped to the ground it sits
+      over — the wall is 19 m across and the hill falls away sideways, so its
+      corners stood clear however low the arch went. **Zero portal vertices
+      above ground**; 15 of the bore remain, worst 1.1 m. And the ribbon is not the only thing drawn along the
       lap: its outline, apron, kerbs and edge lines were still there, showing
       through the hillside as thin red lines. All of them take the same spans.
 
