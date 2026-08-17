@@ -695,9 +695,26 @@ function bakePortals(
   const surround = createMesh();
   const profile = portalSection();
 
-  for (const run of tunnels.runs) {
-    for (const mouth of [run.entry, run.exit]) {
-      const roadY = trackHeightNear(field, plane, mouth.x, mouth.z);
+  const { coords, elevations } = field.trackProfile;
+  // Mouths sit where the cover starts, not where the tag does — see coveredRuns.
+  for (const run of coveredRuns(field, tunnels, BORE_MIN_HEIGHT_M + BORE_COVER_M)) {
+    const ends: { index: number; into: number }[] = [
+      { index: run[0], into: 1 },
+      { index: run[run.length - 1], into: -1 },
+    ];
+    for (const end of ends) {
+      const neighbour = end.index + end.into;
+      if (neighbour < 0 || neighbour >= coords.length) continue;
+      const x = plane.x(coords[end.index][0]);
+      const z = plane.z(coords[end.index][1]);
+      let ux = plane.x(coords[neighbour][0]) - x;
+      let uz = plane.z(coords[neighbour][1]) - z;
+      const length = Math.hypot(ux, uz);
+      if (length < 1e-6) continue;
+      ux /= length;
+      uz /= length;
+      const mouth = { x, z, ux, uz };
+      const roadY = elevations[end.index];
       if (Number.isNaN(roadY)) continue;
       // Right-hand normal of the direction: the arch spans across the road.
       const nx = -mouth.uz;
@@ -761,11 +778,52 @@ function bakePortals(
   return { sleeve: mesh, surround };
 }
 
+/**
+ * The buried stretch that actually has a hill over it.
+ *
+ * OSM marks the whole 455 m as a tunnel, and it is one — but under the Fairmont
+ * and under the waterfront the thing overhead is a building, and a DTM measures
+ * the ground beneath a building rather than its roof. So over the first 85 m and
+ * the last 27 the field says there is no cover at all, and a bore built there
+ * stood on the surface as a black strip: the mouth painted on a hillside, again.
+ *
+ * Geometry therefore follows the cover, not the tag: the bore is built where the
+ * ground is genuinely above it, and its mouths sit where that cover begins. The
+ * lap is still buried for the whole tagged length — that is what the profile and
+ * the audit read — it simply has no vault where nothing is holding one up.
+ */
+function coveredRuns(
+  field: HeightField,
+  tunnels: TunnelMask,
+  clearanceM: number,
+): number[][] {
+  const { coords, elevations } = field.trackProfile;
+  const runs: number[][] = [];
+  let current: number[] = [];
+  for (let i = 0; i < coords.length; i++) {
+    const ground = tunnels.buried(coords[i][0], coords[i][1])
+      ? field.heightAt(coords[i][0], coords[i][1])
+      : Number.NaN;
+    if (!Number.isNaN(ground) && ground - elevations[i] >= clearanceM) {
+      current.push(i);
+      continue;
+    }
+    if (current.length > 1) runs.push(current);
+    current = [];
+  }
+  if (current.length > 1) runs.push(current);
+  return runs;
+}
+
 /** Metres between rings of the bore. Coarser than the profile: it is seen down
  *  its own length, where a ring every few metres is indistinguishable. */
 const BORE_STEP_M = 9;
 /** The floor sits a hair below the ribbon so the two never fight for depth. */
 const BORE_FLOOR_DROP_M = 0.08;
+/** Ground kept over the crown wherever there is ground to keep. */
+const BORE_COVER_M = 0.5;
+/** However little there is, the bore stays tall enough to be a road tunnel. */
+const BORE_MIN_HEIGHT_M = 3.2;
 
 /**
  * The bore itself: floor, walls and vault along the buried stretch of the lap.
@@ -784,23 +842,18 @@ function bakeTunnelBody(
 ): Mesh {
   const mesh = createMesh();
   const { coords, elevations } = field.trackProfile;
-
-  // The buried samples, in the order the lap runs, split into runs.
-  const runs: number[][] = [];
-  let current: number[] = [];
-  for (let i = 0; i < coords.length; i++) {
-    if (tunnels.buried(coords[i][0], coords[i][1])) {
-      current.push(i);
-      continue;
-    }
-    if (current.length > 1) runs.push(current);
-    current = [];
-  }
-  if (current.length > 1) runs.push(current);
+  const runs = coveredRuns(field, tunnels, BORE_MIN_HEIGHT_M + BORE_COVER_M);
 
   for (const run of runs) {
     // Rings at BORE_STEP_M, plus the last sample, so the bore reaches its mouth.
-    const rings: { x: number; y: number; z: number; ux: number; uz: number }[] = [];
+    const rings: {
+      x: number;
+      y: number;
+      z: number;
+      ux: number;
+      uz: number;
+      scale: number;
+    }[] = [];
     let sinceLast = Infinity;
     for (let k = 0; k < run.length; k++) {
       const i = run[k];
@@ -821,13 +874,28 @@ function bakeTunnelBody(
       if (length < 1e-6) continue;
       ux /= length;
       uz /= length;
-      rings.push({ x, y: elevations[i], z, ux, uz });
+      // The section ducks under whatever cover there is. Monaco's tunnel runs
+      // under the Fairmont for its first 85 m and under the waterfront for its
+      // last 27, and a DTM reads the ground beneath a building, not its roof —
+      // so a fixed 6.5 m crown stood proud of the terrain over a quarter of the
+      // length. Since the bore is only ever seen along its axis, losing a metre
+      // of headroom costs nothing and keeps it underground.
+      const ground = field.heightAt(coords[i][0], coords[i][1]);
+      const available = Number.isNaN(ground)
+        ? Infinity
+        : ground - elevations[i] - BORE_COVER_M;
+      const crown = PORTAL_WALL_M + PORTAL_ARCH_M;
+      const scale = Math.max(
+        BORE_MIN_HEIGHT_M / crown,
+        Math.min(1, available / crown),
+      );
+      rings.push({ x, y: elevations[i], z, ux, uz, scale });
     }
     if (rings.length < 2) continue;
 
     const at = (ring: (typeof rings)[number], point: { offset: number; height: number }) => ({
       x: ring.x - ring.uz * point.offset,
-      y: ring.y + point.height,
+      y: ring.y + point.height * ring.scale,
       z: ring.z + ring.ux * point.offset,
     });
 
