@@ -735,6 +735,30 @@ function bakePortals(
       const mouth = { x, z, ux, uz };
       const roadY = elevations[end.index];
       if (Number.isNaN(roadY)) continue;
+
+      // The arch ducks under its own hillside. A mouth stands where the cover
+      // first reaches the bore's headroom, which is less than the arch plus its
+      // headwall needs, so a full-height portal pushed its crown and surround
+      // out through the slope — from above, two bright slivers lying in the
+      // hill. Scaled to fit, the opening stays a hole in something.
+      // The lowest ground the sleeve passes under, not just the ground at the
+      // mouth: the sleeve runs 8 m into the slope and the hill is still rising
+      // over that, so the mouth's own reading is the optimistic one.
+      const crown = PORTAL_WALL_M + PORTAL_ARCH_M;
+      let cover = Infinity;
+      for (let along = -PORTAL_OUT_M; along <= PORTAL_IN_M; along += 2) {
+        const probe = field.heightAt(
+          plane.lon(x + ux * along),
+          plane.lat(z + uz * along),
+        );
+        if (Number.isNaN(probe)) continue;
+        cover = Math.min(cover, probe - roadY);
+      }
+      const available = cover === Infinity ? Infinity : cover - PORTAL_SURROUND_M;
+      const scale = Math.max(
+        BORE_MIN_HEIGHT_M / crown,
+        Math.min(1, available / crown),
+      );
       // Right-hand normal of the direction: the arch spans across the road.
       const nx = -mouth.uz;
       const nz = mouth.ux;
@@ -743,7 +767,7 @@ function bakePortals(
         const point = profile[index];
         return {
           x: mouth.x + nx * point.offset + mouth.ux * along,
-          y: roadY + point.height,
+          y: roadY + point.height * scale,
           z: mouth.z + nz * point.offset + mouth.uz * along,
         };
       };
@@ -763,25 +787,31 @@ function bakePortals(
       // A headwall around the opening. Without it the sleeve reads as a pipe
       // lying on the ground rather than a mouth in a hillside — the arch has to
       // be a hole in something.
-      const archCentreHeight = PORTAL_WALL_M;
+      const archCentreHeight = PORTAL_WALL_M * scale;
       const outward = (index: number) => {
         const point = profile[index];
         const dx = point.offset;
-        const dy = point.height - archCentreHeight;
+        const dy = point.height * scale - archCentreHeight;
         const length = Math.hypot(dx, dy) || 1;
         return {
           offset: point.offset + (dx / length) * PORTAL_SURROUND_M,
           height: point.height + (dy / length) * PORTAL_SURROUND_M,
         };
       };
-      const face = (offset: number, height: number) => ({
-        x: mouth.x + nx * offset + mouth.ux * outside,
-        y: roadY + height,
-        z: mouth.z + nz * offset + mouth.uz * outside,
-      });
+      // Pressed into the slope: the headwall is 19 m across and the hill falls
+      // away sideways, so its outer corners stood clear of the ground however
+      // low the arch was scaled. Clamping each point to the ground it sits over
+      // buries them without shrinking the opening.
+      const face = (offset: number, height: number) => {
+        const fx = mouth.x + nx * offset + mouth.ux * outside;
+        const fz = mouth.z + nz * offset + mouth.uz * outside;
+        const over = field.heightAt(plane.lon(fx), plane.lat(fz));
+        const y = roadY + height;
+        return { x: fx, y: Number.isNaN(over) ? y : Math.min(y, over), z: fz };
+      };
       for (let i = 0; i < profile.length - 1; i++) {
-        const a = face(profile[i].offset, profile[i].height);
-        const b = face(profile[i + 1].offset, profile[i + 1].height);
+        const a = face(profile[i].offset, profile[i].height * scale);
+        const b = face(profile[i + 1].offset, profile[i + 1].height * scale);
         const oa = outward(i);
         const ob = outward(i + 1);
         const c = face(ob.offset, ob.height);
