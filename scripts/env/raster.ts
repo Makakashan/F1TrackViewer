@@ -170,6 +170,11 @@ const FLAT_WATER_MAX_ELEVATION_M = 50;
  * footprint it is a boat or a buoy in the LiDAR, not an island.
  */
 const MIN_ISLAND_M2 = 150;
+/**
+ * Half the narrowest strip of land kept, in metres. A pontoon is a couple of
+ * metres wide and a quay is tens, so this separates them cleanly.
+ */
+const MIN_LAND_HALF_WIDTH_M = 5;
 
 /** The sentinel and everything it was blended into. */
 function maskNodata(values: Float32Array): void {
@@ -291,6 +296,63 @@ function markFlatWater(
  * to being water. A component touching the raster's edge is left alone: it runs
  * out of the frame and its real size is not knowable here.
  */
+/**
+ * Land narrower than it is long is not land here.
+ *
+ * A marina reads back as a comb: pontoons, moored hulls and the odd crane leave
+ * strips of dry cells one or two wide running out into the basin, and the
+ * shoreline grows tongues and detached flakes that no amount of smoothing the
+ * edge can fix, because the mask itself says they are there. A morphological
+ * opening — erode the land, then dilate what survives — deletes anything
+ * thinner than twice the radius while leaving a real quay, which is tens of
+ * metres across, exactly where it was.
+ */
+function openLand(
+  data: Float32Array,
+  width: number,
+  height: number,
+  radius: number,
+): number {
+  const isLand = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) isLand[i] = Number.isNaN(data[i]) ? 0 : 1;
+
+  const pass = (source: Uint8Array, keepWhenAllNeighbours: boolean): Uint8Array => {
+    const out = new Uint8Array(source.length);
+    for (let row = 0; row < height; row++) {
+      for (let col = 0; col < width; col++) {
+        let all = true;
+        let any = false;
+        for (let dr = -radius; dr <= radius && (all || !any); dr++) {
+          for (let dc = -radius; dc <= radius; dc++) {
+            const nr = row + dr;
+            const nc = col + dc;
+            // Off the edge counts as land, so the frame is not eaten away.
+            const value = nr < 0 || nc < 0 || nr >= height || nc >= width
+              ? 1
+              : source[nr * width + nc];
+            if (value) any = true;
+            else all = false;
+          }
+        }
+        out[row * width + col] = keepWhenAllNeighbours ? (all ? 1 : 0) : (any ? 1 : 0);
+      }
+    }
+    return out;
+  };
+
+  const eroded = pass(isLand, true);
+  const opened = pass(eroded, false);
+
+  let removed = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (isLand[i] && !opened[i]) {
+      data[i] = Number.NaN;
+      removed++;
+    }
+  }
+  return removed;
+}
+
 function despeckleLand(
   data: Float32Array,
   width: number,
@@ -532,8 +594,12 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
         );
   // After the water is known, and before averaging blurs a speck into its
   // neighbours: a boat left as land here becomes an islet in the harbour.
-  const cellAreaM2 = (provider.nativeCellM / supersample) ** 2;
+  const cellM = provider.nativeCellM / supersample;
+  const cellAreaM2 = cellM ** 2;
   if (kind !== "mnh" && options.flatWater !== false) {
+    // Order matters: opening first, so the flakes it cuts loose are then seen
+    // as specks and removed rather than left floating in the basin.
+    openLand(fetched, fetchWidth, fetchHeight, Math.max(1, Math.round(MIN_LAND_HALF_WIDTH_M / cellM)));
     despeckleLand(fetched, fetchWidth, fetchHeight, Math.max(1, Math.round(MIN_ISLAND_M2 / cellAreaM2)));
   }
   const flatWaterCells = Math.round(flatWaterFetched / (supersample * supersample));

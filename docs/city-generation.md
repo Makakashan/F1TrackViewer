@@ -738,6 +738,15 @@ belt an order of magnitude inside its byte budget.
       the water the whole south shore read as a shelf on nothing. It now runs to a
       fixed depth **below the datum** instead, which is the same two triangles.
 
+      *The marina read back as a comb.* Pontoons, moored hulls and a crane or two
+      leave strips of dry cells one or two wide running out into the basin, and
+      the shoreline grows tongues and sheds flakes from them. Smoothing the edge
+      cannot help: the mask itself says the land is there. `openLand` erodes the
+      land mask and dilates what survives, deleting anything narrower than 10 m
+      and leaving a real quay — tens of metres across — exactly where it was. It
+      runs before the speck filter, so flakes it cuts loose are then removed
+      rather than left floating.
+
       *Islets speckled the harbour.* A LiDAR return off a moored boat or a pontoon
       leaves a few dry cells in the middle of a basin and the terrain dutifully
       built an island there. `despeckleLand` in `raster.ts` returns any enclosed

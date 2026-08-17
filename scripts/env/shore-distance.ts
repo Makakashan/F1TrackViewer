@@ -17,8 +17,12 @@
 
 import type { HeightField } from "./heightfield";
 
-/** Passes of the 3×3 mean. Two is enough to round a cell-sized corner. */
-const SMOOTHING_PASSES = 2;
+/**
+ * Passes of the 3×3 mean. Two rounds a cell-sized corner; four also takes out
+ * the run of cell-sized steps a rocky shore leaves behind, which is what the
+ * unmapped stretches read as.
+ */
+const SMOOTHING_PASSES = 4;
 
 export interface ShoreDistance {
   /** Metres from the water's edge: positive on land, negative in water. */
