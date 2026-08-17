@@ -835,6 +835,30 @@ belt an order of magnitude inside its byte budget.
       both the ribbon and its outline. Under a hill there is a bore to look at
       instead.
 
+      Two corrections to that, from looking at it: the spans were written as
+      **fractions of vertex index**, but the runtime samples its curve evenly by
+      distance while the centreline's vertices are spaced by whoever drew it —
+      Monaco's hairpins carry a vertex every few metres and its straights every
+      twenty — so the gap landed a couple of hundred metres past the tunnel and
+      ate live road. They are fractions of lap length now: `0.167–0.297`, which
+      is 431 m of 3 337. And the ribbon is not the only thing drawn along the
+      lap: its outline, apron, kerbs and edge lines were still there, showing
+      through the hillside as thin red lines. All of them take the same spans.
+
+      **Buildings sit on the ground under each wall vertex**, not on one base
+      plane. A single plane either buries the uphill side or leaves the downhill
+      side in the air; capping the drop at `MAX_UNDERCUT_M` = 8 m stopped the
+      40 m stilts but still left slabs standing where the slope fell away faster
+      than the cap. Per-vertex footing does neither, and the cap still applies:
+      past 8 m the ground under a footprint on a clifftop is the drop beside it.
+
+      **Quay walls are tied to the cut.** The terrain only follows a segment the
+      raster corroborates; elsewhere it follows the smoothed distance. A wall
+      built on an un-corroborated line therefore stood off the shore in open
+      water — the wedges sticking out of the bays. A wall is now only built
+      within `MAX_OFFSET_FROM_CUT_M` = 6 m of the edge the terrain was actually
+      cut on: **210 more segments skipped**, 413 built.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).

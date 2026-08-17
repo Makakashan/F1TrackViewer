@@ -12,6 +12,7 @@
  * segment is checked: water on one side, ground on the other, or it is skipped.
  */
 
+import type { Coastline } from "./coastline";
 import type { ShoreWay } from "./overpass";
 import type { HeightField } from "./heightfield";
 import { addFlatQuad, createMesh, type Mesh } from "./mesh";
@@ -38,6 +39,15 @@ const MIN_TOP_M = 1.5;
  * already renders it. Median wall is 1.6 m, so this cuts the tail, not the job.
  */
 const MAX_TOP_M = 8;
+/**
+ * How far the wall may stand from the edge the terrain was actually cut on.
+ *
+ * The cut only follows a segment the raster corroborates (P4.0); elsewhere the
+ * ground ends where the smoothed raster distance says. A wall built on the
+ * un-corroborated line then stands off the shore in open water, which is what
+ * the wedges sticking out of the bays were.
+ */
+const MAX_OFFSET_FROM_CUT_M = 6;
 
 export interface ShoreResult {
   walls: Mesh;
@@ -46,12 +56,15 @@ export interface ShoreResult {
   skippedKind: number;
   /** Segments where the ground behind the line is a cliff, not a quay. */
   skippedCliff: number;
+  /** Segments standing away from the edge the terrain was cut on. */
+  skippedOffCut: number;
 }
 
 export function bakeShoreWalls(
   ways: ShoreWay[],
   field: HeightField,
   plane: ScenePlane,
+  coast: Coastline,
 ): ShoreResult {
   const walls = createMesh();
   const result: ShoreResult = {
@@ -60,6 +73,7 @@ export function bakeShoreWalls(
     skippedDisagreement: 0,
     skippedKind: 0,
     skippedCliff: 0,
+    skippedOffCut: 0,
   };
 
   for (const way of ways) {
@@ -84,6 +98,12 @@ export function bakeShoreWalls(
       const nz = (bx - ax) / length;
       const midX = (ax + bx) / 2;
       const midZ = (az + bz) / 2;
+
+      const fromCut = coast.signedDistance(midX, midZ);
+      if (Number.isNaN(fromCut) || Math.abs(fromCut) > MAX_OFFSET_FROM_CUT_M) {
+        result.skippedOffCut++;
+        continue;
+      }
 
       let leftIsWater = false;
       let groundHeight = Number.NaN;

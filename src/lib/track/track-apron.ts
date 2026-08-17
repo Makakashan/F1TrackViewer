@@ -157,6 +157,8 @@ export function buildTrackApronGeometry(
   raise: number,
   samples: number,
   room: ApronRoom,
+  /** Stretches the ribbon is not drawn on; see `buildExtrudedTrack`. */
+  hiddenAt?: (s: number) => boolean,
 ): THREE.BufferGeometry | null {
   const n = samples;
   if (n < 8) return null;
@@ -188,6 +190,7 @@ export function buildTrackApronGeometry(
   let any = false;
   for (const sign of [1, -1] as const) {
     for (let i = 0; i < n; i++) {
+      if (hiddenAt?.((i + 0.5) / n)) continue;
       const j = i + 1;
       const s0 = i / n;
       const s1 = (j % n) / n;
