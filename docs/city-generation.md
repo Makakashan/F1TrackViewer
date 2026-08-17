@@ -871,9 +871,17 @@ belt an order of magnitude inside its byte budget.
       `environment-layer.tsx`** and the old runtime path. This is D17's termination
       condition — the plan is not finished while both paths exist.
 
-**Camera limits are off** in `track-viewer.tsx` while the city is being looked at:
-inspecting the ground means getting under the eaves and down to street level, and
-every one of the old bounds forbade it. They come back with a pass of their own.
+**Distance limits are off** in `track-viewer.tsx` while the city is being looked
+at: inspecting the ground means getting under the eaves and down to street level,
+and every one of the old bounds forbade it. They come back with a pass of their
+own.
+
+The floor stays, at `PI/2 - 0.02`. Terrain is a surface, not a solid, and its
+back faces are culled, so from below the whole city is see-through — the road
+shows through the hillside, the water shows through the ground, and the harbour
+walls read as dark patches floating in the bay. Every "it goes transparent when I
+rotate" report so far has been the camera slipping under the surface it was
+looking at.
 
 ---
 
