@@ -51,8 +51,10 @@ export function bakeShoreWalls(
 
   for (const way of ways) {
     // A pier runs down the middle of its own deck, so both sides of the line
-    // are the same thing and the water test cannot say anything about it.
-    if (way.kind === "pier" || way.kind === "groyne") {
+    // are the same thing and the water test cannot say anything about it. A
+    // basin's outline is a water area, not a built edge — it says where the
+    // water stops, not that anyone poured concrete there.
+    if (way.kind === "pier" || way.kind === "groyne" || way.kind === "water") {
       result.skippedKind++;
       continue;
     }

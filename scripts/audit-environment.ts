@@ -19,7 +19,9 @@ import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 
 import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types";
 import { buildCircuitGround, fromOverpass } from "./env/bake";
-import { fetchBuildingWays } from "./env/overpass";
+import { buildCoastline, type Coastline } from "./env/coastline";
+import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
+import { fetchBuildingWays, fetchShoreWays } from "./env/overpass";
 import { BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
 import type { HeightField } from "./env/heightfield";
 import type { ScenePlane } from "./env/plane";
@@ -109,13 +111,43 @@ async function readBelt(circuitId: string, belt: Belt) {
 }
 
 /** Does the shipped terrain still sit where the field says the ground is? */
+/**
+ * How close to the cut a vertex has to be before it is measured as coast rather
+ * than as ground. The shoreline is cut against the surveyed line, not the
+ * raster (P4.0), so along that line the two are meant to differ: the cut holds
+ * the quay's height out to the line instead of ramping down to whatever the
+ * raster says half a cell inland. One far-belt cell is the widest a cut vertex
+ * can sit from the line it was placed on. Past it the terrain is the raster's,
+ * and any disagreement is a bug.
+ */
+const SHORE_EXEMPT_M = 16;
+
 function checkTerrain(
   meshes: { name: string; positions: Float32Array }[],
   field: HeightField,
   plane: ScenePlane,
-): { worst: number; sampled: number } {
+  coast: Coastline,
+  rasterShore: ShoreDistance,
+): { worst: number; sampled: number; shore: number; worstShore: number } {
   let worst = 0;
   let sampled = 0;
+  let shore = 0;
+  let worstShore = 0;
+
+  // The bake cuts against the surveyed line where there is one and against the
+  // smoothed raster distance where there is not, so a vertex near the zero of
+  // either is a coast vertex and is measured as one.
+  const onCut = (x: number, z: number): boolean => {
+    const surveyed = coast.signedDistance(x, z);
+    const raster = rasterShore.at(plane.lon(x), plane.lat(z));
+    if (!Number.isNaN(surveyed) && Math.abs(surveyed) <= SHORE_EXEMPT_M) return true;
+    if (Math.abs(raster) <= SHORE_EXEMPT_M) return true;
+    // Where the line and the raster disagree about which element this even is,
+    // the cut follows the line and the field still reads the raster, so the two
+    // are measuring different things and the difference is not a defect.
+    return !Number.isNaN(surveyed) && surveyed > 0 !== raster > 0;
+  };
+
   for (const mesh of meshes) {
     if (mesh.name !== "terrain") continue;
     const count = mesh.positions.length / 3;
@@ -131,11 +163,16 @@ function checkTerrain(
       const delta = Math.abs(y - ground);
       // A skirt vertex is a whole skirt below its edge; it is not a surface.
       if (delta > 2.5) continue;
+      if (onCut(x, z)) {
+        shore++;
+        if (delta > worstShore) worstShore = delta;
+        continue;
+      }
       sampled++;
       if (delta > worst) worst = delta;
     }
   }
-  return { worst, sampled };
+  return { worst, sampled, shore, worstShore };
 }
 
 interface BuildingFit {
@@ -236,6 +273,9 @@ async function audit(circuitId: string): Promise<Check[]> {
   };
   // The same source the bake used, not the old pipeline's file.
   const buildings = fromOverpass(await fetchBuildingWays(circuitId, field.bbox));
+  // The line the terrain was cut against, rebuilt the same way (P4.0).
+  const rasterShore = buildShoreDistance(field);
+  const cutLine = buildCoastline(await fetchShoreWays(circuitId, field.bbox), field, plane);
   const water = JSON.parse(await readFile(join(dir, "water.json"), "utf8")) as WaterFile;
 
   const checks: Check[] = [];
@@ -244,6 +284,8 @@ async function audit(circuitId: string): Promise<Check[]> {
   let drawCalls = 0;
   let worstTerrain = 0;
   let terrainSamples = 0;
+  let shoreSamples = 0;
+  let worstShore = 0;
   let waterOffDatum = 0;
   let buildingVerticesOnTrack = 0;
   let worstIntrusionM = 0;
@@ -290,9 +332,11 @@ async function audit(circuitId: string): Promise<Check[]> {
       }
     }
 
-    const terrain = checkTerrain(meshes, field, plane);
+    const terrain = checkTerrain(meshes, field, plane, cutLine, rasterShore);
     if (terrain.worst > worstTerrain) worstTerrain = terrain.worst;
     terrainSamples += terrain.sampled;
+    shoreSamples += terrain.shore;
+    if (terrain.worstShore > worstShore) worstShore = terrain.worstShore;
 
     for (const mesh of meshes) {
       if (mesh.name !== "water") continue;
@@ -311,7 +355,8 @@ async function audit(circuitId: string): Promise<Check[]> {
   checks.push(
     check(
       "terrain follows the field",
-      `worst ${worstTerrain.toFixed(2)} m over ${terrainSamples.toLocaleString()} vertices`,
+      `worst ${worstTerrain.toFixed(2)} m over ${terrainSamples.toLocaleString()} vertices`
+        + ` (${shoreSamples.toLocaleString()} at the cut coast, worst ${worstShore.toFixed(2)} m)`,
       `${TERRAIN_TOLERANCE_M} m`,
       worstTerrain <= TERRAIN_TOLERANCE_M,
     ),

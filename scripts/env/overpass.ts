@@ -25,7 +25,7 @@ const CACHE_DIR = join(REPO_ROOT, "data", "cache", "overpass-structures");
 export interface ShoreWay {
   id: string;
   points: [number, number][];
-  kind: "coastline" | "quay" | "pier" | "breakwater" | "groyne";
+  kind: "coastline" | "quay" | "pier" | "breakwater" | "groyne" | "water";
   name?: string;
 }
 
@@ -158,6 +158,8 @@ function shoreQuery(bbox: RasterBBox): string {
 (
   way["natural"="coastline"](${box});
   way["man_made"~"^(quay|pier|breakwater|groyne)$"](${box});
+  way["natural"="water"](${box});
+  way["waterway"="dock"](${box});
 );
 out geom tags;`;
 }
@@ -184,10 +186,14 @@ export async function fetchShoreWays(
   for (const element of response.elements) {
     if (element.type !== "way" || !element.geometry?.length) continue;
     const tags = element.tags ?? {};
-    const kind =
+    // A basin drawn as an area, not as a line: a beach or a dock where OSM
+    // carries no coastline. Its ring is the water's edge all the same.
+    const kind: ShoreWay["kind"] | undefined =
       tags.natural === "coastline"
         ? "coastline"
-        : (tags.man_made as ShoreWay["kind"] | undefined);
+        : tags.natural === "water" || tags.waterway === "dock"
+          ? "water"
+          : (tags.man_made as ShoreWay["kind"] | undefined);
     if (!kind) continue;
     ways.push({
       id: `way/${element.id}`,

@@ -165,6 +165,11 @@ const FLAT_WATER_MIN_CELLS = 300;
  * a constant plateau is more likely a man-made surface than a basin.
  */
 const FLAT_WATER_MAX_ELEVATION_M = 50;
+/**
+ * Smallest patch of land allowed to sit in open water. Below a small building's
+ * footprint it is a boat or a buoy in the LiDAR, not an island.
+ */
+const MIN_ISLAND_M2 = 150;
 
 /** The sentinel and everything it was blended into. */
 function maskNodata(values: Float32Array): void {
@@ -276,6 +281,60 @@ function markFlatWater(
  * one output cell of open coast and leave harbour edges — which are not nodata
  * at this point — untouched.
  */
+/**
+ * Land too small to be land. A LiDAR return off a moored boat, a buoy or a
+ * pontoon leaves a handful of dry cells sitting in the middle of a basin, and
+ * the terrain dutifully builds an islet there — from any distance the harbour
+ * reads as a speckled edge rather than as water.
+ *
+ * Anything enclosed by water and smaller than a building's footprint goes back
+ * to being water. A component touching the raster's edge is left alone: it runs
+ * out of the frame and its real size is not knowable here.
+ */
+function despeckleLand(
+  data: Float32Array,
+  width: number,
+  height: number,
+  minCells: number,
+): number {
+  const seen = new Uint8Array(width * height);
+  const component: number[] = [];
+  const queue: number[] = [];
+  let removed = 0;
+
+  for (let start = 0; start < data.length; start++) {
+    if (seen[start] || Number.isNaN(data[start])) continue;
+    component.length = 0;
+    queue.length = 0;
+    queue.push(start);
+    seen[start] = 1;
+    let touchesEdge = false;
+
+    while (queue.length) {
+      const index = queue.pop() as number;
+      component.push(index);
+      const row = Math.floor(index / width);
+      const col = index - row * width;
+      if (row === 0 || col === 0 || row === height - 1 || col === width - 1) touchesEdge = true;
+      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+        const nr = row + dr;
+        const nc = col + dc;
+        if (nr < 0 || nc < 0 || nr >= height || nc >= width) continue;
+        const next = nr * width + nc;
+        if (seen[next] || Number.isNaN(data[next])) continue;
+        seen[next] = 1;
+        queue.push(next);
+      }
+    }
+
+    if (touchesEdge || component.length > minCells) continue;
+    for (const index of component) data[index] = Number.NaN;
+    removed += component.length;
+  }
+
+  return removed;
+}
+
 function erodeNodata(
   values: Float32Array,
   width: number,
@@ -471,6 +530,12 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
           FLAT_WATER_MIN_CELLS * supersample * supersample,
           FLAT_WATER_MAX_ELEVATION_M,
         );
+  // After the water is known, and before averaging blurs a speck into its
+  // neighbours: a boat left as land here becomes an islet in the harbour.
+  const cellAreaM2 = (provider.nativeCellM / supersample) ** 2;
+  if (kind !== "mnh" && options.flatWater !== false) {
+    despeckleLand(fetched, fetchWidth, fetchHeight, Math.max(1, Math.round(MIN_ISLAND_M2 / cellAreaM2)));
+  }
   const flatWaterCells = Math.round(flatWaterFetched / (supersample * supersample));
   const reduced = downsample(fetched, fetchWidth, fetchHeight, supersample);
   const data = reduced.data;
