@@ -8,6 +8,7 @@
     "cars:generate": "bun scripts/generate-car-manifest.ts",
     "cars:lods": "bun scripts/generate-team-cars.ts cars/apx_gp.glb --ratio 0.04 --error 0.2",
     "cars:teams": "bun scripts/generate-team-cars.ts cars/apx_gp.glb",
+    "circuits:generate": "bun scripts/generate-circuits.ts",
     "dev": "next dev -p 4000",
     "elevations:generate": "bun scripts/generate-elevations.ts",
     "env:audit": "bun scripts/audit-environment.ts",
