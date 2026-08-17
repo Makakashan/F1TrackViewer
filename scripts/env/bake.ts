@@ -1431,7 +1431,8 @@ async function main() {
   console.log(
     `  shore ${report.shore.built} wall segments, ` +
       `${report.shore.skippedDisagreement} skipped where OSM and the raster disagree, ` +
-      `${report.shore.skippedKind} piers skipped`,
+      `${report.shore.skippedKind} piers skipped, ` +
+      `${report.shore.skippedCliff} against cliffs`,
   );
   if (report.tunnels.runs.length) {
     console.log(`  tunnels ${report.tunnels.runs.length} run(s), ${report.tunnels.buriedLengthM} m buried`);

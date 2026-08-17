@@ -812,6 +812,14 @@ belt an order of magnitude inside its byte budget.
       for the full tagged length — that is what the profile and the audit read —
       it simply has no vault where the data says there is no hill.
 
+      **Quay walls stopped growing into cliffs.** The wall takes its height from
+      the ground behind the line, which is right on a waterfront and absurd
+      against a headland: along Le Rocher the ground behind the coastline is the
+      clifftop, so the walls came out as a row of fangs standing out of the sea —
+      **median 1.6 m, but a tail reaching 38.7 m**. Nobody poured that, and the
+      terrain already renders the headland. Segments whose ground is over
+      `MAX_TOP_M` = 8 m are now skipped: **93 of 512**, leaving 419.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).
