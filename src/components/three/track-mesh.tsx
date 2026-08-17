@@ -319,6 +319,16 @@ export default function TrackMesh({
     };
   }, [raceView, realWidthActive, widthProfile]);
 
+  // Under a hill there is a bore to look at; the ribbon there is inside the
+  // terrain, and from far enough away it shows through it.
+  const hiddenAt = useMemo(() => {
+    const spans = cityManifest?.track?.buried;
+    const count = cityManifest?.track?.elevations?.length ?? 0;
+    if (!spans?.length || count < 2) return undefined;
+    const ranges = spans.map(([from, to]) => [from / count, (to + 1) / count]);
+    return (s: number) => ranges.some(([from, to]) => s >= from && s <= to);
+  }, [cityManifest]);
+
   const trackGeometry = useMemo(
     () =>
       buildExtrudedTrack(
@@ -329,13 +339,14 @@ export default function TrackMesh({
         samples,
         trackSkirtBottom,
         widthColorAt,
+        hiddenAt,
       ),
-    [curve, halfWidth, groundY, samples, trackSkirtBottom, widthColorAt],
+    [curve, halfWidth, groundY, samples, trackSkirtBottom, widthColorAt, hiddenAt],
   );
 
   const outlineGeometry = useMemo(
-    () => buildTrackOutline(curve, halfWidth, TRACK_OVERLAY_RAISE, samples),
-    [curve, halfWidth, samples],
+    () => buildTrackOutline(curve, halfWidth, TRACK_OVERLAY_RAISE, samples, hiddenAt),
+    [curve, halfWidth, samples, hiddenAt],
   );
 
   // Where the paved verge may go.

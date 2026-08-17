@@ -90,6 +90,8 @@ const SHORE_FOOT_M = -3;
 const SHORE_EDGE_MAX_M = 3;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
+/** How far below its own floor a building's walls may reach for the ground. */
+const MAX_UNDERCUT_M = 8;
 
 type MeshKind = "terrain" | "building" | "water" | "tunnel" | "portal" | "shore" | "barrier";
 
@@ -551,7 +553,11 @@ function bakeBuildings(
     // a terraced block on a Monaco hillside into a cliff of wall, and standing
     // it on the middle alone would leave the downhill side in the air.
     const base = grounds[Math.floor(grounds.length / 2)];
-    const foot = grounds[0];
+    // ...but only so far down. On the lip of a cliff the lowest corner is the
+    // foot of the cliff, and a block there grew a 40 m stilt that stood in the
+    // bay once the coast was cut back to the waterline. Past this the ground is
+    // not the building's plot any more, it is the drop beside it.
+    const foot = Math.max(grounds[0], base - MAX_UNDERCUT_M);
 
     let centreX = 0;
     let centreZ = 0;
@@ -1041,6 +1047,39 @@ function bakeBarriers(
  * One value per centreline vertex, with the closing duplicate dropped, which is
  * what `buildTrackCurveWithY` indexes against.
  */
+/**
+ * Which stretches of the stripped centreline run under the ground, as index
+ * spans into the manifest's own elevation array.
+ *
+ * The runtime draws the ribbon along the whole lap, and under a hill that puts
+ * a red band inside the terrain. Near the car the depth buffer hides it; from
+ * a long way off its precision runs out and the ribbon shows through the hill
+ * in patches. Rather than fight the depth test, the runtime is told where the
+ * road is not to be drawn — under a hill there is a bore to see instead.
+ */
+function buriedSpans(
+  coords: [number, number][],
+  tunnels: TunnelMask,
+): [number, number][] {
+  const points = coords.slice();
+  const first = points[0];
+  const last = points[points.length - 1];
+  if (first && last && first[0] === last[0] && first[1] === last[1]) points.pop();
+
+  const spans: [number, number][] = [];
+  let start = -1;
+  for (let i = 0; i < points.length; i++) {
+    const buried = tunnels.buried(points[i][0], points[i][1]);
+    if (buried && start < 0) start = i;
+    if (!buried && start >= 0) {
+      spans.push([start, i - 1]);
+      start = -1;
+    }
+  }
+  if (start >= 0) spans.push([start, points.length - 1]);
+  return spans;
+}
+
 function trackElevations(field: HeightField, coords: [number, number][], plane: ScenePlane): number[] {
   const points = coords.slice();
   const first = points[0];
@@ -1326,7 +1365,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     tunnels,
     overrides: overrideStats,
   };
-  await writeManifest(outDir, circuitId, field, plane, report, elevations);
+  await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(coords, tunnels));
   return report;
 }
 
@@ -1337,6 +1376,7 @@ async function writeManifest(
   plane: ScenePlane,
   report: BakeReport,
   trackElevationProfile: number[],
+  buried: [number, number][],
 ): Promise<void> {
   const manifest = {
     schemaVersion: 2,
@@ -1367,6 +1407,8 @@ async function writeManifest(
       /** One height per centreline vertex, closing duplicate dropped. */
       elevations: trackElevationProfile,
       halfWidthM: DEFAULT_TRACK_HALF_WIDTH_M,
+      /** Inclusive index spans where the road runs under the ground. */
+      buried,
     },
     sources: {
       elevation: "ign-geoplateforme",

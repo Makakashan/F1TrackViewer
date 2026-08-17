@@ -25,6 +25,13 @@ export function buildExtrudedTrack(
   samples: number,
   bottomYAt?: TrackBottomYAt,
   colorAt?: TrackColorAt,
+  /**
+   * Where along the lap the ribbon is not to be drawn at all. Under a hill the
+   * road is inside the terrain, and no depth offset hides it once the camera is
+   * far enough for depth precision to run out — the ribbon shows through the
+   * hillside in patches. The bake says which stretches those are.
+   */
+  hiddenAt?: (s: number) => boolean,
 ): THREE.BufferGeometry {
   const N = samples;
   const pts = curve.getSpacedPoints(N);
@@ -123,6 +130,7 @@ export function buildExtrudedTrack(
   }
 
   for (let i = 0; i < N; i++) {
+    if (hiddenAt?.((i + 0.5) / N)) continue;
     const base0 = i * stride;
     const base1 = (i + 1) * stride;
     const tL0 = base0 + 0;
@@ -163,6 +171,8 @@ export function buildTrackOutline(
   halfWidth: HalfWidth,
   topRaise: number,
   samples: number,
+  /** Stretches the ribbon is not drawn on; see `buildExtrudedTrack`. */
+  hiddenAt?: (s: number) => boolean,
 ): THREE.BufferGeometry {
   const N = samples;
   const pts = curve.getSpacedPoints(N);
@@ -190,6 +200,7 @@ export function buildTrackOutline(
 
   const positions: number[] = [];
   for (let i = 0; i < N; i++) {
+    if (hiddenAt?.((i + 0.5) / N)) continue;
     positions.push(leftPts[i * 3], leftPts[i * 3 + 1], leftPts[i * 3 + 2]);
     positions.push(
       leftPts[(i + 1) * 3],
