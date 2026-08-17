@@ -28,6 +28,8 @@ export interface CityManifest {
     /** One height per centreline vertex, closing duplicate dropped. */
     elevations: number[];
     halfWidthM: number;
+    /** Inclusive index spans where the road runs under the ground. */
+    buried?: [number, number][];
   };
   attribution: string;
   generatedAt: string;

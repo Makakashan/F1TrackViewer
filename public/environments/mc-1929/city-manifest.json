@@ -16,7 +16,7 @@
   "belts": {
     "core": {
       "file": "core.glb",
-      "bytes": 675988,
+      "bytes": 676116,
       "triangles": 83952,
       "drawCalls": 6,
       "radiusM": 150,
@@ -24,7 +24,7 @@
     },
     "city": {
       "file": "city.glb",
-      "bytes": 1518816,
+      "bytes": 1518748,
       "triangles": 108633,
       "drawCalls": 3,
       "radiusM": 600,
@@ -32,7 +32,7 @@
     },
     "far": {
       "file": "far.glb",
-      "bytes": 1441068,
+      "bytes": 1441136,
       "triangles": 88213,
       "drawCalls": 3,
       "radiusM": null,
@@ -206,7 +206,13 @@
       42.14,
       42.28
     ],
-    "halfWidthM": 6
+    "halfWidthM": 6,
+    "buried": [
+      [
+        39,
+        48
+      ]
+    ]
   },
   "sources": {
     "elevation": "ign-geoplateforme",

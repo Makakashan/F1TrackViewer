@@ -820,6 +820,21 @@ belt an order of magnitude inside its byte budget.
       terrain already renders the headland. Segments whose ground is over
       `MAX_TOP_M` = 8 m are now skipped: **93 of 512**, leaving 419.
 
+      **Buildings stopped growing stilts.** Walls ran from the floor down to the
+      lowest ground under the footprint, which on the lip of a cliff is the foot
+      of the cliff — once the coast was cut back to the waterline those blocks
+      stood in the bay on 40 m legs. `MAX_UNDERCUT_M` = 8 m stops the reach:
+      past that the ground is not the building's plot, it is the drop beside it.
+      Floating buildings stay at zero.
+
+      **The ribbon is not drawn where it is buried.** Under a hill the road is
+      inside the terrain, and the depth buffer only hides it while the camera is
+      close; from far off its precision runs out and the ribbon shows through the
+      hillside in patches. The manifest now carries `track.buried` — inclusive
+      index spans over the centreline — and the runtime skips those segments of
+      both the ribbon and its outline. Under a hill there is a bore to look at
+      instead.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).
