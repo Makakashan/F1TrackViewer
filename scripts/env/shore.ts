@@ -28,12 +28,24 @@ const PROBE_STEPS_M = [3, 6, 9, 12];
 const FOOT_M = 2.5;
 /** A quay is at least this tall even where the ground behind it is barely dry. */
 const MIN_TOP_M = 1.5;
+/**
+ * And no taller than this, or it is not a quay.
+ *
+ * The wall takes its height from the ground behind the line, which is right on a
+ * waterfront and absurd against a cliff: along Le Rocher the ground behind the
+ * coastline is the clifftop, and the walls came out as a row of 38 m fangs
+ * standing out of the sea. Nobody poured that; it is a headland, and the terrain
+ * already renders it. Median wall is 1.6 m, so this cuts the tail, not the job.
+ */
+const MAX_TOP_M = 8;
 
 export interface ShoreResult {
   walls: Mesh;
   built: number;
   skippedDisagreement: number;
   skippedKind: number;
+  /** Segments where the ground behind the line is a cliff, not a quay. */
+  skippedCliff: number;
 }
 
 export function bakeShoreWalls(
@@ -47,6 +59,7 @@ export function bakeShoreWalls(
     built: 0,
     skippedDisagreement: 0,
     skippedKind: 0,
+    skippedCliff: 0,
   };
 
   for (const way of ways) {
@@ -94,6 +107,10 @@ export function bakeShoreWalls(
         // No probe found an edge: the line runs well inside the land or well
         // out in the water, and a wall here would be a guess.
         result.skippedDisagreement++;
+        continue;
+      }
+      if (groundHeight > MAX_TOP_M) {
+        result.skippedCliff++;
         continue;
       }
       const top = Math.max(MIN_TOP_M, groundHeight);
