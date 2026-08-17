@@ -679,7 +679,124 @@ belt an order of magnitude inside its byte budget.
       a solid panel is wrong and a transparent one costs a sorted draw. It waits for
       the material work that P4 can carry.
 
-### P4 — Deferred on purpose
+### P4
+
+- [x] **P4.0** The coast is cut against the surveyed line, not the grid —
+      `scripts/env/coastline.ts`.
+
+      The height field only knows land from water per raster node, so every water
+      edge it could draw ran along a grid line: teeth 4 m across in the core belt
+      and 16 m in the far one. Per-triangle emission (P1.4) removed the *holes* in
+      the shoreline but not its grain, and no cell size removes a staircase — it
+      only makes the steps smaller while paying for them over the whole surface.
+
+      So the terrain is emitted by marching squares against a scalar that is the
+      signed distance to the OSM shoreline, and it is the crossing of that scalar,
+      not the cell boundary, that ends the land. A cut cell keeps its dry corners,
+      gains a vertex wherever its rim crosses the line, and is fanned. The cut edge
+      is shared by both cells that own it, so it cannot open a seam, and it carries
+      its own skirt down past the datum — the grid-aligned skirt now only fires on
+      a dry rim, which is the belt boundary and the edge of the bbox.
+
+      **Which side is dry** is the part that cannot come from geometry. OSM orients
+      `natural=coastline` with the land on its left, and across Monaco's 25
+      coastline ways the raster agrees with that on **every segment it has an
+      opinion about** (measured: 0 ways on one side, 25 on the other), so the tag is
+      taken at its word. That matters beyond tidiness: the old majority vote threw
+      away a 59-segment coastline because the raster could only separate the sides
+      on 2 of them. A quay or a breakwater carries no such promise and is still
+      oriented by probing the field along its length.
+
+      Where the surveyed line is not near, the raster mask still decides, so an
+      enclosed basin with no OSM line behind it keeps the old edge.
+
+      **Result:** 28 of 94 ways cut the terrain (540 segments after the
+      corroboration filter); the 66 that do not are 41 piers — a pier is drawn down the middle of its own deck, so it has no
+      land side and cutting against it would slice the deck in half — and 2 quays
+      whose sides the raster cannot separate, and 23 `natural=water` rings that turn
+      out to be Monaco's fountains and swimming pools — OSM does not draw the sea
+      as an area, so the `MIN_BASIN_M2` floor earns its keep by refusing to open a
+      hole in a courtyard. Cost over the whole of P4.0: **3.58 → 3.65 MB**.
+
+      One correction on the way in: a node the line calls land can be one the
+      raster calls sea and has no height for, and feeding that `NaN` into a vertex
+      threw triangles across the scene. Such a node now takes the nearest dry
+      reading rather than the datum, which is also what keeps the quay a wall
+      instead of a beach.
+
+      `env:audit` had to learn the difference too: on the cut line the mesh and the
+      field are *meant* to disagree, so vertices within one far-belt cell of either
+      cut source are counted and reported separately (**1 377 at the cut coast,
+      worst 2.41 m**) while the ground proper holds **worst 0.42 m** over 9 067
+      vertices.
+
+      **Three defects found by looking at it afterwards**, each with a different
+      cause:
+
+      *The headland hung in the air.* The coast's skirt dropped a fixed 3 m, so a
+      cliff standing 30 m above the sea got a 3 m hem and open air below it — from
+      the water the whole south shore read as a shelf on nothing. It now runs to a
+      fixed depth **below the datum** instead, which is the same two triangles.
+
+      *Islets speckled the harbour.* A LiDAR return off a moored boat or a pontoon
+      leaves a few dry cells in the middle of a basin and the terrain dutifully
+      built an island there. `despeckleLand` in `raster.ts` returns any enclosed
+      land component under **150 m²** to water, before the box average can blur it
+      into its neighbours. Monaco now has **zero** enclosed land components.
+
+      *Larvotto still came out as 16 m steps.* 97% of the shore was cut by a line,
+      but the remaining 93 nodes sat **26–160 m** (median 76) from any mapped way,
+      and there the scalar fell back on the land/water flag — which is boolean, so
+      its edge was the grid again. `shore-distance.ts` replaces that fallback with
+      a **smoothed signed distance to the water**, built by a chamfer transform
+      over the field and blurred twice, so the zero crossing lands between the
+      nodes rather than on one. Every metre of coast is now cut against something
+      continuous.
+
+      *The cliff edge was a palisade.* A cut vertex inherited the height of the dry
+      node behind it, which is right for a quay and wrong for a cliff: Le Rocher
+      rises 53 m within 30 m of the sea, so its waterline inherited the clifftop
+      and neighbouring edge vertices stood **30 m apart** (median jump 3.6 m). The
+      edge is now capped at `SHORE_EDGE_MAX_M` = 3 m — the waterline belongs at the
+      water, and the rise belongs to the ground behind it. A quay keeps 3 m of its
+      own height, which is what its wall covers anyway.
+
+      Above the waterline the cliff is still terraced, and that is the raster, not
+      the mesh: a transect reads 53, 50, 43, 37, 27 m and then nodata, because a
+      DTM cannot represent an overhang and steps down instead. Nothing in the bake
+      can invent the face it did not measure.
+
+      That fallback exposed the real conflict underneath. Around Larvotto the
+      mapped line and the LiDAR disagree by up to 160 m — reclaimed land in one
+      source and open sea in the other — so at the edge of the line's influence
+      the scalar jumped across zero and the shore came out as a *band of loose
+      triangles*, worse than the staircase. The fix is not to blend two sources
+      that contradict each other but to drop the one that cannot be corroborated:
+      a segment now only cuts if the raster finds water on its wet side and ground
+      on its dry side within 15 m. **270 of 810 segments** fail that and the
+      smoothed distance takes those stretches instead.
+
+- [x] **P4.0b** Two defects the coast work uncovered, found by looking rather than
+      by measuring.
+
+      **Every flat roof was invisible from above.** The cap was built by
+      `ShapeUtils.triangulateShape`, whose indices are already wound to face the
+      sky once read back in scene axes; reversing them turned all of them over.
+      Counted: **1 312 of 1 319** horizontal caps in the core belt faced down, so
+      backface culling left the buildings open like boxes — from the air the city
+      was see-through. Same test after the fix: 1 310 up, 9 down. (The residual
+      handful are self-intersecting footprints where the winding is not
+      well-defined; a whole-mesh normal test would not have caught the bug
+      anyway, which is why it survived P3.2.)
+
+      **The tunnel had no bore.** The sleeve stopped 8 m in and was capped, so a
+      mouth read as a black rectangle painted on the hillside — a "trace of a
+      hole", exactly as reported. `bakeTunnelBody` now sweeps the portal's own
+      section along the buried stretch of the lap: floor, walls, vault, rings
+      every 9 m, open at both ends, so a mouth opens into a bore with daylight at
+      the far end. **838 triangles** for the whole 455 m. It is a swept section,
+      not an excavation — the bore is only ever seen down its own axis — and P4.1
+      still owns cutting the hill open for real.
 
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
@@ -688,6 +805,10 @@ belt an order of magnitude inside its byte budget.
 - [ ] **P4.4** Migrate the remaining 23 circuits, then **delete
       `environment-layer.tsx`** and the old runtime path. This is D17's termination
       condition — the plan is not finished while both paths exist.
+
+**Camera limits are off** in `track-viewer.tsx` while the city is being looked at:
+inspecting the ground means getting under the eaves and down to street level, and
+every one of the old bounds forbade it. They come back with a pass of their own.
 
 ---
 

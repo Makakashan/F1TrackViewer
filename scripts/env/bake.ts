@@ -43,6 +43,8 @@ import { fetchBuildingWays, fetchShoreWays, fetchStructureWays, type BuildingWay
 import { fetchElevationRaster, sampleRaster } from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
 import { bakeShoreWalls, type ShoreResult } from "./shore";
+import { buildCoastline, type Coastline, type CoastlineStats } from "./coastline";
+import { buildShoreDistance } from "./shore-distance";
 import {
   applyBuildingOverrides,
   applyTerrainOverrides,
@@ -67,6 +69,25 @@ const DEFAULT_TRACK_HALF_WIDTH_M = 6;
 const TRACK_CLEARANCE_M = 8;
 /** How far a terrain edge drops where its neighbour is missing, to hide the seam. */
 const SKIRT_M = 3;
+/**
+ * Where the coast's skirt ends. A fixed drop is wrong at the water: a cliff
+ * standing 30 m up gets a 3 m hem and the rest is open air, so from the sea the
+ * headland reads as a shelf hanging over nothing. Going to a fixed depth below
+ * the datum instead costs the same two triangles and closes the wall.
+ */
+const SHORE_FOOT_M = -3;
+/**
+ * Highest the land is allowed to be at the water's edge itself.
+ *
+ * The cut vertex used to inherit the height of the dry node behind it, which is
+ * right for a quay — a 5 m wall stays 5 m to its lip — and wrong for a cliff:
+ * Le Rocher rises 40 m within one cell of the sea, so its edge inherited the
+ * clifftop and the shoreline came out as a palisade of slabs, neighbouring
+ * vertices 30 m apart. Capping the edge low puts the waterline at the water and
+ * leaves the rise to the ground behind it, which is where the cliff belongs.
+ * A quay is barely affected: 3 m of its own height it keeps.
+ */
+const SHORE_EDGE_MAX_M = 3;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
 
@@ -94,8 +115,21 @@ interface TerrainResult {
  * whose centre falls in that belt. Where a cell has no neighbour — the coast,
  * or the step to a coarser belt — the edge drops a skirt, which is cheaper than
  * stitching two resolutions and hides the same seam.
+ *
+ * The water edge is the exception: it is cut against the surveyed shoreline
+ * rather than the grid (P4.0), because a grid edge is a staircase and no cell
+ * size makes it not one.
  */
-function bakeTerrain(field: HeightField, plane: ScenePlane, corridor: Corridor): TerrainResult {
+function bakeTerrain(
+  field: HeightField,
+  plane: ScenePlane,
+  corridor: Corridor,
+  coast: Coastline,
+): TerrainResult {
+  // Where no surveyed line reaches — a third of a kilometre of Larvotto, among
+  // others — the edge still has to come from somewhere smoother than a boolean
+  // flag, or the cut falls back on the grid it exists to escape.
+  const rasterShore = buildShoreDistance(field);
   const meshes = {} as Record<Belt, Mesh>;
   const cellsByBelt = { core: 0, city: 0, far: 0 } as Record<Belt, number>;
 
@@ -145,53 +179,166 @@ function bakeTerrain(field: HeightField, plane: ScenePlane, corridor: Corridor):
       return value;
     };
 
+    const nodes = (rows + 2) * (cols + 2);
+
+    /**
+     * A height for a node the terrain is going to stand on. The raster and the
+     * surveyed line disagree by a few metres in places, so a node the line puts
+     * on land can be one the raster calls sea and has no height for. Rather
+     * than drop it to the datum — which ramps the quay into the water like a
+     * beach — it takes the nearest dry reading, widening until it finds one.
+     */
+    const solidHeightAt = (row: number, col: number): number => {
+      const own = heightAt(row, col);
+      if (!Number.isNaN(own)) return own;
+      for (let radius = 1; radius <= 3; radius++) {
+        let sum = 0;
+        let count = 0;
+        for (let dr = -radius; dr <= radius; dr++) {
+          for (let dc = -radius; dc <= radius; dc++) {
+            if (Math.max(Math.abs(dr), Math.abs(dc)) !== radius) continue;
+            const value = heightAt(row + dr, col + dc);
+            if (Number.isNaN(value)) continue;
+            sum += value;
+            count++;
+          }
+        }
+        if (count > 0) return sum / count;
+      }
+      return 0;
+    };
+
     const vertexAt = (row: number, col: number): number =>
-      grid.vertex(row * (cols + 2) + col, minX + col * cell, heightAt(row, col), minZ + row * cell);
+      grid.vertex(
+        row * (cols + 2) + col,
+        minX + col * cell,
+        solidHeightAt(row, col),
+        minZ + row * cell,
+      );
+
+    // How much land there is at a node: metres from the surveyed shoreline
+    // where there is one, and otherwise a flag standing in for "well inside"
+    // the raster's own land or water. The terrain is the region where this is
+    // positive, so the coast lands wherever it crosses zero rather than on the
+    // nearest grid line.
+    const scalarCache = new Map<number, number>();
+    const scalarAt = (row: number, col: number): number => {
+      const key = row * (cols + 2) + col;
+      const cached = scalarCache.get(key);
+      if (cached !== undefined) return cached;
+      const x = minX + col * cell;
+      const z = minZ + row * cell;
+      const surveyed = coast.signedDistance(x, z);
+      const value = Number.isNaN(surveyed)
+        ? rasterShore.at(plane.lon(x), plane.lat(z))
+        : surveyed;
+      scalarCache.set(key, value);
+      return value;
+    };
+
+    /**
+     * The point on a cell edge where the land runs out, as a shared vertex: the
+     * two cells either side of the edge compute it from the same two nodes, so
+     * the cut cannot open a seam.
+     */
+    const crossingAt = (
+      rowA: number, colA: number, sA: number,
+      rowB: number, colB: number, sB: number,
+    ): number => {
+      const horizontal = rowA === rowB;
+      const key =
+        nodes * (horizontal ? 1 : 2) +
+        Math.min(rowA, rowB) * (cols + 2) +
+        Math.min(colA, colB);
+      const t = Math.max(0, Math.min(1, sA / (sA - sB)));
+      const xA = minX + colA * cell;
+      const zA = minZ + rowA * cell;
+      const x = xA + (minX + colB * cell - xA) * t;
+      const z = zA + (minZ + rowB * cell - zA) * t;
+      // Height comes from the dry end. The wet end has none, and reading the
+      // datum there would ramp the quay down into the sea like a beach.
+      const hA = heightAt(rowA, colA);
+      const hB = heightAt(rowB, colB);
+      let y: number;
+      if (!Number.isNaN(hA) && !Number.isNaN(hB)) y = hA + (hB - hA) * t;
+      else if (!Number.isNaN(hA)) y = hA;
+      else if (!Number.isNaN(hB)) y = hB;
+      else y = solidHeightAt(rowA, colA);
+      return grid.vertex(key, x, Math.min(y, SHORE_EDGE_MAX_M), z);
+    };
+
+    // Land–water crossings, as vertex pairs, so the coast can drop a skirt once
+    // the grid is finished and its positions are settled.
+    const shoreEdges: [number, number][] = [];
+    // Counter-clockwise seen from above, so the normal points at the sky.
+    const walk = [[0, 0], [1, 0], [1, 1], [0, 1]] as const;
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         if (beltOfCell(row, col, cell) !== belt) continue;
 
-        const h00 = heightAt(row, col);
-        const h10 = heightAt(row, col + 1);
-        const h01 = heightAt(row + 1, col);
-        const h11 = heightAt(row + 1, col + 1);
-        const land00 = !Number.isNaN(h00);
-        const land10 = !Number.isNaN(h10);
-        const land01 = !Number.isNaN(h01);
-        const land11 = !Number.isNaN(h11);
-        if (!land00 && !land10 && !land01 && !land11) continue;
+        const scalars = walk.map(([dr, dc]) => scalarAt(row + dr, col + dc));
+        if (scalars.every((value) => value <= 0)) continue;
 
-        // Per triangle, not per cell. Dropping the whole cell when one corner
-        // is water costs a full cell of coast — 16 m in the far belt — and the
-        // shoreline comes out as teeth of sea biting into the city.
-        // Counter-clockwise seen from above, so the normal points at the sky.
-        let built = false;
-        if (land00 && land11 && land10) {
-          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col + 1), vertexAt(row, col + 1));
-          built = true;
-        }
-        if (land00 && land01 && land11) {
+        if (scalars.every((value) => value > 0)) {
           grid.triangle(vertexAt(row, col), vertexAt(row + 1, col), vertexAt(row + 1, col + 1));
-          built = true;
+          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col + 1), vertexAt(row, col + 1));
+          cellsByBelt[belt]++;
+          continue;
         }
-        if (built) cellsByBelt[belt]++;
+
+        // A cut cell: walk its rim, keeping the dry corners and adding a vertex
+        // wherever the rim crosses the water's edge, then fan the result.
+        const ring: number[] = [];
+        const cut: boolean[] = [];
+        for (let i = 0; i < 4; i++) {
+          const [dr, dc] = walk[i];
+          const [nr, nc] = walk[(i + 1) % 4];
+          if (scalars[i] > 0) {
+            ring.push(vertexAt(row + dr, col + dc));
+            cut.push(false);
+          }
+          if (scalars[i] > 0 !== scalars[(i + 1) % 4] > 0) {
+            ring.push(
+              crossingAt(
+                row + dr, col + dc, scalars[i],
+                row + nr, col + nc, scalars[(i + 1) % 4],
+              ),
+            );
+            cut.push(true);
+          }
+        }
+        if (ring.length < 3) continue;
+
+        for (let i = 1; i < ring.length - 1; i++) {
+          grid.triangle(ring[0], ring[i], ring[i + 1]);
+        }
+        for (let i = 0; i < ring.length; i++) {
+          const next = (i + 1) % ring.length;
+          if (cut[i] && cut[next]) shoreEdges.push([ring[i], ring[next]]);
+        }
+        cellsByBelt[belt]++;
       }
     }
 
     const mesh = grid.finish();
-    addTerrainSkirts(mesh, field, plane, beltOfCell, belt, minX, minZ, cell, rows, cols);
+    addTerrainSkirts(mesh, scalarAt, heightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
+    addShoreSkirts(mesh, shoreEdges);
     meshes[belt] = mesh;
   }
 
   return { meshes, cellsByBelt };
 }
 
-/** A vertical drop on every edge whose neighbour cell was not built. */
+/**
+ * A vertical drop on every edge whose neighbour cell was not built — the belt
+ * boundary and the edge of the bbox. The water's edge is not one of these: it
+ * is cut inside the cell and gets its skirt from `addShoreSkirts`.
+ */
 function addTerrainSkirts(
   mesh: Mesh,
-  field: HeightField,
-  plane: ScenePlane,
+  scalarAt: (row: number, col: number) => number,
+  heightAt: (row: number, col: number) => number,
   beltOfCell: (row: number, col: number, cell: number) => Belt,
   belt: Belt,
   minX: number,
@@ -200,22 +347,25 @@ function addTerrainSkirts(
   rows: number,
   cols: number,
 ): void {
+  // Built by the same test the emitter used, or a cell would drop a skirt
+  // against a neighbour that is standing right there.
   const built = (row: number, col: number): boolean => {
     if (row < 0 || col < 0 || row >= rows || col >= cols) return false;
     if (beltOfCell(row, col, cell) !== belt) return false;
-    let land = 0;
-    for (const [dr, dc] of [[0, 0], [0, 1], [1, 0], [1, 1]] as const) {
-      const h = field.heightAt(
-        plane.lon(minX + (col + dc) * cell),
-        plane.lat(minZ + (row + dr) * cell),
-      );
-      if (!Number.isNaN(h)) land++;
-    }
-    return land >= 3;
+    return (
+      scalarAt(row, col) > 0 ||
+      scalarAt(row, col + 1) > 0 ||
+      scalarAt(row + 1, col) > 0 ||
+      scalarAt(row + 1, col + 1) > 0
+    );
   };
 
-  const heightAt = (row: number, col: number): number =>
-    field.heightAt(plane.lon(minX + col * cell), plane.lat(minZ + row * cell));
+  /** Only a rim of dry ground gets a grid-aligned skirt. */
+  const dry = (rowA: number, colA: number, rowB: number, colB: number): boolean =>
+    scalarAt(rowA, colA) > 0 &&
+    scalarAt(rowB, colB) > 0 &&
+    !Number.isNaN(heightAt(rowA, colA)) &&
+    !Number.isNaN(heightAt(rowB, colB));
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -228,23 +378,49 @@ function addTerrainSkirts(
       const h10 = heightAt(row, col + 1);
       const h01 = heightAt(row + 1, col);
       const h11 = heightAt(row + 1, col + 1);
-      if (Number.isNaN(h00) || Number.isNaN(h10) || Number.isNaN(h01) || Number.isNaN(h11)) {
-        continue; // a shoreline cell: its own edge is the coast, and needs no skirt
-      }
 
-      if (!built(row - 1, col)) {
+      if (!built(row - 1, col) && dry(row, col, row, col + 1)) {
         addFlatQuad(mesh, x0, h00, z0, x1, h10, z0, x1, h10 - SKIRT_M, z0, x0, h00 - SKIRT_M, z0);
       }
-      if (!built(row + 1, col)) {
+      if (!built(row + 1, col) && dry(row + 1, col, row + 1, col + 1)) {
         addFlatQuad(mesh, x1, h11, z1, x0, h01, z1, x0, h01 - SKIRT_M, z1, x1, h11 - SKIRT_M, z1);
       }
-      if (!built(row, col - 1)) {
+      if (!built(row, col - 1) && dry(row, col, row + 1, col)) {
         addFlatQuad(mesh, x0, h01, z1, x0, h00, z0, x0, h00 - SKIRT_M, z0, x0, h01 - SKIRT_M, z1);
       }
-      if (!built(row, col + 1)) {
+      if (!built(row, col + 1) && dry(row, col + 1, row + 1, col + 1)) {
         addFlatQuad(mesh, x1, h10, z0, x1, h11, z1, x1, h11 - SKIRT_M, z1, x1, h10 - SKIRT_M, z0);
       }
     }
+  }
+}
+
+/**
+ * The coast's own drop. The cut leaves the ground ending at the quay's height
+ * in mid-air; this closes it down past the datum so the sea plane meets a wall
+ * rather than a torn edge.
+ *
+ * Each edge runs the way the land's rim does — counter-clockwise seen from
+ * above — so reversing it puts the face outward, at the water.
+ */
+function addShoreSkirts(mesh: Mesh, edges: [number, number][]): void {
+  const { positions } = mesh;
+  for (const [a, b] of edges) {
+    const ax = positions[a * 3];
+    const ay = positions[a * 3 + 1];
+    const az = positions[a * 3 + 2];
+    const bx = positions[b * 3];
+    const by = positions[b * 3 + 1];
+    const bz = positions[b * 3 + 2];
+    // Down to the sea floor, not down by a fixed hem: see SHORE_FOOT_M.
+    const foot = Math.min(SHORE_FOOT_M, Math.min(ay, by) - 0.5);
+    addFlatQuad(
+      mesh,
+      bx, by, bz,
+      ax, ay, az,
+      ax, foot, az,
+      bx, foot, bz,
+    );
   }
 }
 
@@ -458,12 +634,15 @@ function extrude(
     }
   }
 
+  // `triangulateShape` works in the contour's own plane, which is (x, -z); read
+  // back in scene axes that winding already faces the sky, so it is kept as it
+  // comes. Reversing it here is what made every flat roof invisible from above.
   for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
     addFlatTriangle(
       mesh,
       ordered[i].x, top, ordered[i].z,
-      ordered[k].x, top, ordered[k].z,
       ordered[j].x, top, ordered[j].z,
+      ordered[k].x, top, ordered[k].z,
     );
   }
 }
@@ -489,15 +668,9 @@ const PORTAL_ARCH_SEGMENTS = 8;
  * leaves the near side invisible and the dark far side facing the camera.
  * Excavating the hill properly is P4.1.
  */
-function bakePortals(
-  tunnels: TunnelMask,
-  field: HeightField,
-  plane: ScenePlane,
-): { sleeve: Mesh; surround: Mesh } {
-  const mesh = createMesh();
-  const surround = createMesh();
-
-  /** Half an arch section: up the wall, then over the crown. */
+/** Half an arch section: up the wall, then over the crown. Shared with the bore
+ *  so the mouth and what is behind it are the same shape. */
+function portalSection(): { offset: number; height: number }[] {
   const profile: { offset: number; height: number }[] = [];
   profile.push({ offset: -PORTAL_HALF_WIDTH_M, height: 0 });
   profile.push({ offset: -PORTAL_HALF_WIDTH_M, height: PORTAL_WALL_M });
@@ -510,6 +683,17 @@ function bakePortals(
   }
   profile.push({ offset: PORTAL_HALF_WIDTH_M, height: PORTAL_WALL_M });
   profile.push({ offset: PORTAL_HALF_WIDTH_M, height: 0 });
+  return profile;
+}
+
+function bakePortals(
+  tunnels: TunnelMask,
+  field: HeightField,
+  plane: ScenePlane,
+): { sleeve: Mesh; surround: Mesh } {
+  const mesh = createMesh();
+  const surround = createMesh();
+  const profile = portalSection();
 
   for (const run of tunnels.runs) {
     for (const mouth of [run.entry, run.exit]) {
@@ -569,21 +753,113 @@ function bakePortals(
         addFlatQuad(surround, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
       }
 
-      // The far end is capped, or the sleeve is a hole through the hill.
-      const centre = {
-        x: mouth.x + mouth.ux * inside,
-        y: roadY,
-        z: mouth.z + mouth.uz * inside,
-      };
-      for (let i = 0; i < profile.length - 1; i++) {
-        const a = at(i, inside);
-        const b = at(i + 1, inside);
-        addFlatTriangle(mesh, centre.x, centre.y, centre.z, a.x, a.y, a.z, b.x, b.y, b.z);
-      }
+      // No cap: the sleeve used to be closed 8 m in, so the mouth read as a
+      // black patch painted on the hill. It now opens into the bore below.
     }
   }
 
   return { sleeve: mesh, surround };
+}
+
+/** Metres between rings of the bore. Coarser than the profile: it is seen down
+ *  its own length, where a ring every few metres is indistinguishable. */
+const BORE_STEP_M = 9;
+/** The floor sits a hair below the ribbon so the two never fight for depth. */
+const BORE_FLOOR_DROP_M = 0.08;
+
+/**
+ * The bore itself: floor, walls and vault along the buried stretch of the lap.
+ *
+ * Without it a portal is a black rectangle on a hillside — the mouth opens into
+ * nothing, which is exactly what it looks like. The bore is only ever seen down
+ * its own axis through a mouth, so it is a swept section rather than anything
+ * excavated: cheap, and enough to read as a tunnel with daylight at the far end.
+ * Cutting the hill open for real is still P4.1.
+ */
+function bakeTunnelBody(
+  field: HeightField,
+  plane: ScenePlane,
+  tunnels: TunnelMask,
+  section: { offset: number; height: number }[],
+): Mesh {
+  const mesh = createMesh();
+  const { coords, elevations } = field.trackProfile;
+
+  // The buried samples, in the order the lap runs, split into runs.
+  const runs: number[][] = [];
+  let current: number[] = [];
+  for (let i = 0; i < coords.length; i++) {
+    if (tunnels.buried(coords[i][0], coords[i][1])) {
+      current.push(i);
+      continue;
+    }
+    if (current.length > 1) runs.push(current);
+    current = [];
+  }
+  if (current.length > 1) runs.push(current);
+
+  for (const run of runs) {
+    // Rings at BORE_STEP_M, plus the last sample, so the bore reaches its mouth.
+    const rings: { x: number; y: number; z: number; ux: number; uz: number }[] = [];
+    let sinceLast = Infinity;
+    for (let k = 0; k < run.length; k++) {
+      const i = run[k];
+      const x = plane.x(coords[i][0]);
+      const z = plane.z(coords[i][1]);
+      if (rings.length) {
+        const previous = rings[rings.length - 1];
+        sinceLast = Math.hypot(x - previous.x, z - previous.z);
+        if (sinceLast < BORE_STEP_M && k < run.length - 1) continue;
+      }
+      // Direction from the neighbouring samples, so the section stays square to
+      // the road through a curve.
+      const before = run[Math.max(0, k - 1)];
+      const after = run[Math.min(run.length - 1, k + 1)];
+      let ux = plane.x(coords[after][0]) - plane.x(coords[before][0]);
+      let uz = plane.z(coords[after][1]) - plane.z(coords[before][1]);
+      const length = Math.hypot(ux, uz);
+      if (length < 1e-6) continue;
+      ux /= length;
+      uz /= length;
+      rings.push({ x, y: elevations[i], z, ux, uz });
+    }
+    if (rings.length < 2) continue;
+
+    const at = (ring: (typeof rings)[number], point: { offset: number; height: number }) => ({
+      x: ring.x - ring.uz * point.offset,
+      y: ring.y + point.height,
+      z: ring.z + ring.ux * point.offset,
+    });
+
+    for (let r = 0; r < rings.length - 1; r++) {
+      const near = rings[r];
+      const far = rings[r + 1];
+      for (let i = 0; i < section.length - 1; i++) {
+        const a = at(near, section[i]);
+        const b = at(near, section[i + 1]);
+        const c = at(far, section[i + 1]);
+        const d = at(far, section[i]);
+        // Seen from inside, so the faces look in at the road.
+        addFlatQuad(mesh, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
+      }
+      // Floor, dropped a little so it never fights the ribbon for depth.
+      const left = section[0];
+      const right = section[section.length - 1];
+      const nearLeft = at(near, { offset: left.offset, height: -BORE_FLOOR_DROP_M });
+      const nearRight = at(near, { offset: right.offset, height: -BORE_FLOOR_DROP_M });
+      const farLeft = at(far, { offset: left.offset, height: -BORE_FLOOR_DROP_M });
+      const farRight = at(far, { offset: right.offset, height: -BORE_FLOOR_DROP_M });
+      addFlatQuad(
+        mesh,
+        nearLeft.x, nearLeft.y, nearLeft.z,
+        nearRight.x, nearRight.y, nearRight.z,
+        farRight.x, farRight.y, farRight.z,
+        farLeft.x, farLeft.y, farLeft.z,
+      );
+    }
+  }
+
+  return mesh;
 }
 
 /** The road's own height at a point, which under a hill only the profile knows. */
@@ -799,6 +1075,7 @@ export interface BakeReport {
   portalTriangles: number;
   barrierTriangles: number;
   shore: ShoreResult;
+  coast: CoastlineStats;
   heights: HeightStats;
   tunnels: TunnelMask;
   overrides: OverrideStats;
@@ -878,16 +1155,19 @@ export async function buildCircuitGround(
 export async function bakeCircuit(circuitId: string, refresh = false): Promise<BakeReport> {
   const { coords, bbox, plane, field, corridor, tunnels, overrides, overrideStats } =
     await buildCircuitGround(circuitId, refresh);
-  const shore = bakeShoreWalls(
-    overrideShoreWays(await fetchShoreWays(circuitId, bbox, refresh), overrides, overrideStats),
-    field,
-    plane,
+  const shoreWays = overrideShoreWays(
+    await fetchShoreWays(circuitId, bbox, refresh),
+    overrides,
+    overrideStats,
   );
+  const shore = bakeShoreWalls(shoreWays, field, plane);
+  const coast = buildCoastline(shoreWays, field, plane);
 
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(tunnels, field, plane);
+  const bore = bakeTunnelBody(field, plane, tunnels, portalSection());
   const barriers = bakeBarriers(field, plane, tunnels, DEFAULT_TRACK_HALF_WIDTH_M);
-  const terrain = bakeTerrain(field, plane, corridor);
+  const terrain = bakeTerrain(field, plane, corridor, coast);
   const water = bakeWater(field, plane);
 
   const buildingWays = await fetchBuildingWays(circuitId, bbox, refresh);
@@ -932,6 +1212,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
       { kind: "terrain", mesh: terrain.meshes.core },
       { kind: "building", mesh: buildings.meshes.core },
       { kind: "tunnel", mesh: portals.sleeve },
+      { kind: "tunnel", mesh: bore },
       // Its own mesh, not merged into the buildings: a headwall stands over the
       // road on purpose, and the corridor check would read it as a wall in the
       // way.
@@ -972,6 +1253,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
     barrierTriangles: triangleCount(barriers),
     shore,
+    coast: coast.stats,
     heights: heightStats.value,
     tunnels,
     overrides: overrideStats,
@@ -1073,6 +1355,11 @@ async function main() {
   );
   console.log(`  portals ${report.portalTriangles} tris`);
   console.log(`  barriers ${report.barrierTriangles} tris`);
+  console.log(
+    `  coast ${report.coast.oriented} of ${report.coast.ways} ways cut the terrain ` +
+      `(${report.coast.segments} segments), ${report.coast.unoriented} without a land side, ` +
+      `${report.coast.segmentsDropped} segments the raster does not confirm`,
+  );
   console.log(
     `  shore ${report.shore.built} wall segments, ` +
       `${report.shore.skippedDisagreement} skipped where OSM and the raster disagree, ` +
