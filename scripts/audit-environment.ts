@@ -148,23 +148,47 @@ function checkTerrain(
     return !Number.isNaN(surveyed) && surveyed > 0 !== raster > 0;
   };
 
+
+
   for (const mesh of meshes) {
     if (mesh.name !== "terrain") continue;
     const count = mesh.positions.length / 3;
+
+    /**
+     * The highest vertex standing at each footprint.
+     *
+     * Skirts share a mesh with the surface they hang from, and they are not a
+     * surface: measuring one against the ground below it reports the skirt's
+     * own depth as drift. They used to be filtered by dropping anything more
+     * than 2.5 m off the field, which works only where the ground is flat —
+     * on the 4:1 face below Le Rocher the ground under a skirt's foot is
+     * metres below the ground under its top, so the foot came in at 2.47 m and
+     * passed for surface. A skirt vertex is instead recognised for what it is:
+     * something standing directly beneath another vertex of the same mesh.
+     */
+    const topAt = new Map<number, number>();
+    const footprint = (x: number, z: number): number =>
+      Math.round(x * 10) * 100_000 + Math.round(z * 10);
+    for (let i = 0; i < count; i++) {
+      const key = footprint(mesh.positions[i * 3], mesh.positions[i * 3 + 2]);
+      const y = mesh.positions[i * 3 + 1];
+      const seen = topAt.get(key);
+      if (seen === undefined || y > seen) topAt.set(key, y);
+    }
+
     // Every 7th vertex: enough to catch a systematic shift, cheap enough to run
-    // on every bake. Skirts hang below the surface, so they are skipped by the
-    // NaN test rather than by counting.
+    // on every bake.
     for (let i = 0; i < count; i += 7) {
       const x = mesh.positions[i * 3];
       const y = mesh.positions[i * 3 + 1];
       const z = mesh.positions[i * 3 + 2];
+      // Standing under another vertex: a skirt, not the surface.
+      if (y < (topAt.get(footprint(x, z)) ?? y) - 0.05) continue;
       const ground = field.heightAt(plane.lon(x), plane.lat(z));
       if (Number.isNaN(ground)) continue;
       // The surface is held clear of the sea plane, so that is the height it is
       // meant to have where the raster reads at or below the datum.
       const delta = Math.abs(y - Math.max(ground, WATER_CLEARANCE_M));
-      // A skirt vertex is a whole skirt below its edge; it is not a surface.
-      if (delta > 2.5) continue;
       if (onCut(x, z)) {
         shore++;
         if (delta > worstShore) worstShore = delta;

@@ -190,18 +190,52 @@ function bakeTerrain(
   const blockM = BELT_CELL_M.far;
   const blockCols = Math.ceil((maxX - minX) / blockM);
   const blockRows = Math.ceil((maxZ - minZ) / blockM);
+  // Blocks the water's edge runs through, and then the same set grown by one
+  // block in every direction.
+  //
+  // Both halves matter. The cut is only as fine as the grid it is sampled on,
+  // so a 16 m cell leaves the coast in 16 m steps however smooth the line
+  // behind it — that is why the waterline is drawn at the finest cell wherever
+  // it runs, however far from the circuit.
+  //
+  // The growing is what closes the coast. Two belts cut the same waterline from
+  // their own nodes, so their cut polylines meet the shared block edge at
+  // different points and leave a sliver of open water between them — and the
+  // grid skirt only fires on a dry rim, so nothing closes it. Larvotto's
+  // breakwaters came out as torn crescents for exactly this reason. Grown by a
+  // block, the belt boundary no longer lands on the waterline: it is either
+  // wholly at sea, where neither side draws anything, or wholly on dry ground,
+  // where the skirt hides it the way it hides every other belt boundary.
+  const straddles = new Uint8Array(blockRows * blockCols);
+  for (let row = 0; row < blockRows; row++) {
+    for (let col = 0; col < blockCols; col++) {
+      const x = minX + (col + 0.5) * blockM;
+      const z = minZ + (row + 0.5) * blockM;
+      if (straddlesWater(field, plane, x, z, blockM)) straddles[row * blockCols + col] = 1;
+    }
+  }
+  const coastal = new Uint8Array(blockRows * blockCols);
+  for (let row = 0; row < blockRows; row++) {
+    for (let col = 0; col < blockCols; col++) {
+      if (!straddles[row * blockCols + col]) continue;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const r = row + dr;
+          const c = col + dc;
+          if (r < 0 || c < 0 || r >= blockRows || c >= blockCols) continue;
+          coastal[r * blockCols + c] = 1;
+        }
+      }
+    }
+  }
+
   const blockBelt = new Uint8Array(blockRows * blockCols);
   for (let row = 0; row < blockRows; row++) {
     for (let col = 0; col < blockCols; col++) {
       const x = minX + (col + 0.5) * blockM;
       const z = minZ + (row + 0.5) * blockM;
       let belt = beltAtDistance(corridor.distance(x, z));
-      // A block the water's edge runs through is drawn at the city belt's cell
-      // however far from the circuit it is. The cut is only as fine as the grid
-      // it is sampled on, so a 16 m cell leaves the coast as 16 m steps no
-      // matter how smooth the line behind it — and a coastline is looked at
-      // from anywhere, unlike the ground behind it.
-      if (belt === "far" && straddlesWater(field, plane, x, z, blockM)) belt = "city";
+      if (coastal[row * blockCols + col]) belt = "core";
       blockBelt[row * blockCols + col] = BELT_ORDER.indexOf(belt);
     }
   }
