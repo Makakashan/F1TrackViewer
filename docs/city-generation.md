@@ -931,6 +931,37 @@ belt an order of magnitude inside its byte budget.
       wide moles the terrain already draws properly. Cost: +1,489 triangles and
       one draw call, all in the city belt.
 
+- [x] **P4.0e** The belt boundary stops landing on the waterline.
+
+      Larvotto's breakwaters came out as torn crescents and the harbour quays as
+      a row of teeth, and neither was the cause anyone would guess. It was not
+      the source: at the waterline itself the surveyed line covers **85%** of
+      Larvotto and **100%** of Port Hercule — the earlier "16%" reading was
+      measured over a whole window, most of which is open sea, and was
+      meaningless. It was not the cell size either: drawing the coast at the
+      core belt's 4 m changed nothing.
+
+      Baking the whole city as one belt fixed it completely, which named the
+      cause. Two belts cut the same waterline from their own nodes, so their cut
+      polylines reach the shared block edge at different points and leave a
+      sliver of open water between them — and the grid skirt only fires on a dry
+      rim, so nothing closes it.
+
+      So the set of blocks the waterline runs through is grown by one block in
+      every direction and the whole band is drawn at the core cell. The belt
+      boundary then lies either wholly at sea, where neither side draws
+      anything, or wholly on dry ground, where the skirt hides it as it hides
+      every other boundary. Cost **3.72 -> 3.95 MB**; the one-belt bake that
+      proves the fix is 5.40 MB.
+
+      The audit's skirt filter was wrong too, and this exposed it. Skirts share
+      a mesh with the surface and were excluded by dropping anything more than
+      2.5 m off the field — which holds only where the ground is flat. On the
+      4:1 face below Le Rocher the ground under a skirt's foot is metres below
+      the ground under its top, so the foot measured 2.47 m and passed for
+      surface. A skirt is now recognised for what it is: a vertex standing
+      directly beneath another vertex of the same mesh.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).
