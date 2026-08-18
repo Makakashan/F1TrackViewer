@@ -42,6 +42,7 @@ import { buildRoof, PARAPET_M, planRoof, type RoofKind, type RoofTags } from "./
 import { fetchBuildingWays, fetchShoreWays, fetchStructureWays, type BuildingWay } from "./overpass";
 import { fetchElevationRaster, sampleRaster } from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
+import { buildPiers, type PierResult } from "./piers";
 import { bakeShoreWalls, type ShoreResult } from "./shore";
 import { buildCoastline, type Coastline, type CoastlineStats } from "./coastline";
 import { buildShoreDistance } from "./shore-distance";
@@ -94,7 +95,7 @@ const SHORE_EDGE_MAX_M = 3;
  * The water is one quad at the datum (`bakeWater`), so any ground the DTM reads
  * at y = 0 is co-planar with it and the depth buffer decides per pixel which of
  * the two is in front. That decision moves with the camera, so the waterline
- * changed shape as the view pulled back: 7.6 km2 of Larvotto's beach and the
+ * changed shape as the view pulled back: 7,625 m2 of Larvotto's beach and the
  * Monte-Carlo Bay foreshore sit within 15 cm of the datum. Holding the surface
  * a fixed step above the plane costs nothing at any other height and leaves the
  * coast where the cut put it, which is the only thing that should decide it.
@@ -110,10 +111,12 @@ function clampToSurface(y: number): number {
   return Math.max(WATER_CLEARANCE_M, Math.min(y, SHORE_EDGE_MAX_M));
 }
 
-type MeshKind = "terrain" | "building" | "water" | "tunnel" | "portal" | "shore" | "barrier";
+type MeshKind = "terrain" | "building" | "water" | "tunnel" | "portal" | "shore" | "pier" | "barrier";
 
 const MESH_COLOR: Record<MeshKind, string> = {
   terrain: DIORAMA_COLORS.terrain,
+  // A deck is ground you can walk on, not a wall, so it reads as terrain.
+  pier: DIORAMA_COLORS.terrain,
   building: DIORAMA_COLORS.building,
   water: DIORAMA_COLORS.water,
   tunnel: "#14161A",
@@ -487,6 +490,22 @@ function bakeWater(field: HeightField, plane: ScenePlane): Mesh {
   const z0 = plane.z(field.bbox.maxLat);
   const z1 = plane.z(field.bbox.minLat);
   addFlatQuad(mesh, x0, 0, z0, x0, 0, z1, x1, 0, z1, x1, 0, z0);
+  return mesh;
+}
+
+/**
+ * The pontoon decks, extruded from their mapped rings.
+ *
+ * The walls go to the same foot the coast's skirt uses, so a deck meets the sea
+ * plane in a wall rather than in a torn edge, and the little the raster kept of
+ * the pontoon stays buried under the deck it belongs to.
+ */
+function bakePierDecks(piers: PierResult): Mesh {
+  const mesh = createMesh();
+  for (const deck of piers.decks) {
+    const foot = Math.min(SHORE_FOOT_M, deck.deckY - 1);
+    extrude(mesh, deck.ring, deck.ring.map(() => foot), deck.deckY);
+  }
   return mesh;
 }
 
@@ -1313,6 +1332,7 @@ export interface BakeReport {
   portalTriangles: number;
   barrierTriangles: number;
   shore: ShoreResult;
+  piers: PierResult;
   coast: CoastlineStats;
   heights: HeightStats;
   tunnels: TunnelMask;
@@ -1400,6 +1420,8 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   );
   const coast = buildCoastline(shoreWays, field, plane);
   const shore = bakeShoreWalls(shoreWays, field, plane, coast);
+  const piers = buildPiers(shoreWays, field, plane);
+  const pierDecks = bakePierDecks(piers);
 
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(tunnels, field, plane);
@@ -1438,6 +1460,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     terrain.meshes.far,
     ...standing,
     shore.walls,
+    pierDecks,
   ]) {
     applyAmbientOcclusion(mesh, occluders);
   }
@@ -1463,6 +1486,9 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
       // The waterfront is one thing wherever it runs, so it ships whole rather
       // than split across belts by distance.
       { kind: "shore", mesh: shore.walls },
+      // Decks go with the waterfront for the same reason: the harbour is one
+      // thing, and splitting it by distance would cut a pontoon in half.
+      { kind: "pier", mesh: pierDecks },
     ],
     far: [
       { kind: "terrain", mesh: terrain.meshes.far },
@@ -1491,6 +1517,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
     barrierTriangles: triangleCount(barriers),
     shore,
+    piers,
     coast: coast.stats,
     heights: heightStats.value,
     tunnels,
@@ -1607,6 +1634,12 @@ async function main() {
       `${report.shore.skippedKind} piers skipped, ` +
       `${report.shore.skippedCliff} against cliffs, ` +
       `${report.shore.skippedOffCut} off the cut edge`,
+  );
+  console.log(
+    `  piers ${report.piers.decks.length} decks, ` +
+      `${report.piers.skippedOpen} mapped as a line, ` +
+      `${report.piers.skippedSmall} too small, ` +
+      `${report.piers.skippedSolid} already solid ground`,
   );
   if (report.tunnels.runs.length) {
     console.log(`  tunnels ${report.tunnels.runs.length} run(s), ${report.tunnels.buriedLengthM} m buried`);
