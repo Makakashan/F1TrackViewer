@@ -18,7 +18,13 @@ import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 
 import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types";
-import { buildCircuitGround, fromOverpass, WATER_CLEARANCE_M } from "./env/bake";
+import {
+  buildBeltBlocks,
+  buildCircuitGround,
+  fromOverpass,
+  WATER_CLEARANCE_M,
+  type BeltBlocks,
+} from "./env/bake";
 import { buildCoastline, type Coastline } from "./env/coastline";
 import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
 import { fetchBuildingWays, fetchShoreWays } from "./env/overpass";
@@ -128,11 +134,14 @@ function checkTerrain(
   plane: ScenePlane,
   coast: Coastline,
   rasterShore: ShoreDistance,
-): { worst: number; sampled: number; shore: number; worstShore: number } {
+  blocks: BeltBlocks,
+): { worst: number; sampled: number; shore: number; worstShore: number; seam: number; worstSeam: number } {
   let worst = 0;
   let sampled = 0;
   let shore = 0;
   let worstShore = 0;
+  let seam = 0;
+  let worstSeam = 0;
 
   // The bake cuts against the surveyed line where there is one and against the
   // smoothed raster distance where there is not, so a vertex near the zero of
@@ -194,11 +203,19 @@ function checkTerrain(
         if (delta > worstShore) worstShore = delta;
         continue;
       }
+      // A node the fine belt gave up to the coarse one is on the coarse chord
+      // on purpose: it is the price of the two surfaces meeting, and measuring
+      // it against the raster measures the coarse belt's own reach, not drift.
+      if (blocks.conformsAt(x, z)) {
+        seam++;
+        if (delta > worstSeam) worstSeam = delta;
+        continue;
+      }
       sampled++;
       if (delta > worst) worst = delta;
     }
   }
-  return { worst, sampled, shore, worstShore };
+  return { worst, sampled, shore, worstShore, seam, worstSeam };
 }
 
 interface BuildingFit {
@@ -292,6 +309,7 @@ function checkCoastline(water: WaterFile, field: HeightField): { agree: number; 
 async function audit(circuitId: string): Promise<Check[]> {
   // The same recipe the bake used, so a disagreement here is a real one.
   const { coords, plane, field, corridor, tunnels } = await buildCircuitGround(circuitId);
+  const blocks = buildBeltBlocks(field, plane, corridor);
 
   const dir = join(ENVIRONMENTS, circuitId);
   const manifest = JSON.parse(await readFile(join(dir, "city-manifest.json"), "utf8")) as {
@@ -312,6 +330,8 @@ async function audit(circuitId: string): Promise<Check[]> {
   let terrainSamples = 0;
   let shoreSamples = 0;
   let worstShore = 0;
+  let seamSamples = 0;
+  let worstSeam = 0;
   let waterOffDatum = 0;
   let buildingVerticesOnTrack = 0;
   let worstIntrusionM = 0;
@@ -358,11 +378,13 @@ async function audit(circuitId: string): Promise<Check[]> {
       }
     }
 
-    const terrain = checkTerrain(meshes, field, plane, cutLine, rasterShore);
+    const terrain = checkTerrain(meshes, field, plane, cutLine, rasterShore, blocks);
     if (terrain.worst > worstTerrain) worstTerrain = terrain.worst;
     terrainSamples += terrain.sampled;
     shoreSamples += terrain.shore;
     if (terrain.worstShore > worstShore) worstShore = terrain.worstShore;
+    seamSamples += terrain.seam;
+    if (terrain.worstSeam > worstSeam) worstSeam = terrain.worstSeam;
 
     for (const mesh of meshes) {
       if (mesh.name !== "water") continue;
@@ -382,7 +404,8 @@ async function audit(circuitId: string): Promise<Check[]> {
     check(
       "terrain follows the field",
       `worst ${worstTerrain.toFixed(2)} m over ${terrainSamples.toLocaleString()} vertices`
-        + ` (${shoreSamples.toLocaleString()} at the cut coast, worst ${worstShore.toFixed(2)} m)`,
+        + ` (${shoreSamples.toLocaleString()} at the cut coast, worst ${worstShore.toFixed(2)} m;`
+        + ` ${seamSamples.toLocaleString()} at a belt seam, worst ${worstSeam.toFixed(2)} m)`,
       `${TERRAIN_TOLERANCE_M} m`,
       worstTerrain <= TERRAIN_TOLERANCE_M,
     ),

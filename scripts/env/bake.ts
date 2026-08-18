@@ -130,6 +130,137 @@ const MESH_COLOR: Record<MeshKind, string> = {
 interface TerrainResult {
   meshes: Record<Belt, Mesh>;
   cellsByBelt: Record<Belt, number>;
+  /** How much the fine belts gave up to meet the coarse ones — see `surfaceHeightAt`. */
+  conform: { nodes: number; worstM: number; meanM: number; over1M: number; over2M: number };
+}
+
+export interface BeltBlocks {
+  blockM: number;
+  blockRows: number;
+  blockCols: number;
+  blockBelt: Uint8Array;
+  beltOfCell(row: number, col: number, cell: number): Belt;
+  /**
+   * Is this position a node the fine belt gave up to the coarse one?
+   *
+   * True on a block boundary the two sides disagree about, and only between the
+   * coarse lattice's own nodes — those it shares outright. The audit asks the
+   * same question the bake did, from the same map, rather than keeping a second
+   * copy of the rule.
+   */
+  conformsAt(x: number, z: number): boolean;
+}
+
+/**
+ * Which belt owns which patch of ground.
+ *
+ * Decided once, on the coarsest grid, so the finer grids divide into it exactly.
+ * Deciding per cell instead leaves a strip that no belt claims — the 8 m cell is
+ * outside its belt by its own centre while the 16 m cell covering it is inside
+ * by its own, and the gap shows as a hairline of sea along the boundary.
+ *
+ * Blocks the water's edge runs through are grown by one block in every
+ * direction and the whole band is drawn at the finest cell. Both halves matter.
+ * The cut is only as fine as the grid it is sampled on, so a 16 m cell leaves
+ * the coast in 16 m steps however smooth the line behind it. And the growing is
+ * what closes the coast: two belts cut the same waterline from their own nodes,
+ * so their cut polylines meet the shared block edge at different points and
+ * leave a sliver of open water between them, which the grid skirt does not
+ * close because it only fires on a dry rim. Larvotto's breakwaters came out as
+ * torn crescents for exactly this reason. Grown by a block, the boundary lies
+ * either wholly at sea, where neither side draws anything, or wholly on dry
+ * ground, where the skirt hides it as it hides every other boundary.
+ */
+export function buildBeltBlocks(
+  field: HeightField,
+  plane: ScenePlane,
+  corridor: Corridor,
+): BeltBlocks {
+  const minX = plane.x(field.bbox.minLon);
+  const maxX = plane.x(field.bbox.maxLon);
+  const minZ = plane.z(field.bbox.maxLat);
+  const maxZ = plane.z(field.bbox.minLat);
+
+  const blockM = BELT_CELL_M.far;
+  const blockCols = Math.ceil((maxX - minX) / blockM);
+  const blockRows = Math.ceil((maxZ - minZ) / blockM);
+
+  const straddles = new Uint8Array(blockRows * blockCols);
+  for (let row = 0; row < blockRows; row++) {
+    for (let col = 0; col < blockCols; col++) {
+      const x = minX + (col + 0.5) * blockM;
+      const z = minZ + (row + 0.5) * blockM;
+      if (straddlesWater(field, plane, x, z, blockM)) straddles[row * blockCols + col] = 1;
+    }
+  }
+  const coastal = new Uint8Array(blockRows * blockCols);
+  for (let row = 0; row < blockRows; row++) {
+    for (let col = 0; col < blockCols; col++) {
+      if (!straddles[row * blockCols + col]) continue;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const r = row + dr;
+          const c = col + dc;
+          if (r < 0 || c < 0 || r >= blockRows || c >= blockCols) continue;
+          coastal[r * blockCols + c] = 1;
+        }
+      }
+    }
+  }
+
+  const blockBelt = new Uint8Array(blockRows * blockCols);
+  for (let row = 0; row < blockRows; row++) {
+    for (let col = 0; col < blockCols; col++) {
+      const x = minX + (col + 0.5) * blockM;
+      const z = minZ + (row + 0.5) * blockM;
+      let belt = beltAtDistance(corridor.distance(x, z));
+      if (coastal[row * blockCols + col]) belt = "core";
+      blockBelt[row * blockCols + col] = BELT_ORDER.indexOf(belt);
+    }
+  }
+
+  const beltOfCell = (row: number, col: number, cell: number): Belt => {
+    const blockRow = Math.min(blockRows - 1, Math.floor((row * cell) / blockM));
+    const blockCol = Math.min(blockCols - 1, Math.floor((col * cell) / blockM));
+    return BELT_ORDER[blockBelt[blockRow * blockCols + blockCol]];
+  };
+
+  const cellOfBlock = (blockRow: number, blockCol: number): number => {
+    if (blockRow < 0 || blockCol < 0 || blockRow >= blockRows || blockCol >= blockCols) return 0;
+    return BELT_CELL_M[BELT_ORDER[blockBelt[blockRow * blockCols + blockCol]]];
+  };
+
+  const conformsAt = (x: number, z: number): boolean => {
+    const offsetX = x - minX;
+    const offsetZ = z - minZ;
+    // Quantisation moves a shipped vertex by a couple of centimetres, so a
+    // boundary is recognised by nearness to the lattice, not by equality.
+    const onLine = (offset: number): boolean =>
+      Math.abs(offset / blockM - Math.round(offset / blockM)) * blockM < 0.15;
+    const onVertical = onLine(offsetX);
+    const onHorizontal = onLine(offsetZ);
+    if (onVertical === onHorizontal) return false; // interior, or a block corner
+
+    let finest = Infinity;
+    let coarsest = 0;
+    for (const dx of [-0.5, 0.5]) {
+      for (const dz of [-0.5, 0.5]) {
+        const cell = cellOfBlock(
+          Math.floor((offsetZ + dz) / blockM),
+          Math.floor((offsetX + dx) / blockM),
+        );
+        if (cell === 0) continue;
+        if (cell > coarsest) coarsest = cell;
+        if (cell < finest) finest = cell;
+      }
+    }
+    if (coarsest <= finest) return false;
+    // A node of the coarse lattice is shared outright and keeps its own height.
+    const along = onVertical ? offsetZ : offsetX;
+    return Math.abs(along / coarsest - Math.round(along / coarsest)) * coarsest > 0.15;
+  };
+
+  return { blockM, blockRows, blockCols, blockBelt, beltOfCell, conformsAt };
 }
 
 /** Does this block have both land and water in it? */
@@ -174,6 +305,11 @@ function bakeTerrain(
   // others — the edge still has to come from somewhere smoother than a boolean
   // flag, or the cut falls back on the grid it exists to escape.
   const rasterShore = buildShoreDistance(field);
+  let conformed = 0;
+  let worstConform = 0;
+  let conformSum = 0;
+  let conformOver1 = 0;
+  let conformOver2 = 0;
   const meshes = {} as Record<Belt, Mesh>;
   const cellsByBelt = { core: 0, city: 0, far: 0 } as Record<Belt, number>;
 
@@ -182,68 +318,8 @@ function bakeTerrain(
   const minZ = plane.z(field.bbox.maxLat); // north edge is the smaller Z
   const maxZ = plane.z(field.bbox.minLat);
 
-  // Which belt owns a patch is decided once, on the coarsest grid, and the finer
-  // grids divide into it exactly. Deciding per cell instead leaves a strip that
-  // no belt claims — the 8 m cell is outside its belt by its own centre while
-  // the 16 m cell covering it is inside by its own, and the gap shows as a
-  // hairline of sea along the boundary.
-  const blockM = BELT_CELL_M.far;
-  const blockCols = Math.ceil((maxX - minX) / blockM);
-  const blockRows = Math.ceil((maxZ - minZ) / blockM);
-  // Blocks the water's edge runs through, and then the same set grown by one
-  // block in every direction.
-  //
-  // Both halves matter. The cut is only as fine as the grid it is sampled on,
-  // so a 16 m cell leaves the coast in 16 m steps however smooth the line
-  // behind it — that is why the waterline is drawn at the finest cell wherever
-  // it runs, however far from the circuit.
-  //
-  // The growing is what closes the coast. Two belts cut the same waterline from
-  // their own nodes, so their cut polylines meet the shared block edge at
-  // different points and leave a sliver of open water between them — and the
-  // grid skirt only fires on a dry rim, so nothing closes it. Larvotto's
-  // breakwaters came out as torn crescents for exactly this reason. Grown by a
-  // block, the belt boundary no longer lands on the waterline: it is either
-  // wholly at sea, where neither side draws anything, or wholly on dry ground,
-  // where the skirt hides it the way it hides every other belt boundary.
-  const straddles = new Uint8Array(blockRows * blockCols);
-  for (let row = 0; row < blockRows; row++) {
-    for (let col = 0; col < blockCols; col++) {
-      const x = minX + (col + 0.5) * blockM;
-      const z = minZ + (row + 0.5) * blockM;
-      if (straddlesWater(field, plane, x, z, blockM)) straddles[row * blockCols + col] = 1;
-    }
-  }
-  const coastal = new Uint8Array(blockRows * blockCols);
-  for (let row = 0; row < blockRows; row++) {
-    for (let col = 0; col < blockCols; col++) {
-      if (!straddles[row * blockCols + col]) continue;
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
-          const r = row + dr;
-          const c = col + dc;
-          if (r < 0 || c < 0 || r >= blockRows || c >= blockCols) continue;
-          coastal[r * blockCols + c] = 1;
-        }
-      }
-    }
-  }
-
-  const blockBelt = new Uint8Array(blockRows * blockCols);
-  for (let row = 0; row < blockRows; row++) {
-    for (let col = 0; col < blockCols; col++) {
-      const x = minX + (col + 0.5) * blockM;
-      const z = minZ + (row + 0.5) * blockM;
-      let belt = beltAtDistance(corridor.distance(x, z));
-      if (coastal[row * blockCols + col]) belt = "core";
-      blockBelt[row * blockCols + col] = BELT_ORDER.indexOf(belt);
-    }
-  }
-  const beltOfCell = (row: number, col: number, cell: number): Belt => {
-    const blockRow = Math.min(blockRows - 1, Math.floor((row * cell) / blockM));
-    const blockCol = Math.min(blockCols - 1, Math.floor((col * cell) / blockM));
-    return BELT_ORDER[blockBelt[blockRow * blockCols + blockCol]];
-  };
+  const blocks = buildBeltBlocks(field, plane, corridor);
+  const { blockM, blockRows, blockCols, blockBelt, beltOfCell } = blocks;
 
   for (const belt of BELT_ORDER) {
     const cell = BELT_CELL_M[belt];
@@ -292,11 +368,73 @@ function bakeTerrain(
       return 0;
     };
 
+    const ownHeightAt = (row: number, col: number): number =>
+      Math.max(solidHeightAt(row, col), WATER_CLEARANCE_M);
+
+    /** The coarsest cell of the blocks meeting at this node's own position. */
+    const coarsestAt = (offsetX: number, offsetZ: number): number => {
+      let coarsest = 0;
+      for (const dx of [-0.5, 0.5]) {
+        for (const dz of [-0.5, 0.5]) {
+          const blockCol = Math.floor((offsetX + dx) / blockM);
+          const blockRow = Math.floor((offsetZ + dz) / blockM);
+          if (blockRow < 0 || blockCol < 0 || blockRow >= blockRows || blockCol >= blockCols) {
+            continue;
+          }
+          const other = BELT_CELL_M[BELT_ORDER[blockBelt[blockRow * blockCols + blockCol]]];
+          if (other > coarsest) coarsest = other;
+        }
+      }
+      return coarsest;
+    };
+
+    /**
+     * The surface height at a node, conforming to the coarser belt where the
+     * two meet.
+     *
+     * A belt boundary is a T-junction: the coarse side draws one straight chord
+     * across 8 or 16 m while the fine side follows the ground every 4 m. On
+     * Monaco the two disagree by metres, and the skirt that stops it being a
+     * hole leaves it a ledge instead — a step through the middle of flat
+     * ground, which is what the coastal band put all over the city. So on a
+     * shared boundary the fine side gives up its own readings and takes the
+     * chord: the two surfaces then meet exactly, and there is nothing left to
+     * hide. Every cell size divides every coarser one, so the coarse node the
+     * chord runs between is always a node of this grid too.
+     */
+    const surfaceHeightAt = (row: number, col: number): number => {
+      const offsetX = col * cell;
+      const offsetZ = row * cell;
+      const coarsest = coarsestAt(offsetX, offsetZ);
+      if (coarsest <= cell) return ownHeightAt(row, col);
+      const step = coarsest / cell;
+      const onVertical = offsetX % blockM === 0;
+      const onHorizontal = offsetZ % blockM === 0;
+      // A block corner is a node of every lattice, so it needs no chord.
+      if (onVertical === onHorizontal) return ownHeightAt(row, col);
+
+      const index = onVertical ? row : col;
+      const low = Math.floor(index / step) * step;
+      const high = low + step;
+      if (low < 0 || high > (onVertical ? rows + 1 : cols + 1)) return ownHeightAt(row, col);
+      const t = (index - low) / step;
+      const a = onVertical ? ownHeightAt(low, col) : ownHeightAt(row, low);
+      const b = onVertical ? ownHeightAt(high, col) : ownHeightAt(row, high);
+      const chord = a + (b - a) * t;
+      conformed++;
+      const moved = Math.abs(chord - ownHeightAt(row, col));
+      if (moved > worstConform) worstConform = moved;
+      conformSum += moved;
+      if (moved > 1) conformOver1++;
+      if (moved > 2) conformOver2++;
+      return chord;
+    };
+
     const vertexAt = (row: number, col: number): number =>
       grid.vertex(
         row * (cols + 2) + col,
         minX + col * cell,
-        Math.max(solidHeightAt(row, col), WATER_CLEARANCE_M),
+        surfaceHeightAt(row, col),
         minZ + row * cell,
       );
 
@@ -406,12 +544,22 @@ function bakeTerrain(
     }
 
     const mesh = grid.finish();
-    addTerrainSkirts(mesh, scalarAt, heightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
+    addTerrainSkirts(mesh, scalarAt, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
     addShoreSkirts(mesh, shoreEdges);
     meshes[belt] = mesh;
   }
 
-  return { meshes, cellsByBelt };
+  return {
+    meshes,
+    cellsByBelt,
+    conform: {
+      nodes: conformed,
+      worstM: worstConform,
+      meanM: conformSum / Math.max(1, conformed),
+      over1M: conformOver1,
+      over2M: conformOver2,
+    },
+  };
 }
 
 /**
@@ -422,7 +570,16 @@ function bakeTerrain(
 function addTerrainSkirts(
   mesh: Mesh,
   scalarAt: (row: number, col: number) => number,
-  heightAt: (row: number, col: number) => number,
+  /**
+   * The height the *surface* was built at, not the raster's own reading.
+   *
+   * The two differ wherever the raster has no value for a node the cut calls
+   * land, and there the skirt used to be skipped for want of a height while the
+   * surface above it was drawn anyway — an open crack down the belt boundary,
+   * on half of every boundary in Monaco. A skirt has to answer the same
+   * question the emitter did, from the same source.
+   */
+  surfaceHeightAt: (row: number, col: number) => number,
   beltOfCell: (row: number, col: number, cell: number) => Belt,
   belt: Belt,
   minX: number,
@@ -444,12 +601,11 @@ function addTerrainSkirts(
     );
   };
 
-  /** Only a rim of dry ground gets a grid-aligned skirt. */
+  // Only a rim of dry ground gets a grid-aligned skirt: the water's edge is cut
+  // inside the cell and gets its own from `addShoreSkirts`. Dry is decided by
+  // the same scalar the emitter used and by nothing else.
   const dry = (rowA: number, colA: number, rowB: number, colB: number): boolean =>
-    scalarAt(rowA, colA) > 0 &&
-    scalarAt(rowB, colB) > 0 &&
-    !Number.isNaN(heightAt(rowA, colA)) &&
-    !Number.isNaN(heightAt(rowB, colB));
+    scalarAt(rowA, colA) > 0 && scalarAt(rowB, colB) > 0;
 
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
@@ -458,11 +614,12 @@ function addTerrainSkirts(
       const x1 = x0 + cell;
       const z0 = minZ + row * cell;
       const z1 = z0 + cell;
-      // The tops meet the surface, so they take the same clearance it does.
-      const h00 = Math.max(heightAt(row, col), WATER_CLEARANCE_M);
-      const h10 = Math.max(heightAt(row, col + 1), WATER_CLEARANCE_M);
-      const h01 = Math.max(heightAt(row + 1, col), WATER_CLEARANCE_M);
-      const h11 = Math.max(heightAt(row + 1, col + 1), WATER_CLEARANCE_M);
+      // The tops are the surface, or the skirt hangs from somewhere the ground
+      // is not.
+      const h00 = surfaceHeightAt(row, col);
+      const h10 = surfaceHeightAt(row, col + 1);
+      const h01 = surfaceHeightAt(row + 1, col);
+      const h11 = surfaceHeightAt(row + 1, col + 1);
 
       if (!built(row - 1, col) && dry(row, col, row, col + 1)) {
         addFlatQuad(mesh, x0, h00, z0, x1, h10, z0, x1, h10 - SKIRT_M, z0, x0, h00 - SKIRT_M, z0);
@@ -1362,6 +1519,7 @@ export interface BakeReport {
   belts: Record<Belt, { bytes: number; triangles: number; drawCalls: number }>;
   buildings: BuildingResult;
   cellsByBelt: Record<Belt, number>;
+  conform: TerrainResult["conform"];
   trackVertices: number;
   portalTriangles: number;
   barrierTriangles: number;
@@ -1547,6 +1705,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     belts,
     buildings,
     cellsByBelt: terrain.cellsByBelt,
+    conform: terrain.conform,
     trackVertices: elevations.length,
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
     barrierTriangles: triangleCount(barriers),
@@ -1668,6 +1827,11 @@ async function main() {
       `${report.shore.skippedKind} piers skipped, ` +
       `${report.shore.skippedCliff} against cliffs, ` +
       `${report.shore.skippedOffCut} off the cut edge`,
+  );
+  console.log(
+    `  belt seams ${report.conform.nodes} nodes conformed to the coarser chord, ` +
+      `worst ${report.conform.worstM.toFixed(2)} m, mean ${report.conform.meanM.toFixed(2)} m, ` +
+      `${report.conform.over1M} over 1 m, ${report.conform.over2M} over 2 m`,
   );
   console.log(
     `  piers ${report.piers.decks.length} decks, ` +
