@@ -1,5 +1,5 @@
 /**
- * Port Hercule's pontoons, as decks rather than as terrain.
+ * Port Hercule's pontoons and the breakwaters, as decks rather than as terrain.
  *
  * A pontoon in the harbour is 4–5 m wide. The core belt's cell is 4 m, so the
  * shape is narrower than two samples and no marching-squares reconstruction of
@@ -146,7 +146,10 @@ export function buildPiers(
   const result: PierResult = { decks: [], skippedOpen: 0, skippedSmall: 0, skippedSolid: 0 };
 
   for (const way of ways) {
-    if (way.kind !== "pier") continue;
+    // A breakwater is the same problem wearing a different tag: Fontvieille's
+    // are 6 and 9 m across, mapped as closed rings, and the grid makes the same
+    // comb of them that it made of the pontoons.
+    if (way.kind !== "pier" && way.kind !== "breakwater") continue;
     const points = way.points.map(([lon, lat]) => ({ x: plane.x(lon), z: plane.z(lat) }));
     if (points.length < 4) {
       result.skippedOpen++;
