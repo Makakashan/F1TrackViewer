@@ -962,6 +962,37 @@ belt an order of magnitude inside its byte budget.
       surface. A skirt is now recognised for what it is: a vertex standing
       directly beneath another vertex of the same mesh.
 
+- [x] **P4.0f** The seams the coastal band exposed.
+
+      Growing the coastal band put belt boundaries all through the city, and two
+      faults that had been rare became visible everywhere.
+
+      *The skirt asked a different question than the emitter.* A grid skirt was
+      only built where `heightAt` had a reading at both ends, while the surface
+      above it was built from `solidHeightAt`, which invents one from the
+      nearest ring that does. Half of Monaco's belt boundaries touch a node the
+      raster calls water, so half of them had surface with no skirt under it —
+      an open crack. The skirt now reads the same source the surface did.
+
+      *The boundary was a T-junction.* The coarse side draws one straight chord
+      across 8 or 16 m while the fine side follows the ground every 4 m. The
+      skirt stops that being a hole and leaves it a ledge. On the shared line
+      the fine side now takes the chord: **10,403 nodes**, moved by **6.40 m at
+      worst, 0.27 m on average, 776 over a metre**. Measuring shared nodes finds
+      nothing — they always agreed — which is why the first measurement of this
+      said the seam was fine.
+
+      The audit counts those nodes in their own bucket, from the same block map
+      the bake used (`buildBeltBlocks`, now shared) rather than from a second
+      copy of the rule. Real surface: worst **0.50 m** over 9,589 vertices.
+
+      *And the pier gate was on the wrong quantity.* Three rings were left to
+      the terrain for being mostly solid ground; Port Hercule's north mole is
+      66% land and **9 m across**, and the terrain's version of it was a torn
+      comb. How much land the raster kept says nothing about whether the grid
+      can hold the shape. The gate is now width — under three core cells and it
+      gets a deck whatever the raster thinks. **34 decks**, up from 31.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).

@@ -23,11 +23,18 @@ import type { ScenePlane } from "./plane";
  */
 const MIN_PIER_M2 = 40;
 /**
- * Above this share of raster land inside it, the ring is not a pontoon but a
- * mole: wide enough that the terrain already draws it properly, and decking it
- * over would flatten ground that is correct.
+ * Above this share of raster land inside it, the ring may be a mole rather than
+ * a pontoon — but only if it is also wide enough for the grid to draw, which is
+ * the condition that actually matters. Port Hercule's north mole is 66% land
+ * and 9 m across, and the terrain's version of it was a torn comb: how much
+ * land the raster kept says nothing about whether it can hold the shape.
  */
 const MAX_RASTER_LAND = 0.6;
+/**
+ * And this is what decides it: a ring narrower than three cells of the finest
+ * belt is below what marching squares can express, however solid it is.
+ */
+const MIN_SOLID_WIDTH_M = 12;
 /** Freeboard for a deck the raster has nothing to say about — a floating pontoon. */
 const DEFAULT_DECK_M = 0.8;
 /** The band a deck is allowed in: clear of the sea, below the quay behind it. */
@@ -57,6 +64,25 @@ function ringArea(ring: { x: number; z: number }[]): number {
     twice += a.x * b.z - b.x * a.z;
   }
   return Math.abs(twice) / 2;
+}
+
+/**
+ * Roughly how wide the ring is: its area over its longer side. A jetty 100 m
+ * long and 5 m across comes out at 5, which is the number that matters.
+ */
+function meanWidth(ring: { x: number; z: number }[]): number {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const point of ring) {
+    if (point.x < minX) minX = point.x;
+    if (point.x > maxX) maxX = point.x;
+    if (point.z < minZ) minZ = point.z;
+    if (point.z > maxZ) maxZ = point.z;
+  }
+  const longer = Math.max(maxX - minX, maxZ - minZ);
+  return longer > 0 ? ringArea(ring) / longer : 0;
 }
 
 function pointInRing(ring: { x: number; z: number }[], x: number, z: number): boolean {
@@ -141,7 +167,7 @@ export function buildPiers(
       continue;
     }
     const { deckY, landShare } = deckHeight(ring, field, plane);
-    if (landShare > MAX_RASTER_LAND) {
+    if (landShare > MAX_RASTER_LAND && meanWidth(ring) >= MIN_SOLID_WIDTH_M) {
       result.skippedSolid++;
       continue;
     }
