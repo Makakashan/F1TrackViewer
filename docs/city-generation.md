@@ -914,6 +914,23 @@ belt an order of magnitude inside its byte budget.
       measures against the same clamp, so the clearance cannot be mistaken for
       drift: worst 0.37 m against a 0.6 m limit, unchanged.
 
+- [x] **P4.0d** The pontoons are decks, not terrain — `scripts/env/piers.ts`.
+
+      Port Hercule's pontoons are **4–5 m wide** and the core belt's cell is
+      **4 m**, so the shape is narrower than two samples of the grid meant to
+      hold it. No reconstruction of it can be right, and both attempts proved
+      it: the raster's version came out as a comb, and cutting the terrain
+      against the mapped pier rings produced rounded blobs the size of
+      `INFLUENCE_M`. The raster itself agrees it cannot hold them — after the
+      opening, only **12%** of the area inside the mapped rings is still land.
+
+      So the deck is not sampled. The ring OSM surveyed *is* the outline, and it
+      is extruded directly the way a building footprint is, with walls to the
+      same foot the coast's skirt uses. **31 decks**; 3 piers mapped as a line
+      keep the terrain's version, 4 are too small to be worth one, and 3 are
+      wide moles the terrain already draws properly. Cost: +1,489 triangles and
+      one draw call, all in the city belt.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).
