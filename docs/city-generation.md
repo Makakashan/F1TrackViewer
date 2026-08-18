@@ -993,6 +993,23 @@ belt an order of magnitude inside its byte budget.
       can hold the shape. The gate is now width — under three core cells and it
       gets a deck whatever the raster thinks. **34 decks**, up from 31.
 
+- [x] **P4.0g** Breakwaters get the pontoon treatment.
+
+      Same problem, different tag: Fontvieille's breakwaters are mapped as
+      closed rings **6 and 9 m across**, and the grid made the same comb of them
+      it made of the pontoons. **37 decks**, up from 34.
+
+      Larvotto's breakwaters cannot be done this way and this is a limit of the
+      source, not of the bake: OSM traces them as open `natural=coastline`, not
+      as areas. Only **one** closed ring exists in that bay (way/224205566,
+      17.5 m across), and the rest have no outline to extrude. Closing the gap
+      to the aerial photograph there needs authored geometry — P4.2.
+
+      The same holds for the marina. The box the west quay was compared against
+      holds **7 pier ways in OSM** and the bake decks all 7; the aerial shows
+      perhaps twice that, because the catwalks between the boats are not mapped.
+      Nothing is being dropped — the data stops there.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).
