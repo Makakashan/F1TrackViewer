@@ -88,10 +88,27 @@ const SHORE_FOOT_M = -3;
  * A quay is barely affected: 3 m of its own height it keeps.
  */
 const SHORE_EDGE_MAX_M = 3;
+/**
+ * How far the land is held above the sea plane.
+ *
+ * The water is one quad at the datum (`bakeWater`), so any ground the DTM reads
+ * at y = 0 is co-planar with it and the depth buffer decides per pixel which of
+ * the two is in front. That decision moves with the camera, so the waterline
+ * changed shape as the view pulled back: 7.6 km2 of Larvotto's beach and the
+ * Monte-Carlo Bay foreshore sit within 15 cm of the datum. Holding the surface
+ * a fixed step above the plane costs nothing at any other height and leaves the
+ * coast where the cut put it, which is the only thing that should decide it.
+ */
+export const WATER_CLEARANCE_M = 0.25;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
 /** How far below its own floor a building's walls may reach for the ground. */
 const MAX_UNDERCUT_M = 8;
+
+/** The band a terrain surface vertex is allowed to live in: clear of the sea plane, below the cliff cap. */
+function clampToSurface(y: number): number {
+  return Math.max(WATER_CLEARANCE_M, Math.min(y, SHORE_EDGE_MAX_M));
+}
 
 type MeshKind = "terrain" | "building" | "water" | "tunnel" | "portal" | "shore" | "barrier";
 
@@ -242,7 +259,7 @@ function bakeTerrain(
       grid.vertex(
         row * (cols + 2) + col,
         minX + col * cell,
-        solidHeightAt(row, col),
+        Math.max(solidHeightAt(row, col), WATER_CLEARANCE_M),
         minZ + row * cell,
       );
 
@@ -294,7 +311,7 @@ function bakeTerrain(
       else if (!Number.isNaN(hA)) y = hA;
       else if (!Number.isNaN(hB)) y = hB;
       else y = solidHeightAt(rowA, colA);
-      return grid.vertex(key, x, Math.min(y, SHORE_EDGE_MAX_M), z);
+      return grid.vertex(key, x, clampToSurface(y), z);
     };
 
     // Land–water crossings, as vertex pairs, so the coast can drop a skirt once
@@ -404,10 +421,11 @@ function addTerrainSkirts(
       const x1 = x0 + cell;
       const z0 = minZ + row * cell;
       const z1 = z0 + cell;
-      const h00 = heightAt(row, col);
-      const h10 = heightAt(row, col + 1);
-      const h01 = heightAt(row + 1, col);
-      const h11 = heightAt(row + 1, col + 1);
+      // The tops meet the surface, so they take the same clearance it does.
+      const h00 = Math.max(heightAt(row, col), WATER_CLEARANCE_M);
+      const h10 = Math.max(heightAt(row, col + 1), WATER_CLEARANCE_M);
+      const h01 = Math.max(heightAt(row + 1, col), WATER_CLEARANCE_M);
+      const h11 = Math.max(heightAt(row + 1, col + 1), WATER_CLEARANCE_M);
 
       if (!built(row - 1, col) && dry(row, col, row, col + 1)) {
         addFlatQuad(mesh, x0, h00, z0, x1, h10, z0, x1, h10 - SKIRT_M, z0, x0, h00 - SKIRT_M, z0);
