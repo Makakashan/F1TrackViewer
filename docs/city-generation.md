@@ -903,6 +903,17 @@ belt an order of magnitude inside its byte budget.
       within `MAX_OFFSET_FROM_CUT_M` = 6 m of the edge the terrain was actually
       cut on: **210 more segments skipped**, 413 built.
 
+- [x] **P4.0c** The land is held clear of the sea plane — `WATER_CLEARANCE_M`.
+
+      The water is one quad at the datum, so ground the DTM reads at y = 0 is
+      co-planar with it and the depth buffer picks a winner per pixel. That
+      winner moves with the camera, so the bay at Larvotto changed shape as the
+      view pulled back — the defect read as a coastline problem and was a depth
+      problem. **7,625 m2** of near-horizontal terrain sat within 15 cm of the
+      datum; the surface now starts 0.25 m above it and **none does**. The audit
+      measures against the same clamp, so the clearance cannot be mistaken for
+      drift: worst 0.37 m against a 0.6 m limit, unchanged.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).

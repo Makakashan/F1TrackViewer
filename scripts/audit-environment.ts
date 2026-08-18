@@ -18,7 +18,7 @@ import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 
 import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types";
-import { buildCircuitGround, fromOverpass } from "./env/bake";
+import { buildCircuitGround, fromOverpass, WATER_CLEARANCE_M } from "./env/bake";
 import { buildCoastline, type Coastline } from "./env/coastline";
 import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
 import { fetchBuildingWays, fetchShoreWays } from "./env/overpass";
@@ -160,7 +160,9 @@ function checkTerrain(
       const z = mesh.positions[i * 3 + 2];
       const ground = field.heightAt(plane.lon(x), plane.lat(z));
       if (Number.isNaN(ground)) continue;
-      const delta = Math.abs(y - ground);
+      // The surface is held clear of the sea plane, so that is the height it is
+      // meant to have where the raster reads at or below the datum.
+      const delta = Math.abs(y - Math.max(ground, WATER_CLEARANCE_M));
       // A skirt vertex is a whole skirt below its edge; it is not a surface.
       if (delta > 2.5) continue;
       if (onCut(x, z)) {
