@@ -113,6 +113,17 @@ function agreesWithRaster(
       plane.lat(midZ - segment.nz * probe),
     );
     if (!Number.isNaN(onLand) && Number.isNaN(onWater)) return true;
+    // The raster reading the two sides the *other* way round is not a reason to
+    // drop the line. A coastline is oriented by definition — OSM puts the land
+    // on its left — so the line already knows which side is which, and what the
+    // raster is calling ground on the wet side of it is the boats moored along
+    // a pontoon. Ten segments in Monaco read like this, two of them the outline
+    // of Port Hercule's pier fingers, which came out as torn slabs offset from
+    // where they are mapped for want of them. What the confirmation is really
+    // for is a line the raster has nothing to say about on either side, which
+    // is the Larvotto case: mapped up to 160 m from where the LiDAR puts the
+    // water, with sea on both sides of it.
+    if (Number.isNaN(onLand) && !Number.isNaN(onWater)) return true;
   }
   return false;
 }
