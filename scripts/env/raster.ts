@@ -171,6 +171,16 @@ const FLAT_WATER_MAX_ELEVATION_M = 50;
  */
 const MIN_ISLAND_M2 = 150;
 /**
+ * Smallest enclosed patch of nodata kept as water.
+ *
+ * The DTM has holes: a boat shadow, a crane, a gap in the flight lines. Ringed
+ * by ground, one of those is not a pond — it is a hole punched through the quay,
+ * and the terrain cuts a coastline around it. The one at the root of Port
+ * Hercule's T pier is 24 m2. Kept the same size as an islet, because the two
+ * questions are the same one turned over.
+ */
+const MIN_POND_M2 = 150;
+/**
  * Half the narrowest strip of land kept, in metres.
  *
  * Measured, not guessed: a marina pontoon is 3–4 m across and Monaco's quays
@@ -402,6 +412,78 @@ function despeckleLand(
   return removed;
 }
 
+/**
+ * Fills small enclosed patches of nodata, the mirror of `despeckleLand`.
+ *
+ * A nodata component that never reaches the edge of the raster is surrounded by
+ * ground, so it is either a real pond or a hole in the survey. Below a pond's
+ * size it is a hole, and it is filled from the ring of ground around it rather
+ * than left for the terrain to cut a coastline through.
+ */
+function fillPonds(
+  data: Float32Array,
+  width: number,
+  height: number,
+  minCells: number,
+): number {
+  const seen = new Uint8Array(width * height);
+  const component: number[] = [];
+  const queue: number[] = [];
+  let filled = 0;
+
+  for (let start = 0; start < data.length; start++) {
+    if (seen[start] || !Number.isNaN(data[start])) continue;
+    component.length = 0;
+    queue.length = 0;
+    queue.push(start);
+    seen[start] = 1;
+    let touchesEdge = false;
+
+    while (queue.length) {
+      const index = queue.pop() as number;
+      component.push(index);
+      const row = Math.floor(index / width);
+      const col = index - row * width;
+      if (row === 0 || col === 0 || row === height - 1 || col === width - 1) touchesEdge = true;
+      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+        const nr = row + dr;
+        const nc = col + dc;
+        if (nr < 0 || nc < 0 || nr >= height || nc >= width) continue;
+        const next = nr * width + nc;
+        if (seen[next] || !Number.isNaN(data[next])) continue;
+        seen[next] = 1;
+        queue.push(next);
+      }
+    }
+
+    if (touchesEdge || component.length > minCells) continue;
+
+    // The mean of the ground touching the hole: the quay it is punched through
+    // is flat, so its own rim is the best answer available.
+    let sum = 0;
+    let count = 0;
+    for (const index of component) {
+      const row = Math.floor(index / width);
+      const col = index - row * width;
+      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+        const nr = row + dr;
+        const nc = col + dc;
+        if (nr < 0 || nc < 0 || nr >= height || nc >= width) continue;
+        const value = data[nr * width + nc];
+        if (Number.isNaN(value)) continue;
+        sum += value;
+        count++;
+      }
+    }
+    if (count === 0) continue;
+    const level = sum / count;
+    for (const index of component) data[index] = level;
+    filled += component.length;
+  }
+
+  return filled;
+}
+
 function erodeNodata(
   values: Float32Array,
   width: number,
@@ -491,6 +573,27 @@ async function readCachedRaster(key: string): Promise<Raster | null> {
   }
 }
 
+/**
+ * The last of the water cleanup, applied to the finished grid rather than to
+ * the fetched one.
+ *
+ * The cache holds the processed raster, not the tiles behind it, so a change
+ * anywhere earlier in the pipeline can only be made by refetching every tile
+ * from the IGN. This step reads the same as it would there — a hole in the quay
+ * is smaller than a pond at any cell size — so it runs here, on whatever the
+ * cache hands back, and costs nobody a download.
+ */
+function cleanWater(raster: Raster, kind: RasterKind): void {
+  if (kind === "mnh") return;
+  const cellAreaM2 = raster.header.pixelSizeM.x * raster.header.pixelSizeM.y;
+  fillPonds(
+    raster.data,
+    raster.header.width,
+    raster.header.height,
+    Math.max(1, Math.round(MIN_POND_M2 / cellAreaM2)),
+  );
+}
+
 async function writeCachedRaster(key: string, raster: Raster): Promise<void> {
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(join(CACHE_DIR, `${key}.json`), JSON.stringify(raster.header, null, 2));
@@ -548,7 +651,10 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
   const key = cacheKey(provider, kind, bbox, width, height);
   if (!refresh) {
     const cached = await readCachedRaster(key);
-    if (cached) return cached;
+    if (cached) {
+      cleanWater(cached, kind);
+      return cached;
+    }
   }
 
   await throttle(provider.minRequestIntervalMs);
@@ -632,6 +738,7 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
   };
 
   await writeCachedRaster(key, raster);
+  cleanWater(raster, kind);
   return raster;
 }
 
