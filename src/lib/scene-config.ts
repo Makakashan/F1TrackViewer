@@ -6,6 +6,17 @@ export const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.18;
 export const TRACK_PAINT_RAISE = TRACK_SURFACE_RAISE + 0.02;
 export const TRACK_RENDER_ORDER = 100;
 export const TRACK_OVERLAY_RENDER_ORDER = TRACK_RENDER_ORDER + 1;
+/**
+ * The apron is under the ribbon, so it is drawn before it.
+ *
+ * The whole stack used to be ordered by polygon offset instead. That is a depth
+ * bias scaled by the polygon's own slope, so the ribbon on a hillside seen at a
+ * grazing angle was pulled toward the camera by an amount that grows with
+ * distance — far enough to come out through the building in front of it at the
+ * Fairmont hairpin. Height and draw order say the same thing and say it in world
+ * space, where a building either is in front or is not.
+ */
+export const TRACK_APRON_RENDER_ORDER = TRACK_RENDER_ORDER - 1;
 /** Solid things standing on the track: cars, gantry, start lights. */
 export const TRACK_PROP_RENDER_ORDER = TRACK_OVERLAY_RENDER_ORDER + 1;
 export const TERRAIN_TRACK_OFFSET = 4.5;

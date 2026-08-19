@@ -1010,6 +1010,24 @@ belt an order of magnitude inside its byte budget.
       perhaps twice that, because the catwalks between the boats are not mapped.
       Nothing is being dropped — the data stops there.
 
+- [x] **P4.0h** The ribbon stops coming through the buildings.
+
+      The track's layers — apron, ribbon, edge lines, kerbs — were stacked by
+      `polygonOffset` because their geometric separation is one or two
+      centimetres, too little to survive depth precision at range. But polygon
+      offset is a depth bias **scaled by the polygon's own slope**: the ribbon on
+      a hillside seen at a grazing angle is pulled toward the camera by an amount
+      that grows with distance, and at the Fairmont hairpin it came out through
+      the building in front of it. Every "the track shows through" report has
+      been this, once the camera-under-the-ground ones are set aside.
+
+      The stack is ordered by height and draw order instead — apron at
+      `RAISE - 0.02` drawn first, ribbon at `RAISE`, edge lines and kerbs at
+      `RAISE + 0.02` drawn last. `depthTest` is `LessEqual`, so a later layer
+      still wins where the depths quantise equal, and nothing is biased toward
+      the camera, so a building in front is in front. **Seven** polygon-offset
+      blocks removed.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).
