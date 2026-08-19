@@ -1028,6 +1028,23 @@ belt an order of magnitude inside its byte budget.
       the camera, so a building in front is in front. **Seven** polygon-offset
       blocks removed.
 
+- [x] **P4.0i** The raster's copy of a deck is cleared from under it.
+
+      The LiDAR sees the pontoons and the boats moored along them, and its
+      version sits a few metres off the mapped ring — so down the whole of Port
+      Hercule the clean deck and a torn strip of terrain were drawn side by
+      side, which is what the harbour still looked wrong for.
+
+      The terrain now reads a node as water where a deck is near. Which halo,
+      though, is not a distance: **80%** of the raster land within a deck's halo
+      is the quay the pontoon is tied to, and the mapped coastline sits several
+      metres off the raster's own quay edge in places, so a threshold generous
+      enough to protect the quay leaves the debris and one tight enough to clear
+      the debris bites notches out of the harbour wall — which is exactly what a
+      10 m halo did. The test is relative instead: clear only where the **deck is
+      the nearer of the two lines**. Which is closer does not care how far
+      either of them is.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).

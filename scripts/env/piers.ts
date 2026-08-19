@@ -42,6 +42,24 @@ const MIN_DECK_M = 0.6;
 const MAX_DECK_M = 3;
 /** Sampling step inside a ring, in metres. Finer than the narrowest deck. */
 const SAMPLE_STEP_M = 1.5;
+/**
+ * How far around a deck the raster's own version of it is cleared away.
+ *
+ * The LiDAR sees the pontoons and the boats moored along them, and its version
+ * sits a few metres off the mapped ring — so the deck and a torn strip of
+ * terrain were drawn side by side down the whole of Port Hercule.
+ */
+const DECK_CLEAR_M = 8;
+/**
+ * And only where the deck is the nearer of the two.
+ *
+ * A fixed distance to the shore does not work: the mapped coastline sits
+ * several metres off the raster's own quay edge in places, so any threshold
+ * generous enough to protect the quay leaves the debris and any threshold tight
+ * enough to clear the debris bites notches out of the harbour wall. Which line
+ * is closer does not care how far either of them is.
+ */
+const QUAY_SEARCH_M = 24;
 
 export interface PierDeck {
   ring: { x: number; z: number }[];
@@ -50,6 +68,13 @@ export interface PierDeck {
 
 export interface PierResult {
   decks: PierDeck[];
+  /**
+   * Is this the raster's own copy of a deck, standing next to the real one?
+   *
+   * True near a deck and away from every surveyed shore line. The terrain reads
+   * it as water so the deck is the only thing drawn there.
+   */
+  clearsTerrain(x: number, z: number): boolean;
   /** Rings that were not decked, by the reason they were not. */
   skippedOpen: number;
   skippedSmall: number;
@@ -143,7 +168,13 @@ export function buildPiers(
   field: HeightField,
   plane: ScenePlane,
 ): PierResult {
-  const result: PierResult = { decks: [], skippedOpen: 0, skippedSmall: 0, skippedSolid: 0 };
+  const result: PierResult = {
+    decks: [],
+    clearsTerrain: () => false,
+    skippedOpen: 0,
+    skippedSmall: 0,
+    skippedSolid: 0,
+  };
 
   for (const way of ways) {
     // A breakwater is the same problem wearing a different tag: Fontvieille's
@@ -176,6 +207,82 @@ export function buildPiers(
     }
     result.decks.push({ ring, deckY });
   }
+
+  // Everything that is not a pier is a surveyed shore: the coast, the quays,
+  // the basin outlines. A deck's halo stops where one of those begins.
+  const shore: { ax: number; az: number; bx: number; bz: number }[] = [];
+  for (const way of ways) {
+    if (way.kind === "pier" || way.kind === "breakwater") continue;
+    const points = way.points.map(([lon, lat]) => ({ x: plane.x(lon), z: plane.z(lat) }));
+    for (let i = 0; i < points.length - 1; i++) {
+      shore.push({ ax: points[i].x, az: points[i].z, bx: points[i + 1].x, bz: points[i + 1].z });
+    }
+  }
+
+  /**
+   * Nearest segment distance, from a uniform hash so a lookup only tests its
+   * own neighbourhood. `clearsTerrain` is asked for every node of every belt's
+   * grid — a few hundred thousand times — and a linear scan over the shore
+   * would take longer than the rest of the bake put together. Distances beyond
+   * one cell are reported as Infinity, which is all the comparison needs.
+   */
+  const index = (
+    segments: { ax: number; az: number; bx: number; bz: number }[],
+    cell: number,
+  ) => {
+    const buckets = new Map<string, typeof segments>();
+    const key = (col: number, row: number) => `${col}:${row}`;
+    for (const segment of segments) {
+      const colFrom = Math.floor(Math.min(segment.ax, segment.bx) / cell);
+      const colTo = Math.floor(Math.max(segment.ax, segment.bx) / cell);
+      const rowFrom = Math.floor(Math.min(segment.az, segment.bz) / cell);
+      const rowTo = Math.floor(Math.max(segment.az, segment.bz) / cell);
+      for (let row = rowFrom; row <= rowTo; row++) {
+        for (let col = colFrom; col <= colTo; col++) {
+          const bucket = buckets.get(key(col, row));
+          if (bucket) bucket.push(segment);
+          else buckets.set(key(col, row), [segment]);
+        }
+      }
+    }
+    return (x: number, z: number): number => {
+      const col = Math.floor(x / cell);
+      const row = Math.floor(z / cell);
+      let best = Infinity;
+      for (let r = row - 1; r <= row + 1; r++) {
+        for (let c = col - 1; c <= col + 1; c++) {
+          const bucket = buckets.get(key(c, r));
+          if (!bucket) continue;
+          for (const segment of bucket) {
+            const ux = segment.bx - segment.ax;
+            const uz = segment.bz - segment.az;
+            const lengthSquared = ux * ux + uz * uz;
+            let t = lengthSquared
+              ? ((x - segment.ax) * ux + (z - segment.az) * uz) / lengthSquared
+              : 0;
+            t = Math.max(0, Math.min(1, t));
+            const distance = Math.hypot(x - segment.ax - ux * t, z - segment.az - uz * t);
+            if (distance < best) best = distance;
+          }
+        }
+      }
+      return best;
+    };
+  };
+
+  const deckSegments = result.decks.flatMap((deck) =>
+    deck.ring.map((point, i) => {
+      const next = deck.ring[(i + 1) % deck.ring.length];
+      return { ax: point.x, az: point.z, bx: next.x, bz: next.z };
+    }),
+  );
+  const toDeck = index(deckSegments, QUAY_SEARCH_M);
+  const toShore = index(shore, QUAY_SEARCH_M);
+
+  result.clearsTerrain = (x: number, z: number): boolean => {
+    const deck = toDeck(x, z);
+    return deck <= DECK_CLEAR_M && deck < toShore(x, z);
+  };
 
   return result;
 }
