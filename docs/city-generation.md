@@ -1076,8 +1076,14 @@ belt an order of magnitude inside its byte budget.
       overruled — **54 nodes**, at a gate tight enough not to hand the shoreline
       back to the grid, which a looser one did.
 
-      A small hole remains at that root: its core reads past the gate, and both
-      attempts to widen it brought the sawtooth back.
+      That gate closed the rim of the hole and not its core, and widening it
+      brought the sawtooth back, so the hole is closed by **enclosure** instead,
+      which needs no threshold on depth at all. A patch of water ringed by land
+      is either a basin or an artefact, and every real basin here reaches the
+      sea — so a small one that does not is an artefact. The shoreline is
+      connected to the sea by construction and cannot be caught by this. **Ten
+      cells** in the whole city, decided once on the core lattice so every belt
+      fills the same ones.
 
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes

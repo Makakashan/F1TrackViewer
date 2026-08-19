@@ -145,10 +145,101 @@ const MESH_COLOR: Record<MeshKind, string> = {
 interface TerrainResult {
   meshes: Record<Belt, Mesh>;
   cellsByBelt: Record<Belt, number>;
-  /** Nodes where a corner of the surveyed line was overruled by the raster. */
+  /** Cells of water that never reached the sea and were filled as holes. */
   holesFilled: number;
   /** How much the fine belts gave up to meet the coarse ones — see `surfaceHeightAt`. */
   conform: { nodes: number; worstM: number; meanM: number; over1M: number; over2M: number };
+}
+
+/** The finest lattice any belt samples, so every belt sees the same fill. */
+const POND_CELL_M = BELT_CELL_M.core;
+/**
+ * Largest patch of water enclosed by land that is taken for a hole rather than
+ * a basin. Port Hercule's is about 60 m2; the smallest thing here that is
+ * really water is the marina, and that reaches the sea.
+ */
+const MIN_POND_M2 = 400;
+/** How much land a filled hole reports. Enough that no cell edge crosses zero inside it. */
+const POND_FILLED_SCALAR_M = 2;
+
+/**
+ * Water that never reaches the open sea, and is small.
+ *
+ * The signed distance is to the *nearest* segment, so where a pier meets its
+ * quay that segment's wet side sweeps back over the ground behind it and opens
+ * a hole. Overruling it by asking the raster works only in a band tight enough
+ * to miss the deepest part of the hole, and a looser band hands the shoreline
+ * back to the grid — the quay came back as a sawtooth twice that way.
+ *
+ * Enclosure settles it without a threshold on depth at all. A patch of water
+ * ringed by land is either a basin or an artefact, and the real basins all
+ * reach the sea, so a small one that does not is an artefact. The shoreline
+ * itself is connected to the sea by construction and cannot be touched by this.
+ */
+function findEnclosedWater(
+  scalarAt: (x: number, z: number) => number,
+  minX: number,
+  maxX: number,
+  minZ: number,
+  maxZ: number,
+): { cells: number; has(x: number, z: number): boolean } {
+  const cols = Math.floor((maxX - minX) / POND_CELL_M) + 1;
+  const rows = Math.floor((maxZ - minZ) / POND_CELL_M) + 1;
+  const wet = new Uint8Array(rows * cols);
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      if (scalarAt(minX + col * POND_CELL_M, minZ + row * POND_CELL_M) <= 0) {
+        wet[row * cols + col] = 1;
+      }
+    }
+  }
+
+  const filled = new Uint8Array(rows * cols);
+  const seen = new Uint8Array(rows * cols);
+  const maxCells = Math.round(MIN_POND_M2 / (POND_CELL_M * POND_CELL_M));
+  const component: number[] = [];
+  const queue: number[] = [];
+  let cells = 0;
+
+  for (let start = 0; start < wet.length; start++) {
+    if (seen[start] || !wet[start]) continue;
+    component.length = 0;
+    queue.length = 0;
+    queue.push(start);
+    seen[start] = 1;
+    let reachesTheSea = false;
+
+    while (queue.length) {
+      const index = queue.pop() as number;
+      component.push(index);
+      const row = Math.floor(index / cols);
+      const col = index - row * cols;
+      if (row === 0 || col === 0 || row === rows - 1 || col === cols - 1) reachesTheSea = true;
+      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+        const nr = row + dr;
+        const nc = col + dc;
+        if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
+        const next = nr * cols + nc;
+        if (seen[next] || !wet[next]) continue;
+        seen[next] = 1;
+        queue.push(next);
+      }
+    }
+
+    if (reachesTheSea || component.length > maxCells) continue;
+    for (const index of component) filled[index] = 1;
+    cells += component.length;
+  }
+
+  return {
+    cells,
+    has(x: number, z: number): boolean {
+      const col = Math.round((x - minX) / POND_CELL_M);
+      const row = Math.round((z - minZ) / POND_CELL_M);
+      if (row < 0 || col < 0 || row >= rows || col >= cols) return false;
+      return filled[row * cols + col] === 1;
+    },
+  };
 }
 
 export interface BeltBlocks {
@@ -323,6 +414,27 @@ function bakeTerrain(
   // others — the edge still has to come from somewhere smoother than a boolean
   // flag, or the cut falls back on the grid it exists to escape.
   const rasterShore = buildShoreDistance(field);
+
+  /**
+   * How much land there is at a point: metres from the surveyed shoreline where
+   * there is one, and otherwise the smoothed raster distance. The terrain is
+   * where this is positive, so the coast lands wherever it crosses zero rather
+   * than on the nearest grid line.
+   */
+  const rawScalarAt = (x: number, z: number): number => {
+    // The raster's own copy of a deck is not land: the LiDAR saw the pontoon and
+    // the boats tied to it, a few metres off where the ring is mapped, so the
+    // deck and a torn strip of terrain were drawn side by side. The deck is the
+    // better answer and it is the only one kept.
+    if (piers.clearsTerrain(x, z)) return -DECK_CLEARED_SCALAR_M;
+    const surveyed = coast.signedDistance(x, z);
+    const raster = rasterShore.at(plane.lon(x), plane.lat(z));
+    const value = Number.isNaN(surveyed) ? raster : surveyed;
+    if (value < 0 && value > -SURVEYED_HOLE_M && raster > RASTER_CONFIDENT_M) {
+      return raster;
+    }
+    return value;
+  };
   let conformed = 0;
   let worstConform = 0;
   let conformSum = 0;
@@ -336,6 +448,9 @@ function bakeTerrain(
   const maxX = plane.x(field.bbox.maxLon);
   const minZ = plane.z(field.bbox.maxLat); // north edge is the smaller Z
   const maxZ = plane.z(field.bbox.minLat);
+
+  const ponds = findEnclosedWater(rawScalarAt, minX, maxX, minZ, maxZ);
+  holesFilled = ponds.cells;
 
   const blocks = buildBeltBlocks(field, plane, corridor);
   const { blockM, blockRows, blockCols, blockBelt, beltOfCell } = blocks;
@@ -469,21 +584,7 @@ function bakeTerrain(
       if (cached !== undefined) return cached;
       const x = minX + col * cell;
       const z = minZ + row * cell;
-      // The raster's own copy of a deck is not land: the LiDAR saw the pontoon
-      // and the boats tied to it, a few metres off where the ring is mapped, so
-      // the deck and a torn strip of terrain were drawn side by side. The deck
-      // is the better answer and it is the only one kept.
-      if (piers.clearsTerrain(x, z)) {
-        scalarCache.set(key, -DECK_CLEARED_SCALAR_M);
-        return -DECK_CLEARED_SCALAR_M;
-      }
-      const surveyed = coast.signedDistance(x, z);
-      const raster = rasterShore.at(plane.lon(x), plane.lat(z));
-      let value = Number.isNaN(surveyed) ? raster : surveyed;
-      if (value < 0 && value > -SURVEYED_HOLE_M && raster > RASTER_CONFIDENT_M) {
-        holesFilled++;
-        value = raster;
-      }
+      const value = ponds.has(x, z) ? POND_FILLED_SCALAR_M : rawScalarAt(x, z);
       scalarCache.set(key, value);
       return value;
     };
@@ -1866,7 +1967,7 @@ async function main() {
       `worst ${report.conform.worstM.toFixed(2)} m, mean ${report.conform.meanM.toFixed(2)} m, ` +
       `${report.conform.over1M} over 1 m, ${report.conform.over2M} over 2 m`,
   );
-  console.log(`  corner holes ${report.holesFilled} nodes the raster overruled`);
+  console.log(`  enclosed water ${report.holesFilled} cells filled as holes`);
   console.log(
     `  piers ${report.piers.decks.length} decks, ` +
       `${report.piers.skippedOpen} mapped as a line, ` +
