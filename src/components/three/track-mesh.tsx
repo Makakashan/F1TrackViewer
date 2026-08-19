@@ -66,6 +66,7 @@ import type { CityManifest } from "@/lib/env/city-loader";
 import StudioStage from "@/components/three/studio-stage";
 import type { CameraPreset } from "@/components/track/track-viewer";
 import {
+  TRACK_APRON_RENDER_ORDER,
   TRACK_SURFACE_RAISE,
   TRACK_PAINT_RAISE,
   TRACK_OVERLAY_RAISE,
@@ -390,7 +391,7 @@ export default function TrackMesh({
       buildTrackApronGeometry(
         curve,
         halfWidth,
-        TRACK_SURFACE_RAISE - 0.01,
+        TRACK_SURFACE_RAISE - 0.02,
         samples,
         apronRoom,
         hiddenAt,
@@ -398,7 +399,7 @@ export default function TrackMesh({
     [curve, halfWidth, samples, apronRoom, hiddenAt],
   );
 
-  // Kerbs sit a couple of centimeters above the surface and take a deeper polygon offset than it.
+  // Kerbs sit a couple of centimetres above the surface and are drawn after it.
   const kerbGeometry = useMemo(
     () =>
       buildKerbGeometry(
@@ -761,9 +762,6 @@ export default function TrackMesh({
                 side={THREE.DoubleSide}
                 depthTest
                 depthWrite
-                polygonOffset
-                polygonOffsetFactor={-2}
-                polygonOffsetUnits={-2}
               />
             </mesh>
           ))}
@@ -803,25 +801,19 @@ export default function TrackMesh({
               side={THREE.DoubleSide}
               depthTest
               depthWrite
-              polygonOffset
-              polygonOffsetFactor={-2}
-              polygonOffsetUnits={-2}
               toneMapped={false}
             />
           </mesh>
         </>
       )}
 
-      <mesh geometry={edgeLineGeometry} renderOrder={TRACK_RENDER_ORDER}>
+      <mesh geometry={edgeLineGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
         <meshBasicMaterial
           color="#f2f4f7"
           side={THREE.DoubleSide}
           depthTest
           depthWrite
           toneMapped={false}
-          polygonOffset
-          polygonOffsetFactor={-6}
-          polygonOffsetUnits={-6}
         />
       </mesh>
 
@@ -830,31 +822,25 @@ export default function TrackMesh({
           strip traced around it in the sector colour reads as an outline
           somebody forgot to turn off. */}
       {raceView && apronGeometry && (
-        <mesh geometry={apronGeometry} renderOrder={TRACK_RENDER_ORDER}>
+        <mesh geometry={apronGeometry} renderOrder={TRACK_APRON_RENDER_ORDER}>
           <meshBasicMaterial
             color={ASPHALT_COLOR}
             side={THREE.DoubleSide}
             depthTest
             depthWrite
             toneMapped={false}
-            polygonOffset
-            polygonOffsetFactor={-1}
-            polygonOffsetUnits={-1}
           />
         </mesh>
       )}
 
       {raceView && kerbGeometry && (
-        <mesh geometry={kerbGeometry} renderOrder={TRACK_RENDER_ORDER}>
+        <mesh geometry={kerbGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
           <meshBasicMaterial
             vertexColors
             side={THREE.DoubleSide}
             depthTest
             depthWrite
             toneMapped={false}
-            polygonOffset
-            polygonOffsetFactor={-6}
-            polygonOffsetUnits={-6}
           />
         </mesh>
       )}
@@ -884,9 +870,6 @@ export default function TrackMesh({
           depthTest
           depthWrite={false}
           toneMapped={false}
-          polygonOffset
-          polygonOffsetFactor={-10}
-          polygonOffsetUnits={-10}
         />
       </mesh>
 
@@ -901,9 +884,6 @@ export default function TrackMesh({
             depthTest
             depthWrite={false}
             toneMapped={false}
-            polygonOffset
-            polygonOffsetFactor={-10}
-            polygonOffsetUnits={-10}
           />
         </mesh>
       )}
