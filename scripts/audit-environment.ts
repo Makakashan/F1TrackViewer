@@ -22,6 +22,7 @@ import {
   buildBeltBlocks,
   buildCircuitGround,
   fromOverpass,
+  SHORE_EDGE_MAX_M,
   WATER_CLEARANCE_M,
   type BeltBlocks,
 } from "./env/bake";
@@ -198,7 +199,11 @@ function checkTerrain(
       // The surface is held clear of the sea plane, so that is the height it is
       // meant to have where the raster reads at or below the datum.
       const delta = Math.abs(y - Math.max(ground, WATER_CLEARANCE_M));
-      if (onCut(x, z)) {
+      // Sitting on the cap the waterline is held to, with ground above it, is
+      // the signature of `SHORE_EDGE_MAX_M` and of nothing else: this is a cut
+      // vertex at the foot of a rise, however far the line has drifted from it.
+      const capped = y <= SHORE_EDGE_MAX_M + 0.1 && ground > y + 0.1;
+      if (onCut(x, z) || capped) {
         shore++;
         if (delta > worstShore) worstShore = delta;
         continue;

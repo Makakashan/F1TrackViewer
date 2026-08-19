@@ -88,7 +88,7 @@ const SHORE_FOOT_M = -3;
  * leaves the rise to the ground behind it, which is where the cliff belongs.
  * A quay is barely affected: 3 m of its own height it keeps.
  */
-const SHORE_EDGE_MAX_M = 3;
+export const SHORE_EDGE_MAX_M = 3;
 /**
  * How far the land is held above the sea plane.
  *
@@ -101,6 +101,19 @@ const SHORE_EDGE_MAX_M = 3;
  * coast where the cut put it, which is the only thing that should decide it.
  */
 export const WATER_CLEARANCE_M = 0.25;
+/**
+ * How far the surveyed line may say "water" before the raster stops overruling
+ * it, and how far inland the raster has to be to do the overruling.
+ *
+ * The signed distance is to the *nearest* segment, so at a concave corner — a
+ * pier meeting its quay — that segment's wet side sweeps back over ground
+ * behind it and punches a hole. At the root of Port Hercule's T pier the line
+ * reads -1.8 m with +2.4 and +1.0 either side of it, while the raster has it
+ * 9.6 m inland. A hole a metre or two deep in ground the raster is confident
+ * about is a corner artefact, not a coastline.
+ */
+const SURVEYED_HOLE_M = 2.5;
+const RASTER_CONFIDENT_M = 8;
 /** How wet a node cleared for a deck reads. Any negative would do; this keeps the cut's interpolation sane. */
 const DECK_CLEARED_SCALAR_M = 2;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
@@ -132,6 +145,8 @@ const MESH_COLOR: Record<MeshKind, string> = {
 interface TerrainResult {
   meshes: Record<Belt, Mesh>;
   cellsByBelt: Record<Belt, number>;
+  /** Nodes where a corner of the surveyed line was overruled by the raster. */
+  holesFilled: number;
   /** How much the fine belts gave up to meet the coarse ones — see `surfaceHeightAt`. */
   conform: { nodes: number; worstM: number; meanM: number; over1M: number; over2M: number };
 }
@@ -313,6 +328,7 @@ function bakeTerrain(
   let conformSum = 0;
   let conformOver1 = 0;
   let conformOver2 = 0;
+  let holesFilled = 0;
   const meshes = {} as Record<Belt, Mesh>;
   const cellsByBelt = { core: 0, city: 0, far: 0 } as Record<Belt, number>;
 
@@ -462,9 +478,12 @@ function bakeTerrain(
         return -DECK_CLEARED_SCALAR_M;
       }
       const surveyed = coast.signedDistance(x, z);
-      const value = Number.isNaN(surveyed)
-        ? rasterShore.at(plane.lon(x), plane.lat(z))
-        : surveyed;
+      const raster = rasterShore.at(plane.lon(x), plane.lat(z));
+      let value = Number.isNaN(surveyed) ? raster : surveyed;
+      if (value < 0 && value > -SURVEYED_HOLE_M && raster > RASTER_CONFIDENT_M) {
+        holesFilled++;
+        value = raster;
+      }
       scalarCache.set(key, value);
       return value;
     };
@@ -563,6 +582,7 @@ function bakeTerrain(
   return {
     meshes,
     cellsByBelt,
+    holesFilled,
     conform: {
       nodes: conformed,
       worstM: worstConform,
@@ -1531,6 +1551,7 @@ export interface BakeReport {
   buildings: BuildingResult;
   cellsByBelt: Record<Belt, number>;
   conform: TerrainResult["conform"];
+  holesFilled: number;
   trackVertices: number;
   portalTriangles: number;
   barrierTriangles: number;
@@ -1717,6 +1738,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     buildings,
     cellsByBelt: terrain.cellsByBelt,
     conform: terrain.conform,
+    holesFilled: terrain.holesFilled,
     trackVertices: elevations.length,
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
     barrierTriangles: triangleCount(barriers),
@@ -1844,6 +1866,7 @@ async function main() {
       `worst ${report.conform.worstM.toFixed(2)} m, mean ${report.conform.meanM.toFixed(2)} m, ` +
       `${report.conform.over1M} over 1 m, ${report.conform.over2M} over 2 m`,
   );
+  console.log(`  corner holes ${report.holesFilled} nodes the raster overruled`);
   console.log(
     `  piers ${report.piers.decks.length} decks, ` +
       `${report.piers.skippedOpen} mapped as a line, ` +
