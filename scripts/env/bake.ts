@@ -101,6 +101,8 @@ const SHORE_EDGE_MAX_M = 3;
  * coast where the cut put it, which is the only thing that should decide it.
  */
 export const WATER_CLEARANCE_M = 0.25;
+/** How wet a node cleared for a deck reads. Any negative would do; this keeps the cut's interpolation sane. */
+const DECK_CLEARED_SCALAR_M = 2;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
 /** How far below its own floor a building's walls may reach for the ground. */
@@ -300,6 +302,7 @@ function bakeTerrain(
   plane: ScenePlane,
   corridor: Corridor,
   coast: Coastline,
+  piers: PierResult,
 ): TerrainResult {
   // Where no surveyed line reaches — a third of a kilometre of Larvotto, among
   // others — the edge still has to come from somewhere smoother than a boolean
@@ -450,6 +453,14 @@ function bakeTerrain(
       if (cached !== undefined) return cached;
       const x = minX + col * cell;
       const z = minZ + row * cell;
+      // The raster's own copy of a deck is not land: the LiDAR saw the pontoon
+      // and the boats tied to it, a few metres off where the ring is mapped, so
+      // the deck and a torn strip of terrain were drawn side by side. The deck
+      // is the better answer and it is the only one kept.
+      if (piers.clearsTerrain(x, z)) {
+        scalarCache.set(key, -DECK_CLEARED_SCALAR_M);
+        return -DECK_CLEARED_SCALAR_M;
+      }
       const surveyed = coast.signedDistance(x, z);
       const value = Number.isNaN(surveyed)
         ? rasterShore.at(plane.lon(x), plane.lat(z))
@@ -1619,7 +1630,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const portals = bakePortals(tunnels, field, plane);
   const bore = bakeTunnelBody(field, plane, tunnels, portalSection());
   const barriers = bakeBarriers(field, plane, tunnels, DEFAULT_TRACK_HALF_WIDTH_M);
-  const terrain = bakeTerrain(field, plane, corridor, coast);
+  const terrain = bakeTerrain(field, plane, corridor, coast, piers);
   const water = bakeWater(field, plane);
 
   const buildingWays = await fetchBuildingWays(circuitId, bbox, refresh);
