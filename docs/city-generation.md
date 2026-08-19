@@ -1045,6 +1045,40 @@ belt an order of magnitude inside its byte budget.
       the nearer of the two lines**. Which is closer does not care how far
       either of them is.
 
+- [x] **P4.0j** A coastline the raster contradicts is still a coastline.
+
+      Port Hercule's pier fingers came out as torn slabs offset from where they
+      are mapped, and the cause was `agreesWithRaster` throwing away the very
+      segments that describe them. **36%** of the harbour outline in that band
+      was dropped, including the two 58 m segments that *are* the fingers.
+
+      They were dropped for reading **reversed** — the raster finding ground on
+      the wet side of the line and water on the dry side. But a coastline is
+      oriented by definition, land on its left, so it already knows which side
+      is which, and what the raster calls ground out there is the boats moored
+      along the pontoon. Ten segments in the whole city read like this. What the
+      confirmation is really for is a line the raster has nothing to say about
+      on *either* side — the Larvotto case, mapped up to 160 m from where the
+      LiDAR puts the water, sea on both sides of it. Silent is now the only
+      failure; reversed is kept.
+
+      Two other readings of the same evidence were tried and measured worse.
+      Deleting the raster's land on the wet side of a contradicted segment
+      merged the slabs into the quay and turned the quay's own edge into a
+      sawtooth. Clearing a fixed halo around every deck bit notches out of the
+      harbour wall.
+
+      The corner hole at the pier root is separate: the signed distance is to
+      the *nearest* segment, so where a pier meets its quay that segment's wet
+      side sweeps back over the ground behind it. The line read **-1.8 m** there
+      with **+2.4** and **+1.0** either side, while the raster had it 9.6 m
+      inland. A shallow hole in ground the raster is confident about is now
+      overruled — **54 nodes**, at a gate tight enough not to hand the shoreline
+      back to the grid, which a looser one did.
+
+      A small hole remains at that root: its core reads past the gate, and both
+      attempts to widen it brought the sawtooth back.
+
 - [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).
