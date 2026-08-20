@@ -101,7 +101,7 @@ scene can draw.
 | **D1** | One generator for every circuit, plus a versioned per-circuit overrides file. Only a few circuits (Monaco first) get hand corrections. | Fixes live in git, not in a binary. 23 other circuits keep working. |
 | **D2** | One height field is the single source of truth. The track supplies hard constraint lines; the field relaxes locally to meet them. Buildings, roads and water all read the same field. | "Floating building" becomes impossible by construction, not by tuning an offset. |
 | **D3** | High-resolution DEM, adaptive: **4 m** near the track (the source's native cell — see P0.1), 8 m in the city belt, 16 m at the edge. DTM for the ground, DSM/MNH for building heights. | Le Rocher gets hundreds of samples instead of eight. |
-| **D4** | Tunnels render as portals with a short vault, not a boolean cut. Real CSG excavation is a follow-up (P4.1). | ~95% of the visual for ~200 triangles and no runtime CSG. |
+| **D4** | Tunnels render as portals with a swept vault, and the approaches are excavated into the height field rather than cut out of it as solids (P4.1). | ~95% of the visual for ~900 triangles and no CSG anywhere. |
 | **D5** | Budget: ≤ 15 MB per circuit over the wire, ≥ 30 fps on mobile, ≥ 60 fps on desktop, ≤ 120 draw calls including the car fleet. | Every later decision is checked against these numbers by `env:audit`. |
 | **D6** | Geometry is baked to GLB at generation time. The browser loads, it does not build. | No main-thread triangulation, no 900-building cap, and the output can be opened in Blender to see what broke. |
 | **D7** | Three detail belts measured from the track centreline: **core** ≤ 150 m, **city** ≤ 600 m, **far** to the bbox edge. | Detail follows the camera's actual interest. The harbour and Le Rocher land in core/city automatically. |
@@ -1085,7 +1085,71 @@ belt an order of magnitude inside its byte budget.
       cells** in the whole city, decided once on the core lattice so every belt
       fills the same ones.
 
-- [ ] **P4.1** Real tunnel excavation — boolean cut through the hill (D4's target).
+- [x] **P4.1** The approaches are excavated, so the mouth is a hole in a face.
+
+      D4 asked for a boolean cut through the hill. A height field cannot hold a
+      cavity, so what it can be given instead is the part of the excavation that
+      is actually visible: the **cutting** the road runs in before it reaches the
+      rock. That is where the defect was. The tunnel is tagged for 455 m but the
+      hill only covers 335 of them, and the terrain was the raw hill for the
+      whole tag — so at each end a lip of ground rose over the road, the ribbon
+      dived under it, and it cut across the arch in front of the mouth. From
+      outside, the exit read as a pipe lying in a slope.
+
+      **The burn-in now stops at the vault, not at the tag.** The corridor
+      flattening already knows how to cut a shelf for a road; it was held back
+      over the whole tagged tunnel, because burning a tunnel in would carve a
+      canyon through the hill. Those are two different questions, and
+      `TrackConstraint` now asks them separately: `buried` still says *do not
+      trust the raster for the road's height here*, and a new `vaulted` says
+      *leave the ground alone, something is holding it up*. Everything tagged but
+      unvaulted is burned in, which is the cutting.
+
+      Which stretch is vaulted cannot be known before the ground is, so the
+      ground is built **twice**: a survey pass with the whole tag held back, to
+      read how much hill there is over the road, and then the real pass holding
+      back only what `vaultedRuns` found. No network, and the second pass is
+      milliseconds.
+
+      **The mouths move inward to where a full-height portal fits.** The arch
+      used to be scaled down to whatever cover was at the mouth — measured 49% at
+      Monaco, a squat opening — because a mouth sat where the cover first reached
+      the *bore's* 3.7 m. It now walks in until the hill is `PORTAL_NEED_M` = 9 m
+      deep, up to 30 m. Selecting the run at 9 m instead would have split it:
+      Monaco thins to **6.6 m** of cover halfway through, which would have put
+      two more mouths in the middle of the hill. **18 m cut open** in total, 9 m
+      at each end, and both arches are full size.
+
+      **The cutting stops square at the face.** A corridor is a distance to a
+      polyline, so its end cap is round and reaches a full 13 m past the last
+      burned sample — straight through the mouth, flattening the very hill the
+      portal has to be a hole in. Measured: cover at both mouths read **0.00 m**
+      and the arch collapsed again. Cells whose projection falls beyond the join
+      are now left alone, so the flattening ends on the plane of the mouth and
+      the rock stands where the vault begins.
+
+      **The tunnel's geometry is sized against the hill, not against its own
+      cutting.** The cut at a mouth exists *because* the portal does, so reading
+      it back is circular — and it read as no cover at all. The pre-cut field is
+      carried through to `bakePortals` and `bakeTunnelBody` for both the arch's
+      scale and the headwall's clamp. Against the hill that shaped it: **0 of
+      2 034 bore and sleeve vertices** and **0 portal vertices** stand above the
+      ground, where the best previous result was 15 bore vertices at 1.1 m
+      against a scaled-down arch. Against the finished terrain the headwall now
+      stands 9 m proud — which is the point, it is a wall in an open cutting.
+
+      **And the ribbon was hidden by the wrong ruler.** `buriedSpans` walked the
+      *drawn* centreline, which carries a vertex every 30 to 70 m through
+      Monaco's tunnel, and a span can only begin at a vertex — so **51 m** of
+      ribbon was still drawn inside the hill at the entry, which is the red band
+      that kept coming back. It walks the field's 3 m profile now. Hidden
+      **647–973 m** against a vault of 641–976: **0 covered centreline samples
+      are still drawn**, and the road stays visible right up to the face, which
+      is what "there is road missing before the tunnel" was asking for.
+
+      Cost: **0 bytes**. 5 triangles on the portals, and the terrain cell counts
+      are unchanged — the cutting replaces hill that was already being drawn.
+
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).
 - [ ] **P4.3** Trees and vegetation.
