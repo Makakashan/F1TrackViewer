@@ -1094,17 +1094,17 @@ function portalSection(): { offset: number; height: number }[] {
 }
 
 function bakePortals(
-  tunnels: TunnelMask,
-  field: HeightField,
+  vaults: VaultedRuns,
+  hill: HeightField,
   plane: ScenePlane,
 ): { sleeve: Mesh; surround: Mesh } {
   const mesh = createMesh();
   const surround = createMesh();
   const profile = portalSection();
 
-  const { coords, elevations } = field.trackProfile;
-  // Mouths sit where the cover starts, not where the tag does — see coveredRuns.
-  for (const run of coveredRuns(field, tunnels, BORE_MIN_HEIGHT_M + BORE_COVER_M)) {
+  const { coords, elevations } = hill.trackProfile;
+  // Mouths sit where the vault does, not where the tag does — see vaultedRuns.
+  for (const run of vaults.runs) {
     const ends: { index: number; into: number }[] = [
       { index: run[0], into: 1 },
       { index: run[run.length - 1], into: -1 },
@@ -1132,10 +1132,14 @@ function bakePortals(
       // The lowest ground the sleeve passes under, not just the ground at the
       // mouth: the sleeve runs 8 m into the slope and the hill is still rising
       // over that, so the mouth's own reading is the optimistic one.
+      //
+      // Inward from the face only. The ground outside it is the cutting's
+      // floor, at the road's own level, so including it would read no cover at
+      // all and shrink every arch to its floor.
       const crown = PORTAL_WALL_M + PORTAL_ARCH_M;
       let cover = Infinity;
-      for (let along = -PORTAL_OUT_M; along <= PORTAL_IN_M; along += 2) {
-        const probe = field.heightAt(
+      for (let along = 0; along <= PORTAL_IN_M; along += 2) {
+        const probe = hill.heightAt(
           plane.lon(x + ux * along),
           plane.lat(z + uz * along),
         );
@@ -1193,7 +1197,7 @@ function bakePortals(
       const face = (offset: number, height: number) => {
         const fx = mouth.x + nx * offset + mouth.ux * outside;
         const fz = mouth.z + nz * offset + mouth.uz * outside;
-        const over = field.heightAt(plane.lon(fx), plane.lat(fz));
+        const over = hill.heightAt(plane.lon(fx), plane.lat(fz));
         const y = roadY + height;
         return { x: fx, y: Number.isNaN(over) ? y : Math.min(y, over), z: fz };
       };
@@ -1252,6 +1256,89 @@ function coveredRuns(
   return runs;
 }
 
+/** Cover a full-height portal needs: the crown, plus the headwall around it. */
+const PORTAL_NEED_M = PORTAL_WALL_M + PORTAL_ARCH_M + PORTAL_SURROUND_M;
+/** How far a mouth may be pushed into the hill looking for that cover. Past
+ *  this the hill is not going to arrive and the arch is scaled instead. */
+const PORTAL_SEEK_M = 30;
+
+export interface VaultedRuns {
+  /** Profile-index runs a vault is built along, mouth to mouth. */
+  runs: number[][];
+  /** True at a centreline sample a vault covers — the burn-in's hold-back. */
+  covers(lon: number, lat: number): boolean;
+  stats: { taggedSamples: number; vaultedSamples: number; cutM: number };
+}
+
+/**
+ * Where the vault goes, and therefore where the ground is left alone (P4.1).
+ *
+ * A tagged tunnel is longer than the hill it runs under. `coveredRuns` already
+ * finds the stretch with real cover, but the terrain was still the raw hill for
+ * the whole tag, so the approaches kept a lip of ground rising over the road:
+ * the ribbon dived under it, and it cut across the arch in front of the mouth.
+ * What is actually there is a cutting, and a cutting is what the burn-in makes.
+ *
+ * The mouths are then pushed inward to where the hill is tall enough for a
+ * full-height portal, up to `PORTAL_SEEK_M`. Selecting the run at that depth
+ * instead would break it in two — Monaco thins to 6.6 m of cover halfway
+ * through — and put two more mouths in the middle of the hill.
+ */
+function vaultedRuns(
+  field: HeightField,
+  plane: ScenePlane,
+  tunnels: TunnelMask,
+): VaultedRuns {
+  const { coords, elevations } = field.trackProfile;
+  const coverAt = (i: number) => {
+    const ground = field.heightAt(coords[i][0], coords[i][1]);
+    return Number.isNaN(ground) ? Number.NaN : ground - elevations[i];
+  };
+  const stepM = (a: number, b: number) =>
+    Math.hypot(
+      plane.x(coords[a][0]) - plane.x(coords[b][0]),
+      plane.z(coords[a][1]) - plane.z(coords[b][1]),
+    );
+
+  let cutM = 0;
+  const runs: number[][] = [];
+  for (const run of coveredRuns(field, tunnels, BORE_MIN_HEIGHT_M + BORE_COVER_M)) {
+    let from = 0;
+    let to = run.length - 1;
+    let sought = 0;
+    while (from < to && coverAt(run[from]) < PORTAL_NEED_M && sought < PORTAL_SEEK_M) {
+      sought += stepM(run[from], run[from + 1]);
+      from++;
+    }
+    cutM += sought;
+    sought = 0;
+    while (to > from && coverAt(run[to]) < PORTAL_NEED_M && sought < PORTAL_SEEK_M) {
+      sought += stepM(run[to], run[to - 1]);
+      to--;
+    }
+    cutM += sought;
+    if (to - from > 1) runs.push(run.slice(from, to + 1));
+  }
+
+  // Keyed on the sample itself. Both passes densify the same centreline with
+  // the same step, so the profile is the same array of points either time.
+  const covered = new Set<string>();
+  for (const run of runs) for (const i of run) covered.add(`${coords[i][0]},${coords[i][1]}`);
+
+  let taggedSamples = 0;
+  for (const [lon, lat] of coords) if (tunnels.buried(lon, lat)) taggedSamples++;
+
+  return {
+    runs,
+    covers: (lon, lat) => covered.has(`${lon},${lat}`),
+    stats: {
+      taggedSamples,
+      vaultedSamples: covered.size,
+      cutM: Math.round(cutM),
+    },
+  };
+}
+
 /** Metres between rings of the bore. Coarser than the profile: it is seen down
  *  its own length, where a ring every few metres is indistinguishable. */
 const BORE_STEP_M = 9;
@@ -1274,14 +1361,13 @@ const BORE_MIN_HEIGHT_M = 3.2;
 function bakeTunnelBody(
   field: HeightField,
   plane: ScenePlane,
-  tunnels: TunnelMask,
+  vaults: VaultedRuns,
   section: { offset: number; height: number }[],
 ): Mesh {
   const mesh = createMesh();
   const { coords, elevations } = field.trackProfile;
-  const runs = coveredRuns(field, tunnels, BORE_MIN_HEIGHT_M + BORE_COVER_M);
 
-  for (const run of runs) {
+  for (const run of vaults.runs) {
     // Rings at BORE_STEP_M, plus the last sample, so the bore reaches its mouth.
     const rings: {
       x: number;
@@ -1489,15 +1575,18 @@ function bakeBarriers(
  * road is not to be drawn — under a hill there is a bore to see instead.
  */
 function buriedSpans(
-  coords: [number, number][],
   plane: ScenePlane,
   field: HeightField,
   tunnels: TunnelMask,
 ): [number, number][] {
-  const points = coords.slice();
-  const first = points[0];
-  const last = points[points.length - 1];
-  if (first && last && first[0] === last[0] && first[1] === last[1]) points.pop();
+  // Walked along the field's own densified profile, not the drawn centreline.
+  // Both describe the same polyline, so a distance fraction means the same
+  // thing on either — but the drawn one carries a vertex every 30 to 70 m
+  // through the tunnel, and a span can only begin at a vertex. Snapping to
+  // those left 51 m of ribbon drawn inside the hill at the entry. The profile
+  // is sampled every 3 m.
+  const points = field.trackProfile.coords;
+  const road = field.trackProfile.elevations;
   if (points.length < 2) return [];
 
   // Fractions of lap length, not of vertex count. The runtime samples its curve
@@ -1507,31 +1596,36 @@ function buriedSpans(
   // entirely and the ribbon vanishes well past the tunnel.
   const distances = [0];
   for (let i = 1; i < points.length; i++) {
-    const step = Math.hypot(
-      plane.x(points[i][0]) - plane.x(points[i - 1][0]),
-      plane.z(points[i][1]) - plane.z(points[i - 1][1]),
+    distances.push(
+      distances[i - 1] +
+        Math.hypot(
+          plane.x(points[i][0]) - plane.x(points[i - 1][0]),
+          plane.z(points[i][1]) - plane.z(points[i - 1][1]),
+        ),
     );
-    distances.push(distances[i - 1] + step);
   }
-  const closing = Math.hypot(
-    plane.x(points[0][0]) - plane.x(points[points.length - 1][0]),
-    plane.z(points[0][1]) - plane.z(points[points.length - 1][1]),
-  );
-  const total = distances[distances.length - 1] + closing;
+  const last = points.length - 1;
+  const closed = points[0][0] === points[last][0] && points[0][1] === points[last][1];
+  const total = closed
+    ? distances[last]
+    : distances[last] +
+      Math.hypot(
+        plane.x(points[0][0]) - plane.x(points[last][0]),
+        plane.z(points[0][1]) - plane.z(points[last][1]),
+      );
   if (total <= 0) return [];
 
   // Hidden where there is ground over the road, however little.
   //
   // Not the tag: OSM marks the whole 455 m, but under the Fairmont and the
-  // waterfront the thing overhead is a building, the field reads ground at road
-  // level, and hiding there took the ribbon away while the car is still out in
-  // the open — missing road before the tunnel.
+  // waterfront the thing overhead is a building and the field reads ground at
+  // road level, so hiding by the tag took the ribbon away while the car is
+  // still out in the open — missing road before the tunnel.
   //
-  // Nor the bore's own test, which needs 3.7 m of cover to fit a vault: between
-  // those two there is a stretch with a metre or two of ground over the road,
-  // where the ribbon is genuinely buried and showed through the hillside as red
-  // dashes. Anything the ground covers is hidden; whether a vault fits there is
-  // a different question.
+  // Since P4.1 the approaches are cut down to the road, so there is nothing
+  // over them to hide behind and this test now lands on the vault's own mouths.
+  // It is still the measurement rather than the vault, because what the ribbon
+  // has to survive is the ground, not the geometry the bake chose to build.
   const clearance = 0.3;
   const spans: [number, number][] = [];
   let start = -1;
@@ -1539,17 +1633,15 @@ function buriedSpans(
     const ground = tunnels.buried(points[i][0], points[i][1])
       ? field.heightAt(points[i][0], points[i][1])
       : Number.NaN;
-    const road = trackHeightNear(field, plane, plane.x(points[i][0]), plane.z(points[i][1]));
-    const buried = !Number.isNaN(ground) && !Number.isNaN(road) && ground - road >= clearance;
-    if (buried && start < 0) start = i;
-    if (!buried && start >= 0) {
+    const covered =
+      !Number.isNaN(ground) && !Number.isNaN(road[i]) && ground - road[i] >= clearance;
+    if (covered && start < 0) start = i;
+    if (!covered && start >= 0) {
       spans.push([distances[start] / total, distances[i - 1] / total]);
       start = -1;
     }
   }
-  if (start >= 0) {
-    spans.push([distances[start] / total, distances[points.length - 1] / total]);
-  }
+  if (start >= 0) spans.push([distances[start] / total, distances[last] / total]);
   return spans;
 }
 
@@ -1661,6 +1753,7 @@ export interface BakeReport {
   coast: CoastlineStats;
   heights: HeightStats;
   tunnels: TunnelMask;
+  vaults: VaultedRuns["stats"];
   overrides: OverrideStats;
 }
 
@@ -1677,8 +1770,15 @@ export interface CircuitGround {
   bbox: ReturnType<typeof circuitBBox>;
   plane: ScenePlane;
   field: HeightField;
+  /**
+   * The ground before the cuttings were burned into it. The tunnel's own
+   * geometry is sized against this: the cut at a mouth is there because the
+   * portal is, so reading it back would shrink the arch to nothing.
+   */
+  hill: HeightField;
   corridor: ReturnType<typeof buildCorridor>;
   tunnels: TunnelMask;
+  vaults: VaultedRuns;
 }
 
 export async function buildCircuitGround(
@@ -1710,12 +1810,27 @@ export async function buildCircuitGround(
       }
     : found;
 
+  // Two passes, because where a vault goes cannot be known until the ground is
+  // known (P4.1). The first keeps every tagged metre of tunnel unburned, which
+  // is the only way to read how much hill there is over the road; the second
+  // holds back only the stretch that turned out to have a hill, so the
+  // approaches are burned in as the cuttings they are.
+  const survey = buildHeightField({
+    dtm,
+    track: {
+      coords,
+      halfWidthM: DEFAULT_TRACK_HALF_WIDTH_M,
+      buried: tunnels.buried,
+    },
+  });
+  const vaults = vaultedRuns(survey, plane, tunnels);
   const field = buildHeightField({
     dtm,
     track: {
       coords,
       halfWidthM: DEFAULT_TRACK_HALF_WIDTH_M,
       buried: tunnels.buried,
+      vaulted: vaults.covers,
     },
   });
   // Applied after the burn-in: a hand-set height is the last word, over both
@@ -1730,13 +1845,15 @@ export async function buildCircuitGround(
     bbox,
     plane,
     field,
+    hill: survey,
     corridor: buildCorridor(coords, plane),
     tunnels,
+    vaults,
   };
 }
 
 export async function bakeCircuit(circuitId: string, refresh = false): Promise<BakeReport> {
-  const { coords, bbox, plane, field, corridor, tunnels, overrides, overrideStats } =
+  const { coords, bbox, plane, field, hill, corridor, tunnels, vaults, overrides, overrideStats } =
     await buildCircuitGround(circuitId, refresh);
   const shoreWays = overrideShoreWays(
     await fetchShoreWays(circuitId, bbox, refresh),
@@ -1749,8 +1866,8 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const pierDecks = bakePierDecks(piers);
 
   const elevations = trackElevations(field, coords, plane);
-  const portals = bakePortals(tunnels, field, plane);
-  const bore = bakeTunnelBody(field, plane, tunnels, portalSection());
+  const portals = bakePortals(vaults, hill, plane);
+  const bore = bakeTunnelBody(hill, plane, vaults, portalSection());
   const barriers = bakeBarriers(field, plane, tunnels, DEFAULT_TRACK_HALF_WIDTH_M);
   const terrain = bakeTerrain(field, plane, corridor, coast, piers);
   const water = bakeWater(field, plane);
@@ -1848,9 +1965,10 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     coast: coast.stats,
     heights: heightStats.value,
     tunnels,
+    vaults: vaults.stats,
     overrides: overrideStats,
   };
-  await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(coords, plane, field, tunnels));
+  await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(plane, field, tunnels));
   return report;
 }
 
@@ -1976,6 +2094,10 @@ async function main() {
   );
   if (report.tunnels.runs.length) {
     console.log(`  tunnels ${report.tunnels.runs.length} run(s), ${report.tunnels.buriedLengthM} m buried`);
+    console.log(
+      `  vaults ${report.vaults.vaultedSamples} of ${report.vaults.taggedSamples} tunnel samples`
+        + ` have a hill over them, ${report.vaults.cutM} m cut open at the mouths`,
+    );
     for (const run of report.tunnels.runs) {
       console.log(`    ${run.name ?? run.wayId} — ${run.lengthM} m`);
     }
