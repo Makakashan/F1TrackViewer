@@ -1147,8 +1147,36 @@ belt an order of magnitude inside its byte budget.
       are still drawn**, and the road stays visible right up to the face, which
       is what "there is road missing before the tunnel" was asking for.
 
-      Cost: **0 bytes**. 5 triangles on the portals, and the terrain cell counts
-      are unchanged — the cutting replaces hill that was already being drawn.
+      **The clip is a plane at the mouth, not a rule about segments.** Stopping
+      only the last segment of the cutting was not enough — the one before it
+      reaches just as far, because every segment carries its own round end cap.
+      Measured: terrain nodes **6 m inside the vault** were still being pulled
+      down to the road. The half-space at the mouth is checked once per cell and
+      holds only within a corridor's reach of it, since a plane over the whole
+      map would refuse to burn every other part of the lap beyond it.
+
+      **And the mouth is a hole in a face, which needs the field to lose
+      something.** With the cutting in place the terrain still crossed the
+      opening: the cut floor and the untouched hill are neighbouring nodes 3 m
+      apart with 8.6 m between them, and the surface drawn across that pair is a
+      ramp — steeper than the arch and straight through it. A ray down the axis
+      hit terrain **0.6 m before the mouth**. No wall in front helps; the ramp is
+      *inside* the hole.
+
+      So the ground over the arch is removed — `portalVoids`, D4's boolean cut
+      reduced to the one shape the field has to lose — and the portal closes what
+      that leaves: a face at each end with the arch cut out of it, a wall down
+      each side, and a lid over the top. The same ray now runs **139 m** down the
+      bore. Three sizing lessons, each found by looking: the face has to be wider
+      than the void, because the void is decided on cell centres and the hole it
+      leaves runs half a cell past its nominal edge; the face's height has to be
+      read across its own width, not at its centre, or its corners come up short;
+      and without a lid the excavation reads from above as a black rectangle cut
+      into the slope — closed at the road's level and open at the sky's.
+
+      Cost: **0 bytes**. Portals 75 → 148 triangles, and the terrain cell counts
+      are otherwise unchanged — the cutting replaces hill that was already being
+      drawn.
 
 - [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
       (D10's third tier).
