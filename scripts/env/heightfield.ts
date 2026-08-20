@@ -40,16 +40,27 @@ export interface TrackConstraint {
   blendM?: number;
   /**
    * Where the track runs under the ground rather than on it — the Monaco
-   * tunnel. Burning those stretches in would carve a canyon through the hill
-   * the road passes under, so the ground there keeps its own height and the
-   * portals in the bake are what show the road going in.
+   * tunnel. The raster there describes the hill, not the road beneath it, so
+   * these samples take an interpolated elevation instead of a measured one.
    */
   buried?(lon: number, lat: number): boolean;
+  /**
+   * Where a vault is holding the hill up, and the ground must therefore keep
+   * its own height. Burning those stretches in would carve a canyon through
+   * the hill the road passes under.
+   *
+   * Narrower than `buried`, and deliberately so. A tagged tunnel reaches
+   * beyond the stretch that has a hill over it — under a building the ground
+   * is at road level and the bake builds no vault — and where nothing is
+   * holding the hill up, the road is in a cutting and the ground belongs at
+   * the road's level. Defaults to `buried`, which is the old behaviour.
+   */
+  vaulted?(lon: number, lat: number): boolean;
 }
 
 export interface HeightFieldStats {
-  /** Centreline samples skipped because the track is under the ground there. */
-  buriedSamples: number;
+  /** Centreline samples left unburned because a vault holds the hill up. */
+  vaultedSamples: number;
   cellsBurned: number;
   maxLiftM: number;
   maxCutM: number;
@@ -201,7 +212,7 @@ function burnTrack(
   halfWidthM: number,
   vergeM: number,
   blendM: number,
-  buried: ((lon: number, lat: number) => boolean) | undefined,
+  vaulted: ((lon: number, lat: number) => boolean) | undefined,
 ): HeightFieldStats {
   const cellX = bboxSizeMeters(bbox).width / (width - 1);
   const cellZ = bboxSizeMeters(bbox).height / (height - 1);
@@ -214,10 +225,10 @@ function burnTrack(
   const bestDist = new Float32Array(width * height).fill(Infinity);
   const bestElev = new Float32Array(width * height);
 
-  let buriedSamples = 0;
+  let vaultedSamples = 0;
   for (let i = 0; i < coords.length - 1; i++) {
-    if (buried?.(coords[i][0], coords[i][1])) {
-      buriedSamples++;
+    if (vaulted?.(coords[i][0], coords[i][1])) {
+      vaultedSamples++;
       continue;
     }
     const ax = plane.toX(coords[i][0]);
@@ -236,13 +247,24 @@ function burnTrack(
     const abz = bz - az;
     const abLenSq = abx * abx + abz * abz;
 
+    // Where the burn meets a vault it stops square, not round. The corridor is
+    // a distance to a polyline, so its end cap reaches a full `reach` past the
+    // last sample — which is straight through the tunnel mouth, flattening the
+    // very hill the portal has to be a hole in. Clipped at the join, the
+    // cutting ends at the face and the rock stands where the vault begins.
+    const capsAtStart = i > 0 && Boolean(vaulted?.(coords[i - 1][0], coords[i - 1][1]));
+    const capsAtEnd = Boolean(vaulted?.(coords[i + 1][0], coords[i + 1][1]));
+
     for (let row = rowFrom; row <= rowTo; row++) {
       const pz = row * cellZ;
       for (let col = colFrom; col <= colTo; col++) {
         const px = col * cellX;
-        const t = abLenSq > 0
-          ? Math.min(1, Math.max(0, ((px - ax) * abx + (pz - az) * abz) / abLenSq))
+        const along = abLenSq > 0
+          ? ((px - ax) * abx + (pz - az) * abz) / abLenSq
           : 0;
+        if (capsAtStart && along < 0) continue;
+        if (capsAtEnd && along > 1) continue;
+        const t = Math.min(1, Math.max(0, along));
         const dx = px - (ax + abx * t);
         const dz = pz - (az + abz * t);
         const dist = Math.hypot(dx, dz);
@@ -297,7 +319,7 @@ function burnTrack(
     if (v > trackMaxM) trackMaxM = v;
   }
   return {
-    buriedSamples,
+    vaultedSamples,
     cellsBurned,
     maxLiftM,
     maxCutM,
@@ -333,7 +355,7 @@ export function buildHeightField(options: BuildHeightFieldOptions): HeightField 
     track.halfWidthM,
     track.vergeM ?? DEFAULT_VERGE_M,
     track.blendM ?? DEFAULT_BLEND_M,
-    track.buried,
+    track.vaulted ?? track.buried,
   );
 
   const cellSizeM = {
