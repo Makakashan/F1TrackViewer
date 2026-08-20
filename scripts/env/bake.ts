@@ -409,6 +409,7 @@ function bakeTerrain(
   corridor: Corridor,
   coast: Coastline,
   piers: PierResult,
+  isVoid: (x: number, z: number) => boolean,
 ): TerrainResult {
   // Where no surveyed line reaches — a third of a kilometre of Larvotto, among
   // others — the edge still has to come from somewhere smoother than a boolean
@@ -629,6 +630,7 @@ function bakeTerrain(
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         if (beltOfCell(row, col, cell) !== belt) continue;
+        if (isVoid(minX + (col + 0.5) * cell, minZ + (row + 0.5) * cell)) continue;
 
         const scalars = walk.map(([dr, dc]) => scalarAt(row + dr, col + dc));
         if (scalars.every((value) => value <= 0)) continue;
@@ -1061,10 +1063,31 @@ const PORTAL_HALF_WIDTH_M = 7;
 /** Springing height of the arch, and the crown above it. */
 const PORTAL_WALL_M = 3;
 const PORTAL_ARCH_M = 3.5;
-/** Width of the headwall around the opening — what makes it read as a portal. */
+/** Least width of the headwall around the opening — what makes it read as a
+ *  portal — and how far it may grow looking for the ground to meet. */
 const PORTAL_SURROUND_M = 2.5;
-/** How far the sleeve stands out of the hillside, and how far it reaches in. */
-const PORTAL_OUT_M = 1;
+/**
+ * Half width of the void the terrain leaves at a mouth, and of the face that
+ * closes it.
+ *
+ * The face has to be the larger of the two, and by a clear margin: the void is
+ * decided per cell on the cell's own centre, so the hole it actually leaves
+ * runs half a cell — two metres in the core belt — past the nominal edge. A
+ * face cut to the nominal size leaves daylight showing around it.
+ */
+const PORTAL_VOID_HALF_M = PORTAL_HALF_WIDTH_M;
+const PORTAL_FACE_HALF_M = PORTAL_HALF_WIDTH_M + 5;
+/** Same margin fore and aft: the void starts inside the front face and ends
+ *  before the back one. */
+const PORTAL_VOID_PAD_M = 3;
+/**
+ * How far the sleeve stands out of the face, and how far it reaches in.
+ *
+ * Three metres out, not one: the cut floor meets the hill somewhere inside the
+ * cell that straddles the mouth, so the ramp between them can start up to a
+ * cell early. The collar stands in front of all of it.
+ */
+const PORTAL_OUT_M = 5;
 const PORTAL_IN_M = 8;
 const PORTAL_ARCH_SEGMENTS = 8;
 
@@ -1091,6 +1114,63 @@ function portalSection(): { offset: number; height: number }[] {
   profile.push({ offset: PORTAL_HALF_WIDTH_M, height: PORTAL_WALL_M });
   profile.push({ offset: PORTAL_HALF_WIDTH_M, height: 0 });
   return profile;
+}
+
+/**
+ * The cells the terrain must not fill: the arch's own footprint at each mouth.
+ *
+ * This is the one place a height field genuinely cannot answer. The cut floor
+ * and the untouched hill are neighbouring nodes 3 m apart with 8.6 m between
+ * them, and the surface drawn across that pair is a ramp — measured, it rises
+ * from the road to 8.60 m and is drawn straight through the opening, so the
+ * mouth showed a slope where the bore should be. No wall in front helps: the
+ * ramp is *inside* the hole, not outside it.
+ *
+ * So the ground is removed over the arch, from the headwall to just past where
+ * the ramp lands, and the sleeve — which runs further in than the void does —
+ * is what covers the gap. That is D4's boolean cut, reduced to the only shape
+ * the field has to lose.
+ */
+const PORTAL_VOID_IN_M = 8;
+
+function portalVoids(
+  vaults: VaultedRuns,
+  hill: HeightField,
+  plane: ScenePlane,
+): (x: number, z: number) => boolean {
+  const { coords } = hill.trackProfile;
+  const boxes: { x: number; z: number; ux: number; uz: number }[] = [];
+  for (const run of vaults.runs) {
+    for (const end of [
+      { index: run[0], into: 1 },
+      { index: run[run.length - 1], into: -1 },
+    ]) {
+      const neighbour = end.index + end.into;
+      if (neighbour < 0 || neighbour >= coords.length) continue;
+      const x = plane.x(coords[end.index][0]);
+      const z = plane.z(coords[end.index][1]);
+      let ux = plane.x(coords[neighbour][0]) - x;
+      let uz = plane.z(coords[neighbour][1]) - z;
+      const length = Math.hypot(ux, uz);
+      if (length < 1e-6) continue;
+      boxes.push({ x, z, ux: ux / length, uz: uz / length });
+    }
+  }
+  return (x, z) => {
+    for (const box of boxes) {
+      const dx = x - box.x;
+      const dz = z - box.z;
+      const along = dx * box.ux + dz * box.uz;
+      if (
+        along < -PORTAL_OUT_M + PORTAL_VOID_PAD_M ||
+        along > PORTAL_VOID_IN_M - PORTAL_VOID_PAD_M
+      ) {
+        continue;
+      }
+      if (Math.abs(dx * -box.uz + dz * box.ux) <= PORTAL_VOID_HALF_M) return true;
+    }
+    return false;
+  };
 }
 
 function bakePortals(
@@ -1176,39 +1256,114 @@ function bakePortals(
         addFlatQuad(mesh, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
       }
 
-      // A headwall around the opening. Without it the sleeve reads as a pipe
-      // lying on the ground rather than a mouth in a hillside — the arch has to
-      // be a hole in something.
+      // The headwall closes the cutting, and the void behind it.
+      //
+      // The cut floor and the untouched hill are neighbouring nodes with 8.6 m
+      // between them, and the surface drawn across that pair is a ramp — one
+      // cell long, steeper than the arch, drawn straight through the opening.
+      // No wall in front of it helps: the ramp is *inside* the hole. So the
+      // ground over the arch is removed (`portalVoids`) and the portal closes
+      // what that leaves: a face at each end of the void with the arch cut out
+      // of it, and a wall down each side. The sleeve runs further in than the
+      // void does, so the bore is what shows through both openings.
       const archCentreHeight = PORTAL_WALL_M * scale;
-      const outward = (index: number) => {
-        const point = profile[index];
-        const dx = point.offset;
-        const dy = point.height * scale - archCentreHeight;
-        const length = Math.hypot(dx, dy) || 1;
-        return {
-          offset: point.offset + (dx / length) * PORTAL_SURROUND_M,
-          height: point.height + (dy / length) * PORTAL_SURROUND_M,
-        };
-      };
-      // Pressed into the slope: the headwall is 19 m across and the hill falls
-      // away sideways, so its outer corners stood clear of the ground however
-      // low the arch was scaled. Clamping each point to the ground it sits over
-      // buries them without shrinking the opening.
-      const face = (offset: number, height: number) => {
-        const fx = mouth.x + nx * offset + mouth.ux * outside;
-        const fz = mouth.z + nz * offset + mouth.uz * outside;
+      const groundOver = (offset: number, along: number) => {
+        const fx = mouth.x + nx * offset + mouth.ux * along;
+        const fz = mouth.z + nz * offset + mouth.uz * along;
         const over = hill.heightAt(plane.lon(fx), plane.lat(fz));
-        const y = roadY + height;
-        return { x: fx, y: Number.isNaN(over) ? y : Math.min(y, over), z: fz };
+        return Number.isNaN(over) ? roadY : over;
       };
-      for (let i = 0; i < profile.length - 1; i++) {
-        const a = face(profile[i].offset, profile[i].height * scale);
-        const b = face(profile[i + 1].offset, profile[i + 1].height * scale);
-        const oa = outward(i);
-        const ob = outward(i + 1);
-        const c = face(ob.offset, ob.height);
-        const d = face(oa.offset, oa.height);
-        addFlatQuad(surround, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
+      const at3 = (offset: number, height: number, along: number) => ({
+        x: mouth.x + nx * offset + mouth.ux * along,
+        y: roadY + height,
+        z: mouth.z + nz * offset + mouth.uz * along,
+      });
+      // Tall enough to reach the hill it is set into, and never below the arch.
+      // Read across the face rather than at its centre: the hill falls away
+      // sideways, and a face cut to the middle reading leaves its corners short.
+      const topOf = (along: number) => {
+        let top = crown * scale + PORTAL_SURROUND_M;
+        for (const offset of [-PORTAL_FACE_HALF_M, 0, PORTAL_FACE_HALF_M]) {
+          top = Math.max(top, groundOver(offset, along) - roadY);
+        }
+        return top;
+      };
+      /** Where a ray out of the arch's centre leaves the face's rectangle. */
+      const outward = (index: number, top: number) => {
+        const point = profile[index];
+        const height = point.height * scale;
+        const dx = point.offset;
+        const dy = height - archCentreHeight;
+        const length = Math.hypot(dx, dy) || 1;
+        const ox = dx / length;
+        const oy = dy / length;
+        const toSide = ox > 0
+          ? (PORTAL_FACE_HALF_M - point.offset) / ox
+          : ox < 0
+            ? (-PORTAL_FACE_HALF_M - point.offset) / ox
+            : Infinity;
+        const toCap = oy > 1e-6 ? (top - height) / oy : oy < -1e-6 ? -height / oy : Infinity;
+        const reach = Math.max(0, Math.min(toSide, toCap));
+        return { offset: point.offset + ox * reach, height: height + oy * reach };
+      };
+      const facePlane = (along: number, flip: boolean) => {
+        const top = topOf(along);
+        for (let i = 0; i < profile.length - 1; i++) {
+          const inner = [profile[i], profile[i + 1]];
+          const a = at3(inner[0].offset, inner[0].height * scale, along);
+          const b = at3(inner[1].offset, inner[1].height * scale, along);
+          const oa = outward(i, top);
+          const ob = outward(i + 1, top);
+          const c = at3(ob.offset, ob.height, along);
+          const d = at3(oa.offset, oa.height, along);
+          if (flip) {
+            addFlatQuad(surround, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z);
+          } else {
+            addFlatQuad(surround, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
+          }
+        }
+      };
+      const front = outside;
+      const back = PORTAL_VOID_IN_M;
+      // The sides run between the faces, so the void is closed all round.
+      facePlane(front, false);
+      facePlane(back, true);
+
+      // A lid over the void. The sleeve's back is 6.5 m below the hilltop, so
+      // without one the excavation reads from above as a black rectangle cut
+      // into the slope — the hole is closed at the road's level and open at the
+      // sky's.
+      {
+        const frontTop = topOf(front);
+        const backTop = topOf(back);
+        const fl = at3(-PORTAL_FACE_HALF_M, frontTop, front);
+        const fr = at3(PORTAL_FACE_HALF_M, frontTop, front);
+        const bl = at3(-PORTAL_FACE_HALF_M, backTop, back);
+        const br = at3(PORTAL_FACE_HALF_M, backTop, back);
+        addFlatQuad(surround, fl.x, fl.y, fl.z, fr.x, fr.y, fr.z, br.x, br.y, br.z, bl.x, bl.y, bl.z);
+      }
+
+      // And the two sides of the void, from the cut floor up to the ground the
+      // rim was taken from, so the slot is not open to the sky.
+      const SIDE_STEPS = 4;
+      for (const side of [-PORTAL_FACE_HALF_M, PORTAL_FACE_HALF_M]) {
+        for (let step = 0; step < SIDE_STEPS; step++) {
+          const a1 = front + ((back - front) * step) / SIDE_STEPS;
+          const a2 = front + ((back - front) * (step + 1)) / SIDE_STEPS;
+          const t1 = Math.max(0, groundOver(side, a1) - roadY);
+          const t2 = Math.max(0, groundOver(side, a2) - roadY);
+          const p1 = at3(side, 0, a1);
+          const p2 = at3(side, 0, a2);
+          const q1 = at3(side, t1, a1);
+          const q2 = at3(side, t2, a2);
+          // Facing in at the road, like the sleeve: the outer side is inside
+          // the hill and never seen.
+          if (side < 0) {
+            addFlatQuad(surround, p1.x, p1.y, p1.z, q1.x, q1.y, q1.z, q2.x, q2.y, q2.z, p2.x, p2.y, p2.z);
+          } else {
+            addFlatQuad(surround, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, q2.x, q2.y, q2.z, q1.x, q1.y, q1.z);
+          }
+        }
       }
 
       // No cap: the sleeve used to be closed 8 m in, so the mouth read as a
@@ -1869,7 +2024,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const portals = bakePortals(vaults, hill, plane);
   const bore = bakeTunnelBody(hill, plane, vaults, portalSection());
   const barriers = bakeBarriers(field, plane, tunnels, DEFAULT_TRACK_HALF_WIDTH_M);
-  const terrain = bakeTerrain(field, plane, corridor, coast, piers);
+  const terrain = bakeTerrain(field, plane, corridor, coast, piers, portalVoids(vaults, hill, plane));
   const water = bakeWater(field, plane);
 
   const buildingWays = await fetchBuildingWays(circuitId, bbox, refresh);
