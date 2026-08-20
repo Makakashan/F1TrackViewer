@@ -225,6 +225,46 @@ function burnTrack(
   const bestDist = new Float32Array(width * height).fill(Infinity);
   const bestElev = new Float32Array(width * height);
 
+  // Where the burn meets a vault it stops square, not round. The corridor is a
+  // distance to a polyline, so every segment carries a round end cap reaching a
+  // full `reach` beyond itself — which is straight through the tunnel mouth and
+  // on into the hill, flattening the very ground the portal has to be a hole in.
+  // Clipping the last segment alone is not enough: the one before it reaches
+  // just as far. Measured, terrain nodes 6 m inside the vault were still being
+  // pulled down to the road, and the ramp back up to the hill was drawn across
+  // the opening.
+  //
+  // So the clip is a plane at the mouth rather than a rule about segments. It
+  // only holds near the mouth — a half-space over the whole map would refuse to
+  // burn every other part of the lap that happens to lie beyond it.
+  const clipRadius = reach + Math.hypot(cellX, cellZ);
+  const mouths: { x: number; z: number; ux: number; uz: number }[] = [];
+  if (vaulted) {
+    for (let i = 0; i < coords.length - 1; i++) {
+      const here = vaulted(coords[i][0], coords[i][1]);
+      const next = vaulted(coords[i + 1][0], coords[i + 1][1]);
+      if (here === next) continue;
+      const inner = here ? i : i + 1;
+      const outer = here ? i + 1 : i;
+      const x = plane.toX(coords[inner][0]);
+      const z = plane.toZ(coords[inner][1]);
+      let ux = x - plane.toX(coords[outer][0]);
+      let uz = z - plane.toZ(coords[outer][1]);
+      const length = Math.hypot(ux, uz);
+      if (length < 1e-6) continue;
+      mouths.push({ x, z, ux: ux / length, uz: uz / length });
+    }
+  }
+  const insideAVault = (px: number, pz: number) => {
+    for (const mouth of mouths) {
+      const dx = px - mouth.x;
+      const dz = pz - mouth.z;
+      if (dx * dx + dz * dz > clipRadius * clipRadius) continue;
+      if (dx * mouth.ux + dz * mouth.uz > 0) return true;
+    }
+    return false;
+  };
+
   let vaultedSamples = 0;
   for (let i = 0; i < coords.length - 1; i++) {
     if (vaulted?.(coords[i][0], coords[i][1])) {
@@ -247,24 +287,14 @@ function burnTrack(
     const abz = bz - az;
     const abLenSq = abx * abx + abz * abz;
 
-    // Where the burn meets a vault it stops square, not round. The corridor is
-    // a distance to a polyline, so its end cap reaches a full `reach` past the
-    // last sample — which is straight through the tunnel mouth, flattening the
-    // very hill the portal has to be a hole in. Clipped at the join, the
-    // cutting ends at the face and the rock stands where the vault begins.
-    const capsAtStart = i > 0 && Boolean(vaulted?.(coords[i - 1][0], coords[i - 1][1]));
-    const capsAtEnd = Boolean(vaulted?.(coords[i + 1][0], coords[i + 1][1]));
-
     for (let row = rowFrom; row <= rowTo; row++) {
       const pz = row * cellZ;
       for (let col = colFrom; col <= colTo; col++) {
         const px = col * cellX;
-        const along = abLenSq > 0
-          ? ((px - ax) * abx + (pz - az) * abz) / abLenSq
+        if (insideAVault(px, pz)) continue;
+        const t = abLenSq > 0
+          ? Math.min(1, Math.max(0, ((px - ax) * abx + (pz - az) * abz) / abLenSq))
           : 0;
-        if (capsAtStart && along < 0) continue;
-        if (capsAtEnd && along > 1) continue;
-        const t = Math.min(1, Math.max(0, along));
         const dx = px - (ax + abx * t);
         const dz = pz - (az + abz * t);
         const dist = Math.hypot(dx, dz);
