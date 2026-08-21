@@ -15,6 +15,7 @@ import type { BuildingFeature, BuildingsFile } from "../../src/lib/env/environme
 import type { HeightField } from "./heightfield";
 import type { ShoreWay } from "./overpass";
 import type { ScenePlane } from "./plane";
+import type { PropPlacement } from "./props";
 
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 
@@ -45,6 +46,14 @@ export interface CityOverrides {
     points: [number, number][];
     note?: string;
   }[];
+  /**
+   * Things that are there because somebody says they are: a named building the
+   * survey has no shape for, a crane, a temporary grandstand (P4.2). Either a
+   * parametric `kind` or a `model` naming a `.glb` under the repo root.
+   *
+   * Yachts are not written here — they are berthed from the harbour survey.
+   */
+  props?: PropPlacement[];
 }
 
 export interface OverrideStats {
@@ -57,6 +66,7 @@ export interface OverrideStats {
   tunnelMasks: number;
   ignoredTunnelWays: number;
   shoreSplines: number;
+  props: number;
 }
 
 export function emptyOverrideStats(): OverrideStats {
@@ -70,6 +80,7 @@ export function emptyOverrideStats(): OverrideStats {
     tunnelMasks: 0,
     ignoredTunnelWays: 0,
     shoreSplines: 0,
+    props: 0,
   };
 }
 

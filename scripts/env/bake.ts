@@ -43,6 +43,7 @@ import { fetchBuildingWays, fetchShoreWays, fetchStructureWays, type BuildingWay
 import { fetchElevationRaster, sampleRaster } from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
 import { buildPiers, type PierResult } from "./piers";
+import { berthYachts, buildProps, type PropResult } from "./props";
 import { bakeShoreWalls, type ShoreResult } from "./shore";
 import { buildCoastline, type Coastline, type CoastlineStats } from "./coastline";
 import { buildShoreDistance } from "./shore-distance";
@@ -126,7 +127,17 @@ function clampToSurface(y: number): number {
   return Math.max(WATER_CLEARANCE_M, Math.min(y, SHORE_EDGE_MAX_M));
 }
 
-type MeshKind = "terrain" | "building" | "water" | "tunnel" | "portal" | "shore" | "pier" | "barrier";
+type MeshKind =
+  | "terrain"
+  | "building"
+  | "water"
+  | "tunnel"
+  | "portal"
+  | "shore"
+  | "pier"
+  | "barrier"
+  | "prop"
+  | "propDark";
 
 const MESH_COLOR: Record<MeshKind, string> = {
   terrain: DIORAMA_COLORS.terrain,
@@ -138,6 +149,9 @@ const MESH_COLOR: Record<MeshKind, string> = {
   portal: DIORAMA_COLORS.buildingSide,
   shore: DIORAMA_COLORS.buildingSide,
   barrier: "#C9CFD6",
+  prop: DIORAMA_COLORS.building,
+  // A hull, a crane leg, a stand frame: what sits below the deck line.
+  propDark: DIORAMA_COLORS.buildingSide,
 };
 
 // ─── terrain ───────────────────────────────────────────────────────────────
@@ -1909,6 +1923,7 @@ export interface BakeReport {
   heights: HeightStats;
   tunnels: TunnelMask;
   vaults: VaultedRuns["stats"];
+  props: PropResult["stats"];
   overrides: OverrideStats;
 }
 
@@ -2019,6 +2034,17 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const shore = bakeShoreWalls(shoreWays, field, plane, coast);
   const piers = buildPiers(shoreWays, field, plane);
   const pierDecks = bakePierDecks(piers);
+  // Berthed from the harbour survey, then whatever the overrides add by hand.
+  const overrideProps = overrides?.props ?? [];
+  overrideStats.props = overrideProps.length;
+  const props = await buildProps(
+    [...berthYachts(piers, field, plane), ...overrideProps],
+    field,
+    plane,
+    REPO_ROOT,
+  );
+  props.stats.berthed = props.stats.byKind.yacht ?? 0;
+  props.stats.fromOverrides = overrideProps.length;
 
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(vaults, hill, plane);
@@ -2086,6 +2112,9 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
       // Decks go with the waterfront for the same reason: the harbour is one
       // thing, and splitting it by distance would cut a pontoon in half.
       { kind: "pier", mesh: pierDecks },
+      // The boats belong to the harbour they are tied to, so they ship with it.
+      { kind: "propDark", mesh: props.dark },
+      { kind: "prop", mesh: props.light },
     ],
     far: [
       { kind: "terrain", mesh: terrain.meshes.far },
@@ -2121,6 +2150,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     heights: heightStats.value,
     tunnels,
     vaults: vaults.stats,
+    props: props.stats,
     overrides: overrideStats,
   };
   await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(plane, field, tunnels));
@@ -2248,6 +2278,11 @@ async function main() {
       `${report.piers.skippedSolid} already solid ground`,
   );
   if (report.tunnels.runs.length) {
+    console.log(
+      `  props ${report.props.placed} placed — ${report.props.berthed} yachts berthed along the pontoons`
+        + `, ${report.props.fromOverrides} from overrides, ${report.props.fromModels} from models`
+        + (report.props.skippedAground ? `, ${report.props.skippedAground} with no ground under them` : ""),
+    );
     console.log(`  tunnels ${report.tunnels.runs.length} run(s), ${report.tunnels.buriedLengthM} m buried`);
     console.log(
       `  vaults ${report.vaults.vaultedSamples} of ${report.vaults.taggedSamples} tunnel samples`
