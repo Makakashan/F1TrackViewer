@@ -107,7 +107,7 @@ scene can draw.
 | **D7** | Three detail belts measured from the track centreline: **core** ≤ 150 m, **city** ≤ 600 m, **far** to the bbox edge. | Detail follows the camera's actual interest. The harbour and Le Rocher land in core/city automatically. |
 | **D8** | Building height comes from IGN **MNH** (height above ground, already DSM − DTM at source), not OSM tags. Roof form comes from ~8 parametric archetypes selected by `roof:shape` where present, by heuristic otherwise. | Real ridge heights; silhouettes that read as Monaco. |
 | **D9** | Ambient occlusion is baked into vertex colours. No screen-space passes. Colour from the palette; no facade textures. | The city and the sun are both static — paying per frame for a static effect is the wrong trade (AGENTS.md). |
-| **D10** | Overrides may edit **data** (heights, add/remove buildings, terrain points), **masks** (no-build, water, tunnel, grandstand) and **splines** (quay wall, barrier, breakwater). Authored GLB props by coordinate follow in P4.2. | Covers every named bug class without becoming a level editor. |
+| **D10** | Overrides may edit **data** (heights, add/remove buildings, terrain points), **masks** (no-build, water, tunnel, grandstand), **splines** (quay wall, barrier, breakwater) and **props** placed by coordinate — a parametric kind or a named `.glb` (P4.2). | Covers every named bug class without becoming a level editor. |
 | **D11** | `env:audit` reports numbers and fails on regression. | Regressions are caught by a threshold, not by someone happening to look. |
 | **D12** | ~~GDAL/PDAL CLI~~ **Superseded by P0.3.** Elevation comes from the IGN Géoplateforme WMS as `image/x-bil;bits=32` — a raw little-endian float32 raster in EPSG:4326, at whatever grid we ask for. TypeScript reads the response body straight into a `Float32Array`. No GDAL, no PDAL, no Python. | Nothing to reproject, clip or convert. The whole raster step is one `fetch` and a `DataView`. A provider interface keeps the door open for non-French circuits. |
 | **D13** | The track's visual mesh (ribbon, kerbs, apron, markings) is baked into the GLB. The centreline curve stays live for the simulation, camera and start/finish calibration — both produced by one pass. | The heaviest runtime build in the scene is static; the curve that must stay live, stays live. |
@@ -1178,8 +1178,57 @@ belt an order of magnitude inside its byte budget.
       are otherwise unchanged — the cutting replaces hill that was already being
       drawn.
 
-- [ ] **P4.2** Authored GLB props placed by coordinate: Casino, yachts, harbour cranes
-      (D10's third tier).
+- [x] **P4.2** Props placed by coordinate — `scripts/env/props.ts`.
+
+      Everything else in the bake is derived from a measurement. A prop is the
+      opposite: it is there because somebody says it is, and the whole question
+      is where. So there are two ways in and one way out. A placement either
+      comes from `overrides.props`, where a human wrote the coordinate down, or
+      it is derived from geometry the bake already trusts. Both end up as the
+      same record and the same builder turns them into triangles.
+
+      **The yachts are berthed, not typed in.** Port Hercule's pontoons are
+      already extruded from the harbour survey (P4.0d), so the berths come from
+      those decks: the deck's long axis from the covariance of its own ring —
+      not its first and last point, which on a surveyed ring are wherever the
+      mapper started drawing — and boats moored stern-to along both sides at
+      beam plus three metres, the way the Mediterranean does it. Only `pier`
+      decks; a breakwater is not something you tie up to. Lengths run 18–46 m
+      from a hash of the berth, so the same berth gets the same boat every bake.
+      **305 yachts**, +0.17 MB and +11 k triangles in the city belt, where the
+      harbour they belong to already ships.
+
+      **Where the field says water, and the field decides.** The first version
+      tested the keel line only, and `env:audit` immediately found **14 hull
+      vertices below the datum standing on rock** — boats whose shoulder was
+      over the quay behind the pontoon. The test now runs across the beam as
+      well: **305 placed, 0 aground**, and the audit keeps that honest with a
+      check of its own, since a berth picked from the field and a hull drawn on
+      the water are two things that can drift apart.
+
+      **Parametric, not modelled.** A prop that reads correctly at a hundred
+      metres is a silhouette, and a silhouette costs about seventy triangles;
+      modelling it would cost an asset pipeline, a licence and a megabyte. The
+      hull is lofted from five stations at a displacement yacht's own ratios, so
+      a 40 m boat comes out 8.7 m in the beam rather than whatever a box would
+      have given. Two corrections from looking at it: without **sheer** the hull
+      is a wedge of paper and reads as a barge from the quay, and a deckhouse at
+      the full beam reads as a container on a raft — set back to 0.26–0.56 of
+      the length and 0.3 of the beam, it is a boat.
+
+      **And a `.glb` may be named instead.** Anything with a name — the Casino,
+      a particular sculpture — is a model somebody drew, and `placement.model`
+      is the door for it: node transforms are baked down on the way in, so what
+      arrives is triangles in the file's own units, and only the placement moves
+      them. Verified against the repo's own car model, which merged as **230 945
+      triangles** and sat on the ground at the coordinate given. That test also
+      earned the `scale` field: glTF says metres and files disagree — the car is
+      authored **6 cm** long.
+
+      Cranes and grandstands are built the same way and wait on coordinates.
+      Monaco's stands are temporary and their positions are not in OSM, and
+      guessing at them would be inventing data, which is the one thing this
+      pipeline does not do.
 - [ ] **P4.3** Trees and vegetation.
 - [ ] **P4.4** Migrate the remaining 23 circuits, then **delete
       `environment-layer.tsx`** and the old runtime path. This is D17's termination
