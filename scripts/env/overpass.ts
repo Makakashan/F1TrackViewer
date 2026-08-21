@@ -44,6 +44,20 @@ export interface BuildingWay {
   };
 }
 
+/**
+ * Somewhere green, or something growing.
+ *
+ * Three shapes arrive under one query because they answer the same question in
+ * three resolutions: a surveyed tree is a position, a tree row is a line to
+ * step along, and a park is an area to scatter over.
+ */
+export interface GreenWay {
+  id: string;
+  kind: "tree" | "tree_row" | "wood" | "scrub" | "park" | "grass";
+  /** One point for a tree, a polyline for a row, a closed ring for an area. */
+  points: [number, number][];
+}
+
 export interface StructureWay {
   id: string;
   points: [number, number][];
@@ -67,6 +81,9 @@ interface OverpassWay {
   id: number;
   tags?: Record<string, string>;
   geometry?: { lat: number; lon: number }[];
+  /** Nodes carry their position directly rather than a geometry array. */
+  lat?: number;
+  lon?: number;
 }
 
 function query(bbox: RasterBBox): string {
@@ -209,6 +226,97 @@ export async function fetchShoreWays(
 }
 
 /** Ways in the bbox that are tunnelled, bridged or covered, with their tags. */
+/**
+ * Two queries, not one.
+ *
+ * Asked together — surveyed trees, tree rows, woods, landuse and parks — the
+ * public endpoints answer **504**, while either half on its own comes back in
+ * seconds. Splitting them is not a nicety; the combined form was returning an
+ * empty city and caching it.
+ *
+ * The areas are asked for one tag at a time for the same reason. A regex over
+ * `landuse` timed out where nine plain equality clauses come back at once.
+ */
+function greenQueries(bbox: RasterBBox): string[] {
+  const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
+  return [
+    `[out:json][timeout:180];
+(
+  node["natural"="tree"](${box});
+  way["natural"="tree_row"](${box});
+);
+out geom tags;`,
+    `[out:json][timeout:180];
+(
+  way["natural"="wood"](${box});
+  way["natural"="scrub"](${box});
+  way["landuse"="forest"](${box});
+  way["landuse"="grass"](${box});
+  way["landuse"="meadow"](${box});
+  way["landuse"="village_green"](${box});
+  way["landuse"="cemetery"](${box});
+  way["leisure"="park"](${box});
+  way["leisure"="garden"](${box});
+);
+out geom tags;`,
+  ];
+}
+
+function greenKind(tags: Record<string, string>): GreenWay["kind"] | null {
+  if (tags.natural === "tree") return "tree";
+  if (tags.natural === "tree_row") return "tree_row";
+  if (tags.natural === "wood" || tags.landuse === "forest") return "wood";
+  if (tags.natural === "scrub") return "scrub";
+  if (tags.leisure === "park" || tags.leisure === "garden") return "park";
+  if (tags.landuse) return "grass";
+  return null;
+}
+
+/** Trees, tree rows and the green areas to scatter more of them over. */
+export async function fetchGreenWays(
+  circuitId: string,
+  bbox: RasterBBox,
+  refresh = false,
+): Promise<GreenWay[]> {
+  const cachePath = join(CACHE_DIR, `${circuitId}-green.json`);
+  if (!refresh) {
+    try {
+      return JSON.parse(await readFile(cachePath, "utf8")) as GreenWay[];
+    } catch {
+      // not cached yet
+    }
+  }
+
+  const elements: OverpassWay[] = [];
+  for (const query of greenQueries(bbox)) {
+    const response = await run(query);
+    if (!response) throw new Error(`overpass: no endpoint answered for ${circuitId} greenery`);
+    elements.push(...response.elements);
+  }
+
+  const ways: GreenWay[] = [];
+  for (const element of elements) {
+    const tags = element.tags ?? {};
+    const kind = greenKind(tags);
+    if (!kind) continue;
+    if (element.type === "node") {
+      if (element.lon === undefined || element.lat === undefined) continue;
+      ways.push({ id: `node/${element.id}`, kind, points: [[element.lon, element.lat]] });
+      continue;
+    }
+    if (element.type !== "way" || !element.geometry?.length) continue;
+    ways.push({
+      id: `way/${element.id}`,
+      kind,
+      points: element.geometry.map((p) => [p.lon, p.lat] as [number, number]),
+    });
+  }
+
+  await mkdir(CACHE_DIR, { recursive: true });
+  await writeFile(cachePath, JSON.stringify(ways));
+  return ways;
+}
+
 export async function fetchStructureWays(
   circuitId: string,
   bbox: RasterBBox,
