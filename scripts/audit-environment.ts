@@ -340,6 +340,8 @@ async function audit(circuitId: string): Promise<Check[]> {
   let waterOffDatum = 0;
   let buildingVerticesOnTrack = 0;
   let worstIntrusionM = 0;
+  let propsAground = 0;
+  let propVertices = 0;
 
   for (const belt of BELT_ORDER) {
     const { bytes, meshes } = await readBelt(circuitId, belt);
@@ -380,6 +382,19 @@ async function audit(circuitId: string): Promise<Check[]> {
         if (!Number.isNaN(ground) && y - ground > EAVE_CLEARANCE_M) continue;
         buildingVerticesOnTrack++;
         worstIntrusionM = Math.max(worstIntrusionM, TRACK_CLEARANCE_M - distance);
+      }
+    }
+
+    // A hull below the datum has to be over water. The berths are picked from
+    // the field (P4.2), so a boat on the quay means the two have drifted apart.
+    for (const mesh of meshes) {
+      if (mesh.name !== "prop" && mesh.name !== "propDark") continue;
+      for (let i = 0; i < mesh.positions.length / 3; i++) {
+        propVertices++;
+        if (mesh.positions[i * 3 + 1] >= 0) continue;
+        const x = mesh.positions[i * 3];
+        const z = mesh.positions[i * 3 + 2];
+        if (!field.isWater(plane.lon(x), plane.lat(z))) propsAground++;
       }
     }
 
@@ -453,6 +468,15 @@ async function audit(circuitId: string): Promise<Check[]> {
       "reported",
       true,
       false,
+    ),
+  );
+
+  checks.push(
+    check(
+      "props below the waterline are afloat",
+      `${propsAground} aground of ${propVertices.toLocaleString()} prop vertices`,
+      "0",
+      propsAground === 0,
     ),
   );
 
