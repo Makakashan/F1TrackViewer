@@ -64,6 +64,8 @@ const QUAY_SEARCH_M = 24;
 export interface PierDeck {
   ring: { x: number; z: number }[];
   deckY: number;
+  /** What OSM called it. A boat ties up to a pontoon, not to a breakwater. */
+  kind: "pier" | "breakwater";
 }
 
 export interface PierResult {
@@ -205,7 +207,7 @@ export function buildPiers(
       result.skippedSolid++;
       continue;
     }
-    result.decks.push({ ring, deckY });
+    result.decks.push({ ring, deckY, kind: way.kind });
   }
 
   // Everything that is not a pier is a surveyed shore: the coast, the quays,
