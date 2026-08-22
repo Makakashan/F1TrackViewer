@@ -1229,7 +1229,55 @@ belt an order of magnitude inside its byte budget.
       Monaco's stands are temporary and their positions are not in OSM, and
       guessing at them would be inventing data, which is the one thing this
       pipeline does not do.
-- [ ] **P4.3** Trees and vegetation.
+- [x] **P4.3** Trees, and the ground they stand on — `scripts/env/greenery.ts`.
+
+      Greenery arrives from OSM in three resolutions and each is used for what
+      it is good for. A surveyed `natural=tree` is a position, and Monaco has
+      **662** of them along the streets the circuit runs down. A `tree_row` is a
+      line to step along. A park or a wood is an area, and an area says *there
+      are trees here*, not where, so trees are scattered over it on a jittered
+      lattice — global rather than per-area, so two parks that touch do not
+      plant two trees in the same metre.
+
+      **Two things are done with that, at two ranges.** Near the circuit the
+      greenery is trees, because a tree is what you see. Beyond 600 m it is a
+      colour. The measurement made that decision: at core spacing the green
+      areas hold **7 130** plantable points and **5 575** of them are past the
+      far belt's boundary — drawing them would have cost a quarter of that
+      belt's whole triangle budget to say something no one can resolve. So the
+      areas tint the terrain everywhere and grow trees only inside 600 m.
+
+      The tint rides on the vertex colours the AO pass already writes: no
+      geometry, no draw call, no material. Sixty per cent of the way to the
+      palette's park green, because full saturation reads as a golf course
+      dropped into a pale diorama. **12 808 ground nodes** over **153 ha** and
+      194 areas.
+
+      **1 290 trees**: 369 surveyed, 7 from rows, 914 scattered, split between
+      the core and city belts at the same 150 m the belts use. 79 were refused
+      for standing in the road and 43 for standing in the sea. Twenty triangles
+      each — a four-sided trunk under a six-sided canopy — which at a thousand
+      trees is a fifth of what one belt spends on buildings. **4.12 → 5.04 MB**,
+      still inside every per-belt budget.
+
+      **Two corrections, both from the audit.** A trunk on a single base plane
+      leaves its downhill corners in the air, exactly as a building does: **217
+      of 5 036 corners off the ground, worst 1.91 m**. Each corner now meets its
+      own ground and is buried on the uphill side rather than floated on the
+      downhill one. Then the check itself was wrong twice over — it measured the
+      distance both ways, when a buried foot is what a trunk on a slope has to
+      be, and it read the ground at the exact baked position, when quantisation
+      moves that sideways by half a metre and a 1:1 slope turns half a metre of
+      sideways into half a metre of height. One-sided, and against the highest
+      ground within a quantisation step: **0 in the air, worst 0.07 m**.
+
+      **And Overpass would not answer the obvious query.** Asked for trees, rows,
+      woods, landuse and parks together it returns **504**; asked as two queries
+      it comes back in seconds. The areas are also asked one tag at a time,
+      because a regex over `landuse` timed out where nine plain equality clauses
+      do not. This mattered more than it sounds: the failing form was returning
+      an empty result and the cache was keeping it, so the bake had no greenery
+      and said nothing about it.
 - [ ] **P4.4** Migrate the remaining 23 circuits, then **delete
       `environment-layer.tsx`** and the old runtime path. This is D17's termination
       condition — the plan is not finished while both paths exist.
