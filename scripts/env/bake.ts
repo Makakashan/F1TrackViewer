@@ -47,7 +47,7 @@ import {
   type BuildingWay,
 } from "./overpass";
 import { buildGreenery, tintGreenGround, type GreeneryResult } from "./greenery";
-import { fetchElevationRaster, sampleRaster } from "./raster";
+import { fetchElevationRaster, providerFor, sampleRaster } from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
 import { buildPiers, type PierResult } from "./piers";
 import { berthYachts, buildProps, type PropResult } from "./props";
@@ -2088,7 +2088,11 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     overrideStats,
   );
   const heightStats = { value: { measured: 0, fellBack: 0, medianDeltaM: 0, tallest: 0 } };
-  const mnh = await fetchElevationRaster({ kind: "mnh", bbox, refresh });
+  // A surface model where the provider has one. Skadi does not, and a circuit
+  // without measured heights is not a circuit without buildings.
+  const mnh = providerFor(bbox)?.layerFor("mnh")
+    ? await fetchElevationRaster({ kind: "mnh", bbox, refresh })
+    : null;
   const measured = measureBuildingHeights(buildingsFile.buildings, mnh, heightStats);
   const roofTags = new Map<string, RoofTags>(
     buildingWays.map((way) => [way.id, way.tags as RoofTags]),
@@ -2324,19 +2328,19 @@ async function main() {
       `${report.piers.skippedSmall} too small, ` +
       `${report.piers.skippedSolid} already solid ground`,
   );
+  console.log(
+    `  greenery ${report.greenery.planted} trees — ${report.greenery.surveyed} surveyed`
+      + `, ${report.greenery.fromRows} from rows, ${report.greenery.scattered} scattered over`
+      + ` ${report.greenery.areas} areas (${(report.greenery.areaM2 / 10_000).toFixed(1)} ha)`
+      + `; ${report.greenery.tintedNodes} ground nodes tinted`
+      + `, ${report.greenery.skippedOnTrack} on the road, ${report.greenery.skippedAtSea} at sea`,
+  );
+  console.log(
+    `  props ${report.props.placed} placed — ${report.props.berthed} yachts berthed along the pontoons`
+      + `, ${report.props.fromOverrides} from overrides, ${report.props.fromModels} from models`
+      + (report.props.skippedAground ? `, ${report.props.skippedAground} with no ground under them` : ""),
+  );
   if (report.tunnels.runs.length) {
-    console.log(
-      `  greenery ${report.greenery.planted} trees — ${report.greenery.surveyed} surveyed`
-        + `, ${report.greenery.fromRows} from rows, ${report.greenery.scattered} scattered over`
-        + ` ${report.greenery.areas} areas (${(report.greenery.areaM2 / 10_000).toFixed(1)} ha)`
-        + `; ${report.greenery.tintedNodes} ground nodes tinted`
-        + `, ${report.greenery.skippedOnTrack} on the road, ${report.greenery.skippedAtSea} at sea`,
-    );
-    console.log(
-      `  props ${report.props.placed} placed — ${report.props.berthed} yachts berthed along the pontoons`
-        + `, ${report.props.fromOverrides} from overrides, ${report.props.fromModels} from models`
-        + (report.props.skippedAground ? `, ${report.props.skippedAground} with no ground under them` : ""),
-    );
     console.log(`  tunnels ${report.tunnels.runs.length} run(s), ${report.tunnels.buriedLengthM} m buried`);
     console.log(
       `  vaults ${report.vaults.vaultedSamples} of ${report.vaults.taggedSamples} tunnel samples`

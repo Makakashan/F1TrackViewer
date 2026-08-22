@@ -44,10 +44,16 @@ export interface HeightStats {
  */
 export function measureBuildingHeights(
   buildings: BuildingFeature[],
-  mnh: Raster,
+  mnh: Raster | null,
   stats: { value: HeightStats },
 ): Map<string, HeightMeasurement> {
   const heights = new Map<string, HeightMeasurement>();
+  // Outside France there is no surface model, so every height is the tag the
+  // mapper wrote (P4.4). Saying so once here beats a branch at every call site.
+  if (!mnh) {
+    stats.value = { measured: 0, fellBack: buildings.length, medianDeltaM: 0, tallest: 0 };
+    return heights;
+  }
   const { bbox, width, height } = mnh.header;
   const lonStep = (bbox.maxLon - bbox.minLon) / (width - 1);
   const latStep = (bbox.maxLat - bbox.minLat) / (height - 1);
