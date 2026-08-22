@@ -11,6 +11,8 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { SKADI_PROVIDER } from "./skadi";
+
 // ─── types ─────────────────────────────────────────────────────────────────
 
 export interface RasterBBox {
@@ -60,7 +62,21 @@ export interface ElevationProvider {
   minRequestIntervalMs: number;
   layerFor(kind: RasterKind): string | null;
   covers(bbox: RasterBBox): boolean;
-  url(layer: string, bbox: RasterBBox, width: number, height: number): string;
+  /** A service that renders a raster per request answers with a URL. */
+  url?(layer: string, bbox: RasterBBox, width: number, height: number): string;
+  /**
+   * A service that ships fixed tiles answers with the grid itself.
+   *
+   * One of `url` and `grid` has to be there. The split is not decoration: a WMS
+   * is asked for the exact window wanted and a tiled archive is not, so the
+   * resampling has to live on the provider that needs it.
+   */
+  grid?(
+    layer: string,
+    bbox: RasterBBox,
+    width: number,
+    height: number,
+  ): Promise<Float32Array>;
 }
 
 // ─── geometry ──────────────────────────────────────────────────────────────
@@ -137,7 +153,12 @@ export const IGN_PROVIDER: ElevationProvider = {
   },
 };
 
-const PROVIDERS: ElevationProvider[] = [IGN_PROVIDER];
+/**
+ * In order of how good the data is, not of how convenient it is. IGN is 3.9 m
+ * over France; Skadi is 30 m over the world. A circuit takes the first that
+ * covers it, so Monaco keeps the LiDAR and everything else still gets ground.
+ */
+const PROVIDERS: ElevationProvider[] = [IGN_PROVIDER, SKADI_PROVIDER];
 
 export function providerFor(bbox: RasterBBox): ElevationProvider | null {
   return PROVIDERS.find((p) => p.covers(bbox)) ?? null;
@@ -624,6 +645,36 @@ export interface FetchRasterOptions {
   provider?: ElevationProvider;
 }
 
+/** A WMS window, as a raw little-endian float32 BIL body. */
+async function fetchBil(
+  provider: ElevationProvider,
+  layer: string,
+  kind: RasterKind,
+  bbox: RasterBBox,
+  width: number,
+  height: number,
+): Promise<Float32Array> {
+  if (!provider.url) throw new Error(`${provider.id} has neither url nor grid`);
+  const res = await fetch(provider.url(layer, bbox, width, height));
+  if (!res.ok) throw new Error(`${provider.id} ${kind}: HTTP ${res.status}`);
+
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("x-bil")) {
+    // WMS reports failure as an XML body under HTTP 200, so the type is the check.
+    throw new Error(`${provider.id} ${kind}: expected float32 BIL, got ${contentType}`);
+  }
+
+  const body = await res.arrayBuffer();
+  if (body.byteLength !== width * height * 4) {
+    throw new Error(
+      `${provider.id} ${kind}: expected ${width * height * 4} bytes, got ${body.byteLength}`,
+    );
+  }
+  // The payload is little-endian float32 and every platform this runs on is
+  // little-endian, so the buffer is the array.
+  return new Float32Array(body);
+}
+
 export async function fetchElevationRaster(options: FetchRasterOptions): Promise<Raster> {
   const { kind, bbox, refresh = false } = options;
   const provider = options.provider ?? providerFor(bbox);
@@ -658,27 +709,9 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
   }
 
   await throttle(provider.minRequestIntervalMs);
-  const url = provider.url(layer, bbox, fetchWidth, fetchHeight);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${provider.id} ${kind}: HTTP ${res.status}`);
-
-  const contentType = res.headers.get("content-type") ?? "";
-  if (!contentType.includes("x-bil")) {
-    // WMS reports failure as an XML body under HTTP 200, so the type is the check.
-    throw new Error(`${provider.id} ${kind}: expected float32 BIL, got ${contentType}`);
-  }
-
-  const body = await res.arrayBuffer();
-  if (body.byteLength !== fetchWidth * fetchHeight * 4) {
-    throw new Error(
-      `${provider.id} ${kind}: expected ${fetchWidth * fetchHeight * 4} bytes, ` +
-        `got ${body.byteLength}`,
-    );
-  }
-
-  // The payload is little-endian float32 and every platform this runs on is
-  // little-endian, so the buffer is the array.
-  const fetched = new Float32Array(body);
+  const fetched = provider.grid
+    ? await provider.grid(layer, bbox, fetchWidth, fetchHeight)
+    : await fetchBil(provider, layer, kind, bbox, fetchWidth, fetchHeight);
   maskNodata(fetched);
   // Erode at the fetched pitch first: a contaminated pixel that survives into a
   // block average drags the whole output cell below sea level, and the coast is
