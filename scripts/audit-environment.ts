@@ -129,6 +129,9 @@ async function readBelt(circuitId: string, belt: Belt) {
  */
 const SHORE_EXEMPT_M = 16;
 
+/** A trunk's foot may stand off its own ground by a quantisation step, no more. */
+const TREE_FOOT_TOLERANCE_M = 0.35;
+
 function checkTerrain(
   meshes: { name: string; positions: Float32Array }[],
   field: HeightField,
@@ -342,6 +345,9 @@ async function audit(circuitId: string): Promise<Check[]> {
   let worstIntrusionM = 0;
   let propsAground = 0;
   let propVertices = 0;
+  let treesOffGround = 0;
+  let worstTreeFootM = 0;
+  let treeCount = 0;
 
   for (const belt of BELT_ORDER) {
     const { bytes, meshes } = await readBelt(circuitId, belt);
@@ -395,6 +401,50 @@ async function audit(circuitId: string): Promise<Check[]> {
         const x = mesh.positions[i * 3];
         const z = mesh.positions[i * 3 + 2];
         if (!field.isWater(plane.lon(x), plane.lat(z))) propsAground++;
+      }
+    }
+
+    // A trunk's foot is on the ground it was planted on, or the greenery and
+    // the field have drifted apart and the trees are hovering.
+    for (const mesh of meshes) {
+      if (mesh.name !== "trunk") continue;
+      // Four vertices to a trunk face, the lower pair at the ground.
+      const feet = new Map<string, number>();
+      for (let i = 0; i < mesh.positions.length / 3; i++) {
+        const x = mesh.positions[i * 3];
+        const y = mesh.positions[i * 3 + 1];
+        const z = mesh.positions[i * 3 + 2];
+        const key = `${Math.round(x * 4)},${Math.round(z * 4)}`;
+        const seen = feet.get(key);
+        if (seen === undefined || y < seen) feet.set(key, y);
+      }
+      for (const [key, y] of feet) {
+        const [kx, kz] = key.split(",").map(Number);
+        const x = kx / 4;
+        const z = kz / 4;
+        // The highest ground within a quantisation step. A baked position moves
+        // by up to half a metre sideways, and on a 1:1 slope that is half a
+        // metre of height the trunk never actually stood off.
+        let ground = Number.NaN;
+        for (const [dx, dz] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+          const sample = field.heightAt(
+            plane.lon(x + dx * QUANTISATION_SLACK_M),
+            plane.lat(z + dz * QUANTISATION_SLACK_M),
+          );
+          if (Number.isNaN(sample)) continue;
+          if (Number.isNaN(ground) || sample > ground) ground = sample;
+        }
+        treeCount++;
+        if (Number.isNaN(ground)) {
+          treesOffGround++;
+          continue;
+        }
+        // One-sided on purpose. A corner below its own ground is buried, which
+        // is what a trunk on a slope has to be; a corner above it is a tree
+        // standing in the air, which is the bug.
+        const off = y - ground;
+        if (off > TREE_FOOT_TOLERANCE_M) treesOffGround++;
+        if (off > worstTreeFootM) worstTreeFootM = off;
       }
     }
 
@@ -477,6 +527,15 @@ async function audit(circuitId: string): Promise<Check[]> {
       `${propsAground} aground of ${propVertices.toLocaleString()} prop vertices`,
       "0",
       propsAground === 0,
+    ),
+  );
+
+  checks.push(
+    check(
+      "trunks reach the ground",
+      `${treesOffGround} in the air of ${treeCount.toLocaleString()} trunk corners, worst ${worstTreeFootM.toFixed(2)} m`,
+      `${TREE_FOOT_TOLERANCE_M} m`,
+      treesOffGround === 0,
     ),
   );
 
