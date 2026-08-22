@@ -216,8 +216,15 @@ function burnTrack(
 ): HeightFieldStats {
   const cellX = bboxSizeMeters(bbox).width / (width - 1);
   const cellZ = bboxSizeMeters(bbox).height / (height - 1);
-  const hard = halfWidthM + vergeM;
-  const reach = hard + blendM;
+  // The corridor has to be wider than the grid it is burned into, or it lands
+  // between nodes and nothing is written at all. Over France the cell is 3.9 m
+  // and a 16 m corridor covers four of them; over SRTM it is 30 m and the road
+  // fell straight through the gap — measured, the shipped profile stood 0.73 m
+  // off ground the burn was supposed to have set, on a stretch with a 0.2%
+  // gradient, which is not a slope problem but a resolution one.
+  const cell = Math.max(cellX, cellZ);
+  const hard = Math.max(halfWidthM + vergeM, cell * 1.2);
+  const reach = hard + Math.max(blendM, cell * 1.5);
 
   // Nearest approach of the centreline to each touched cell, with the track's
   // elevation at that point. Per-cell minimum, so overlapping segments and the
