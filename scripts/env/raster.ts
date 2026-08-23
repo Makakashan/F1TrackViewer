@@ -675,14 +675,48 @@ async function fetchBil(
   return new Float32Array(body);
 }
 
+/**
+ * The raster, from the best provider that actually has data there.
+ *
+ * `covers` is a bounding box and a country is not. IGN's box has to hold France,
+ * which means it also holds Belgium, Luxembourg, the Rhineland, Piedmont and
+ * Catalonia — and IGN has nothing in any of them. Spa came out of P4.4's sweep
+ * with a raster of **875 280 nodata and no valid pixel**, a city belt of zero
+ * triangles, and no error anywhere: the coverage test said yes and the service
+ * said nothing, which is not the same as the service saying nothing is there.
+ *
+ * So coverage is claimed by the box and confirmed by the answer. A provider that
+ * returns an empty raster hands the circuit to the next one that covers it.
+ */
 export async function fetchElevationRaster(options: FetchRasterOptions): Promise<Raster> {
-  const { kind, bbox, refresh = false } = options;
-  const provider = options.provider ?? providerFor(bbox);
-  if (!provider) {
+  const { bbox } = options;
+  if (options.provider) return fetchFromProvider(options, options.provider);
+
+  const candidates = PROVIDERS.filter((candidate) => candidate.covers(bbox));
+  if (!candidates.length) {
     throw new Error(
       `no elevation provider covers ${JSON.stringify(bbox)} — see docs/city-generation.md §5.1`,
     );
   }
+  let last: Raster | null = null;
+  for (const candidate of candidates) {
+    if (!candidate.layerFor(options.kind)) continue;
+    const raster = await fetchFromProvider(options, candidate);
+    last = raster;
+    if (raster.header.validCount > 0) return raster;
+    console.warn(
+      `  ${candidate.id} has no data for ${options.kind} here — falling through`,
+    );
+  }
+  if (!last) throw new Error(`no provider has a ${options.kind} layer for this bbox`);
+  return last;
+}
+
+async function fetchFromProvider(
+  options: FetchRasterOptions,
+  provider: ElevationProvider,
+): Promise<Raster> {
+  const { kind, bbox, refresh = false } = options;
   const layer = provider.layerFor(kind);
   if (!layer) throw new Error(`${provider.id} has no layer for ${kind}`);
 

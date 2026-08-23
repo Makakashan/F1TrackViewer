@@ -2088,11 +2088,15 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     overrideStats,
   );
   const heightStats = { value: { measured: 0, fellBack: 0, medianDeltaM: 0, tallest: 0 } };
-  // A surface model where the provider has one. Skadi does not, and a circuit
-  // without measured heights is not a circuit without buildings.
-  const mnh = providerFor(bbox)?.layerFor("mnh")
+  // A surface model where one exists. Skadi has no layer for it at all, and
+  // IGN's box reaches into countries it holds nothing for, so the test is
+  // whether the raster came back with any data — not whether a provider claimed
+  // the ground. A circuit without measured heights is not a circuit without
+  // buildings; the tags carry it.
+  const surface = providerFor(bbox)?.layerFor("mnh")
     ? await fetchElevationRaster({ kind: "mnh", bbox, refresh })
     : null;
+  const mnh = surface && surface.header.validCount > 0 ? surface : null;
   const measured = measureBuildingHeights(buildingsFile.buildings, mnh, heightStats);
   const roofTags = new Map<string, RoofTags>(
     buildingWays.map((way) => [way.id, way.tags as RoofTags]),
