@@ -114,7 +114,13 @@ async function run(body: string): Promise<OverpassResponse | null> {
       const json = (await res.json()) as OverpassResponse;
       // A rate-limited or timed-out query comes back as HTTP 200 with an empty
       // result and a remark. Taking that as an answer caches an empty city.
-      if (json.remark && !json.elements?.length) {
+      //
+      // And sometimes without a remark, which is worse, because it looks like an
+      // answer: measured, two circuits came out of P4.4's sweep with zero green
+      // ways cached — the Red Bull Ring, which stands in a forest, and Albert
+      // Park, which is a park. An empty result is therefore worth another
+      // endpoint before it is believed.
+      if (!json.elements?.length) {
         await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
         continue;
       }
@@ -164,8 +170,14 @@ export async function fetchBuildingWays(
     });
   }
 
-  await mkdir(CACHE_DIR, { recursive: true });
-  await writeFile(cachePath, JSON.stringify(ways));
+  // Nothing is never written down. Somewhere with no park, no verge and no
+  // street tree does not exist, so an empty answer is a failed query wearing a
+  // successful one's clothes, and caching it makes a treeless circuit that no
+  // later run will ever correct.
+  if (ways.length) {
+    await mkdir(CACHE_DIR, { recursive: true });
+    await writeFile(cachePath, JSON.stringify(ways));
+  }
   return ways;
 }
 
