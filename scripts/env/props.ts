@@ -69,68 +69,16 @@ export interface PropResult {
 
 // ─── berthing ──────────────────────────────────────────────────────────────
 
-/** Least deck a boat is worth berthing along. Shorter is a landing stage. */
-const MIN_BERTH_DECK_M = 25;
+/** Least edge a boat is worth berthing against. Shorter is a pontoon's end. */
+const MIN_BERTH_EDGE_M = 14;
 /** Clear water a hull needs, measured from the pontoon it is tied to. */
 const BERTH_CLEAR_M = 1.5;
 /** Gap between neighbouring hulls, on top of their beam. */
 const BERTH_GAP_M = 3;
-/** Both ends of a pontoon are left free — that is where it meets the quay. */
-const BERTH_MARGIN_M = 8;
+/** Both ends of an edge are left free, so boats do not stack into a corner. */
+const BERTH_MARGIN_M = 7;
 const YACHT_MIN_M = 18;
 const YACHT_MAX_M = 46;
-
-/**
- * The long axis of a deck, and how far it runs each way.
- *
- * A pontoon is a long thin ring, so its principal axis is its length — found
- * from the covariance of its own points rather than from the first and last,
- * which on a surveyed ring are wherever the mapper started drawing.
- */
-function deckAxis(ring: { x: number; z: number }[]) {
-  let cx = 0;
-  let cz = 0;
-  for (const point of ring) {
-    cx += point.x;
-    cz += point.z;
-  }
-  cx /= ring.length;
-  cz /= ring.length;
-
-  let xx = 0;
-  let xz = 0;
-  let zz = 0;
-  for (const point of ring) {
-    const dx = point.x - cx;
-    const dz = point.z - cz;
-    xx += dx * dx;
-    xz += dx * dz;
-    zz += dz * dz;
-  }
-  // Leading eigenvector of a symmetric 2x2, in closed form.
-  const trace = xx + zz;
-  const det = xx * zz - xz * xz;
-  const eigen = trace / 2 + Math.sqrt(Math.max(0, (trace / 2) ** 2 - det));
-  let ux = xz;
-  let uz = eigen - xx;
-  if (Math.hypot(ux, uz) < 1e-6) {
-    ux = 1;
-    uz = 0;
-  }
-  const length = Math.hypot(ux, uz);
-  ux /= length;
-  uz /= length;
-
-  let halfLength = 0;
-  let halfWidth = 0;
-  for (const point of ring) {
-    const dx = point.x - cx;
-    const dz = point.z - cz;
-    halfLength = Math.max(halfLength, Math.abs(dx * ux + dz * uz));
-    halfWidth = Math.max(halfWidth, Math.abs(dx * -uz + dz * ux));
-  }
-  return { cx, cz, ux, uz, halfLength, halfWidth };
-}
 
 /** Repeatable pseudo-randomness: the same berth gets the same boat every bake. */
 function hashed(seed: number): number {
@@ -138,13 +86,36 @@ function hashed(seed: number): number {
   return x - Math.floor(x);
 }
 
+function pointInRing(ring: { x: number; z: number }[], x: number, z: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i];
+    const b = ring[j];
+    if (a.z > z === b.z > z) continue;
+    if (x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
 /**
  * Yachts moored stern-to along the pontoons, the way the Mediterranean does it.
  *
- * Nothing here is typed in. The berths come from the decks P4.0d already
- * extrudes from the harbour survey, and a boat is only placed where the field
- * agrees there is water under it — which is what keeps them out of the quay
- * behind the pontoon and off the moles.
+ * Berthed **edge by edge**, not along the deck's principal axis. The axis was
+ * the first attempt and it is wrong for the shape it has to handle: a surveyed
+ * pier way is often a comb — several catwalks in one ring — or an L, or a quay
+ * head barely longer than it is wide, and one axis through the middle of that
+ * points nowhere in particular. What it produced was a fan: boats radiating from
+ * a point and crossing each other, which is what the harbour actually looked
+ * like from above.
+ *
+ * A boat ties to the side of the pontoon it is on, so the side is what decides.
+ * Every edge long enough to berth against gets a row perpendicular to itself,
+ * facing away from the deck, and a straight edge therefore gives a parallel row
+ * whatever the rest of the ring is doing.
+ *
+ * Nothing here is typed in. The decks come from the harbour survey (P4.0d) and a
+ * boat is only placed where the field agrees there is water under it, which is
+ * what keeps them off the quay behind the pontoon and off the moles.
  */
 export function berthYachts(
   piers: PierResult,
@@ -152,24 +123,50 @@ export function berthYachts(
   plane: ScenePlane,
 ): PropPlacement[] {
   const berths: PropPlacement[] = [];
+  /** Sterns already placed, so two edges meeting at a corner do not both berth. */
+  const taken: { x: number; z: number; beam: number }[] = [];
   let seed = 1;
+
   for (const deck of piers.decks) {
     if (deck.kind !== "pier") continue;
-    const axis = deckAxis(deck.ring);
-    if (axis.halfLength * 2 < MIN_BERTH_DECK_M) continue;
+    const ring = deck.ring;
+    if (ring.length < 3) continue;
 
-    for (const side of [-1, 1]) {
-      const nx = -axis.uz * side;
-      const nz = axis.ux * side;
-      let along = -axis.halfLength + BERTH_MARGIN_M;
-      while (along <= axis.halfLength - BERTH_MARGIN_M) {
+    for (let i = 0; i < ring.length; i++) {
+      const a = ring[i];
+      const b = ring[(i + 1) % ring.length];
+      const length = Math.hypot(b.x - a.x, b.z - a.z);
+      if (length < MIN_BERTH_EDGE_M) continue;
+      const ux = (b.x - a.x) / length;
+      const uz = (b.z - a.z) / length;
+      // Outward is decided by asking the ring, not by trusting its winding: a
+      // surveyed way is drawn in whichever direction the mapper walked.
+      let nx = -uz;
+      let nz = ux;
+      const midX = (a.x + b.x) / 2;
+      const midZ = (a.z + b.z) / 2;
+      if (pointInRing(ring, midX + nx, midZ + nz)) {
+        nx = -nx;
+        nz = -nz;
+      }
+
+      let along = BERTH_MARGIN_M;
+      while (along <= length - BERTH_MARGIN_M) {
         seed++;
         const lengthM = YACHT_MIN_M + hashed(seed) * (YACHT_MAX_M - YACHT_MIN_M);
         const beam = lengthM / 4.6;
-        const offset = axis.halfWidth + BERTH_CLEAR_M;
-        const sternX = axis.cx + axis.ux * along + nx * offset;
-        const sternZ = axis.cz + axis.uz * along + nz * offset;
+        const sternX = a.x + ux * along + nx * BERTH_CLEAR_M;
+        const sternZ = a.z + uz * along + nz * BERTH_CLEAR_M;
         along += beam + BERTH_GAP_M;
+
+        let clear = true;
+        for (const other of taken) {
+          if (Math.hypot(sternX - other.x, sternZ - other.z) < (beam + other.beam) * 0.45) {
+            clear = false;
+            break;
+          }
+        }
+        if (!clear) continue;
 
         // Water under the whole hull, or the boat is sitting on the quay behind
         // the pontoon. Checked across the beam as well as along the keel: a
@@ -178,8 +175,8 @@ export function berthYachts(
         let afloat = true;
         for (let t = 0; t <= 1.0001 && afloat; t += 0.125) {
           for (const across of [-beam / 2, 0, beam / 2]) {
-            const x = sternX + nx * lengthM * t + axis.ux * across;
-            const z = sternZ + nz * lengthM * t + axis.uz * across;
+            const x = sternX + nx * lengthM * t + ux * across;
+            const z = sternZ + nz * lengthM * t + uz * across;
             if (!field.isWater(plane.lon(x), plane.lat(z))) {
               afloat = false;
               break;
@@ -188,6 +185,7 @@ export function berthYachts(
         }
         if (!afloat) continue;
 
+        taken.push({ x: sternX, z: sternZ, beam });
         berths.push({
           kind: "yacht",
           lon: plane.lon(sternX),
