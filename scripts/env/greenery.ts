@@ -30,6 +30,8 @@ const TRACK_CLEAR_M = 9;
 const SPACING_NEAR_M = 10;
 const SPACING_FAR_M = 20;
 const NEAR_M = 150;
+/** Areas that carry trees. The rest tint the ground and grow nothing. */
+const PLANTED_KINDS = new Set<GreenWay["kind"]>(["wood", "scrub", "park"]);
 /** Metres between trees along a surveyed row. */
 const ROW_STEP_M = 8;
 const TREE_MIN_H_M = 5;
@@ -69,6 +71,7 @@ export interface GreeneryResult {
 // ─── areas ─────────────────────────────────────────────────────────────────
 
 interface Area {
+  kind: GreenWay["kind"];
   ring: { x: number; z: number }[];
   minX: number;
   maxX: number;
@@ -244,7 +247,7 @@ export function buildGreenery(
       minZ = Math.min(minZ, point.z);
       maxZ = Math.max(maxZ, point.z);
     }
-    areas.push({ ring, minX, maxX, minZ, maxZ });
+    areas.push({ kind: way.kind, ring, minX, maxX, minZ, maxZ });
     areaM2 += ringArea(ring);
   }
   const isGreen = indexAreas(areas);
@@ -319,6 +322,10 @@ export function buildGreenery(
   // And what it only knows the outline of. The lattice is global rather than
   // per-area, so two parks that touch do not plant two trees in the same metre.
   for (const area of areas) {
+    // Only what actually grows trees. A meadow or a lawn is green ground and
+    // nothing else — Silverstone is ringed by 750 ha of farmland tagged
+    // `landuse=grass`, and scattering into it planted 8 050 trees in fields.
+    if (!PLANTED_KINDS.has(area.kind)) continue;
     const spacing = corridor.distance(
       (area.minX + area.maxX) / 2,
       (area.minZ + area.maxZ) / 2,
