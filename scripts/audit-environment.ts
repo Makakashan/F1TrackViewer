@@ -604,17 +604,12 @@ async function audit(circuitId: string): Promise<Check[]> {
 
 const USAGE = `Usage:
   bun run env:audit <circuitId>
+  bun run env:audit --all
 
 Checks a baked city against its height field and against the budgets in
 docs/city-generation.md. Exits non-zero when a fatal check fails.`;
 
-async function main() {
-  const circuitId = process.argv.slice(2).find((a) => !a.startsWith("--"));
-  if (!circuitId) {
-    console.log(USAGE);
-    return;
-  }
-
+async function report(circuitId: string): Promise<number> {
   const checks = await audit(circuitId);
   console.log(`env:audit — ${circuitId}`);
   let failed = 0;
@@ -623,6 +618,58 @@ async function main() {
     if (!entry.ok && entry.fatal) failed++;
     console.log(`  ${mark} ${entry.name.padEnd(34)} ${entry.measured.padEnd(38)} limit ${entry.limit}`);
   }
+  return failed;
+}
+
+/**
+ * Every baked circuit, one line each (P4.4).
+ *
+ * A migration is not thirty-one separate questions. What matters is which
+ * circuits fail and on what, so the sweep prints a line per circuit and the
+ * failing checks under it, and comes back with the total.
+ */
+async function reportAll(): Promise<number> {
+  const raw = await readFile(join(REPO_ROOT, "public", "circuits", "index.json"), "utf8");
+  const parsed = JSON.parse(raw) as { id: string }[] | { circuits: { id: string }[] };
+  const ids = (Array.isArray(parsed) ? parsed : parsed.circuits).map((c) => c.id);
+
+  let failedCircuits = 0;
+  let missing = 0;
+  for (const id of ids) {
+    let checks: Check[];
+    try {
+      checks = await audit(id);
+    } catch (error) {
+      missing++;
+      console.log(`  ---- ${id.padEnd(10)} not baked (${error instanceof Error ? error.message : error})`);
+      continue;
+    }
+    const bad = checks.filter((entry) => !entry.ok && entry.fatal);
+    const warned = checks.filter((entry) => !entry.ok && !entry.fatal).length;
+    if (bad.length) failedCircuits++;
+    console.log(
+      `  ${bad.length ? "FAIL" : "ok  "} ${id.padEnd(10)} ` +
+        `${checks.length - bad.length - warned}/${checks.length} checks` +
+        (warned ? `, ${warned} warn` : ""),
+    );
+    for (const entry of bad) console.log(`         ${entry.name}: ${entry.measured} (limit ${entry.limit})`);
+  }
+  console.log(`\n${ids.length - failedCircuits - missing} clean, ${failedCircuits} failing, ${missing} not baked`);
+  return failedCircuits + missing;
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  if (args.includes("--all")) {
+    if (await reportAll()) process.exitCode = 1;
+    return;
+  }
+  const circuitId = args.find((a) => !a.startsWith("--"));
+  if (!circuitId) {
+    console.log(USAGE);
+    return;
+  }
+  const failed = await report(circuitId);
   if (failed) {
     console.log(`\n${failed} check${failed === 1 ? "" : "s"} failed`);
     process.exitCode = 1;
