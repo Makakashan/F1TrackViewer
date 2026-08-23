@@ -17,7 +17,6 @@ const ENDPOINTS = [
   "https://overpass.osm.ch/api/interpreter",
 ];
 const USER_AGENT = "F1TrackViewer/0.1 (https://github.com/Makakashan/F1TrackViewer)";
-const RETRY_DELAY_MS = 5_000;
 
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 const CACHE_DIR = join(REPO_ROOT, "data", "cache", "overpass-structures");
@@ -99,7 +98,26 @@ function query(bbox: RasterBBox): string {
 out geom tags;`;
 }
 
+/**
+ * One pass over the endpoints is not a retry policy.
+ *
+ * Overpass hands out query slots per address and refuses everything while they
+ * are taken, so a bake that asks for thirty-one circuits in a row spends part of
+ * its time locked out — and one pass over three endpoints, five seconds apart,
+ * gives up fifteen seconds into a wait that is measured in minutes. The passes
+ * back off, and the last one waits a minute between endpoints.
+ */
+const RETRY_BACKOFF_MS = [5_000, 20_000, 60_000];
+
 async function run(body: string): Promise<OverpassResponse | null> {
+  for (const wait of RETRY_BACKOFF_MS) {
+    const answer = await runOnce(body, wait);
+    if (answer) return answer;
+  }
+  return null;
+}
+
+async function runOnce(body: string, waitMs: number): Promise<OverpassResponse | null> {
   for (const endpoint of ENDPOINTS) {
     try {
       const res = await fetch(endpoint, {
@@ -108,7 +126,7 @@ async function run(body: string): Promise<OverpassResponse | null> {
         body,
       });
       if (!res.ok) {
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
         continue;
       }
       const json = (await res.json()) as OverpassResponse;
@@ -121,12 +139,12 @@ async function run(body: string): Promise<OverpassResponse | null> {
       // Park, which is a park. An empty result is therefore worth another
       // endpoint before it is believed.
       if (!json.elements?.length) {
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
         continue;
       }
       return json;
     } catch {
-      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
   }
   return null;
@@ -170,10 +188,9 @@ export async function fetchBuildingWays(
     });
   }
 
-  // Nothing is never written down. Somewhere with no park, no verge and no
-  // street tree does not exist, so an empty answer is a failed query wearing a
-  // successful one's clothes, and caching it makes a treeless circuit that no
-  // later run will ever correct.
+  // Nothing is never written down: an empty answer is a failed query wearing a
+  // successful one's clothes, and caching it makes an empty city that no later
+  // run will ever correct.
   if (ways.length) {
     await mkdir(CACHE_DIR, { recursive: true });
     await writeFile(cachePath, JSON.stringify(ways));
@@ -299,11 +316,22 @@ export async function fetchGreenWays(
     }
   }
 
+  // Greenery is the one layer a circuit can be baked without. Terrain and
+  // buildings are the scene; trees are dressing, and refusing to bake Austria
+  // because Overpass was busy would be the wrong way round. An unanswered query
+  // is warned about and left uncached, so the next run asks again.
   const elements: OverpassWay[] = [];
+  let unanswered = 0;
   for (const query of greenQueries(bbox)) {
     const response = await run(query);
-    if (!response) throw new Error(`overpass: no endpoint answered for ${circuitId} greenery`);
+    if (!response) {
+      unanswered++;
+      continue;
+    }
     elements.push(...response.elements);
+  }
+  if (unanswered) {
+    console.warn(`  overpass: ${unanswered} greenery quer(y|ies) unanswered for ${circuitId}`);
   }
 
   const ways: GreenWay[] = [];
@@ -324,8 +352,14 @@ export async function fetchGreenWays(
     });
   }
 
-  await mkdir(CACHE_DIR, { recursive: true });
-  await writeFile(cachePath, JSON.stringify(ways));
+  // Nothing is never written down, and neither is a partial answer. Somewhere
+  // with no park, no verge and no street tree does not exist, so an empty
+  // result is a failed query wearing a successful one's clothes — cache it and
+  // no later run ever corrects the treeless circuit it makes.
+  if (ways.length && !unanswered) {
+    await mkdir(CACHE_DIR, { recursive: true });
+    await writeFile(cachePath, JSON.stringify(ways));
+  }
   return ways;
 }
 
