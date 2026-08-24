@@ -1229,6 +1229,49 @@ belt an order of magnitude inside its byte budget.
       Monaco's stands are temporary and their positions are not in OSM, and
       guessing at them would be inventing data, which is the one thing this
       pipeline does not do.
+
+      **Three corrections to the berthing, all found by looking at the harbour
+      from above.**
+
+      *A boat ties to the side of its pontoon, not to the deck's average
+      direction.* Berthing along the deck's principal axis is wrong for the
+      shape it has to handle: a surveyed pier way is often a comb — several
+      catwalks in one ring — or an L, or a quay head barely longer than it is
+      wide, and one axis through the middle of that points nowhere. What it drew
+      was a fan, boats radiating from a point and crossing each other. Every
+      edge longer than 14 m now carries a row perpendicular to itself, so a
+      straight edge gives a parallel row whatever the rest of the ring does.
+      Outward is asked of the ring rather than taken from its winding, because a
+      surveyed way is drawn in whichever direction the mapper walked.
+
+      *A berth is as long as the water in front of it.* Port Hercule's pontoons
+      stand about twenty metres apart and an unclamped 46 m hull crossed the gap
+      into the row facing it. The water ahead of each berth is probed, and where
+      the probe finds the far side the gap belongs to both rows and each takes
+      half of it.
+
+      *And hulls are checked against hulls, not sterns against sterns.* A
+      distance test between mooring points cannot see the failure it is meant to
+      catch: boats on facing pontoons have their sterns twenty metres apart and
+      their bows in each other. Oriented rectangles, four separating axes.
+      **305 → 164 boats**, and none of them moored through another.
+
+      **A pool and a pitch are surveyed surfaces, not bare ground.** Monaco's
+      pool quay renders as bare concrete, and the reason is worth recording
+      because it looks like a bake bug and is not: within 130 m of Quai des
+      États-Unis OSM holds **zero** building footprints, and along Quai Albert
+      1er it holds two. The long halls in the aerial photograph are the Grand
+      Prix's own hospitality structures, up for six weeks a year, and nobody
+      surveys those. What *is* permanent there is the Stade Nautique, and it is
+      mapped — as `leisure=swimming_pool`, which the building query never asked
+      for. The single thing the buildings query did find on that quay is
+      `way/952067351`, the pool's diving platform, tagged `building=yes`.
+
+      So pools and pitches are fetched with the greenery — the same shape of
+      answer, an area that is neither ground nor building — and drawn as a flat
+      lid 12 cm above the terrain, fanned from the centroid and **wound by the
+      ring's signed area**, since that is the bug that hid every flat roof in
+      the city until P4.0b counted them.
 - [x] **P4.3** Trees, and the ground they stand on — `scripts/env/greenery.ts`.
 
       Greenery arrives from OSM in three resolutions and each is used for what
