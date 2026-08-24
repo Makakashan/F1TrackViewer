@@ -52,7 +52,7 @@ export interface BuildingWay {
  */
 export interface GreenWay {
   id: string;
-  kind: "tree" | "tree_row" | "wood" | "scrub" | "park" | "grass";
+  kind: "tree" | "tree_row" | "wood" | "scrub" | "park" | "grass" | "pool" | "pitch";
   /** One point for a tree, a polyline for a row, a closed ring for an area. */
   points: [number, number][];
 }
@@ -256,42 +256,46 @@ export async function fetchShoreWays(
 
 /** Ways in the bbox that are tunnelled, bridged or covered, with their tags. */
 /**
- * Two queries, not one.
+ * One query per tag, not one query for everything.
  *
- * Asked together — surveyed trees, tree rows, woods, landuse and parks — the
- * public endpoints answer **504**, while either half on its own comes back in
- * seconds. Splitting them is not a nicety; the combined form was returning an
- * empty city and caching it.
+ * This started as a single query and the public endpoints answered **504**.
+ * Split in two it worked for Monaco and Silverstone and then failed again for
+ * every larger bbox in P4.4's sweep — Baku, Melbourne, the Red Bull Ring — and
+ * the cost was not the refusal but the backoff behind it: **170 seconds of
+ * waiting per circuit** to arrive at no trees.
  *
- * The areas are asked for one tag at a time for the same reason. A regex over
- * `landuse` timed out where nine plain equality clauses come back at once.
+ * It is the weight of the query, not the rate limit. `node["natural"="tree"]`
+ * over a circuit's whole bbox is a large scan and a regex over `landuse` is a
+ * larger one; asked one plain equality at a time they each come back in
+ * seconds. Eleven cheap requests beat one that times out.
  */
 function greenQueries(bbox: RasterBBox): string[] {
   const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
-  return [
-    `[out:json][timeout:180];
-(
-  node["natural"="tree"](${box});
-  way["natural"="tree_row"](${box});
-);
-out geom tags;`,
-    `[out:json][timeout:180];
-(
-  way["natural"="wood"](${box});
-  way["natural"="scrub"](${box});
-  way["landuse"="forest"](${box});
-  way["landuse"="grass"](${box});
-  way["landuse"="meadow"](${box});
-  way["landuse"="village_green"](${box});
-  way["landuse"="cemetery"](${box});
-  way["leisure"="park"](${box});
-  way["leisure"="garden"](${box});
-);
-out geom tags;`,
+  const clauses = [
+    `node["natural"="tree"](${box});`,
+    `way["natural"="tree_row"](${box});`,
+    `way["natural"="wood"](${box});`,
+    `way["natural"="scrub"](${box});`,
+    `way["landuse"="forest"](${box});`,
+    `way["landuse"="grass"](${box});`,
+    `way["landuse"="meadow"](${box});`,
+    `way["landuse"="village_green"](${box});`,
+    `way["landuse"="cemetery"](${box});`,
+    `way["leisure"="park"](${box});`,
+    `way["leisure"="garden"](${box});`,
+    // Not greenery, but the same shape of answer: a surveyed area that is not a
+    // building and is not bare ground. Monaco's pool quay reads as empty
+    // concrete without them — the halls beside it are the Grand Prix's own and
+    // nobody maps those, but the Stade Nautique is permanent and is drawn.
+    `way["leisure"="swimming_pool"](${box});`,
+    `way["leisure"="pitch"](${box});`,
   ];
+  return clauses.map((clause) => `[out:json][timeout:120];\n${clause}\nout geom tags;`);
 }
 
 function greenKind(tags: Record<string, string>): GreenWay["kind"] | null {
+  if (tags.leisure === "swimming_pool") return "pool";
+  if (tags.leisure === "pitch") return "pitch";
   if (tags.natural === "tree") return "tree";
   if (tags.natural === "tree_row") return "tree_row";
   if (tags.natural === "wood" || tags.landuse === "forest") return "wood";
@@ -321,12 +325,17 @@ export async function fetchGreenWays(
   // because Overpass was busy would be the wrong way round. An unanswered query
   // is warned about and left uncached, so the next run asks again.
   const elements: OverpassWay[] = [];
+  const queries = greenQueries(bbox);
   let unanswered = 0;
-  for (const query of greenQueries(bbox)) {
+  for (const [index, query] of queries.entries()) {
     const response = await run(query);
     if (!response) {
-      unanswered++;
-      continue;
+      // The rest are not asked. Every query goes to the same three endpoints,
+      // so if one has exhausted its retries the others will too — and eleven
+      // queries times three backoff passes is half an hour of a bake spent
+      // waiting to be told the same thing.
+      unanswered = queries.length - index;
+      break;
     }
     elements.push(...response.elements);
   }

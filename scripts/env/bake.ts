@@ -154,7 +154,9 @@ type MeshKind =
   | "prop"
   | "propDark"
   | "foliage"
-  | "trunk";
+  | "trunk"
+  | "pool"
+  | "pitch";
 
 const MESH_COLOR: Record<MeshKind, string> = {
   terrain: DIORAMA_COLORS.terrain,
@@ -168,6 +170,8 @@ const MESH_COLOR: Record<MeshKind, string> = {
   barrier: "#C9CFD6",
   prop: DIORAMA_COLORS.building,
   foliage: "#4E8C4A",
+  pool: DIORAMA_COLORS.waterTop,
+  pitch: DIORAMA_COLORS.landuseGrass,
   trunk: "#6B5B4A",
   // A hull, a crane leg, a stand frame: what sits below the deck line.
   propDark: DIORAMA_COLORS.buildingSide,
@@ -2154,6 +2158,9 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
       { kind: "barrier", mesh: barriers },
       { kind: "foliage", mesh: greenery.foliage.core },
       { kind: "trunk", mesh: greenery.trunks.core },
+      // Flat, ground-level and near the road, so they belong with the core.
+      { kind: "pool", mesh: greenery.pools },
+      { kind: "pitch", mesh: greenery.pitches },
     ],
     city: [
       { kind: "terrain", mesh: terrain.meshes.city },
