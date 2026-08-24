@@ -1321,9 +1321,74 @@ belt an order of magnitude inside its byte budget.
       do not. This mattered more than it sounds: the failing form was returning
       an empty result and the cache was keeping it, so the bake had no greenery
       and said nothing about it.
-- [ ] **P4.4** Migrate the remaining 23 circuits, then **delete
+- [ ] **P4.4** Migrate the remaining 30 circuits, then **delete
       `environment-layer.tsx`** and the old runtime path. This is D17's termination
       condition — the plan is not finished while both paths exist.
+
+      **Started, and the sweep is what found the pipeline's real faults.**
+      `bun run env:bake:all` bakes every circuit the app lists, keeps going past
+      a failure and prints one table; `bun run env:audit --all` does the same for
+      the checks. A run that stops at the first broken circuit tells you about
+      one circuit.
+
+      *There is a global elevation provider now* — `scripts/env/skadi.ts`. IGN
+      covers France and Monaco, which is one circuit of thirty-one, and the
+      constraint that picks the replacement is that this pipeline reads binary
+      and nothing else: no GDAL, no PNG decoder, no image library. Terrarium and
+      the GeoTIFF pyramid both need one. The same archive ships **Skadi** — SRTM
+      void-filled, one file per degree, 3601 x 3601 big-endian int16, gzipped —
+      which is a `gunzip` and a `DataView`. The cost is honest: one arc-second is
+      about **30 m** where IGN gives 3.9, so the core belt's 4 m cell is
+      interpolation outside France and no amount of it invents a quay. What it
+      holds is the shape of a landscape, which is what terrain is for.
+
+      *Coverage is claimed by a box and confirmed by the answer.* `covers` is a
+      rectangle and a country is not: IGN's box has to hold France, so it also
+      holds Belgium, Luxembourg, the Rhineland, Piedmont and Catalonia, where
+      IGN has nothing. Spa came out of the first sweep with a raster of **875 280
+      nodata and no valid pixel**, a city belt of **zero triangles**, and no
+      error anywhere. A provider that answers with an empty raster now hands the
+      circuit to the next one that covers it.
+
+      *The corridor is never narrower than the grid it is burned into.* A 16 m
+      corridor fell straight through a 30 m cell: the shipped profile stood
+      **0.73 m** off ground the burn was supposed to have set, on a stretch with
+      a 0.2% gradient — not a slope problem but a resolution one. **0.73 → 0.235
+      m**. The audit's tolerance had the same fault and is now a fraction of the
+      cell: 0.05 m against 3.9 m is 1.3% of a cell, 0.235 against 30 m is 0.8%.
+
+      *And a meadow is green ground, not a forest.* Silverstone is ringed by
+      **750 ha** of farmland tagged `landuse=grass`, and scattering into it
+      planted **8 050** trees in fields. Only wood, scrub and park carry trees
+      now: 8 050 → 2 203, and the core belt fell from 3.34 MB to 1.46.
+
+      **The worst fault was silence, and it had nothing to do with elevation.**
+      Overpass answers a refused or timed-out query with HTTP 200 and an empty
+      body, and the cache wrote that down as an answer. Measured by reading the
+      shipped GLBs rather than the logs: **22 of 24 circuits baked with zero
+      buildings** — Melbourne, Baku, Bahrain, Shanghai, Suzuka, cities with no
+      city — and **121 cache files of two bytes** across the repo. Nothing failed.
+      Nothing warned.
+
+      Three things came out of that. An empty result is now worth another
+      endpoint before it is believed, and is never written to disk, so a later
+      run corrects it. Retries back off over minutes rather than fifteen seconds,
+      because Overpass hands out query slots per address and a sweep of
+      thirty-one circuits spends part of its time locked out. And greenery — the
+      one layer a circuit can be baked without — warns instead of failing, which
+      is why `--missing-greenery` exists: the green cache is only written on a
+      complete answer, so its absence is exactly the question "were the trees
+      missed".
+
+      One more, about query weight rather than rate: asked as a single query the
+      greenery returns **504**, and split in two it still failed for every bbox
+      larger than Monaco's. It is the scan, not the limit — `node["natural"="tree"]`
+      over a whole bbox is expensive and a regex over `landuse` more so. Eleven
+      plain equality clauses come back in seconds each.
+
+      **Verified so far: `gb-1948` (18/18) and `mc-1929` (19/19).** The rest were
+      deleted rather than shipped — a city with no buildings is worse than no
+      city — and are waiting on Overpass to answer again.
 
 **Distance limits are off** in `track-viewer.tsx` while the city is being looked
 at: inspecting the ground means getting under the eaves and down to street level,
