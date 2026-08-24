@@ -79,6 +79,10 @@ const BERTH_GAP_M = 3;
 const BERTH_MARGIN_M = 7;
 const YACHT_MIN_M = 18;
 const YACHT_MAX_M = 46;
+/** How far ahead of a berth the water is probed for room. */
+const BERTH_PROBE_M = 60;
+/** Clear water kept ahead of the bow. */
+const BOW_CLEAR_M = 2;
 
 /** Repeatable pseudo-randomness: the same berth gets the same boat every bake. */
 function hashed(seed: number): number {
@@ -95,6 +99,63 @@ function pointInRing(ring: { x: number; z: number }[], x: number, z: number): bo
     if (x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
   }
   return inside;
+}
+
+interface Hull {
+  cx: number;
+  cz: number;
+  /** Along the hull, unit. The beam runs across it. */
+  ux: number;
+  uz: number;
+  halfLength: number;
+  halfBeam: number;
+}
+
+/**
+ * Do two moored hulls occupy the same water?
+ *
+ * Separating axes, over the four edge normals of two rectangles. A stern-only
+ * distance test — which is what the first version did — cannot see this: boats
+ * berthed on facing pontoons have their sterns twenty metres apart and their
+ * bows in each other, which is exactly what the harbour came out looking like.
+ */
+function hullsOverlap(a: Hull, b: Hull): boolean {
+  const axes = [
+    [a.ux, a.uz],
+    [-a.uz, a.ux],
+    [b.ux, b.uz],
+    [-b.uz, b.ux],
+  ];
+  const dx = b.cx - a.cx;
+  const dz = b.cz - a.cz;
+  for (const [ax, az] of axes) {
+    const centre = Math.abs(dx * ax + dz * az);
+    const reachA =
+      a.halfLength * Math.abs(a.ux * ax + a.uz * az) +
+      a.halfBeam * Math.abs(-a.uz * ax + a.ux * az);
+    const reachB =
+      b.halfLength * Math.abs(b.ux * ax + b.uz * az) +
+      b.halfBeam * Math.abs(-b.uz * ax + b.ux * az);
+    if (centre > reachA + reachB) return false;
+  }
+  return true;
+}
+
+/** How far the water runs out from a berth before it meets ground. */
+function openWaterAhead(
+  sternX: number,
+  sternZ: number,
+  nx: number,
+  nz: number,
+  field: HeightField,
+  plane: ScenePlane,
+): { metres: number; hitsLand: boolean } {
+  for (let t = 2; t <= BERTH_PROBE_M; t += 2) {
+    if (!field.isWater(plane.lon(sternX + nx * t), plane.lat(sternZ + nz * t))) {
+      return { metres: t - 2, hitsLand: true };
+    }
+  }
+  return { metres: BERTH_PROBE_M, hitsLand: false };
 }
 
 /**
@@ -123,8 +184,8 @@ export function berthYachts(
   plane: ScenePlane,
 ): PropPlacement[] {
   const berths: PropPlacement[] = [];
-  /** Sterns already placed, so two edges meeting at a corner do not both berth. */
-  const taken: { x: number; z: number; beam: number }[] = [];
+  /** Hulls already in the water, so nothing is moored through anything else. */
+  const taken: Hull[] = [];
   let seed = 1;
 
   for (const deck of piers.decks) {
@@ -153,20 +214,26 @@ export function berthYachts(
       let along = BERTH_MARGIN_M;
       while (along <= length - BERTH_MARGIN_M) {
         seed++;
-        const lengthM = YACHT_MIN_M + hashed(seed) * (YACHT_MAX_M - YACHT_MIN_M);
-        const beam = lengthM / 4.6;
         const sternX = a.x + ux * along + nx * BERTH_CLEAR_M;
         const sternZ = a.z + uz * along + nz * BERTH_CLEAR_M;
-        along += beam + BERTH_GAP_M;
 
-        let clear = true;
-        for (const other of taken) {
-          if (Math.hypot(sternX - other.x, sternZ - other.z) < (beam + other.beam) * 0.45) {
-            clear = false;
-            break;
-          }
+        // A berth is as long as the water in front of it, and no longer. This
+        // is what stops the collisions: Port Hercule's pontoons stand twenty
+        // metres apart and an unclamped forty-six metre hull crossed the gap
+        // into the row facing it. Where the probe finds the far side, the gap
+        // belongs to both rows and each takes half of it.
+        const room = openWaterAhead(sternX, sternZ, nx, nz, field, plane);
+        const berthLength = room.hitsLand
+          ? room.metres / 2 - BOW_CLEAR_M
+          : room.metres - BOW_CLEAR_M;
+        if (berthLength < YACHT_MIN_M) {
+          along += YACHT_MIN_M / 4.6 + BERTH_GAP_M;
+          continue;
         }
-        if (!clear) continue;
+        const wanted = YACHT_MIN_M + hashed(seed) * (YACHT_MAX_M - YACHT_MIN_M);
+        const lengthM = Math.min(wanted, berthLength);
+        const beam = lengthM / 4.6;
+        along += beam + BERTH_GAP_M;
 
         // Water under the whole hull, or the boat is sitting on the quay behind
         // the pontoon. Checked across the beam as well as along the keel: a
@@ -185,7 +252,17 @@ export function berthYachts(
         }
         if (!afloat) continue;
 
-        taken.push({ x: sternX, z: sternZ, beam });
+        const hull: Hull = {
+          cx: sternX + nx * (lengthM / 2),
+          cz: sternZ + nz * (lengthM / 2),
+          ux: nx,
+          uz: nz,
+          halfLength: lengthM / 2,
+          halfBeam: beam / 2,
+        };
+        if (taken.some((other) => hullsOverlap(hull, other))) continue;
+
+        taken.push(hull);
         berths.push({
           kind: "yacht",
           lon: plane.lon(sternX),
