@@ -46,6 +46,24 @@ async function alreadyBaked(id: string): Promise<boolean> {
   }
 }
 
+/**
+ * Did this circuit ever get a complete answer about its greenery?
+ *
+ * The cache is only written when every query came back (see `fetchGreenWays`),
+ * so its absence is exactly the question "were the trees missed". Overpass hands
+ * out query slots per address and a sweep of thirty-one circuits spends part of
+ * its time locked out, so a first pass can bake a correct circuit with no trees
+ * on it and nothing else records that.
+ */
+async function hasGreenery(id: string): Promise<boolean> {
+  try {
+    await readFile(join(REPO_ROOT, "data", "cache", "overpass-structures", `${id}-green.json`));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function summarise(id: string, report: BakeReport, seconds: number): Row {
   const belts = Object.values(report.belts);
   return {
@@ -66,8 +84,16 @@ async function main() {
   );
   const skipBaked = args.includes("--skip-baked");
   const refresh = args.includes("--refresh");
+  // Re-bakes only what came out treeless because Overpass was busy.
+  const greeneryOnly = args.includes("--missing-greenery");
 
-  const ids = (await circuitIds()).filter((id) => only.size === 0 || only.has(id));
+  let ids = (await circuitIds()).filter((id) => only.size === 0 || only.has(id));
+  if (greeneryOnly) {
+    const missing: string[] = [];
+    for (const id of ids) if (!(await hasGreenery(id))) missing.push(id);
+    console.log(`${missing.length} of ${ids.length} circuits have no greenery cached`);
+    ids = missing;
+  }
   const rows: Row[] = [];
 
   for (const id of ids) {
