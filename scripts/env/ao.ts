@@ -139,3 +139,61 @@ export function applyAmbientOcclusion(mesh: Mesh, occluders: Occluders): void {
 
   mesh.colors = colors;
 }
+
+/**
+ * Darkens the ground by how steep it is.
+ *
+ * The terrain came out of the field one flat colour, and AO only speaks where
+ * something stands nearby — an open hillside sees the whole sky and reads as
+ * paper. Slope is the other thing the eye uses to see relief: a quay is
+ * concrete, a 45° hillside is scrub over rock, and a cliff is rock. So the
+ * vertex's own normal picks a factor on the colour AO already wrote, warmed a
+ * little as it steepens so a cliff reads stony rather than merely dim.
+ *
+ * This replaced the green ground tint, which said *planted* by painting the
+ * terrain and read as paint.
+ */
+/** Below this the ground is flat enough to leave alone. */
+const FLAT_DEG = 12;
+/** At and beyond this it is as dark as ground gets. */
+const STEEP_DEG = 55;
+/** What the steepest ground keeps of its own colour. */
+const STEEP_SHADE = 0.62;
+/** The steepest ground's warmth, as a multiplier per channel. */
+const ROCK_TINT: [number, number, number] = [1, 0.985, 0.96];
+
+export function shadeBySlope(mesh: Mesh): number {
+  if (!mesh.colors) return 0;
+  const flat = Math.cos((FLAT_DEG * Math.PI) / 180);
+  const steep = Math.cos((STEEP_DEG * Math.PI) / 180);
+  let shaded = 0;
+  const count = mesh.positions.length / 3;
+  for (let i = 0; i < count; i++) {
+    // The normal points up on ground; a vertical wall of a cut reads as 0.
+    const up = Math.abs(mesh.normals[i * 3 + 1]);
+    if (up >= flat) continue;
+    const t = Math.max(0, Math.min(1, (flat - up) / (flat - steep)));
+    // Smoothstep, or the first degree past flat shows as a band.
+    const k = t * t * (3 - 2 * t);
+    const shade = 1 - (1 - STEEP_SHADE) * k;
+    mesh.colors[i * 3] *= shade * (1 + (ROCK_TINT[0] - 1) * k);
+    mesh.colors[i * 3 + 1] *= shade * (1 + (ROCK_TINT[1] - 1) * k);
+    mesh.colors[i * 3 + 2] *= shade * (1 + (ROCK_TINT[2] - 1) * k);
+    shaded++;
+  }
+  return shaded;
+}
+
+/**
+ * Multiplies a merged model's own colour into the shade AO wrote.
+ *
+ * The occlusion pass writes `colors` from scratch, so a model's palette cannot
+ * live there until after it has run. Its material is white, and this is what
+ * puts the colour back.
+ */
+export function applyAlbedo(mesh: Mesh): number {
+  if (!mesh.colors || !mesh.albedo) return 0;
+  const count = Math.min(mesh.colors.length, mesh.albedo.length);
+  for (let i = 0; i < count; i++) mesh.colors[i] *= mesh.albedo[i];
+  return count / 3;
+}

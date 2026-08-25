@@ -13,6 +13,12 @@ export interface Mesh {
   indices: number[];
   /** Baked shade per vertex, written by the AO pass (D9). */
   colors?: number[];
+  /**
+   * A merged model's own colour per vertex, read off its material or its
+   * texture. Kept apart from `colors` because the AO pass writes that array
+   * from scratch; the two are multiplied together after it runs.
+   */
+  albedo?: number[];
 }
 
 export function createMesh(): Mesh {
@@ -27,13 +33,18 @@ export function triangleCount(mesh: Mesh): number {
   return mesh.indices.length / 3;
 }
 
-/** A triangle with its own three vertices, so the face keeps a hard edge. */
+/**
+ * A triangle with its own three vertices, so the face keeps a hard edge.
+ *
+ * Returns whether it was kept: a degenerate triangle is dropped, and a caller
+ * writing a parallel per-vertex array has to know that to stay in step.
+ */
 export function addFlatTriangle(
   mesh: Mesh,
   ax: number, ay: number, az: number,
   bx: number, by: number, bz: number,
   cx: number, cy: number, cz: number,
-): void {
+): boolean {
   const ux = bx - ax;
   const uy = by - ay;
   const uz = bz - az;
@@ -44,7 +55,7 @@ export function addFlatTriangle(
   let ny = uz * vx - ux * vz;
   let nz = ux * vy - uy * vx;
   const length = Math.hypot(nx, ny, nz);
-  if (length < 1e-12) return; // degenerate: a footprint with a repeated vertex
+  if (length < 1e-12) return false; // degenerate: a footprint with a repeated vertex
   nx /= length;
   ny /= length;
   nz /= length;
@@ -53,6 +64,7 @@ export function addFlatTriangle(
   mesh.positions.push(ax, ay, az, bx, by, bz, cx, cy, cz);
   mesh.normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
   mesh.indices.push(base, base + 1, base + 2);
+  return true;
 }
 
 export function addFlatQuad(

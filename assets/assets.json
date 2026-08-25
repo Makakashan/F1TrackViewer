@@ -1,0 +1,59 @@
+{
+  "schemaVersion": 1,
+  "packs": [
+    {
+      "id": "kenney-watercraft",
+      "title": "Watercraft Kit",
+      "author": "Kenney",
+      "license": "CC0-1.0",
+      "source": "https://kenney.nl/assets/watercraft-kit",
+      "url": "https://kenney.nl/media/pages/assets/watercraft-kit/a335cfed49-1713519620/kenney_watercraft-pack.zip",
+      "take": [
+        {
+          "from": "Models/GLB format/",
+          "to": ""
+        },
+        {
+          "from": "Textures/",
+          "to": "Textures/"
+        }
+      ]
+    },
+    {
+      "id": "kenney-city-commercial",
+      "title": "City Kit (Commercial) 2.1",
+      "author": "Kenney",
+      "license": "CC0-1.0",
+      "source": "https://kenney.nl/assets/city-kit-commercial",
+      "url": "https://kenney.nl/media/pages/assets/city-kit-commercial/a742d900eb-1753115042/kenney_city-kit-commercial_2.1.zip",
+      "take": [
+        {
+          "from": "Models/GLB format/",
+          "to": ""
+        },
+        {
+          "from": "Textures/",
+          "to": "Textures/"
+        }
+      ]
+    },
+    {
+      "id": "kenney-city-suburban",
+      "title": "City Kit (Suburban) 2.0",
+      "author": "Kenney",
+      "license": "CC0-1.0",
+      "source": "https://kenney.nl/assets/city-kit-suburban",
+      "url": "https://kenney.nl/media/pages/assets/city-kit-suburban/2c871b7af2-1745479373/kenney_city-kit-suburban_20.zip",
+      "take": [
+        {
+          "from": "Models/GLB format/",
+          "to": ""
+        },
+        {
+          "from": "Textures/",
+          "to": "Textures/"
+        }
+      ]
+    }
+  ]
+}

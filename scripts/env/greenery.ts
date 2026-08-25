@@ -1,31 +1,22 @@
 /**
- * Green ground, and the surfaces that sit on it (docs/city-generation.md P4.3).
+ * Surveyed surfaces that are neither ground nor building (docs/city-generation.md P4.3).
  *
- * Greenery arrives from OSM as areas: a park, a wood, a lawn. What is done
- * with them is a colour, not geometry — the terrain's own grey is pulled
- * toward green wherever an area covers it, which costs no triangle, no draw
- * call and no material. Trees were built here once, a canopy and a trunk each;
- * they read as a forest of the same six-sided shape and were taken out. The
- * survey's `natural=tree` and `tree_row` are still fetched and now ignored.
+ * What is left of the greenery pass. Trees were built here once, a canopy and a
+ * trunk each, and read as one six-sided shape repeated a thousand times; the
+ * green ground tint that replaced them at range read as paint on the terrain.
+ * Both are gone. The terrain keeps its own colour and the survey's `natural=tree`,
+ * `tree_row`, woods and lawns are fetched and ignored.
  *
- * Two kinds of surveyed area are not ground and are drawn: a swimming pool and
- * a pitch. Monaco's pool quay reads as bare concrete otherwise, and the halls
- * beside the pool are the Grand Prix's own and are in nobody's survey.
+ * Two kinds of area are still drawn, because they are things rather than
+ * colour: a swimming pool and a pitch. Monaco's pool quay reads as bare
+ * concrete otherwise, and the halls beside the pool are the Grand Prix's own
+ * and are in nobody's survey.
  */
 
 import type { HeightField } from "./heightfield";
 import { addFlatTriangle, createMesh, type Mesh } from "./mesh";
 import type { GreenWay } from "./overpass";
 import type { ScenePlane } from "./plane";
-
-/** Areas that colour the ground. A pool is not a lawn. */
-const TINTED_KINDS = new Set<GreenWay["kind"]>([
-  "wood",
-  "scrub",
-  "park",
-  "grass",
-  "pitch",
-]);
 
 /**
  * A surveyed area that is neither ground nor building: a pool, a pitch.
@@ -40,36 +31,10 @@ export interface GreeneryResult {
   pools: Mesh;
   /** Playing surfaces: pitches and courts. */
   pitches: Mesh;
-  /** True where the ground belongs to a park, a wood or a lawn. */
-  isGreen(x: number, z: number): boolean;
   stats: {
-    areas: number;
-    areaM2: number;
     pools: number;
     pitches: number;
   };
-}
-
-// ─── areas ─────────────────────────────────────────────────────────────────
-
-interface Area {
-  kind: GreenWay["kind"];
-  ring: { x: number; z: number }[];
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
-}
-
-function pointInRing(ring: { x: number; z: number }[], x: number, z: number): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const a = ring[i];
-    const b = ring[j];
-    if (a.z > z === b.z > z) continue;
-    if (x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) inside = !inside;
-  }
-  return inside;
 }
 
 function ringArea(ring: { x: number; z: number }[], signed = false): number {
@@ -82,43 +47,6 @@ function ringArea(ring: { x: number; z: number }[], signed = false): number {
   return signed ? sum / 2 : Math.abs(sum) / 2;
 }
 
-/**
- * The green areas, in a coarse bucket grid.
- *
- * `isGreen` is asked once per terrain vertex of every belt — tens of thousands
- * of times — and a scan over every ring would be the slowest thing in the bake.
- * A ring only ever needs testing if the point is inside its bounding box, so
- * the boxes are stamped into a grid and a lookup tests its own bucket.
- */
-function indexAreas(areas: Area[]) {
-  const BUCKET_M = 120;
-  const buckets = new Map<string, Area[]>();
-  const key = (col: number, row: number) => `${col},${row}`;
-  for (const area of areas) {
-    const fromCol = Math.floor(area.minX / BUCKET_M);
-    const toCol = Math.floor(area.maxX / BUCKET_M);
-    const fromRow = Math.floor(area.minZ / BUCKET_M);
-    const toRow = Math.floor(area.maxZ / BUCKET_M);
-    for (let col = fromCol; col <= toCol; col++) {
-      for (let row = fromRow; row <= toRow; row++) {
-        const id = key(col, row);
-        const list = buckets.get(id);
-        if (list) list.push(area);
-        else buckets.set(id, [area]);
-      }
-    }
-  }
-  return (x: number, z: number): boolean => {
-    const list = buckets.get(key(Math.floor(x / BUCKET_M), Math.floor(z / BUCKET_M)));
-    if (!list) return false;
-    for (const area of list) {
-      if (x < area.minX || x > area.maxX || z < area.minZ || z > area.maxZ) continue;
-      if (pointInRing(area.ring, x, z)) return true;
-    }
-    return false;
-  };
-}
-
 // ─── build ─────────────────────────────────────────────────────────────────
 
 export function buildGreenery(
@@ -126,33 +54,7 @@ export function buildGreenery(
   field: HeightField,
   plane: ScenePlane,
 ): GreeneryResult {
-  const areas: Area[] = [];
-  let areaM2 = 0;
-  for (const way of ways) {
-    if (way.points.length < 4) continue;
-    if (!TINTED_KINDS.has(way.kind)) continue;
-    const ring = way.points.map(([lon, lat]) => ({ x: plane.x(lon), z: plane.z(lat) }));
-    let minX = Infinity;
-    let maxX = -Infinity;
-    let minZ = Infinity;
-    let maxZ = -Infinity;
-    for (const point of ring) {
-      minX = Math.min(minX, point.x);
-      maxX = Math.max(maxX, point.x);
-      minZ = Math.min(minZ, point.z);
-      maxZ = Math.max(maxZ, point.z);
-    }
-    areas.push({ kind: way.kind, ring, minX, maxX, minZ, maxZ });
-    areaM2 += ringArea(ring);
-  }
-  const isGreen = indexAreas(areas);
-
-  const stats: GreeneryResult["stats"] = {
-    areas: areas.length,
-    areaM2: Math.round(areaM2),
-    pools: 0,
-    pitches: 0,
-  };
+  const stats: GreeneryResult["stats"] = { pools: 0, pitches: 0 };
 
   const pools = createMesh();
   const pitches = createMesh();
@@ -185,33 +87,5 @@ export function buildGreenery(
     else stats.pitches++;
   }
 
-  return { pools, pitches, isGreen, stats };
-}
-
-// ─── ground ────────────────────────────────────────────────────────────────
-
-/**
- * Tints the terrain where it is green.
- *
- * The colour rides on the vertex colours the AO pass writes, so it costs no
- * geometry, no draw call and no material: the terrain's own grey is multiplied
- * toward the palette's green wherever a park or a wood covers it. This has to
- * run after the occlusion pass, which owns the same array.
- */
-export function tintGreenGround(
-  mesh: Mesh,
-  isGreen: (x: number, z: number) => boolean,
-  tint: [number, number, number],
-): number {
-  if (!mesh.colors) return 0;
-  let tinted = 0;
-  const count = mesh.positions.length / 3;
-  for (let i = 0; i < count; i++) {
-    if (!isGreen(mesh.positions[i * 3], mesh.positions[i * 3 + 2])) continue;
-    mesh.colors[i * 3] *= tint[0];
-    mesh.colors[i * 3 + 1] *= tint[1];
-    mesh.colors[i * 3 + 2] *= tint[2];
-    tinted++;
-  }
-  return tinted;
+  return { pools, pitches, stats };
 }

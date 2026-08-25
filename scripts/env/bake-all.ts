@@ -23,7 +23,7 @@ interface Row {
   ok: boolean;
   bytes?: number;
   triangles?: number;
-  greenAreas?: number;
+  pools?: number;
   props?: number;
   provider?: string;
   seconds: number;
@@ -71,7 +71,7 @@ function summarise(id: string, report: BakeReport, seconds: number): Row {
     ok: true,
     bytes: belts.reduce((sum, belt) => sum + belt.bytes, 0),
     triangles: belts.reduce((sum, belt) => sum + belt.triangles, 0),
-    greenAreas: report.greenery.areas,
+    pools: report.greenery.pools,
     props: report.props.placed,
     seconds,
   };
@@ -108,7 +108,7 @@ async function main() {
       rows.push(row);
       console.log(
         `ok   ${id} — ${(row.bytes! / 1_000_000).toFixed(2)} MB, ` +
-          `${row.triangles!.toLocaleString()} tris, ${row.greenAreas} green areas, ` +
+          `${row.triangles!.toLocaleString()} tris, ${row.pools} pools, ` +
           `${row.props} props, ${row.seconds.toFixed(0)} s`,
       );
     } catch (error) {
