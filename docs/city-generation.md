@@ -1225,6 +1225,26 @@ belt an order of magnitude inside its byte budget.
       earned the `scale` field: glTF says metres and files disagree — the car is
       authored **6 cm** long.
 
+      **Then the door was widened, because a kit is not one model.** Three CC0
+      packs from Kenney — Watercraft, City (Commercial), City (Suburban), 127
+      models between them — are fetched by `bun run assets:fetch` from
+      `assets/assets.json` into `assets/models/`, which is not committed: the
+      manifest records where each pack came from and under what licence, and the
+      run rewrites `assets/CREDITS.md` from it, so a CC-BY pack costs a line
+      rather than a memory.
+
+      Two things had to change to make a kit usable. **Colour**: a kit paints
+      itself from a texture atlas, and `readModel` was taking geometry only, so
+      every model arrived as one flat prop grey. It now samples the atlas at each
+      vertex's UV, converts sRGB to linear and keeps the result in `mesh.albedo`
+      — kept apart from `colors` because the AO pass writes that array from
+      scratch, and multiplied into it afterwards. Models ship in their own mesh
+      with a **white** material, so the palette is entirely the model's own.
+      **Size**: a kit is authored to its own grid — a Kenney house is 1.3 units
+      wide — so `fitLengthM` scales a model by its own bounding box to the length
+      the placement asks for, which is what a berth or a footprint actually
+      knows.
+
       Cranes and grandstands are built the same way and wait on coordinates.
       Monaco's stands are temporary and their positions are not in OSM, and
       guessing at them would be inventing data, which is the one thing this
@@ -1322,21 +1342,33 @@ belt an order of magnitude inside its byte budget.
       an empty result and the cache was keeping it, so the bake had no greenery
       and said nothing about it.
 
-      **Then the trees came out.** Looked at in the scene they read as one
-      six-sided shape repeated a thousand times, and a hillside of them said
-      *procedural* louder than it said *trees*; the tint underneath was already
-      carrying the same information without a triangle. So the canopy, the
-      trunk and the whole planting pass are gone, and with them the audit's
-      "trunks reach the ground" check. What stays is everything the areas were
-      also doing: the ground tint, the pools and the pitches. `natural=tree`
-      and `tree_row` are still fetched and now ignored — dropping them from the
+      **Then the trees came out, and the tint after them.** Looked at in the
+      scene the trees read as one six-sided shape repeated a thousand times, and
+      a hillside of them said *procedural* louder than it said *trees*. The tint
+      that was carrying the same information at range turned out to have the
+      same problem seen from the other side: it is paint on the terrain, and it
+      says *park* by colouring ground that otherwise looks like every other
+      piece of ground. Both are gone, and with them the audit's "trunks reach
+      the ground" check and the whole area index. `natural=tree`, `tree_row`,
+      woods and lawns are still fetched and now ignored — dropping them from the
       query would invalidate every green cache, which is not a trade worth
       making while Overpass is refusing to answer.
 
-      Monaco's shipped belts were stripped of the two meshes in place rather
-      than rebaked, for that same reason: its green cache is gone and a rebake
-      today would lose the tint and the pool with the trees. **5.04 → 4.21 MB**,
-      19 draw calls to 15, 18/18 audit ok.
+      What is left of this phase is the two things that are objects rather than
+      colour: **pools and pitches**, drawn as flat surveyed lids.
+
+      **What replaced the tint is slope.** An open hillside sees the whole sky,
+      so the AO pass says nothing about it, and the terrain came out of the field
+      one flat colour — the relief was there and unreadable. So the vertex's own
+      normal picks a factor on the shade AO already wrote: flat ground keeps its
+      colour, and by 55° it is down to 62% of it and warmed slightly, so a cliff
+      reads as rock rather than as shadow. Smoothstepped between 12° and 55°, or
+      the first degree past flat shows as a band. **85 346 ground nodes** on
+      Monaco, no geometry, no draw call, no material.
+
+      Monaco rebaked without any greenery answer at all, which is what the empty
+      layer path is for: **4.10 MB**, 19 draw calls to 15, 18/18 audit ok. The
+      pool comes back with Overpass.
 - [ ] **P4.4** Migrate the remaining 30 circuits, then **delete
       `environment-layer.tsx`** and the old runtime path. This is D17's termination
       condition — the plan is not finished while both paths exist.

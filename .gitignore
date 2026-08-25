@@ -102,3 +102,6 @@ skills-lock.json
 # Playwright MCP scratch output — screenshots and console logs from browser
 # automation runs, never part of the app.
 .playwright-mcp/
+
+# Downloaded by `bun run assets:fetch` from assets/assets.json.
+assets/models/

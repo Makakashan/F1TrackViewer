@@ -37,7 +37,7 @@ import {
   type Mesh,
 } from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
-import { applyAmbientOcclusion, buildOccluders } from "./ao";
+import { applyAlbedo, applyAmbientOcclusion, buildOccluders, shadeBySlope } from "./ao";
 import { buildRoof, PARAPET_M, planRoof, type RoofKind, type RoofTags } from "./roofs";
 import {
   fetchBuildingWays,
@@ -46,7 +46,7 @@ import {
   fetchStructureWays,
   type BuildingWay,
 } from "./overpass";
-import { buildGreenery, tintGreenGround, type GreeneryResult } from "./greenery";
+import { buildGreenery, type GreeneryResult } from "./greenery";
 import { fetchElevationRaster, providerFor, sampleRaster } from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
 import { buildPiers, type PierResult } from "./piers";
@@ -129,14 +129,6 @@ const MIN_BUILDING_HEIGHT_M = 2;
 /** How far below its own floor a building's walls may reach for the ground. */
 const MAX_UNDERCUT_M = 8;
 
-/**
- * How far the ground is pulled toward the palette's park green where a park or
- * a wood covers it, as a multiplier on the terrain's own colour. Sixty per cent
- * of the way: full saturation reads as a golf course dropped into a pale
- * diorama, and the point is to say *this is planted*, not to repaint the city.
- */
-const GREEN_GROUND_TINT: [number, number, number] = [0.551, 0.79, 0.548];
-
 /** The band a terrain surface vertex is allowed to live in: clear of the sea plane, below the cliff cap. */
 function clampToSurface(y: number): number {
   return Math.max(WATER_CLEARANCE_M, Math.min(y, SHORE_EDGE_MAX_M));
@@ -153,6 +145,7 @@ type MeshKind =
   | "barrier"
   | "prop"
   | "propDark"
+  | "model"
   | "pool"
   | "pitch";
 
@@ -167,6 +160,8 @@ const MESH_COLOR: Record<MeshKind, string> = {
   shore: DIORAMA_COLORS.buildingSide,
   barrier: "#C9CFD6",
   prop: DIORAMA_COLORS.building,
+  // White on purpose: a merged model carries its own colour per vertex.
+  model: "#FFFFFF",
   pool: DIORAMA_COLORS.waterTop,
   pitch: DIORAMA_COLORS.landuseGrass,
   // A hull, a crane leg, a stand frame: what sits below the deck line.
@@ -1943,7 +1938,8 @@ export interface BakeReport {
   tunnels: TunnelMask;
   vaults: VaultedRuns["stats"];
   props: PropResult["stats"];
-  greenery: GreeneryResult["stats"] & { tintedNodes: number };
+  greenery: GreeneryResult["stats"];
+  slopeShaded: number;
   overrides: OverrideStats;
 }
 
@@ -2071,7 +2067,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     field,
     plane,
   );
-  const greeneryStats = { ...greenery.stats, tintedNodes: 0 };
+  const greeneryStats = { ...greenery.stats };
 
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(vaults, hill, plane);
@@ -2121,17 +2117,20 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     pierDecks,
     props.dark,
     props.light,
+    props.models,
   ]) {
     applyAmbientOcclusion(mesh, occluders);
   }
-  // After the occlusion pass, which owns the same array: the ground under a
-  // park is the same grey as the ground beside it until something says so, and
-  // a colour is the whole of what a wood is now that no tree is drawn.
-  let tintedNodes = 0;
+  // Same reason as the slope pass: AO owns `colors` and writes it from nothing,
+  // so a model's own palette can only be multiplied in once it has run.
+  applyAlbedo(props.models);
+  // After the occlusion pass, which owns the same array: an open hillside sees
+  // the whole sky, so AO says nothing about it and slope is what is left to
+  // read the relief by.
+  let slopeShaded = 0;
   for (const belt of BELT_ORDER) {
-    tintedNodes += tintGreenGround(terrain.meshes[belt], greenery.isGreen, GREEN_GROUND_TINT);
+    slopeShaded += shadeBySlope(terrain.meshes[belt]);
   }
-  greeneryStats.tintedNodes = tintedNodes;
 
   const outDir = join(OUTPUT_ROOT, circuitId);
   await mkdir(outDir, { recursive: true });
@@ -2163,6 +2162,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
       // The boats belong to the harbour they are tied to, so they ship with it.
       { kind: "propDark", mesh: props.dark },
       { kind: "prop", mesh: props.light },
+      { kind: "model", mesh: props.models },
     ],
     far: [
       { kind: "terrain", mesh: terrain.meshes.far },
@@ -2200,6 +2200,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     vaults: vaults.stats,
     props: props.stats,
     greenery: greeneryStats,
+    slopeShaded,
     overrides: overrideStats,
   };
   await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(plane, field, tunnels));
@@ -2327,9 +2328,8 @@ async function main() {
       `${report.piers.skippedSolid} already solid ground`,
   );
   console.log(
-    `  greenery ${report.greenery.areas} areas`
-      + ` (${(report.greenery.areaM2 / 10_000).toFixed(1)} ha), ${report.greenery.tintedNodes} ground nodes tinted`
-      + `; ${report.greenery.pools} pools, ${report.greenery.pitches} pitches`,
+    `  surfaces ${report.greenery.pools} pools, ${report.greenery.pitches} pitches`
+      + `; ${report.slopeShaded} ground nodes shaded by slope`,
   );
   console.log(
     `  props ${report.props.placed} placed — ${report.props.berthed} yachts berthed along the pontoons`

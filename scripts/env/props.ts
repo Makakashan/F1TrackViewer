@@ -24,6 +24,7 @@ import { readFile } from "node:fs/promises";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
 import { MeshoptDecoder } from "meshoptimizer";
+import { PNG } from "pngjs";
 
 import type { HeightField } from "./heightfield";
 import { addFlatQuad, addFlatTriangle, createMesh, type Mesh } from "./mesh";
@@ -49,6 +50,13 @@ export interface PropPlacement {
    * `lengthM` instead.
    */
   scale?: number;
+  /**
+   * Scale the model so its longest horizontal side is this many metres. A kit
+   * is authored to its own grid — a Kenney house is 1.3 units wide — and what
+   * a placement knows is the size of the thing on the ground, not the size of
+   * somebody's unit. Wins over `scale` when both are given.
+   */
+  fitLengthM?: number;
   note?: string;
 }
 
@@ -57,6 +65,12 @@ export interface PropResult {
   dark: Mesh;
   /** Above it: superstructure, jibs, seating decks. */
   light: Mesh;
+  /**
+   * Merged `.glb` models. Their own colour rides in `albedo` and the mesh takes
+   * a white material, so a kit keeps its palette instead of being flattened to
+   * one prop grey.
+   */
+  models: Mesh;
   stats: {
     placed: number;
     berthed: number;
@@ -435,12 +449,43 @@ const DEFAULT_LENGTH_M: Record<PropKind, number> = {
  * arrives is triangles in the file's own metres, and only the placement moves
  * them.
  */
+/** A texture, decoded once and sampled per vertex. */
+interface Texel {
+  width: number;
+  height: number;
+  data: Buffer;
+}
+
+/** Texture bytes are sRGB; vertex colours are linear. */
+function toLinear(channel: number): number {
+  const value = channel / 255;
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+}
+
+function sample(texture: Texel, u: number, v: number): [number, number, number] {
+  // Nearest, and wrapped: a kit's atlas puts a flat colour under each island,
+  // so filtering would only fetch a neighbouring island across a seam.
+  const px = Math.min(texture.width - 1, Math.max(0, Math.floor((u - Math.floor(u)) * texture.width)));
+  const py = Math.min(texture.height - 1, Math.max(0, Math.floor((v - Math.floor(v)) * texture.height)));
+  const at = (py * texture.width + px) * 4;
+  return [
+    toLinear(texture.data[at]),
+    toLinear(texture.data[at + 1]),
+    toLinear(texture.data[at + 2]),
+  ];
+}
+
 async function readModel(path: string): Promise<Mesh> {
   const io = new NodeIO()
     .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({ "meshopt.decoder": MeshoptDecoder });
-  const document: Document = await io.readBinary(new Uint8Array(await readFile(path)));
+  // Read by path rather than from bytes: a kit's `.glb` names its atlas as a
+  // relative file, and only the path form can go and find it.
+  const document: Document = await io.read(path);
   const mesh = createMesh();
+  mesh.albedo = [];
+  const decoded = new Map<string, Texel | null>();
+
   for (const node of document.getRoot().listNodes()) {
     const source = node.getMesh();
     if (!source) continue;
@@ -449,7 +494,23 @@ async function readModel(path: string): Promise<Mesh> {
       const position = primitive.getAttribute("POSITION");
       const indices = primitive.getIndices();
       if (!position || !indices) continue;
+
+      const material = primitive.getMaterial();
+      const factor = material?.getBaseColorFactor() ?? [1, 1, 1, 1];
+      const uv = primitive.getAttribute("TEXCOORD_0");
+      const image = material?.getBaseColorTexture();
+      let texture: Texel | null = null;
+      if (image && uv) {
+        const key = image.getName() || String(decoded.size);
+        if (!decoded.has(key)) {
+          const bytes = image.getImage();
+          decoded.set(key, bytes ? (PNG.sync.read(Buffer.from(bytes)) as Texel) : null);
+        }
+        texture = decoded.get(key) ?? null;
+      }
+
       const v = [0, 0, 0];
+      const uvAt = [0, 0];
       const world = (index: number) => {
         position.getElement(index, v);
         return [
@@ -458,15 +519,41 @@ async function readModel(path: string): Promise<Mesh> {
           matrix[2] * v[0] + matrix[6] * v[1] + matrix[10] * v[2] + matrix[14],
         ];
       };
+      const colourAt = (index: number): [number, number, number] => {
+        if (!texture || !uv) return [factor[0], factor[1], factor[2]];
+        uv.getElement(index, uvAt);
+        const texel = sample(texture, uvAt[0], uvAt[1]);
+        return [texel[0] * factor[0], texel[1] * factor[1], texel[2] * factor[2]];
+      };
+
       for (let i = 0; i < indices.getCount(); i += 3) {
-        const a = world(indices.getScalar(i));
-        const b = world(indices.getScalar(i + 1));
-        const c = world(indices.getScalar(i + 2));
-        addFlatTriangle(mesh, a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+        const ia = indices.getScalar(i);
+        const ib = indices.getScalar(i + 1);
+        const ic = indices.getScalar(i + 2);
+        const a = world(ia);
+        const b = world(ib);
+        const c = world(ic);
+        if (!addFlatTriangle(mesh, a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2])) continue;
+        for (const index of [ia, ib, ic]) mesh.albedo.push(...colourAt(index));
       }
     }
   }
   return mesh;
+}
+
+/** The model's longest horizontal side, for fitting it to a real size. */
+function modelLengthM(mesh: Mesh): number {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < mesh.positions.length; i += 3) {
+    minX = Math.min(minX, mesh.positions[i]);
+    maxX = Math.max(maxX, mesh.positions[i]);
+    minZ = Math.min(minZ, mesh.positions[i + 2]);
+    maxZ = Math.max(maxZ, mesh.positions[i + 2]);
+  }
+  return Math.max(maxX - minX, maxZ - minZ);
 }
 
 function placeModel(target: Mesh, source: Mesh, frame: Frame, scale: number) {
@@ -485,6 +572,10 @@ function placeModel(target: Mesh, source: Mesh, frame: Frame, scale: number) {
     );
   }
   for (const index of source.indices) target.indices.push(base + index);
+  if (source.albedo) {
+    target.albedo ??= [];
+    target.albedo.push(...source.albedo);
+  }
 }
 
 // ─── build ─────────────────────────────────────────────────────────────────
@@ -497,6 +588,8 @@ export async function buildProps(
 ): Promise<PropResult> {
   const dark = createMesh();
   const light = createMesh();
+  const models = createMesh();
+  models.albedo = [];
   const stats: PropResult["stats"] = {
     placed: 0,
     berthed: 0,
@@ -506,10 +599,10 @@ export async function buildProps(
     byKind: {},
   };
 
-  const models = new Map<string, Mesh>();
+  const library = new Map<string, Mesh>();
   for (const placement of placements) {
-    if (!placement.model || models.has(placement.model)) continue;
-    models.set(placement.model, await readModel(`${repoRoot}/${placement.model}`));
+    if (!placement.model || library.has(placement.model)) continue;
+    library.set(placement.model, await readModel(`${repoRoot}/${placement.model}`));
   }
 
   for (const placement of placements) {
@@ -534,9 +627,13 @@ export async function buildProps(
       nz: -Math.sin(heading),
     };
 
-    const model = placement.model ? models.get(placement.model) : undefined;
+    const model = placement.model ? library.get(placement.model) : undefined;
     if (model) {
-      placeModel(light, model, frame, placement.scale ?? 1);
+      const own = modelLengthM(model);
+      const scale = placement.fitLengthM && own > 0
+        ? placement.fitLengthM / own
+        : placement.scale ?? 1;
+      placeModel(models, model, frame, scale);
       stats.fromModels++;
     } else {
       const kind = placement.kind ?? "yacht";
@@ -549,5 +646,5 @@ export async function buildProps(
     stats.placed++;
   }
 
-  return { dark, light, stats };
+  return { dark, light, models, stats };
 }

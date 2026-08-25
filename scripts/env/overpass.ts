@@ -109,9 +109,21 @@ out geom tags;`;
  */
 const RETRY_BACKOFF_MS = [5_000, 20_000, 60_000];
 
+/**
+ * Set once a query has spent every pass without an answer.
+ *
+ * The backoff is sized for one busy endpoint, not for three down at once: a
+ * layer asked as eleven separate queries pays four minutes of waiting each,
+ * and a bake that would have taken five minutes takes fifty to arrive at the
+ * same nothing. The first exhausted query is enough evidence that Overpass is
+ * not answering right now, so the rest of the run asks once and moves on.
+ */
+let overpassRefusing = false;
+
 async function run(body: string): Promise<OverpassResponse | null> {
   let empty: OverpassResponse | null = null;
-  for (const wait of RETRY_BACKOFF_MS) {
+  const passes = overpassRefusing ? [0] : RETRY_BACKOFF_MS;
+  for (const wait of passes) {
     const answer = await runOnce(body, wait);
     if (answer) return answer;
     empty ??= lastEmpty;
@@ -123,6 +135,7 @@ async function run(body: string): Promise<OverpassResponse | null> {
   // circuit bake; not caching it (every caller's job) means a refusal is asked
   // again next time. The two cannot be told apart at this level, so neither is
   // allowed to be fatal and neither is allowed to be permanent.
+  overpassRefusing = true;
   return empty;
 }
 
