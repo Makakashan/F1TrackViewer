@@ -1272,7 +1272,7 @@ belt an order of magnitude inside its byte budget.
       lid 12 cm above the terrain, fanned from the centroid and **wound by the
       ring's signed area**, since that is the bug that hid every flat roof in
       the city until P4.0b counted them.
-- [x] **P4.3** Trees, and the ground they stand on — `scripts/env/greenery.ts`.
+- [x] **P4.3** Green ground, and the surfaces on it — `scripts/env/greenery.ts`.
 
       Greenery arrives from OSM in three resolutions and each is used for what
       it is good for. A surveyed `natural=tree` is a position, and Monaco has
@@ -1321,6 +1321,22 @@ belt an order of magnitude inside its byte budget.
       do not. This mattered more than it sounds: the failing form was returning
       an empty result and the cache was keeping it, so the bake had no greenery
       and said nothing about it.
+
+      **Then the trees came out.** Looked at in the scene they read as one
+      six-sided shape repeated a thousand times, and a hillside of them said
+      *procedural* louder than it said *trees*; the tint underneath was already
+      carrying the same information without a triangle. So the canopy, the
+      trunk and the whole planting pass are gone, and with them the audit's
+      "trunks reach the ground" check. What stays is everything the areas were
+      also doing: the ground tint, the pools and the pitches. `natural=tree`
+      and `tree_row` are still fetched and now ignored — dropping them from the
+      query would invalidate every green cache, which is not a trade worth
+      making while Overpass is refusing to answer.
+
+      Monaco's shipped belts were stripped of the two meshes in place rather
+      than rebaked, for that same reason: its green cache is gone and a rebake
+      today would lose the tint and the pool with the trees. **5.04 → 4.21 MB**,
+      19 draw calls to 15, 18/18 audit ok.
 - [ ] **P4.4** Migrate the remaining 30 circuits, then **delete
       `environment-layer.tsx`** and the old runtime path. This is D17's termination
       condition — the plan is not finished while both paths exist.

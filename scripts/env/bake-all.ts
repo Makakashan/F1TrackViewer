@@ -23,7 +23,7 @@ interface Row {
   ok: boolean;
   bytes?: number;
   triangles?: number;
-  trees?: number;
+  greenAreas?: number;
   props?: number;
   provider?: string;
   seconds: number;
@@ -50,10 +50,10 @@ async function alreadyBaked(id: string): Promise<boolean> {
  * Did this circuit ever get a complete answer about its greenery?
  *
  * The cache is only written when every query came back (see `fetchGreenWays`),
- * so its absence is exactly the question "were the trees missed". Overpass hands
- * out query slots per address and a sweep of thirty-one circuits spends part of
- * its time locked out, so a first pass can bake a correct circuit with no trees
- * on it and nothing else records that.
+ * so its absence is exactly the question "was the greenery missed". Overpass
+ * hands out query slots per address and a sweep of thirty-one circuits spends
+ * part of its time locked out, so a first pass can bake a correct circuit with
+ * no greenery on it and nothing else records that.
  */
 async function hasGreenery(id: string): Promise<boolean> {
   try {
@@ -71,7 +71,7 @@ function summarise(id: string, report: BakeReport, seconds: number): Row {
     ok: true,
     bytes: belts.reduce((sum, belt) => sum + belt.bytes, 0),
     triangles: belts.reduce((sum, belt) => sum + belt.triangles, 0),
-    trees: report.greenery.planted,
+    greenAreas: report.greenery.areas,
     props: report.props.placed,
     seconds,
   };
@@ -108,7 +108,7 @@ async function main() {
       rows.push(row);
       console.log(
         `ok   ${id} — ${(row.bytes! / 1_000_000).toFixed(2)} MB, ` +
-          `${row.triangles!.toLocaleString()} tris, ${row.trees} trees, ` +
+          `${row.triangles!.toLocaleString()} tris, ${row.greenAreas} green areas, ` +
           `${row.props} props, ${row.seconds.toFixed(0)} s`,
       );
     } catch (error) {
