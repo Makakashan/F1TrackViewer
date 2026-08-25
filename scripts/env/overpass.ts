@@ -110,12 +110,25 @@ out geom tags;`;
 const RETRY_BACKOFF_MS = [5_000, 20_000, 60_000];
 
 async function run(body: string): Promise<OverpassResponse | null> {
+  let empty: OverpassResponse | null = null;
   for (const wait of RETRY_BACKOFF_MS) {
     const answer = await runOnce(body, wait);
     if (answer) return answer;
+    empty ??= lastEmpty;
   }
-  return null;
+  // Every pass came back with nothing. That is usually a refusal wearing a 200 —
+  // one of the three endpoints answers busy queries with an empty body — but it
+  // is also what a genuinely empty layer looks like, and an inland circuit with
+  // no quay, pier or coastline has one. Returning the empty answer lets that
+  // circuit bake; not caching it (every caller's job) means a refusal is asked
+  // again next time. The two cannot be told apart at this level, so neither is
+  // allowed to be fatal and neither is allowed to be permanent.
+  return empty;
 }
+
+/** The last well-formed HTTP 200 that carried no elements, for `run` to fall
+ *  back on once its retries are spent. */
+let lastEmpty: OverpassResponse | null = null;
 
 async function runOnce(body: string, waitMs: number): Promise<OverpassResponse | null> {
   for (const endpoint of ENDPOINTS) {
@@ -139,6 +152,7 @@ async function runOnce(body: string, waitMs: number): Promise<OverpassResponse |
       // Park, which is a park. An empty result is therefore worth another
       // endpoint before it is believed.
       if (!json.elements?.length) {
+        lastEmpty = json;
         await new Promise((resolve) => setTimeout(resolve, waitMs));
         continue;
       }
@@ -249,8 +263,12 @@ export async function fetchShoreWays(
     });
   }
 
-  await mkdir(CACHE_DIR, { recursive: true });
-  await writeFile(cachePath, JSON.stringify(ways));
+  // An empty answer is not written down: it is a refusal more often than it
+  // is the truth, and cached it would never be asked again.
+  if (ways.length) {
+    await mkdir(CACHE_DIR, { recursive: true });
+    await writeFile(cachePath, JSON.stringify(ways));
+  }
   return ways;
 }
 
@@ -365,6 +383,9 @@ export async function fetchGreenWays(
   // with no park, no verge and no street tree does not exist, so an empty
   // result is a failed query wearing a successful one's clothes — cache it and
   // no later run ever corrects the treeless circuit it makes.
+  if (!ways.length) {
+    console.warn(`  overpass: no greenery came back for ${circuitId} — not cached`);
+  }
   if (ways.length && !unanswered) {
     await mkdir(CACHE_DIR, { recursive: true });
     await writeFile(cachePath, JSON.stringify(ways));
@@ -404,7 +425,11 @@ export async function fetchStructureWays(
     });
   }
 
-  await mkdir(CACHE_DIR, { recursive: true });
-  await writeFile(cachePath, JSON.stringify(ways));
+  // An empty answer is not written down: it is a refusal more often than it
+  // is the truth, and cached it would never be asked again.
+  if (ways.length) {
+    await mkdir(CACHE_DIR, { recursive: true });
+    await writeFile(cachePath, JSON.stringify(ways));
+  }
   return ways;
 }
