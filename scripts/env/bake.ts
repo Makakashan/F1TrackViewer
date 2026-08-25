@@ -153,8 +153,6 @@ type MeshKind =
   | "barrier"
   | "prop"
   | "propDark"
-  | "foliage"
-  | "trunk"
   | "pool"
   | "pitch";
 
@@ -169,10 +167,8 @@ const MESH_COLOR: Record<MeshKind, string> = {
   shore: DIORAMA_COLORS.buildingSide,
   barrier: "#C9CFD6",
   prop: DIORAMA_COLORS.building,
-  foliage: "#4E8C4A",
   pool: DIORAMA_COLORS.waterTop,
   pitch: DIORAMA_COLORS.landuseGrass,
-  trunk: "#6B5B4A",
   // A hull, a crane leg, a stand frame: what sits below the deck line.
   propDark: DIORAMA_COLORS.buildingSide,
 };
@@ -2074,7 +2070,6 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     await fetchGreenWays(circuitId, bbox, refresh),
     field,
     plane,
-    corridor,
   );
   const greeneryStats = { ...greenery.stats, tintedNodes: 0 };
 
@@ -2124,10 +2119,6 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     ...standing,
     shore.walls,
     pierDecks,
-    greenery.foliage.core,
-    greenery.foliage.city,
-    greenery.trunks.core,
-    greenery.trunks.city,
     props.dark,
     props.light,
   ]) {
@@ -2135,7 +2126,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   }
   // After the occlusion pass, which owns the same array: the ground under a
   // park is the same grey as the ground beside it until something says so, and
-  // a colour is what a wood is at any range a tree is not worth drawing.
+  // a colour is the whole of what a wood is now that no tree is drawn.
   let tintedNodes = 0;
   for (const belt of BELT_ORDER) {
     tintedNodes += tintGreenGround(terrain.meshes[belt], greenery.isGreen, GREEN_GROUND_TINT);
@@ -2156,8 +2147,6 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
       // way.
       { kind: "portal", mesh: portals.surround },
       { kind: "barrier", mesh: barriers },
-      { kind: "foliage", mesh: greenery.foliage.core },
-      { kind: "trunk", mesh: greenery.trunks.core },
       // Flat, ground-level and near the road, so they belong with the core.
       { kind: "pool", mesh: greenery.pools },
       { kind: "pitch", mesh: greenery.pitches },
@@ -2174,8 +2163,6 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
       // The boats belong to the harbour they are tied to, so they ship with it.
       { kind: "propDark", mesh: props.dark },
       { kind: "prop", mesh: props.light },
-      { kind: "foliage", mesh: greenery.foliage.city },
-      { kind: "trunk", mesh: greenery.trunks.city },
     ],
     far: [
       { kind: "terrain", mesh: terrain.meshes.far },
@@ -2340,11 +2327,9 @@ async function main() {
       `${report.piers.skippedSolid} already solid ground`,
   );
   console.log(
-    `  greenery ${report.greenery.planted} trees — ${report.greenery.surveyed} surveyed`
-      + `, ${report.greenery.fromRows} from rows, ${report.greenery.scattered} scattered over`
-      + ` ${report.greenery.areas} areas (${(report.greenery.areaM2 / 10_000).toFixed(1)} ha)`
-      + `; ${report.greenery.tintedNodes} ground nodes tinted`
-      + `, ${report.greenery.skippedOnTrack} on the road, ${report.greenery.skippedAtSea} at sea`,
+    `  greenery ${report.greenery.areas} areas`
+      + ` (${(report.greenery.areaM2 / 10_000).toFixed(1)} ha), ${report.greenery.tintedNodes} ground nodes tinted`
+      + `; ${report.greenery.pools} pools, ${report.greenery.pitches} pitches`,
   );
   console.log(
     `  props ${report.props.placed} placed — ${report.props.berthed} yachts berthed along the pontoons`

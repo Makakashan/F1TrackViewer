@@ -42,11 +42,15 @@ rest are single-purpose modules it calls.
 | `belts.ts` | Detail belts: core 4 m ≤150 m, city 8 m ≤600 m, far 16 m. |
 | `mesh.ts` | Shared mesh/vertex helpers. |
 | `ao.ts` | Baked ambient occlusion into COLOR_0. |
+| `greenery.ts` | Green areas: ground tint from parks/woods/lawns, plus pool and pitch surfaces. No trees — they were built here once and removed. |
+| `props.ts` | Berthed yachts, cranes, grandstands; parametric or from a `.glb`. |
+| `skadi.ts` | SRTM Skadi global elevation, used where IGN has no coverage. |
+| `bake-all.ts` | `env:bake:all` — sweeps every circuit, keeps going past failures. |
 | `overrides.ts` | Per-circuit manual corrections. |
 | `preview.ts` | Local bake preview server on **:4010** (separate from the app on :4000). |
 
-Audit: `bun run env:audit` → `scripts/audit-environment.ts` (D11 checks, currently
-17/17 ok). Run it after every bake; it is the thing that has caught most regressions.
+Audit: `bun run env:audit` → `scripts/audit-environment.ts` (D11 checks, 18/18 ok on
+Monaco). Run it after every bake; it is the thing that has caught most regressions.
 
 Other bake-time scripts (not environment): `generate-circuits.ts`,
 `generate-elevations.ts`, `generate-track-widths.ts`, `generate-car-manifest.ts`,
