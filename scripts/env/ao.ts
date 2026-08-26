@@ -198,9 +198,25 @@ export function shadeBySlope(mesh: Mesh): number {
  * live there until after it has run. Its material is white, and this is what
  * puts the colour back.
  */
-export function applyAlbedo(mesh: Mesh): number {
+export function applyAlbedo(mesh: Mesh, tone: [number, number, number]): number {
   if (!mesh.colors || !mesh.albedo) return 0;
-  const count = Math.min(mesh.colors.length, mesh.albedo.length);
-  for (let i = 0; i < count; i++) mesh.colors[i] *= mesh.albedo[i];
-  return count / 3;
+  const count = Math.min(mesh.colors.length, mesh.albedo.length) / 3;
+  for (let i = 0; i < count; i++) {
+    const r = mesh.albedo[i * 3];
+    const g = mesh.albedo[i * 3 + 1];
+    const b = mesh.albedo[i * 3 + 2];
+    // A kit is painted for a toy town and the diorama is not. What is worth
+    // keeping is which part of the model this is — roof, wall, window — not the
+    // author's palette, so most of the chroma comes out and what is left is
+    // pulled toward the city's own hue. The luminance is untouched: that is the
+    // part that says roof from wall.
+    const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    mesh.colors[i * 3] *= (grey + (r - grey) * CHROMA_KEPT) * tone[0];
+    mesh.colors[i * 3 + 1] *= (grey + (g - grey) * CHROMA_KEPT) * tone[1];
+    mesh.colors[i * 3 + 2] *= (grey + (b - grey) * CHROMA_KEPT) * tone[2];
+  }
+  return count;
 }
+
+/** How much of a merged model's own colour survives. */
+const CHROMA_KEPT = 0.35;
