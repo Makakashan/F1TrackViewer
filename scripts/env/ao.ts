@@ -174,7 +174,14 @@ export function shadeBySlope(mesh: Mesh): number {
     if (up >= flat) continue;
     const t = Math.max(0, Math.min(1, (flat - up) / (flat - steep)));
     // Smoothstep, or the first degree past flat shows as a band.
-    const k = t * t * (3 - 2 * t);
+    let k = t * t * (3 - 2 * t);
+    // Only where there is light left to take. AO and slope multiply, and in a
+    // terraced street they were multiplying together: the cut faces between
+    // Monaco's terraces are both enclosed and vertical, and stacking the two
+    // full-strength painted a smear of soot across the hillside. What AO has
+    // already darkened, slope leaves alone.
+    const lit = (mesh.colors[i * 3] - FLOOR) / (1 - FLOOR);
+    k *= Math.max(0, Math.min(1, lit));
     const shade = 1 - (1 - STEEP_SHADE) * k;
     mesh.colors[i * 3] *= shade * (1 + (ROCK_TINT[0] - 1) * k);
     mesh.colors[i * 3 + 1] *= shade * (1 + (ROCK_TINT[1] - 1) * k);
