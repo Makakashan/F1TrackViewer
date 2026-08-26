@@ -18,6 +18,7 @@ import { ShapeUtils, Vector2 } from "three";
 import { DIORAMA_COLORS } from "../../src/lib/env/diorama-palette";
 import { ENVIRONMENT_ATTRIBUTION, type BuildingsFile } from "../../src/lib/env/environment-types";
 import {
+  BELT_BUDGET,
   BELT_CELL_M,
   BELT_ORDER,
   BELT_RADIUS_M,
@@ -47,6 +48,13 @@ import {
   type BuildingWay,
 } from "./overpass";
 import { buildGreenery, type GreeneryResult } from "./greenery";
+import {
+  chooseKitHouses,
+  KIT_BUDGET_SHARE,
+  loadKitHouses,
+  loadKitPaths,
+  type KitResult,
+} from "./kit";
 import { fetchElevationRaster, providerFor, sampleRaster } from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
 import { buildPiers, type PierResult } from "./piers";
@@ -133,6 +141,17 @@ const MAX_UNDERCUT_M = 8;
 function clampToSurface(y: number): number {
   return Math.max(WATER_CLEARANCE_M, Math.min(y, SHORE_EDGE_MAX_M));
 }
+
+/**
+ * The hue a merged model's colour is pulled toward: the palette's building
+ * colour, divided by its own luminance so only its hue survives.
+ */
+const MODEL_TONE: [number, number, number] = (() => {
+  const hex = DIORAMA_COLORS.building.replace("#", "");
+  const rgb = [0, 2, 4].map((at) => Number.parseInt(hex.slice(at, at + 2), 16) / 255);
+  const luminance = 0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2];
+  return [rgb[0] / luminance, rgb[1] / luminance, rgb[2] / luminance];
+})();
 
 type MeshKind =
   | "terrain"
@@ -911,24 +930,38 @@ interface BuildingResult {
  * with P3.1 and P3.2. The base is the lowest ground under the footprint, so a
  * building on a slope digs into the hill rather than floating off it.
  */
-function bakeBuildings(
+/**
+ * A footprint worked out to the point where it could be built, but not built.
+ *
+ * The kit pass (P4.5) has to decide which footprints become models before the
+ * props are merged, and it needs the ring after it was pushed off the track,
+ * the ground it stands on and the height that was measured — all of which is
+ * the first half of what the extrusion does. So the two halves are separate:
+ * this settles where the building is, and `bakeBuildings` draws whatever the
+ * kit did not take.
+ */
+interface PreparedBuilding {
+  id: string;
+  ring: { x: number; z: number }[];
+  /** Where each wall vertex meets the ground, one per ring point. */
+  footAt: number[];
+  /** The floor: the middle of the ground the footprint covers. */
+  base: number;
+  heightM: number;
+  centreX: number;
+  centreZ: number;
+  belt: Belt;
+}
+
+function prepareBuildings(
   buildings: BuildingsFile,
   field: HeightField,
   plane: ScenePlane,
   corridor: Corridor,
   measured: Map<string, { measured: number }>,
-  tags: Map<string, RoofTags>,
-): BuildingResult {
-  const meshes = { core: createMesh(), city: createMesh(), far: createMesh() } as Record<Belt, Mesh>;
-  const result: BuildingResult = {
-    meshes,
-    roofs: { flat: 0, gabled: 0, hipped: 0, pyramidal: 0, skillion: 0 },
-    built: 0,
-    droppedOnTrack: 0,
-    droppedOverWater: 0,
-    droppedTooLow: 0,
-    pushedOffTrack: 0,
-  };
+  result: BuildingResult,
+): PreparedBuilding[] {
+  const prepared: PreparedBuilding[] = [];
 
   for (const building of buildings.buildings) {
     // The measurement wins where there is one; the tag is the fallback (D8).
@@ -989,10 +1022,35 @@ function bakeBuildings(
     }
     centreX /= pushed.ring.length;
     centreZ /= pushed.ring.length;
-    const belt = beltAtDistance(corridor.distance(centreX, centreZ));
 
-    const top = base + height;
-    const plan = planRoof(pushed.ring, tags.get(building.id) ?? {}, height);
+    prepared.push({
+      id: building.id,
+      ring: pushed.ring,
+      footAt,
+      base,
+      heightM: height,
+      centreX,
+      centreZ,
+      belt: beltAtDistance(corridor.distance(centreX, centreZ)),
+    });
+  }
+
+  return prepared;
+}
+
+function bakeBuildings(
+  prepared: PreparedBuilding[],
+  tags: Map<string, RoofTags>,
+  result: BuildingResult,
+  /** Footprints a kit model has already taken; their roofs come with it. */
+  taken: Set<string>,
+): void {
+  const meshes = result.meshes;
+  for (const building of prepared) {
+    if (taken.has(building.id)) continue;
+    const { ring, footAt, base, heightM, belt } = building;
+    const top = base + heightM;
+    const plan = planRoof(ring, tags.get(building.id) ?? {}, heightM);
     result.roofs[plan.kind]++;
 
     if (plan.kind === "flat") {
@@ -1000,16 +1058,26 @@ function bakeBuildings(
       // the walls run past the roof plane and turn back down inside it. Only
       // where it can be seen: the far belt is silhouettes.
       const parapet = belt === "far" ? 0 : PARAPET_M;
-      extrude(meshes[belt], pushed.ring, footAt, top - plan.heightM, parapet);
+      extrude(meshes[belt], ring, footAt, top - plan.heightM, parapet);
     } else {
       const eaveY = top - plan.heightM;
-      extrude(meshes[belt], pushed.ring, footAt, eaveY, 0);
+      extrude(meshes[belt], ring, footAt, eaveY, 0);
       buildRoof(meshes[belt], plan, eaveY);
     }
     result.built++;
   }
+}
 
-  return result;
+function emptyBuildingResult(): BuildingResult {
+  return {
+    meshes: { core: createMesh(), city: createMesh(), far: createMesh() } as Record<Belt, Mesh>,
+    roofs: { flat: 0, gabled: 0, hipped: 0, pyramidal: 0, skillion: 0 },
+    built: 0,
+    droppedOnTrack: 0,
+    droppedOverWater: 0,
+    droppedTooLow: 0,
+    pushedOffTrack: 0,
+  };
 }
 
 /**
@@ -1939,6 +2007,7 @@ export interface BakeReport {
   vaults: VaultedRuns["stats"];
   props: PropResult["stats"];
   greenery: GreeneryResult["stats"];
+  kit: KitResult["stats"];
   slopeShaded: number;
   overrides: OverrideStats;
 }
@@ -2050,18 +2119,6 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const shore = bakeShoreWalls(shoreWays, field, plane, coast);
   const piers = buildPiers(shoreWays, field, plane);
   const pierDecks = bakePierDecks(piers);
-  // Berthed from the harbour survey, then whatever the overrides add by hand.
-  const overrideProps = overrides?.props ?? [];
-  overrideStats.props = overrideProps.length;
-  const props = await buildProps(
-    [...berthYachts(piers, field, plane), ...overrideProps],
-    field,
-    plane,
-    REPO_ROOT,
-  );
-  props.stats.berthed = props.stats.byKind.yacht ?? 0;
-  props.stats.fromOverrides = overrideProps.length;
-
   const greenery = buildGreenery(
     await fetchGreenWays(circuitId, bbox, refresh),
     field,
@@ -2096,7 +2153,58 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const roofTags = new Map<string, RoofTags>(
     buildingWays.map((way) => [way.id, way.tags as RoofTags]),
   );
-  const buildings = bakeBuildings(buildingsFile, field, plane, corridor, measured, roofTags);
+  // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
+  const kitHouses = await loadKitHouses(REPO_ROOT, "assets/models/kenney-city-suburban");
+  const kitBoats = await loadKitPaths(REPO_ROOT, "assets/models/kenney-watercraft", [
+    "boat-speed",
+    "boat-row",
+    "boat-fishing",
+    "boat-sail",
+  ]);
+
+  const buildings = emptyBuildingResult();
+  const prepared = prepareBuildings(buildingsFile, field, plane, corridor, measured, buildings);
+
+  // The kit runs before the props are merged, because its houses are props: it
+  // decides which footprints it can do better than an extrusion, and the rest
+  // are extruded as they always were.
+  const kit = chooseKitHouses(
+    prepared.map((building) => ({
+      id: building.id,
+      ring: building.ring,
+      // The lowest corner the walls were going to reach, so a modelled house on
+      // a slope is buried rather than left standing on air.
+      groundY: Math.min(...building.footAt),
+      heightM: building.heightM,
+      centreX: building.centreX,
+      centreZ: building.centreZ,
+    })),
+    kitHouses,
+    corridor,
+    plane,
+    (distanceM) => {
+      const belt = beltAtDistance(distanceM);
+      return belt === "far" ? null : belt;
+    },
+    {
+      core: Math.round(BELT_BUDGET.core.triangles * KIT_BUDGET_SHARE),
+      city: Math.round(BELT_BUDGET.city.triangles * KIT_BUDGET_SHARE),
+    },
+  );
+  bakeBuildings(prepared, roofTags, buildings, kit.taken);
+
+  // Berthed from the harbour survey, the kit's houses, then whatever the
+  // overrides add by hand.
+  const overrideProps = overrides?.props ?? [];
+  overrideStats.props = overrideProps.length;
+  const props = await buildProps(
+    [...berthYachts(piers, field, plane, kitBoats), ...kit.placements, ...overrideProps],
+    field,
+    plane,
+    REPO_ROOT,
+  );
+  props.stats.berthed = props.stats.byKind.yacht ?? 0;
+  props.stats.fromOverrides = overrideProps.length;
 
   // Occlusion last: everything that casts it has to exist first.
   const standing = [
@@ -2104,6 +2212,12 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     buildings.meshes.city,
     buildings.meshes.far,
     portals.surround,
+    // A kit house in a row of kit houses shades the one beside it, and a hull
+    // shades the hull it is moored against. Props are built before this for
+    // exactly that reason.
+    props.dark,
+    props.light,
+    props.models,
   ];
   // Barriers occlude nothing worth the trouble and, being thin and at ground
   // level in a street canyon, they come back from the AO pass nearly black.
@@ -2123,7 +2237,9 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   }
   // Same reason as the slope pass: AO owns `colors` and writes it from nothing,
   // so a model's own palette can only be multiplied in once it has run.
-  applyAlbedo(props.models);
+  // The tone is the city's own building colour normalised to its brightness, so
+  // it shifts hue without lightening what it touches.
+  applyAlbedo(props.models, MODEL_TONE);
   // After the occlusion pass, which owns the same array: an open hillside sees
   // the whole sky, so AO says nothing about it and slope is what is left to
   // read the relief by.
@@ -2200,6 +2316,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     vaults: vaults.stats,
     props: props.stats,
     greenery: greeneryStats,
+    kit: kit.stats,
     slopeShaded,
     overrides: overrideStats,
   };
@@ -2330,6 +2447,11 @@ async function main() {
   console.log(
     `  surfaces ${report.greenery.pools} pools, ${report.greenery.pitches} pitches`
       + `; ${report.slopeShaded} ground nodes shaded by slope`,
+  );
+  console.log(
+    `  kit ${report.kit.models} houses modelled (${report.kit.triangles.toLocaleString()} tris) — `
+      + `${report.kit.eligible} footprints fit the shape, ${report.kit.aloneInTheStreet} stood alone, `
+      + `${report.kit.noModelFits} had no model at their proportion, ${report.kit.overBudget} over budget`,
   );
   console.log(
     `  props ${report.props.placed} placed — ${report.props.berthed} yachts berthed along the pontoons`
