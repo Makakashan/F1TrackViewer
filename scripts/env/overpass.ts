@@ -120,7 +120,20 @@ const RETRY_BACKOFF_MS = [5_000, 20_000, 60_000];
  */
 let overpassRefusing = false;
 
+/**
+ * `OVERPASS_OFFLINE=1` skips the API entirely and bakes from the cache alone.
+ *
+ * When all three endpoints are down, every uncached layer still costs its full
+ * retry schedule before arriving at nothing — minutes per bake, repeated on
+ * every iteration. This says so once, explicitly, rather than pretending the
+ * cache is complete: cached layers load as normal and uncached ones come back
+ * empty, which is exactly what the empty-answer path already handles. It is a
+ * switch a person throws, so nothing is ever recorded as absent by accident.
+ */
+const OFFLINE = process.env.OVERPASS_OFFLINE === "1";
+
 async function run(body: string): Promise<OverpassResponse | null> {
+  if (OFFLINE) return { elements: [] };
   let empty: OverpassResponse | null = null;
   const passes = overpassRefusing ? [0] : RETRY_BACKOFF_MS;
   for (const wait of passes) {
