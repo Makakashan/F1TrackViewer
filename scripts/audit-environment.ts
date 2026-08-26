@@ -29,7 +29,7 @@ import {
 import { buildCoastline, type Coastline } from "./env/coastline";
 import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
 import { fetchBuildingWays, fetchShoreWays } from "./env/overpass";
-import { BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
+import { BELT_BUDGET, BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
 import type { HeightField } from "./env/heightfield";
 import type { ScenePlane } from "./env/plane";
 
@@ -38,11 +38,6 @@ const ENVIRONMENTS = join(REPO_ROOT, "public", "environments");
 
 // ─── budgets (D5, D14) ─────────────────────────────────────────────────────
 
-const BELT_BUDGET: Record<Belt, { bytes: number; triangles: number }> = {
-  core: { bytes: 6_000_000, triangles: 450_000 },
-  city: { bytes: 7_000_000, triangles: 350_000 },
-  far: { bytes: 2_000_000, triangles: 120_000 },
-};
 /** The city's share. The car fleet and the rest of the scene own the other 45. */
 const CITY_DRAW_CALL_BUDGET = 75;
 
@@ -137,6 +132,9 @@ async function readBelt(circuitId: string, belt: Belt) {
  * and any disagreement is a bug.
  */
 const SHORE_EXEMPT_M = 16;
+
+/** A foot may stand off its own ground by a quantisation step, no more. */
+const MODEL_FOOT_TOLERANCE_M = 0.35;
 
 function checkTerrain(
   meshes: { name: string; positions: Float32Array }[],
@@ -351,6 +349,9 @@ async function audit(circuitId: string): Promise<Check[]> {
   let worstIntrusionM = 0;
   let propsAground = 0;
   let propVertices = 0;
+  let modelFeet = 0;
+  let modelsInTheAir = 0;
+  let worstModelFootM = 0;
 
   for (const belt of BELT_ORDER) {
     const { bytes, meshes } = await readBelt(circuitId, belt);
@@ -378,7 +379,10 @@ async function audit(circuitId: string): Promise<Check[]> {
     );
 
     for (const mesh of meshes) {
-      if (mesh.name !== "building") continue;
+      // A kit house stands in for a building and owes the corridor the same
+      // clearance: it is fitted to the footprint's own rectangle, and a
+      // footprint pushed off the track has a rectangle that can still reach it.
+      if (mesh.name !== "building" && mesh.name !== "model") continue;
       for (let i = 0; i < mesh.positions.length / 3; i++) {
         const x = mesh.positions[i * 3];
         const y = mesh.positions[i * 3 + 1];
@@ -404,6 +408,45 @@ async function audit(circuitId: string): Promise<Check[]> {
         const x = mesh.positions[i * 3];
         const z = mesh.positions[i * 3 + 2];
         if (!field.isWater(plane.lon(x), plane.lat(z))) propsAground++;
+      }
+    }
+
+    // A model stands on the ground it was placed on, or the placement and the
+    // field have drifted apart. Only the lowest vertex over each spot is a foot
+    // — everything above it is meant to be in the air — and the test is
+    // one-sided, because a house on a slope is buried uphill on purpose.
+    for (const mesh of meshes) {
+      if (mesh.name !== "model") continue;
+      const feet = new Map<string, number>();
+      for (let i = 0; i < mesh.positions.length / 3; i++) {
+        const x = mesh.positions[i * 3];
+        const y = mesh.positions[i * 3 + 1];
+        const z = mesh.positions[i * 3 + 2];
+        const key = `${Math.round(x * 2)},${Math.round(z * 2)}`;
+        const seen = feet.get(key);
+        if (seen === undefined || y < seen) feet.set(key, y);
+      }
+      for (const [key, y] of feet) {
+        const [kx, kz] = key.split(",").map(Number);
+        const x = kx / 2;
+        const z = kz / 2;
+        // The highest ground within a quantisation step, for the same reason the
+        // building check reads it that way.
+        let ground = Number.NaN;
+        for (const [dx, dz] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+          const sample = field.heightAt(
+            plane.lon(x + dx * QUANTISATION_SLACK_M),
+            plane.lat(z + dz * QUANTISATION_SLACK_M),
+          );
+          if (Number.isNaN(sample)) continue;
+          if (Number.isNaN(ground) || sample > ground) ground = sample;
+        }
+        // No ground at all means water, and a boat floats on the datum.
+        if (Number.isNaN(ground)) continue;
+        modelFeet++;
+        const off = y - ground;
+        if (off > MODEL_FOOT_TOLERANCE_M) modelsInTheAir++;
+        if (off > worstModelFootM) worstModelFootM = off;
       }
     }
 
@@ -487,6 +530,15 @@ async function audit(circuitId: string): Promise<Check[]> {
       `${propsAground} aground of ${propVertices.toLocaleString()} prop vertices`,
       "0",
       propsAground === 0,
+    ),
+  );
+
+  checks.push(
+    check(
+      "merged models stand on the ground",
+      `${modelsInTheAir} in the air of ${modelFeet.toLocaleString()} model feet, worst ${worstModelFootM.toFixed(2)} m`,
+      `${MODEL_FOOT_TOLERANCE_M} m`,
+      modelsInTheAir === 0,
     ),
   );
 
