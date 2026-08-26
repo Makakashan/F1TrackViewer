@@ -25,6 +25,17 @@ export const BELT_CELL_M: Record<Belt, number> = {
   far: 16,
 };
 
+/**
+ * What each belt may ship (D5, D14). Lives here rather than in the audit
+ * because the bake now spends against it too — the kit pass takes a share of a
+ * belt's triangles — and two files holding the same budget is how they drift.
+ */
+export const BELT_BUDGET: Record<Belt, { bytes: number; triangles: number }> = {
+  core: { bytes: 6_000_000, triangles: 450_000 },
+  city: { bytes: 7_000_000, triangles: 350_000 },
+  far: { bytes: 2_000_000, triangles: 120_000 },
+};
+
 export function beltAtDistance(distanceM: number): Belt {
   if (distanceM <= BELT_RADIUS_M.core) return "core";
   if (distanceM <= BELT_RADIUS_M.city) return "city";
