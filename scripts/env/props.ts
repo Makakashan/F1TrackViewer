@@ -57,6 +57,13 @@ export interface PropPlacement {
    * somebody's unit. Wins over `scale` when both are given.
    */
   fitLengthM?: number;
+  /**
+   * Where the model's floor goes, in scene metres. The default is the ground
+   * under the placement, which is right for a thing standing on its own plot
+   * and wrong for one covering several metres of slope — a caller that has
+   * already worked out which corner the building stands on says so here.
+   */
+  groundY?: number;
   note?: string;
 }
 
@@ -192,10 +199,22 @@ function openWaterAhead(
  * boat is only placed where the field agrees there is water under it, which is
  * what keeps them off the quay behind the pontoon and off the moles.
  */
+/**
+ * Under this a berth gets a modelled boat rather than a parametric hull.
+ *
+ * The parametric hull is a superyacht's shape and it is right for a superyacht:
+ * it takes whatever length the water in front of the berth allows. At twenty
+ * metres it is the same shape shrunk, which is not what a twenty-metre boat
+ * looks like — and a kit has forty of those, drawn.
+ */
+const KIT_BOAT_MAX_M = 22;
+
 export function berthYachts(
   piers: PierResult,
   field: HeightField,
   plane: ScenePlane,
+  /** Small-craft models to draw the short berths with, if any are downloaded. */
+  kitBoats: string[] = [],
 ): PropPlacement[] {
   const berths: PropPlacement[] = [];
   /** Hulls already in the water, so nothing is moored through anything else. */
@@ -277,11 +296,25 @@ export function berthYachts(
         if (taken.some((other) => hullsOverlap(hull, other))) continue;
 
         taken.push(hull);
+        const headingDeg = (Math.atan2(nx, nz) * 180) / Math.PI;
+        if (kitBoats.length && lengthM < KIT_BOAT_MAX_M) {
+          berths.push({
+            model: kitBoats[Math.floor(hashed(seed + 0.5) * kitBoats.length) % kitBoats.length],
+            // A model is placed by its middle, and the berth is measured from
+            // its stern.
+            lon: plane.lon(hull.cx),
+            lat: plane.lat(hull.cz),
+            headingDeg,
+            fitLengthM: lengthM,
+            groundY: 0,
+          });
+          continue;
+        }
         berths.push({
           kind: "yacht",
           lon: plane.lon(sternX),
           lat: plane.lat(sternZ),
-          headingDeg: (Math.atan2(nx, nz) * 180) / Math.PI,
+          headingDeg,
           lengthM,
         });
       }
@@ -475,7 +508,14 @@ function sample(texture: Texel, u: number, v: number): [number, number, number] 
   ];
 }
 
-async function readModel(path: string): Promise<Mesh> {
+/**
+ * Reads a `.glb` and normalises it: centred on its own footprint, standing on
+ * y = 0. A kit is authored to whatever origin its author liked — one boat sits
+ * on the waterline, the next is centred on its hull — and a placement that has
+ * to know which is which is a placement that will be wrong. After this, a
+ * placement's point is always the middle of the thing and its y is the ground.
+ */
+export async function readModel(path: string): Promise<Mesh> {
   const io = new NodeIO()
     .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({ "meshopt.decoder": MeshoptDecoder });
@@ -538,22 +578,54 @@ async function readModel(path: string): Promise<Mesh> {
       }
     }
   }
+  const size = modelSize(mesh);
+  for (let i = 0; i < mesh.positions.length; i += 3) {
+    mesh.positions[i] -= size.centreX;
+    mesh.positions[i + 1] -= size.floorY;
+    mesh.positions[i + 2] -= size.centreZ;
+  }
   return mesh;
 }
 
-/** The model's longest horizontal side, for fitting it to a real size. */
-function modelLengthM(mesh: Mesh): number {
+export interface ModelSize {
+  /** The longer horizontal side, which is what a placement fits to. */
+  lengthM: number;
+  /** The shorter one. */
+  widthM: number;
+  /** Which model axis the long side runs along, for turning it to match. */
+  lengthAxis: "x" | "z";
+  heightM: number;
+  centreX: number;
+  centreZ: number;
+  floorY: number;
+}
+
+export function modelSize(mesh: Mesh): ModelSize {
   let minX = Infinity;
   let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
   let minZ = Infinity;
   let maxZ = -Infinity;
   for (let i = 0; i < mesh.positions.length; i += 3) {
     minX = Math.min(minX, mesh.positions[i]);
     maxX = Math.max(maxX, mesh.positions[i]);
+    minY = Math.min(minY, mesh.positions[i + 1]);
+    maxY = Math.max(maxY, mesh.positions[i + 1]);
     minZ = Math.min(minZ, mesh.positions[i + 2]);
     maxZ = Math.max(maxZ, mesh.positions[i + 2]);
   }
-  return Math.max(maxX - minX, maxZ - minZ);
+  const spanX = maxX - minX;
+  const spanZ = maxZ - minZ;
+  return {
+    lengthM: Math.max(spanX, spanZ),
+    widthM: Math.min(spanX, spanZ),
+    lengthAxis: spanX > spanZ ? "x" : "z",
+    heightM: maxY - minY,
+    centreX: (minX + maxX) / 2,
+    centreZ: (minZ + maxZ) / 2,
+    floorY: minY,
+  };
 }
 
 function placeModel(target: Mesh, source: Mesh, frame: Frame, scale: number) {
@@ -611,15 +683,15 @@ export async function buildProps(
     const heading = ((placement.headingDeg ?? 0) * Math.PI) / 180;
     // A boat floats at the datum; everything else stands on the ground, and
     // where there is no ground there is nothing to stand on.
-    const floats = placement.kind === "yacht";
+    const floats = placement.kind === "yacht" && placement.groundY === undefined;
     const ground = field.heightAt(placement.lon, placement.lat);
-    if (!floats && Number.isNaN(ground)) {
+    if (!floats && placement.groundY === undefined && Number.isNaN(ground)) {
       stats.skippedAground++;
       continue;
     }
     const frame: Frame = {
       x,
-      y: floats ? 0 : ground,
+      y: placement.groundY ?? (floats ? 0 : ground),
       z,
       ux: Math.sin(heading),
       uz: Math.cos(heading),
@@ -629,11 +701,23 @@ export async function buildProps(
 
     const model = placement.model ? library.get(placement.model) : undefined;
     if (model) {
-      const own = modelLengthM(model);
-      const scale = placement.fitLengthM && own > 0
-        ? placement.fitLengthM / own
+      const size = modelSize(model);
+      const scale = placement.fitLengthM && size.lengthM > 0
+        ? placement.fitLengthM / size.lengthM
         : placement.scale ?? 1;
-      placeModel(models, model, frame, scale);
+      // The heading names the long side of the thing, so a model authored
+      // across its own x is turned a quarter turn to match. Without this a kit
+      // house sits across its plot and a boat lies athwart its berth.
+      const turned = size.lengthAxis === "x"
+        ? {
+            ...frame,
+            ux: frame.nx,
+            uz: frame.nz,
+            nx: -frame.ux,
+            nz: -frame.uz,
+          }
+        : frame;
+      placeModel(models, model, turned, scale);
       stats.fromModels++;
     } else {
       const kind = placement.kind ?? "yacht";
