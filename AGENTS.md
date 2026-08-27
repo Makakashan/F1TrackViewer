@@ -72,6 +72,12 @@ thrown away later.
 - Work on a branch off `main`.
 - Commit and push only when asked to. Finished work waits in the working tree until
   the user says to commit it.
+- **Gap days.** Before committing, compare today with the date of the last commit
+  (`git log -1 --format=%ad --date=short`). If any day in between carries no commit,
+  ask the user whether to backdate commits into those days and how many per day —
+  never decide it yourself. When they say yes, set both `GIT_AUTHOR_DATE` and
+  `GIT_COMMITTER_DATE`, and split the work finely enough that the count is real
+  rather than three commits wearing ten dates.
 
 ## Done means
 
