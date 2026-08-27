@@ -1,8 +1,14 @@
 # Project map
 
 Orientation file. Where things live, what owns what, and which file to open for a
-given symptom. Companion to `docs/architecture.md` (how the app runs) and
-`docs/city-generation.md` (the environment plan of record, P0–P4).
+given symptom.
+
+Its companions, one question each: [`architecture.md`](architecture.md) — how the app
+runs. [`scene-goals.md`](scene-goals.md) — what the baked scene has to be, and the
+invariants that decide it. [`roadmap.md`](roadmap.md) — what is next.
+[`city-generation.md`](city-generation.md) — why the pipeline is shaped this way
+(D1–D17). [`history/city-generation-p0-p4.md`](history/city-generation-p0-p4.md) —
+what was already built.
 
 ## Two halves
 
@@ -119,8 +125,8 @@ bun run typecheck && bun run lint
   several confident diagnoses here were wrong until measured.
 - Commits in this repo carry **no** `Co-Authored-By` / `Claude-Session` trailers.
 
-## Open work
+## What is next
 
-P4.1 tunnel excavation · P4.2 authored props · P4.3 vegetation · P4.4 migrate the
-other 23 circuits then delete `environment-layer.tsx`. Also: P1.2b sampler rewrite,
-camera distance limits, the info-panel elevation profile still reading old SRTM.
+In [`roadmap.md`](roadmap.md) — one list, so a task cannot be open in one file and
+done in another. The invariants a change has to keep are in
+[`scene-goals.md`](scene-goals.md).
