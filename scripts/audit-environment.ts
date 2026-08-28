@@ -13,10 +13,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { NodeIO } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
-
 import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types";
 import {
   buildBeltBlocks,
@@ -26,6 +22,13 @@ import {
   WATER_CLEARANCE_M,
   type BeltBlocks,
 } from "./env/bake";
+import {
+  buildGroundIndex,
+  connectedComponents,
+  readBakedCircuit,
+  type BakedMesh,
+  type GroundIndex,
+} from "./env/baked-scene";
 import { buildCoastline, type Coastline } from "./env/coastline";
 import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
 import { fetchBuildingWays, fetchShoreWays } from "./env/overpass";
@@ -56,8 +59,14 @@ function trackToleranceM(cellM: number): number {
 }
 /** A footprint corner this far under the ground is a box sunk into a hillside. */
 const BURIED_LIMIT_M = 1.5;
-/** Above the ground at all is floating, allowing for the field's own step. */
+/** Above the ground at all is floating, allowing for the quantisation step. */
 const FLOATING_LIMIT_M = 0.15;
+/**
+ * A wall digs into the hill it stands on — that is how a flat floor meets a
+ * slope — and the bake lets it dig `MAX_UNDERCUT_M`. Past that the wall is not
+ * standing on its plot, it is sunk in it.
+ */
+const UNDERCUT_LIMIT_M = 8;
 /** Ground the corridor owns, matching the bake. */
 const TRACK_CLEARANCE_M = 8;
 /**
@@ -83,44 +92,6 @@ function check(name: string, measured: string, limit: string, ok: boolean, fatal
   return { name, measured, limit, ok, fatal };
 }
 
-async function readBelt(circuitId: string, belt: Belt) {
-  await MeshoptDecoder.ready;
-  const io = new NodeIO()
-    .registerExtensions(ALL_EXTENSIONS)
-    .registerDependencies({ "meshopt.decoder": MeshoptDecoder, "meshopt.encoder": MeshoptEncoder });
-  const path = join(ENVIRONMENTS, circuitId, `${belt}.glb`);
-  const bytes = (await readFile(path)).byteLength;
-  const document = await io.read(path);
-
-  const meshes: { name: string; positions: Float32Array; triangles: number }[] = [];
-  for (const node of document.getRoot().listNodes()) {
-    const mesh = node.getMesh();
-    if (!mesh) continue;
-    const translation = node.getTranslation();
-    const scale = node.getScale();
-    for (const primitive of mesh.listPrimitives()) {
-      const attribute = primitive.getAttribute("POSITION");
-      const indices = primitive.getIndices();
-      if (!attribute) continue;
-      const positions = new Float32Array(attribute.getCount() * 3);
-      const element = [0, 0, 0];
-      for (let i = 0; i < attribute.getCount(); i++) {
-        attribute.getElement(i, element);
-        // Quantised meshes carry their world placement on the node.
-        positions[i * 3] = element[0] * scale[0] + translation[0];
-        positions[i * 3 + 1] = element[1] * scale[1] + translation[1];
-        positions[i * 3 + 2] = element[2] * scale[2] + translation[2];
-      }
-      meshes.push({
-        name: mesh.getName(),
-        positions,
-        triangles: (indices?.getCount() ?? attribute.getCount()) / 3,
-      });
-    }
-  }
-  return { bytes, meshes };
-}
-
 /** Does the shipped terrain still sit where the field says the ground is? */
 /**
  * How close to the cut a vertex has to be before it is measured as coast rather
@@ -132,9 +103,6 @@ async function readBelt(circuitId: string, belt: Belt) {
  * and any disagreement is a bug.
  */
 const SHORE_EXEMPT_M = 16;
-
-/** A foot may stand off its own ground by a quantisation step, no more. */
-const MODEL_FOOT_TOLERANCE_M = 0.35;
 
 function checkTerrain(
   meshes: { name: string; positions: Float32Array }[],
@@ -231,7 +199,6 @@ function checkTerrain(
 }
 
 interface BuildingFit {
-  floating: number;
   buriedOverLimit: number;
   worstBuriedM: number;
   inCorridor: number;
@@ -250,7 +217,6 @@ function checkBuildings(
   corridor: ReturnType<typeof buildCorridor>,
 ): BuildingFit {
   const fit: BuildingFit = {
-    floating: 0,
     buriedOverLimit: 0,
     worstBuriedM: 0,
     inCorridor: 0,
@@ -270,15 +236,71 @@ function checkBuildings(
     fit.total++;
     if (inCorridor) fit.inCorridor++;
 
-    const base = Math.min(...heights);
-    const highest = Math.max(...heights);
-    if (base > highest + FLOATING_LIMIT_M) fit.floating++;
-    const buried = highest - base;
+    const buried = Math.max(...heights) - Math.min(...heights);
     if (buried > fit.worstBuriedM) fit.worstBuriedM = buried;
     if (buried > BURIED_LIMIT_M) fit.buriedOverLimit++;
   }
 
   return fit;
+}
+
+/**
+ * How a piece of the shipped city meets the shipped ground.
+ *
+ * The old check for this read the height field under a footprint's corners and
+ * compared that set's own minimum against its own maximum, which cannot be
+ * true — it reported zero on every run while buildings visibly hung in the air.
+ * The mistake was not the comparison but the evidence: the field is not the
+ * surface the browser draws. This measures the mesh that ships against the
+ * terrain triangle beneath it.
+ */
+interface Standing {
+  pieces: number;
+  overWater: number;
+  floating: number;
+  worstFloatM: number;
+  buried: number;
+  worstBuriedM: number;
+}
+
+function checkStanding(
+  meshes: BakedMesh[],
+  names: string[],
+  ground: GroundIndex,
+  into: Standing,
+): void {
+  for (const mesh of meshes) {
+    if (!names.includes(mesh.name)) continue;
+    const { labels, count } = connectedComponents(mesh);
+    const lowest = new Float64Array(count).fill(Infinity);
+    const onGround = new Uint8Array(count);
+    for (let i = 0; i < mesh.positions.length / 3; i++) {
+      const under = ground.at(mesh.positions[i * 3], mesh.positions[i * 3 + 2]);
+      // No ground under it at all is water: a hull floats on the datum, and a
+      // quay's own edge hangs over the basin on purpose.
+      if (Number.isNaN(under)) continue;
+      const label = labels[i];
+      onGround[label] = 1;
+      const gap = mesh.positions[i * 3 + 1] - under;
+      if (gap < lowest[label]) lowest[label] = gap;
+    }
+    for (let label = 0; label < count; label++) {
+      if (!onGround[label]) {
+        into.overWater++;
+        continue;
+      }
+      into.pieces++;
+      const gap = lowest[label];
+      if (gap > FLOATING_LIMIT_M) {
+        into.floating++;
+        if (gap > into.worstFloatM) into.worstFloatM = gap;
+      }
+      if (gap < -UNDERCUT_LIMIT_M) {
+        into.buried++;
+        if (-gap > into.worstBuriedM) into.worstBuriedM = -gap;
+      }
+    }
+  }
 }
 
 function polygonAreaM2(points: [number, number][]): number {
@@ -349,12 +371,21 @@ async function audit(circuitId: string): Promise<Check[]> {
   let worstIntrusionM = 0;
   let propsAground = 0;
   let propVertices = 0;
-  let modelFeet = 0;
-  let modelsInTheAir = 0;
-  let worstModelFootM = 0;
+  const standing: Standing = {
+    pieces: 0,
+    overWater: 0,
+    floating: 0,
+    worstFloatM: 0,
+    buried: 0,
+    worstBuriedM: 0,
+  };
 
-  for (const belt of BELT_ORDER) {
-    const { bytes, meshes } = await readBelt(circuitId, belt);
+  // Every belt is read before any of it is judged: the ground a wall stands on
+  // is drawn by whichever belt covers that spot, which is not always its own.
+  const baked = await readBakedCircuit(ENVIRONMENTS, circuitId);
+  const ground = buildGroundIndex(baked);
+
+  for (const { belt, bytes, meshes } of baked) {
     const triangles = meshes.reduce((sum, mesh) => sum + mesh.triangles, 0);
     totalBytes += bytes;
     totalTriangles += triangles;
@@ -411,44 +442,10 @@ async function audit(circuitId: string): Promise<Check[]> {
       }
     }
 
-    // A model stands on the ground it was placed on, or the placement and the
-    // field have drifted apart. Only the lowest vertex over each spot is a foot
-    // — everything above it is meant to be in the air — and the test is
-    // one-sided, because a house on a slope is buried uphill on purpose.
-    for (const mesh of meshes) {
-      if (mesh.name !== "model") continue;
-      const feet = new Map<string, number>();
-      for (let i = 0; i < mesh.positions.length / 3; i++) {
-        const x = mesh.positions[i * 3];
-        const y = mesh.positions[i * 3 + 1];
-        const z = mesh.positions[i * 3 + 2];
-        const key = `${Math.round(x * 2)},${Math.round(z * 2)}`;
-        const seen = feet.get(key);
-        if (seen === undefined || y < seen) feet.set(key, y);
-      }
-      for (const [key, y] of feet) {
-        const [kx, kz] = key.split(",").map(Number);
-        const x = kx / 2;
-        const z = kz / 2;
-        // The highest ground within a quantisation step, for the same reason the
-        // building check reads it that way.
-        let ground = Number.NaN;
-        for (const [dx, dz] of [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
-          const sample = field.heightAt(
-            plane.lon(x + dx * QUANTISATION_SLACK_M),
-            plane.lat(z + dz * QUANTISATION_SLACK_M),
-          );
-          if (Number.isNaN(sample)) continue;
-          if (Number.isNaN(ground) || sample > ground) ground = sample;
-        }
-        // No ground at all means water, and a boat floats on the datum.
-        if (Number.isNaN(ground)) continue;
-        modelFeet++;
-        const off = y - ground;
-        if (off > MODEL_FOOT_TOLERANCE_M) modelsInTheAir++;
-        if (off > worstModelFootM) worstModelFootM = off;
-      }
-    }
+    // Buildings and kit models alike: does the thing that ships meet the ground
+    // that ships. Measured per welded piece, so one answer per building rather
+    // than one per face.
+    checkStanding(meshes, ["building", "model"], ground, standing);
 
     const terrain = checkTerrain(meshes, field, plane, cutLine, rasterShore, blocks);
     if (terrain.worst > worstTerrain) worstTerrain = terrain.worst;
@@ -535,15 +532,22 @@ async function audit(circuitId: string): Promise<Check[]> {
 
   checks.push(
     check(
-      "merged models stand on the ground",
-      `${modelsInTheAir} in the air of ${modelFeet.toLocaleString()} model feet, worst ${worstModelFootM.toFixed(2)} m`,
-      `${MODEL_FOOT_TOLERANCE_M} m`,
-      modelsInTheAir === 0,
+      "buildings stand on the drawn ground",
+      `${standing.floating} floating of ${standing.pieces.toLocaleString()}, worst ${standing.worstFloatM.toFixed(2)} m up`,
+      `${FLOATING_LIMIT_M} m`,
+      standing.floating === 0,
+    ),
+  );
+  checks.push(
+    check(
+      "buildings sunk past the undercut",
+      `${standing.buried} of ${standing.pieces.toLocaleString()}, worst ${standing.worstBuriedM.toFixed(2)} m down`,
+      `${UNDERCUT_LIMIT_M} m`,
+      standing.buried === 0,
     ),
   );
 
   const fit = checkBuildings(buildings, field, plane, corridor);
-  checks.push(check("buildings floating", String(fit.floating), "0", fit.floating === 0));
   // Measured on the shipped mesh: the bake pushes footprints out of the
   // corridor, so checking the source data would only re-read its input.
   checks.push(
