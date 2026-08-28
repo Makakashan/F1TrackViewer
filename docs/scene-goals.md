@@ -39,7 +39,7 @@ not of an intermediate — the audit that read `buildings.json` while the browse
 | ID | Invariant | Judged by | Status |
 |---|---|---|---|
 | **I1** | One surface answers "how high is the ground here". Terrain meshes, buildings, kit models and props all read `groundAt(x, z, belt)`; nothing samples the raw height field to place something on it. | `ground.test.ts` — a placement query and the meshed triangle agree to 1 mm | planned |
-| **I2** | No building floats. Every wall's lowest vertex sits within 0.15 m above the terrain triangle beneath it, and no more than 1.5 m below it. | `env:audit` over the GLB | **broken today** — the current check compares a set's own min against its own max and can never fail |
+| **I2** | No building floats. Every welded piece of the shipped building mesh has a vertex within 0.15 m above the terrain triangle beneath it, and none sunk past the 8 m the bake is allowed to dig. | `env:audit` over the GLB | **enforced, failing** — 269 of 3,286 pieces float on Monaco, worst 11.16 m; 82 are sunk past the undercut, worst 36.26 m |
 | **I3** | No belt seam opens. Along a boundary between two belts the terrain is continuous: no gap the sky shows through, no overlap that z-fights. | `terrain.test.ts` on a synthetic slope crossing a seam | planned |
 | **I4** | The track lies on the ground. The baked racing surface matches the height field within `max(0.05 m, 1.2 % of a cell)`. | `env:audit` | passing |
 | **I5** | Water is never above land. No water-plane vertex sits higher than the shore vertex it meets. | `env:audit` | passing |
@@ -51,9 +51,11 @@ not of an intermediate — the audit that read `buildings.json` while the browse
 | **I11** | Vertex colour stays in range. Baked `COLOR_0` never leaves `[0.278, 1]` — the AO floor times the steepest slope shade. Below that is a hole, not a shadow. | `env:audit` | passing |
 | **I12** | A bake is reproducible. The same caches in produce the same GLB out, byte for byte. | `bake.test.ts` over the committed fixture | planned |
 
-"Broken today" is not a slur on the check — it is the reason the audit moves to the
-GLB before anything else is fixed. A judge that reads different evidence than the
-viewer is worse than no judge, because it reports confidence.
+A failing invariant is the point of having one. I2 reported zero for as long as it
+read the height field, while buildings visibly hung in the air; reading the shipped
+mesh instead turned that zero into 269. The number is the work of the roadmap's steps
+3 and 4, not a reason to soften the check — a judge that reads different evidence than
+the viewer is worse than no judge, because it reports confidence.
 
 ---
 
