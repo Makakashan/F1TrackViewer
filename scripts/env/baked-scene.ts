@@ -132,6 +132,12 @@ export interface GroundIndex {
   triangles: number;
 }
 
+/** The least a surface has to look like to be asked for a height. */
+export interface SurfaceMesh {
+  positions: ArrayLike<number>;
+  indices: ArrayLike<number>;
+}
+
 interface Bucketed {
   /** Triangle corner positions, nine floats per triangle. */
   corners: Float32Array;
@@ -141,8 +147,7 @@ interface Bucketed {
   minZ: number;
 }
 
-function bucketTerrain(meshes: BakedMesh[]): Bucketed | null {
-  const terrain = meshes.filter((mesh) => mesh.name === "terrain");
+function bucketTerrain(terrain: SurfaceMesh[]): Bucketed | null {
   if (!terrain.length) return null;
 
   let minX = Infinity;
@@ -242,16 +247,20 @@ function heightIn(bucketed: Bucketed, x: number, z: number): number {
 }
 
 /**
- * The drawn ground, finest belt first. Where belts meet, the core's 4 m answer
- * beats the far belt's 16 m one — that is the surface the camera sees there.
+ * The ground as drawn, from surfaces given finest first. Where two answer — a
+ * belt seam is a strip where both do — the finer one wins, because that is the
+ * one the camera sees there.
+ *
+ * The bake indexes the terrain it has just built with this, so that a wall
+ * asking where the ground is gets the triangle it will be standing on rather
+ * than the field the triangle was derived from. Two derivations of one surface
+ * is how a building ends up in the air.
  */
-export function buildGroundIndex(belts: BakedBelt[]): GroundIndex {
+export function buildSurfaceIndex(finestFirst: SurfaceMesh[][]): GroundIndex {
   const ordered: Bucketed[] = [];
   let triangles = 0;
-  for (const belt of BELT_ORDER) {
-    const found = belts.find((candidate) => candidate.belt === belt);
-    if (!found) continue;
-    const bucketed = bucketTerrain(found.meshes);
+  for (const surfaces of finestFirst) {
+    const bucketed = bucketTerrain(surfaces);
     if (!bucketed) continue;
     triangles += bucketed.corners.length / 9;
     ordered.push(bucketed);
@@ -267,6 +276,17 @@ export function buildGroundIndex(belts: BakedBelt[]): GroundIndex {
       return Number.NaN;
     },
   };
+}
+
+/** The same, over a bake read back from disk. */
+export function buildGroundIndex(belts: BakedBelt[]): GroundIndex {
+  return buildSurfaceIndex(
+    BELT_ORDER.map((belt) =>
+      (belts.find((candidate) => candidate.belt === belt)?.meshes ?? []).filter(
+        (mesh) => mesh.name === "terrain",
+      ),
+    ),
+  );
 }
 
 // ─── one merged mesh, many buildings ───────────────────────────────────────
