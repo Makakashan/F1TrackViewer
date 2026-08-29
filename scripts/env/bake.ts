@@ -48,6 +48,8 @@ import {
   type BuildingWay,
 } from "./overpass";
 import { buildGreenery, type GreeneryResult } from "./greenery";
+import { buildSurfaceIndex } from "./baked-scene";
+import { buildGround, type Ground } from "./ground";
 import {
   chooseKitHouses,
   KIT_BUDGET_SHARE,
@@ -452,6 +454,7 @@ function straddlesWater(
  */
 function bakeTerrain(
   field: HeightField,
+  ground: Ground,
   plane: ScenePlane,
   corridor: Corridor,
   coast: Coastline,
@@ -508,18 +511,11 @@ function bakeTerrain(
     const cols = Math.floor((maxX - minX) / cell);
     const rows = Math.floor((maxZ - minZ) / cell);
     const grid = new GridMesh();
-    const heightCache = new Map<number, number>();
 
-    const heightAt = (row: number, col: number): number => {
-      const key = row * (cols + 2) + col;
-      const cached = heightCache.get(key);
-      if (cached !== undefined) return cached;
-      const x = minX + col * cell;
-      const z = minZ + row * cell;
-      const value = field.heightAt(plane.lon(x), plane.lat(z));
-      heightCache.set(key, value);
-      return value;
-    };
+    // One surface, and this belt's view of it. A coarse belt averages the field
+    // over its own cell rather than sampling it, which is the difference
+    // between relief and aliasing — see `ground.ts`.
+    const heightAt = (row: number, col: number): number => ground.nodeAt(belt, row, col);
 
     const nodes = (rows + 2) * (cols + 2);
 
@@ -2130,7 +2126,8 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const portals = bakePortals(vaults, hill, plane);
   const bore = bakeTunnelBody(hill, plane, vaults, portalSection());
   const barriers = bakeBarriers(field, plane, tunnels, DEFAULT_TRACK_HALF_WIDTH_M);
-  const terrain = bakeTerrain(field, plane, corridor, coast, piers, portalVoids(vaults, hill, plane));
+  const ground = buildGround(field, plane);
+  const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, portalVoids(vaults, hill, plane));
   const water = bakeWater(field, plane);
 
   const buildingWays = await fetchBuildingWays(circuitId, bbox, refresh);
