@@ -38,8 +38,8 @@ not of an intermediate — the audit that read `buildings.json` while the browse
 
 | ID | Invariant | Judged by | Status |
 |---|---|---|---|
-| **I1** | One surface answers "how high is the ground here". Terrain meshes, buildings, kit models and props all read `groundAt(x, z, belt)`; nothing samples the raw height field to place something on it. | `ground.test.ts` — a placement query and the meshed triangle agree to 1 mm | planned |
-| **I2** | No building floats. Every welded piece of the shipped building mesh has a vertex within 0.15 m above the terrain triangle beneath it, and none sunk past the 8 m the bake is allowed to dig. | `env:audit` over the GLB | **enforced, failing** — 269 of 3,286 pieces float on Monaco, worst 11.16 m; 82 are sunk past the undercut, worst 36.26 m |
+| **I1** | One surface answers "how high is the ground here". The terrain meshes from `ground.ts`; buildings, kit models and props read the triangles the terrain just drew. Nothing samples the raw field to place something on it. | `env:audit` (I2 is its consequence); `ground.test.ts` still to come | **held** — placement reads the drawn surface as of the P4.6 bake |
+| **I2** | No building floats. Every piece of the shipped building mesh — walls and the roof resting on them, welded into one — has a vertex within 0.15 m of the terrain triangle beneath it, and no piece is entirely below the ground. | `env:audit` over the GLB | **passing** — 0 floating of 1,259 pieces on Monaco, 0 with nothing above ground; deepest wall dig 36.5 m, reported |
 | **I3** | No belt seam opens. Along a boundary between two belts the terrain is continuous: no gap the sky shows through, no overlap that z-fights. | `terrain.test.ts` on a synthetic slope crossing a seam | planned |
 | **I4** | The track lies on the ground. The baked racing surface matches the height field within `max(0.05 m, 1.2 % of a cell)`. | `env:audit` | passing |
 | **I5** | Water is never above land. No water-plane vertex sits higher than the shore vertex it meets. | `env:audit` | passing |
@@ -53,9 +53,13 @@ not of an intermediate — the audit that read `buildings.json` while the browse
 
 A failing invariant is the point of having one. I2 reported zero for as long as it
 read the height field, while buildings visibly hung in the air; reading the shipped
-mesh instead turned that zero into 269. The number is the work of the roadmap's steps
-3 and 4, not a reason to soften the check — a judge that reads different evidence than
-the viewer is worse than no judge, because it reports confidence.
+mesh turned that zero into 269, and one surface turned 269 into none. The order
+mattered: the check came first, so the fix had a judge that was not the person who
+wrote it.
+
+I2's piece rule is deliberately loose — pieces overlapping in plan and meeting in
+height are treated as one building — so a slab hanging beside a tower, at the tower's
+own height and inside its plan, is missed. §4's cameras are what covers that.
 
 ---
 
