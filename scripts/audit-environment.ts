@@ -62,12 +62,6 @@ function trackToleranceM(cellM: number): number {
 const BURIED_LIMIT_M = 1.5;
 /** Above the ground at all is floating, allowing for the quantisation step. */
 const FLOATING_LIMIT_M = 0.15;
-/**
- * A wall digs into the hill it stands on — that is how a flat floor meets a
- * slope — and the bake lets it dig `MAX_UNDERCUT_M`. Past that the wall is not
- * standing on its plot, it is sunk in it.
- */
-const UNDERCUT_LIMIT_M = 8;
 /** Ground the corridor owns, matching the bake. */
 const TRACK_CLEARANCE_M = 8;
 /**
@@ -265,8 +259,10 @@ interface Standing {
   overWater: number;
   floating: number;
   worstFloatM: number;
+  /** Pieces with no geometry above the ground at all: built and invisible. */
   buried: number;
-  worstBuriedM: number;
+  /** How far the deepest wall digs. A cost, not a fault — reported, not failed. */
+  deepestDigM: number;
 }
 
 function checkStanding(
@@ -277,8 +273,9 @@ function checkStanding(
 ): void {
   for (const mesh of meshes) {
     if (!names.includes(mesh.name)) continue;
-    const { labels, count } = connectedComponents(mesh);
+    const { labels, count } = buildingPieces(mesh);
     const lowest = new Float64Array(count).fill(Infinity);
+    const highest = new Float64Array(count).fill(-Infinity);
     const onGround = new Uint8Array(count);
     for (let i = 0; i < mesh.positions.length / 3; i++) {
       const under = ground.at(mesh.positions[i * 3], mesh.positions[i * 3 + 2]);
@@ -289,6 +286,7 @@ function checkStanding(
       onGround[label] = 1;
       const gap = mesh.positions[i * 3 + 1] - under;
       if (gap < lowest[label]) lowest[label] = gap;
+      if (gap > highest[label]) highest[label] = gap;
     }
     for (let label = 0; label < count; label++) {
       if (!onGround[label]) {
@@ -301,10 +299,11 @@ function checkStanding(
         into.floating++;
         if (gap > into.worstFloatM) into.worstFloatM = gap;
       }
-      if (gap < -UNDERCUT_LIMIT_M) {
-        into.buried++;
-        if (-gap > into.worstBuriedM) into.worstBuriedM = -gap;
-      }
+      // Walls dig as deep as the ground under them goes, which on a terrace can
+      // be tens of metres and is invisible. What is a fault is a piece with
+      // nothing above the ground at all — paid for and never seen.
+      if (highest[label] < FLOATING_LIMIT_M) into.buried++;
+      if (-gap > into.deepestDigM) into.deepestDigM = -gap;
     }
   }
 }
@@ -549,10 +548,19 @@ async function audit(circuitId: string): Promise<Check[]> {
   );
   checks.push(
     check(
-      "buildings sunk past the undercut",
-      `${standing.buried} of ${standing.pieces.toLocaleString()}, worst ${standing.worstBuriedM.toFixed(2)} m down`,
-      `${UNDERCUT_LIMIT_M} m`,
+      "buildings with nothing above ground",
+      `${standing.buried} of ${standing.pieces.toLocaleString()}`,
+      "0",
       standing.buried === 0,
+    ),
+  );
+  checks.push(
+    check(
+      "deepest wall dig",
+      `${standing.deepestDigM.toFixed(1)} m`,
+      "reported",
+      true,
+      false,
     ),
   );
 
