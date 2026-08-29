@@ -19,7 +19,7 @@ own.
 Decisions, journal, goals and roadmap in four files instead of one 1,466-line
 document. No code touched.
 
-### 2. The audit reads the GLB
+### 2. The audit reads the GLB — **done**
 
 `scripts/audit-environment.ts` loads `core.glb`, `city.glb`, `far.glb` and checks the
 geometry that ships, instead of `buildings.json` plus the height field.
@@ -31,7 +31,7 @@ against its own maximum — `base > highest + 0.15` where `base = min(heights)` 
 while a building visibly floated. Expect the number to come back non-zero. That is
 the point of the step.
 
-### 3. `scripts/env/ground.ts`
+### 3. `scripts/env/ground.ts` — **done**
 
 One surface per belt, built from the same nodes the mesh emits, plus a box-filtered
 pyramid of the height field so the 8 m and 16 m belts *average* the field instead of
@@ -44,12 +44,22 @@ between neighbouring faces (7.70 m at 16 m). Box-averaging the same nodes drops 
 to 2.55 m and 4.97 m while mean slope moves 16.6° → 16.3°. The noise goes, the relief
 stays.
 
-### 4. Placement moves onto `groundAt`
+### 4. Placement moves onto the drawn ground — **done**
 
 `prepareBuildings`, the kit pass, props, grandstands, cranes. `MAX_UNDERCUT_M`
 (`bake.ts`) is deleted rather than tuned: it exists to paper over a disagreement
 between two readings of the ground, and after step 3 there is only one reading.
-Rebake Monaco; step 2's floating count has to come back zero (**I1**, **I2**).
+Rebake Monaco; step 2's floating count has to come back zero (**I1**, **I2**). It
+does: 0 floating of 1,259 pieces, and the whole audit is green.
+
+Placement reads the *drawn* terrain — the triangles the mesher has just emitted —
+rather than `ground.ts`'s node table, because the coast is cut inside a cell, a seam
+node is conformed to the coarser belt's chord and a vertex is clamped to the surface
+band, all after the nodes are read. Two derivations of one surface is how a building
+ends up in the air; this leaves one.
+
+Walls also gained vertices where the ground under an edge strays from the line
+between its corners, which is what a footprint bridging a gully needs.
 
 ### 5. The edge-preserving filter
 
