@@ -24,12 +24,13 @@ import {
 } from "./env/bake";
 import {
   buildGroundIndex,
-  connectedComponents,
+  buildingPieces,
   readBakedCircuit,
   type BakedMesh,
   type GroundIndex,
 } from "./env/baked-scene";
 import { buildCoastline, type Coastline } from "./env/coastline";
+import { buildGround, type Ground } from "./env/ground";
 import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
 import { fetchBuildingWays, fetchShoreWays } from "./env/overpass";
 import { BELT_BUDGET, BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
@@ -106,7 +107,8 @@ const SHORE_EXEMPT_M = 16;
 
 function checkTerrain(
   meshes: { name: string; positions: Float32Array }[],
-  field: HeightField,
+  belt: Belt,
+  surface: Ground,
   plane: ScenePlane,
   coast: Coastline,
   rasterShore: ShoreDistance,
@@ -169,7 +171,11 @@ function checkTerrain(
       const z = mesh.positions[i * 3 + 2];
       // Standing under another vertex: a skirt, not the surface.
       if (y < (topAt.get(footprint(x, z)) ?? y) - 0.05) continue;
-      const ground = field.heightAt(plane.lon(x), plane.lat(z));
+      // Against the surface the belt was meshed from — `ground.ts` — not
+      // against the field behind it. A coarse belt averages the field over its
+      // own cell on purpose, so measuring it against a point sample of the
+      // field measures the filter and calls it drift.
+      const ground = surface.at(x, z, belt);
       if (Number.isNaN(ground)) continue;
       // The surface is held clear of the sea plane, so that is the height it is
       // meant to have where the raster reads at or below the datum.
@@ -377,13 +383,16 @@ async function audit(circuitId: string): Promise<Check[]> {
     floating: 0,
     worstFloatM: 0,
     buried: 0,
-    worstBuriedM: 0,
+    deepestDigM: 0,
   };
 
   // Every belt is read before any of it is judged: the ground a wall stands on
   // is drawn by whichever belt covers that spot, which is not always its own.
   const baked = await readBakedCircuit(ENVIRONMENTS, circuitId);
   const ground = buildGroundIndex(baked);
+  // The same surface definition the bake meshed from, rebuilt here rather than
+  // trusted: if the two disagree, that is the check firing, not an excuse.
+  const surface = buildGround(field, plane);
 
   for (const { belt, bytes, meshes } of baked) {
     const triangles = meshes.reduce((sum, mesh) => sum + mesh.triangles, 0);
@@ -447,7 +456,7 @@ async function audit(circuitId: string): Promise<Check[]> {
     // than one per face.
     checkStanding(meshes, ["building", "model"], ground, standing);
 
-    const terrain = checkTerrain(meshes, field, plane, cutLine, rasterShore, blocks);
+    const terrain = checkTerrain(meshes, belt, surface, plane, cutLine, rasterShore, blocks);
     if (terrain.worst > worstTerrain) worstTerrain = terrain.worst;
     terrainSamples += terrain.sampled;
     shoreSamples += terrain.shore;
@@ -471,7 +480,7 @@ async function audit(circuitId: string): Promise<Check[]> {
   );
   checks.push(
     check(
-      "terrain follows the field",
+      "terrain follows the surface it meshes",
       `worst ${worstTerrain.toFixed(2)} m over ${terrainSamples.toLocaleString()} vertices`
         + ` (${shoreSamples.toLocaleString()} at the cut coast, worst ${worstShore.toFixed(2)} m;`
         + ` ${seamSamples.toLocaleString()} at a belt seam, worst ${worstSeam.toFixed(2)} m)`,
