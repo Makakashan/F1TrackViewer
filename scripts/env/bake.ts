@@ -136,8 +136,6 @@ const RASTER_CONFIDENT_M = 8;
 const DECK_CLEARED_SCALAR_M = 2;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
-/** How far below its own floor a building's walls may reach for the ground. */
-const MAX_UNDERCUT_M = 8;
 
 /** The band a terrain surface vertex is allowed to live in: clear of the sea plane, below the cliff cap. */
 function clampToSurface(y: number): number {
@@ -939,7 +937,15 @@ interface BuildingResult {
 interface PreparedBuilding {
   id: string;
   ring: { x: number; z: number }[];
-  /** Where each wall vertex meets the ground, one per ring point. */
+  /**
+   * The ring the walls are built from: the footprint, with a vertex added
+   * wherever the ground under an edge leaves the straight line between its
+   * corners. A footprint that bridges a gully has corners on the lip and
+   * nothing under its middle, which is the shape of every "building floating
+   * over a ravine" in Monaco.
+   */
+  wallRing: { x: number; z: number }[];
+  /** Where each wall vertex meets the ground, one per `wallRing` point. */
   footAt: number[];
   /** The floor: the middle of the ground the footprint covers. */
   base: number;
@@ -949,9 +955,70 @@ interface PreparedBuilding {
   belt: Belt;
 }
 
+/**
+ * How far the ground under an edge may stray from the straight line between its
+ * corners before the wall gains a vertex there. Half a metre is under the eye's
+ * threshold for a gap at street distance and well over the quantisation step.
+ */
+const WALL_FOLLOW_TOLERANCE_M = 0.5;
+/** No segment is worth splitting below this: nothing shows in a 1 m gap. */
+const WALL_FOLLOW_MIN_M = 1;
+
+/**
+ * A footprint ring, resampled so its walls follow the ground under them.
+ *
+ * Corners alone are enough on a plane and on an even slope. They are not enough
+ * where the ground drops between two of them: the wall spans the drop as one
+ * quad and the building reads as floating over it, which on Monaco's hillside
+ * is 271 of 3,742 pieces. Only the edges that need it gain vertices, so a block
+ * on flat ground still costs four.
+ */
+function followGround(
+  ring: { x: number; z: number }[],
+  groundAt: (x: number, z: number) => number,
+  /** A vertex may only be added where this allows one. */
+  mayAdd: (x: number, z: number) => boolean,
+): { x: number; z: number }[] {
+  const out: { x: number; z: number }[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    out.push(a);
+    const heightA = groundAt(a.x, a.z);
+    const heightB = groundAt(b.x, b.z);
+    if (Number.isNaN(heightA) || Number.isNaN(heightB)) continue;
+    splitEdge(out, a, heightA, b, heightB, groundAt, mayAdd, 0);
+  }
+  return out;
+}
+
+function splitEdge(
+  out: { x: number; z: number }[],
+  a: { x: number; z: number },
+  heightA: number,
+  b: { x: number; z: number },
+  heightB: number,
+  groundAt: (x: number, z: number) => number,
+  mayAdd: (x: number, z: number) => boolean,
+  depth: number,
+): void {
+  if (depth >= 5 || Math.hypot(b.x - a.x, b.z - a.z) < WALL_FOLLOW_MIN_M * 2) return;
+  const mid = { x: (a.x + b.x) / 2, z: (a.z + b.z) / 2 };
+  const heightMid = groundAt(mid.x, mid.z);
+  if (Number.isNaN(heightMid)) return;
+  if (Math.abs(heightMid - (heightA + heightB) / 2) <= WALL_FOLLOW_TOLERANCE_M) return;
+  // A vertex on the centreline cannot be pushed off the track — there is no
+  // side to push it to — so the corridor refuses one there rather than fixing
+  // it afterwards.
+  if (!mayAdd(mid.x, mid.z)) return;
+  splitEdge(out, a, heightA, mid, heightMid, groundAt, mayAdd, depth + 1);
+  out.push(mid);
+  splitEdge(out, mid, heightMid, b, heightB, groundAt, mayAdd, depth + 1);
+}
+
 function prepareBuildings(
   buildings: BuildingsFile,
-  field: HeightField,
+  groundAt: (x: number, z: number) => number,
   plane: ScenePlane,
   corridor: Corridor,
   measured: Map<string, { measured: number }>,
@@ -987,7 +1054,7 @@ function prepareBuildings(
     // footprint with no ground under it at all is not a building we can place.
     const grounds: number[] = [];
     for (const point of pushed.ring) {
-      const h = field.heightAt(plane.lon(point.x), plane.lat(point.z));
+      const h = groundAt(point.x, point.z);
       if (!Number.isNaN(h)) grounds.push(h);
     }
     if (!grounds.length) {
@@ -1001,13 +1068,22 @@ function prepareBuildings(
     // it on the middle alone would leave the downhill side in the air.
     const base = grounds[Math.floor(grounds.length / 2)];
     // Each wall vertex meets the ground where it stands, so a block on a slope
-    // is neither buried on its uphill side nor left on stilts downhill. It may
-    // only dig so far: past MAX_UNDERCUT_M the ground under a footprint on the
-    // lip of a cliff is the drop beside it, not the plot it stands on.
-    const footAt = pushed.ring.map((point) => {
-      const ground = field.heightAt(plane.lon(point.x), plane.lat(point.z));
-      const solid = Number.isNaN(ground) ? base : ground;
-      return Math.max(base - MAX_UNDERCUT_M, Math.min(solid, base));
+    // is neither buried on its uphill side nor left on stilts downhill. There
+    // is no floor under how far it may dig: the clamp that used to be here
+    // existed because the wall read one surface and the terrain drew another,
+    // and a wall that stopped at the clamp stopped in mid-air. It now reads the
+    // surface that is drawn, so where it reaches is where the ground is.
+    // The corners were pushed clear of the track; a vertex added between two of
+    // them lands on the chord, and a chord across a corner can cut inside the
+    // corridor the push exists to keep clear. Where the denser ring cannot be
+    // pushed clear, the corner ring stands: a wall that follows the ground into
+    // the road is worse than one that spans a dip.
+    const followed = followGround(pushed.ring, groundAt, (x, z) =>
+      corridor.distance(x, z) >= TRACK_CLEARANCE_M);
+    const wallRing = pushOffTrack(followed, corridor)?.ring ?? pushed.ring;
+    const footAt = wallRing.map((point) => {
+      const under = groundAt(point.x, point.z);
+      return Math.min(Number.isNaN(under) ? base : under, base);
     });
 
     let centreX = 0;
@@ -1022,6 +1098,7 @@ function prepareBuildings(
     prepared.push({
       id: building.id,
       ring: pushed.ring,
+      wallRing,
       footAt,
       base,
       heightM: height,
@@ -1044,7 +1121,7 @@ function bakeBuildings(
   const meshes = result.meshes;
   for (const building of prepared) {
     if (taken.has(building.id)) continue;
-    const { ring, footAt, base, heightM, belt } = building;
+    const { ring, wallRing, footAt, base, heightM, belt } = building;
     const top = base + heightM;
     const plan = planRoof(ring, tags.get(building.id) ?? {}, heightM);
     result.roofs[plan.kind]++;
@@ -1054,10 +1131,10 @@ function bakeBuildings(
       // the walls run past the roof plane and turn back down inside it. Only
       // where it can be seen: the far belt is silhouettes.
       const parapet = belt === "far" ? 0 : PARAPET_M;
-      extrude(meshes[belt], ring, footAt, top - plan.heightM, parapet);
+      extrude(meshes[belt], wallRing, footAt, top - plan.heightM, parapet);
     } else {
       const eaveY = top - plan.heightM;
-      extrude(meshes[belt], ring, footAt, eaveY, 0);
+      extrude(meshes[belt], wallRing, footAt, eaveY, 0);
       buildRoof(meshes[belt], plan, eaveY);
     }
     result.built++;
@@ -2160,7 +2237,14 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   ]);
 
   const buildings = emptyBuildingResult();
-  const prepared = prepareBuildings(buildingsFile, field, plane, corridor, measured, buildings);
+  // The one surface, and it is the drawn one. The mesher's own node table would
+  // be a second derivation: the coast is cut inside a cell, a seam node is
+  // conformed to the coarser belt's chord, and a vertex is clamped to the
+  // surface band — all after the nodes were read. A wall asking where the
+  // ground is gets the triangle it will stand on.
+  const drawnGround = buildSurfaceIndex(BELT_ORDER.map((belt) => [terrain.meshes[belt]]));
+  const standOn = (x: number, z: number): number => drawnGround.at(x, z);
+  const prepared = prepareBuildings(buildingsFile, standOn, plane, corridor, measured, buildings);
 
   // The kit runs before the props are merged, because its houses are props: it
   // decides which footprints it can do better than an extrusion, and the rest
@@ -2196,7 +2280,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   overrideStats.props = overrideProps.length;
   const props = await buildProps(
     [...berthYachts(piers, field, plane, kitBoats), ...kit.placements, ...overrideProps],
-    field,
+    standOn,
     plane,
     REPO_ROOT,
   );

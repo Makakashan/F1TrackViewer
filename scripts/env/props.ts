@@ -654,7 +654,8 @@ function placeModel(target: Mesh, source: Mesh, frame: Frame, scale: number) {
 
 export async function buildProps(
   placements: PropPlacement[],
-  field: HeightField,
+  /** The drawn ground, by the same rule the terrain was meshed with. */
+  groundAt: (x: number, z: number) => number,
   plane: ScenePlane,
   repoRoot: string,
 ): Promise<PropResult> {
@@ -684,7 +685,7 @@ export async function buildProps(
     // A boat floats at the datum; everything else stands on the ground, and
     // where there is no ground there is nothing to stand on.
     const floats = placement.kind === "yacht" && placement.groundY === undefined;
-    const ground = field.heightAt(placement.lon, placement.lat);
+    const ground = groundAt(x, z);
     if (!floats && placement.groundY === undefined && Number.isNaN(ground)) {
       stats.skippedAground++;
       continue;
