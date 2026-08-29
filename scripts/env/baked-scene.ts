@@ -351,3 +351,112 @@ export function connectedComponents(mesh: BakedMesh): { labels: Int32Array; coun
   }
   return { labels, count };
 }
+
+/**
+ * How close a piece's underside has to be to another piece's top before it
+ * counts as resting on it rather than hovering over it.
+ */
+const STACK_TOLERANCE_M = 0.5;
+
+/**
+ * Buildings, recovered from a merged mesh.
+ *
+ * `connectedComponents` finds the pieces a mesh is made of, which is not the
+ * same as the things it depicts: a roof carries its own eaves and shares no
+ * vertex with the walls under it, so a block comes back as two pieces and the
+ * roof measures as a building floating at its own storey height. Pieces that
+ * overlap in plan and meet within a step in height are one thing — the roof
+ * rests on the walls — and the walls are what has to reach the ground.
+ */
+export function buildingPieces(mesh: BakedMesh): { labels: Int32Array; count: number } {
+  const { labels, count } = connectedComponents(mesh);
+  if (count < 2) return { labels, count };
+
+  const minX = new Float64Array(count).fill(Infinity);
+  const maxX = new Float64Array(count).fill(-Infinity);
+  const minZ = new Float64Array(count).fill(Infinity);
+  const maxZ = new Float64Array(count).fill(-Infinity);
+  const minY = new Float64Array(count).fill(Infinity);
+  const maxY = new Float64Array(count).fill(-Infinity);
+  for (let i = 0; i < mesh.positions.length / 3; i++) {
+    const label = labels[i];
+    const x = mesh.positions[i * 3];
+    const y = mesh.positions[i * 3 + 1];
+    const z = mesh.positions[i * 3 + 2];
+    if (x < minX[label]) minX[label] = x;
+    if (x > maxX[label]) maxX[label] = x;
+    if (z < minZ[label]) minZ[label] = z;
+    if (z > maxZ[label]) maxZ[label] = z;
+    if (y < minY[label]) minY[label] = y;
+    if (y > maxY[label]) maxY[label] = y;
+  }
+
+  const parent = new Int32Array(count);
+  for (let i = 0; i < count; i++) parent[i] = i;
+  const find = (i: number): number => {
+    let root = i;
+    while (parent[root] !== root) root = parent[root];
+    return root;
+  };
+
+  // Pieces are bucketed by plan position, so only the ones that could overlap
+  // are compared: a city belt holds thousands and every pair is not worth it.
+  const buckets = new Map<number, number[]>();
+  const cols = 4096;
+  for (let label = 0; label < count; label++) {
+    for (let col = Math.floor(minX[label] / BUCKET_M); col <= Math.floor(maxX[label] / BUCKET_M); col++) {
+      for (let row = Math.floor(minZ[label] / BUCKET_M); row <= Math.floor(maxZ[label] / BUCKET_M); row++) {
+        const key = row * cols + col;
+        const list = buckets.get(key);
+        if (list) list.push(label);
+        else buckets.set(key, [label]);
+      }
+    }
+  }
+
+  for (const list of buckets.values()) {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i];
+        const b = list[j];
+        const rootA = find(a);
+        const rootB = find(b);
+        if (rootA === rootB) continue;
+        if (maxX[a] < minX[b] || maxX[b] < minX[a]) continue;
+        if (maxZ[a] < minZ[b] || maxZ[b] < minZ[a]) continue;
+        // Overlapping in plan and meeting in height: a roof on its walls, a
+        // parapet on its roof, a terrace of houses sharing a party wall. The
+        // rule is deliberately loose, because the cost of splitting a building
+        // is a false floater at its own storey height, while the cost of
+        // merging two is that a slab hanging beside a tower — at the tower's
+        // own height, in its plan — is missed. The fixed camera shots in
+        // docs/scene-goals.md are what covers the second.
+        const meets = minY[a] <= maxY[b] + STACK_TOLERANCE_M && minY[b] <= maxY[a] + STACK_TOLERANCE_M;
+        if (!meets) continue;
+        parent[rootB] = rootA;
+        // The merged piece spans both, or a third piece resting on this one
+        // would not find it.
+        minX[rootA] = Math.min(minX[rootA], minX[rootB]);
+        maxX[rootA] = Math.max(maxX[rootA], maxX[rootB]);
+        minZ[rootA] = Math.min(minZ[rootA], minZ[rootB]);
+        maxZ[rootA] = Math.max(maxZ[rootA], maxZ[rootB]);
+        minY[rootA] = Math.min(minY[rootA], minY[rootB]);
+        maxY[rootA] = Math.max(maxY[rootA], maxY[rootB]);
+      }
+    }
+  }
+
+  const merged = new Int32Array(labels.length);
+  const labelOf = new Map<number, number>();
+  let groups = 0;
+  for (let i = 0; i < labels.length; i++) {
+    const root = find(labels[i]);
+    let group = labelOf.get(root);
+    if (group === undefined) {
+      group = groups++;
+      labelOf.set(root, group);
+    }
+    merged[i] = group;
+  }
+  return { labels: merged, count: groups };
+}
