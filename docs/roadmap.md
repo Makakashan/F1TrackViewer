@@ -10,6 +10,11 @@ meets the ground, and without a check that reads the shipped GLB we would be
 comparing screenshots again. Each step is its own commit and is verifiable on its
 own.
 
+**Where it stands (2026-08-30).** Steps 1–4 are in. `env:audit mc-1929` is green on
+every check: 0 floating of 1,259 pieces, terrain within 0.40 m of the surface it
+meshes, 5.90 MB over three belts, all inside budget. What is left of the original
+complaint is the look of the hillside, which is step 5.
+
 ---
 
 ## Now — the ground work
@@ -24,12 +29,13 @@ document. No code touched.
 `scripts/audit-environment.ts` loads `core.glb`, `city.glb`, `far.glb` and checks the
 geometry that ships, instead of `buildings.json` plus the height field.
 
-The floating check (**I2**) becomes real: each wall's lowest vertex against the
-terrain triangle beneath it. Today's version compares a footprint's own minimum
-against its own maximum — `base > highest + 0.15` where `base = min(heights)` and
-`highest = max(heights)` — which cannot be true, so it has reported zero every run
-while a building visibly floated. Expect the number to come back non-zero. That is
-the point of the step.
+The floating check (**I2**) became real: each piece's lowest vertex against the
+terrain triangle beneath it. The version it replaced compared a footprint's own
+minimum against its own maximum — `base > highest + 0.15` where `base = min(heights)`
+and `highest = max(heights)` — which cannot be true, so it had reported zero on every
+run while a building visibly floated. Reading the shipped mesh turned that zero into
+269, which is what the step was for. The model-foot check had the same shape of fault:
+it looked for a mesh named `model`, which no belt ships.
 
 ### 3. `scripts/env/ground.ts` — **done**
 
@@ -61,21 +67,35 @@ ends up in the air; this leaves one.
 Walls also gained vertices where the ground under an edge strays from the line
 between its corners, which is what a footprint bridging a gully needs.
 
-### 5. The edge-preserving filter
+### 5. The edge-preserving filter — **next**
+
+Step 3 landed a box filter, which is the right shape of fix and the wrong kernel: it
+cannot tell a 6 m quay wall from a metre of ripple, so it softens both. On the
+hillside shots the ravine's edge now reads blurred rather than sooty. That is the
+trade the box filter makes, and it is why this step exists.
 
 Bilateral over the field — spatial radius ~2 cells, height threshold ~1.5 m — so a
-mapped quay's 3–8 m step survives untouched and the ±1 m ripple does not. Acceptance
-is **I7**'s three numbers, fixed before the change rather than after it.
+mapped quay's 3–8 m step survives untouched and the ±1 m ripple does not. It replaces
+the kernel inside `windowMean` (`scripts/env/ground.ts`); nothing outside that
+function has to know.
 
-Second layer, once Overpass answers again: `natural=cliff`, `barrier=retaining_wall`,
-`man_made=quay` and the coastline as lines the filter may not cross, so a real wall
-below the threshold is still pinned.
+Acceptance is **I7**'s three numbers, fixed before the change rather than after it:
+kink RMS at the 8 m belt ≤ 2.6 m, mean slope within 0.5° of 16.6°, and the step across
+any mapped quay or retaining wall within 0.3 m of the raw field. The third needs the
+second layer — `natural=cliff`, `barrier=retaining_wall`, `man_made=quay` and the
+coastline as lines the filter may not cross — which needs Overpass to answer.
 
 ### 6. Tests A — invariants on synthetic ground
 
 There is no test runner in the repository yet, so this step installs one. A plane, a
 30° slope, a vertical cut, a terrace, a ravine; the invariants of
 [`scene-goals.md`](scene-goals.md); no network; milliseconds.
+
+Two of them are already owed. **I1**: a placement query and the triangle it names
+have to agree to a millimetre — held today by construction, untested. **I2's piece
+rule**: pieces that overlap in plan and meet in height are welded into one building,
+which is loose enough to miss a slab hanging beside a tower at the tower's own
+height. A synthetic scene is the only cheap way to pin either.
 
 ### 7. Test B — the Monaco fixture
 
@@ -91,9 +111,14 @@ The eight cameras in [`scene-goals.md`](scene-goals.md) §4, snapped after a bak
 
 ## Parked — Monaco, after the ground work
 
-- **Kit houses have never been looked at.** Selection, fitting, orientation and budget
-  in `scripts/env/kit.ts` typecheck and nothing more. Judge them on ground that is
-  already honest, or every fitting complaint is really a placement complaint.
+- **Kit houses have never been looked at.** 75 modelled on the current bake, 92,406
+  triangles, inside budget; 1,976 footprints fit the shape and 369 had no model at
+  their proportion. The numbers are plausible and nobody has looked at one. The
+  ground under them is honest now, so a fitting complaint would be a fitting
+  complaint.
+- **The city belt nearly doubled** — 110,850 to 213,627 triangles — from the kit's
+  houses and the vertices walls take to follow the ground. The budget is 350,000 and
+  the belt is at 61% of it. Worth watching rather than acting on.
 - **No pool.** The Stade Nautique and the pitches need one successful Overpass answer;
   all three endpoints have been down for days. `OVERPASS_OFFLINE=1` bakes from cache
   meanwhile.
