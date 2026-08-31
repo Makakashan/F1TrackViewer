@@ -80,6 +80,9 @@
             draws++;
             triangles += node.geometry.index.count / 3;
             node.material.flatShading = false;
+            // ?sides=double — is that hole a hole, or a face pointing the other
+            // way? The answer changes what is worth fixing.
+            if (params.get("sides") === "double") node.material.side = THREE.DoubleSide;
             // ?shading=ao shows the baked vertex colour alone, with no light in
             // the way, which is the only way to tell an AO bug from a lighting one.
             if (params.get("shading") === "ao") {
