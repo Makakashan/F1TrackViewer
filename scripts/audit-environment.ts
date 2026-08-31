@@ -17,6 +17,7 @@ import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types"
 import {
   buildBeltBlocks,
   buildCircuitGround,
+  loadBakeInputs,
   fromOverpass,
   SHORE_EDGE_MAX_M,
   WATER_CLEARANCE_M,
@@ -63,7 +64,7 @@ function trackToleranceM(cellM: number): number {
 /** A footprint corner this far under the ground is a box sunk into a hillside. */
 const BURIED_LIMIT_M = 1.5;
 /** Above the ground at all is floating, allowing for the quantisation step. */
-const FLOATING_LIMIT_M = 0.15;
+export const FLOATING_LIMIT_M = 0.15;
 /** Ground the corridor owns, matching the bake. */
 const TRACK_CLEARANCE_M = 8;
 /**
@@ -86,7 +87,7 @@ interface Check {
 }
 
 /** How far apart two belts may claim the ground is, where they share a point (I3). */
-const SEAM_TOLERANCE_M = 0.15;
+export const SEAM_TOLERANCE_M = 0.15;
 
 /** The raw step across a breakline that is a wall rather than ripple (I7). */
 const BREAKLINE_STEP_M = 2;
@@ -101,9 +102,9 @@ const BREAKLINE_STEP_M = 2;
  * keeps — the box filter alone manages 85%, and cutting the window at the line
  * overshoots past 100%, because the raster smeared the wall in the first place.
  */
-const RELIEF_KINK_M = 2;
-const RELIEF_SLOPE_DEG = 0.5;
-const RELIEF_STEP_KEPT = 0.95;
+export const RELIEF_KINK_M = 2;
+export const RELIEF_SLOPE_DEG = 0.5;
+export const RELIEF_STEP_KEPT = 0.95;
 
 /** Slope of a belt cell from its central differences, in degrees. */
 function slopeDeg(dEast: number, dSouth: number, cellM: number): number {
@@ -225,7 +226,7 @@ function checkTerrain(
   return { worst, sampled, shore, worstShore, seam, worstSeam };
 }
 
-interface Seam {
+export interface Seam {
   points: number;
   worstM: number;
   meanM: number;
@@ -240,7 +241,7 @@ interface Seam {
  * reports metres of trouble that nobody can see. Both indexes drop the skirts,
  * so what is left is the ground each belt claims at a point they share.
  */
-function checkSeams(
+export function checkSeams(
   belts: { belt: Belt; meshes: BakedMesh[] }[],
   tolerance: number,
 ): Seam {
@@ -285,7 +286,7 @@ function checkSeams(
   return seam;
 }
 
-interface Relief {
+export interface Relief {
   /** RMS of the second difference between neighbouring belt nodes, in metres. */
   kinkM: number;
   /** The same for the unfiltered field, sampled at the same nodes. */
@@ -305,7 +306,7 @@ interface Relief {
  * the mean slope does (the relief it must not flatten), and how much of a
  * surveyed wall's step survives (the edge it must not ramp).
  */
-function checkRelief(
+export function checkRelief(
   surface: Ground,
   field: HeightField,
   plane: ScenePlane,
@@ -432,7 +433,7 @@ function checkBuildings(
  * surface the browser draws. This measures the mesh that ships against the
  * terrain triangle beneath it.
  */
-interface Standing {
+export interface Standing {
   pieces: number;
   overWater: number;
   floating: number;
@@ -443,7 +444,7 @@ interface Standing {
   deepestDigM: number;
 }
 
-function checkStanding(
+export function checkStanding(
   meshes: BakedMesh[],
   names: string[],
   ground: GroundIndex,
@@ -525,7 +526,7 @@ function checkCoastline(water: WaterFile, field: HeightField): { agree: number; 
 
 async function audit(circuitId: string): Promise<Check[]> {
   // The same recipe the bake used, so a disagreement here is a real one.
-  const { coords, plane, field, corridor, tunnels } = await buildCircuitGround(circuitId);
+  const { coords, plane, field, corridor, tunnels } = buildCircuitGround(await loadBakeInputs(circuitId));
   const blocks = buildBeltBlocks(field, plane, corridor);
 
   const dir = join(ENVIRONMENTS, circuitId);

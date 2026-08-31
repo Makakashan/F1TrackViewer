@@ -32,7 +32,7 @@ rest are single-purpose modules it calls.
 
 | File | Owns |
 |---|---|
-| `bake.ts` | Orchestration. Marching-squares terrain, belts, shore skirts, buildings, roads, tunnel bore, GLB writing (`@gltf-transform` + meshopt). |
+| `bake.ts` | Orchestration. `loadBakeInputs` does the reading, `bakeFrom` the baking (D19). Marching-squares terrain, belts, shore skirts, buildings, roads, tunnel bore, GLB writing (`@gltf-transform` + meshopt). |
 | `circuit.ts` | Loads centreline coords + bbox for a circuit id. |
 | `plane.ts` | `scenePlaneFor()` — lon/lat ⇄ scene x/z. Every coordinate crosses here. |
 | `raster.ts` | IGN WMS float32 BIL fetch, nodata masking, flat-water marking, `openLand`, `despeckleLand`, downsample. |
@@ -48,8 +48,10 @@ rest are single-purpose modules it calls.
 | `belts.ts` | Detail belts: core 4 m ≤150 m, city 8 m ≤600 m, far 16 m. |
 | `ground.ts` | The one surface. Per-belt filtered nodes and triangle-exact height queries; everything that stands on the ground reads this, never the raw field. |
 | `breaklines.ts` | Surveyed cliffs, retaining walls, quays and breakwaters — the lines `ground.ts` may not average across (D18). |
+| `fixture.ts` | Cuts a window of a circuit's inputs out of the caches and reads it back as `BakeInputs`. `bun run env:fixture`; the slice is committed under `fixtures/`. |
 | `synthetic.ts` | Ground written by hand — a plane, a slope, a cut — built through the same `heightFieldFrom` the bake uses. Test material only. |
 | `ground.test.ts`, `breaklines.test.ts`, `baked-scene.test.ts` | Layer A of `scene-goals.md` §3: the invariants on that synthetic ground. `bun run test`. |
+| `bake.test.ts` | Layer B: the Monaco fixture through the real bake, judged with the audit's own checks. |
 | `baked-scene.ts` | Reads shipped GLBs back: belt meshes, a terrain index, and the welding that turns flat-shaded triangles into buildings again. |
 | `mesh.ts` | Shared mesh/vertex helpers. |
 | `ao.ts` | Baked ambient occlusion into COLOR_0. |
