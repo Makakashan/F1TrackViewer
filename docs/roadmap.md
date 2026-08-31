@@ -10,7 +10,7 @@ meets the ground, and without a check that reads the shipped GLB we would be
 comparing screenshots again. Each step is its own commit and is verifiable on its
 own.
 
-**Where it stands (2026-08-31).** Steps 1–9 are in, and the ground work is done. `env:audit mc-1929` is green on
+**Where it stands (2026-08-31).** Steps 1–10 are in. `env:audit mc-1929` is green on
 every check, the ground has one definition, one judge and three numbers saying the
 filter neither aliases nor flattens, and `bun run test` holds those properties on
 ground small enough to check by hand and over a committed slice of the real thing. What is left of the original complaint is a
@@ -231,6 +231,22 @@ stands vertical out of the water, the quay line is a wall with hulls against it,
 portal is a mouth in a cutting. Neither belt boundary shows a tear at any angle
 tried. Two things worth writing down came out of looking, and both are parked below
 rather than fixed here: the sea is a slab with an edge, and the bore is unlit.
+
+### 10. Terrain reads as rock — **done**
+
+Looking at step 9's frames is what found this: Le Rocher came out as poured wax and
+the buildings on it looked pressed into dough. Measured before it was believed — the
+drawn surface follows the DTM within a metre across the rim, the buildings there dig
+1.8 m at the median, and 79 OSM footprints are 15 pieces because terraces sharing a
+wall weld into one. Nothing was misplaced. What was wrong was that every terrain
+vertex carried one averaged normal, so a cliff edge shaded as a curve.
+
+`GridMesh.finish(creaseDeg)` now splits a corner whose faces disagree by more than
+25° (D20). Nothing moves and no triangle is added — only how many normals a corner
+may have. Monaco: 5.90 MB to 6.02 MB, triangle counts identical, every audit number
+unchanged. `mesh.test.ts` holds the two halves of it: a flat sheet keeps one vertex
+per node at any crease angle, and a 90° fold gets a flat side and a steep side that
+each keep their own normal.
 
 ---
 
