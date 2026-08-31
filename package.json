@@ -19,6 +19,7 @@
     "env:fixture": "bun scripts/env/fixture.ts",
     "env:field": "bun scripts/env/heightfield.ts",
     "env:preview": "bun scripts/env/preview.ts",
+    "env:shots": "bun scripts/env/shots.ts",
     "env:raster": "bun scripts/env/raster.ts",
     "environment:generate": "bun scripts/generate-environment.ts",
     "lint": "eslint .",
