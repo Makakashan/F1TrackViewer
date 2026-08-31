@@ -10,10 +10,10 @@ meets the ground, and without a check that reads the shipped GLB we would be
 comparing screenshots again. Each step is its own commit and is verifiable on its
 own.
 
-**Where it stands (2026-08-31).** Steps 1–7 are in. `env:audit mc-1929` is green on
+**Where it stands (2026-08-31).** Steps 1–8 are in. `env:audit mc-1929` is green on
 every check, the ground has one definition, one judge and three numbers saying the
 filter neither aliases nor flattens, and `bun run test` holds those properties on
-ground small enough to check by hand. What is left of the original complaint is a
+ground small enough to check by hand and over a committed slice of the real thing. What is left of the original complaint is a
 matter for the eye, which is step 9.
 
 ---
@@ -177,12 +177,41 @@ What they hold:
 Two mutations were run to check the suite is not decorative: making `at()` read the
 wrong triangle fails I1, and disabling the breakline path fails five tests.
 
-### 8. Test B — the Monaco fixture — **next**
+### 8. Test B — the Monaco fixture — **done**
 
-A committed slice: ~200 × 200 field nodes (~160 KB) and about fifty footprints, run
-through the real pipeline in seconds. Catches what only real data expresses.
+`scripts/env/fixtures/monaco-harbour`, 428 KB committed: 200 × 200 DTM nodes over
+Port Hercule and the same window of MNH, with the ways that fall inside it — 116
+footprints, 46 structures, 32 shore ways, 9 breaklines, 130 green ways. Cut from the
+caches by `bun run env:fixture`, read back by `loadFixture`, baked in 0.5 s.
 
-### 9. The fixed shots
+It goes through the pipeline rather than past it. `bakeCircuit` was a fetch and a
+pipeline in one function, so nothing could run over data that had not come off the
+network; it is now `loadBakeInputs` — every read, in one place — and `bakeFrom`,
+which takes them and bakes, with an out directory a caller may point at a temp dir.
+Monaco rebakes byte for byte identical after the split, which is what says the
+refactor changed nothing.
+
+The judging is the audit's own: `checkStanding`, `checkSeams` and `checkRelief` are
+exported and called from the test over the GLB the fixture just wrote, so a number
+here and a number `env:audit` prints are one measurement rather than two opinions.
+What the window holds: no floater of 38 pieces, deepest wall dig 22 m; 172 shared
+seam points, worst 0.05 m, none over the 0.15 m limit; kink 1.46 m against the
+field's 2.00 m, slope 10.30° against 10.51°, 110% of the step kept over 14 edges;
+`COLOR_0` never below the 0.45 AO floor; and the same inputs write the same GLB
+bytes twice, which is **I12** turned from planned into passing.
+
+Two mutations, to show it bites: place buildings from the height field instead of
+the drawn surface — the bug this whole document exists for — and I2 reports a
+floater; switch the breakline path off and I7's step check falls under 95%.
+
+The centreline stays whole in the fixture rather than being cropped: the corridor is
+a closed loop, and half a loop would close itself across the window and lay a road
+through it. Two things the window does not cover, and they are named in the test
+file: the city/far boundary, because it sits inside 600 m of the centreline and the
+far belt ships only water there, and the asset kit, which is left empty so a
+checkout without `bun run assets:fetch` gets the same answer as one with it.
+
+### 9. The fixed shots — **next**
 
 The eight cameras in [`scene-goals.md`](scene-goals.md) §4, snapped after a bake via
 `env:preview`'s `?shot=` and looked at by a person. No pixel diff.
