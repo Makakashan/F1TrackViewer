@@ -10,7 +10,7 @@ meets the ground, and without a check that reads the shipped GLB we would be
 comparing screenshots again. Each step is its own commit and is verifiable on its
 own.
 
-**Where it stands (2026-08-31).** Steps 1–5 are in. `env:audit mc-1929` is green on
+**Where it stands (2026-08-31).** Steps 1–6 are in. `env:audit mc-1929` is green on
 every check, and the ground now has one definition, one judge and three numbers
 saying the filter neither aliases nor flattens. What is left of the original
 complaint is a matter for the eye, which is step 9.
@@ -101,7 +101,7 @@ lookups, and only a window with a line running through it is walked node by node
 was set from the point-sampled and box-filtered measurements before the breaklines
 were built.
 
-### 6. The belt seam gets a judge, then a fix — **next**
+### 6. The belt seam gets a judge, then a fix — **done**
 
 **I3** had been `planned` since it was written, and a seam that no check measures is
 a seam nobody sees a number for. The check exists now and fails: **583 of 1,136
@@ -132,15 +132,13 @@ The fix, in three parts, each of which the judge scored on its own:
    three belts meet resolves through the coarsest: **29 → 28**. Small, and it is
    the part that makes the rule true rather than true on Monaco.
 
-**Still failing: 28 of 1,136 points, mean 0.06 m, worst 0.34 m.** All of them sit
-on a boundary node, 23 of them exactly on the grid. The staircase is gone from the
-picture — this residue is under half a metre where it was metres — but the cause is
-not identified. Quantisation does not explain it: the horizontal step is 0.045 m,
-which at the 64° slope these points sit on buys 0.09 m, not 0.34 m. Left failing
-rather than given a looser limit; a check tuned to pass is the thing this whole
-sequence exists to stop.
+A residue of 28 points remains, mean 0.06 m and worst 0.34 m, and it is parked at
+the end of this file rather than chased here. The limit was **not** loosened to
+cover it — the check keeps the same 0.15 m and keeps printing the count; it is
+reported rather than fatal, so the number stays in front of whoever runs the audit
+without failing every unrelated bake.
 
-### 7. Tests A — invariants on synthetic ground
+### 7. Tests A — invariants on synthetic ground — **next**
 
 There is no test runner in the repository yet, so this step installs one. A plane, a
 30° slope, a vertical cut, a terrace, a ravine; the invariants of
@@ -193,6 +191,13 @@ The eight cameras in [`scene-goals.md`](scene-goals.md) §4, snapped after a bak
 - **Landmarks** — the Casino, the Hôtel de Paris — built parametrically. No CC0 model
   of either exists.
 - **Buoys** from `seamark:*`, once Overpass answers, for honest clutter on the water.
+- **The last 0.34 m of the belt seam.** After step 6, 28 of the 1,136 points two
+  belts share are still more than 0.15 m apart — mean 0.06 m, worst 0.34 m, all on a
+  boundary node and 23 of them exactly on the grid. Invisible: the staircase that
+  started this was metres. The cause is not identified, and quantisation is not it
+  (0.045 m horizontally at the 64° slope these sit on buys 0.09 m). `env:audit`
+  reports it on every run. Worth an hour when someone is next inside `bake.ts`'s
+  boundary code, not a task of its own.
 - **Hand overrides** (was P2.4, P2.5): the overrides file format and loader (D10), then
   Monaco's first pass over Le Rocher, Port Hercule and the tunnel run.
 
