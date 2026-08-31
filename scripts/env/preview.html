@@ -70,8 +70,13 @@
 
       await Promise.all(belts.map((belt) => new Promise((resolve, reject) => {
         loader.load(`/public/environments/${circuit}/${belt}.glb`, (gltf) => {
+          const only = (params.get("only") ?? "").split(",").filter(Boolean);
+          const drop = [];
           gltf.scene.traverse((node) => {
             if (!node.isMesh) return;
+            // ?only=portal,tunnel — one kind of mesh at a time, which is how a
+            // question about the portal stops being a question about the hill.
+            if (only.length && !only.includes(node.name)) { drop.push(node); return; }
             draws++;
             triangles += node.geometry.index.count / 3;
             node.material.flatShading = false;
@@ -84,6 +89,7 @@
               });
             }
           });
+          for (const node of drop) node.removeFromParent();
           scene.add(gltf.scene);
           resolve();
         }, undefined, reject);
