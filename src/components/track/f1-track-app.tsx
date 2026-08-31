@@ -85,7 +85,7 @@ export default function F1TrackApp({
     useState<StartFinishPlacement | null>(null);
   const [footerExpanded, setFooterExpanded] = useState(false);
   const [footerDismissed, setFooterDismissed] = useState(true);
-  const { markers, widthProfile, environmentBundle, environmentAvailable } =
+  const { markers, widthProfile, environmentBundle, environmentAvailable, cityManifest } =
     useCircuitScene(selectedId, environmentEnabled);
 
   useEffect(() => {
@@ -254,6 +254,7 @@ export default function F1TrackApp({
               environmentBundle={
                 terrainModeActive ? environmentBundle ?? null : null
               }
+            cityManifest={cityManifest ?? null}
               environmentTerrain={environmentTerrain}
               widthProfile={widthProfile ?? null}
               realWidthEnabled={realWidthEnabled}

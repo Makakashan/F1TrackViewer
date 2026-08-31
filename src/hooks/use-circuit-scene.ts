@@ -3,6 +3,8 @@ import type { TrackMarkers } from "@/lib/track/track-markers";
 import { fetchTrackMarkers } from "@/lib/track/track-markers";
 import type { EnvironmentBundle } from "@/lib/env/environment-types";
 import { fetchEnvironmentBundle, hasEnvironment } from "@/lib/env/environment-loader";
+import type { CityManifest } from "@/lib/env/city-loader";
+import { fetchCityManifest } from "@/lib/env/city-loader";
 import type { TrackWidthProfile } from "@/lib/track/track-width";
 import { fetchTrackWidthProfile } from "@/lib/track/track-width";
 
@@ -12,6 +14,8 @@ export interface CircuitScene {
   widthProfile: TrackWidthProfile | null | undefined;
   environmentBundle: EnvironmentBundle | null | undefined;
   environmentAvailable: boolean | undefined;
+  /** Present when the circuit has a baked city; it replaces the diorama (D17). */
+  cityManifest: CityManifest | null | undefined;
 }
 
 export function useCircuitScene(
@@ -28,6 +32,25 @@ export function useCircuitScene(
   const [environmentAvailable, setEnvironmentAvailable] = useState<
     boolean | undefined
   >(undefined);
+  const [cityManifest, setCityManifest] = useState<CityManifest | null | undefined>(
+    undefined,
+  );
+
+  useEffect(() => {
+    if (!circuitId) {
+      const timer = window.setTimeout(() => setCityManifest(null), 0);
+      return () => window.clearTimeout(timer);
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => setCityManifest(undefined), 0);
+    fetchCityManifest(circuitId).then((manifest) => {
+      if (!cancelled) setCityManifest(manifest);
+    });
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [circuitId]);
 
   useEffect(() => {
     if (!circuitId) {
@@ -61,6 +84,11 @@ export function useCircuitScene(
 
   // Manifest-only check (~1 KB).
   useEffect(() => {
+    // A baked city makes the diorama's 2 MB of JSON dead weight (D17).
+    if (cityManifest) {
+      const timer = window.setTimeout(() => setEnvironmentAvailable(false), 0);
+      return () => window.clearTimeout(timer);
+    }
     if (!circuitId) {
       const timer = window.setTimeout(() => setEnvironmentAvailable(undefined), 0);
       return () => window.clearTimeout(timer);
@@ -74,10 +102,10 @@ export function useCircuitScene(
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [circuitId]);
+  }, [cityManifest, circuitId]);
 
   useEffect(() => {
-    if (!circuitId || !environmentEnabled) {
+    if (!circuitId || !environmentEnabled || cityManifest) {
       const timer = window.setTimeout(() => setEnvironmentBundle(undefined), 0);
       return () => window.clearTimeout(timer);
     }
@@ -90,7 +118,7 @@ export function useCircuitScene(
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [circuitId, environmentEnabled]);
+  }, [cityManifest, circuitId, environmentEnabled]);
 
-  return { markers, widthProfile, environmentBundle, environmentAvailable };
+  return { markers, widthProfile, environmentBundle, environmentAvailable, cityManifest };
 }

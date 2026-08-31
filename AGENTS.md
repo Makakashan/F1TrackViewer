@@ -69,14 +69,26 @@ thrown away later.
 - Subject: lowercase `feat|fix|refactor|docs|test:` followed by what the change makes
   true — `fix: roads lie on the terrain instead of hovering over it`.
 - No `Co-Authored-By` trailer and no AI attribution anywhere in a commit or PR.
-- Work on a branch off `main`.
+- **Branches.** `main` is what is deployed — nothing lands there except a release the
+  user calls. `dev` is where work accumulates. A feature branches off `dev` and merges
+  back into `dev` with `--no-ff`, so the feature reads as one block in the history.
+- **Stop at the end of a feature.** When the branch is finished, say so and wait: the
+  user looks at it first. Push and merge only after they say it is fine, and never
+  merge into `main` on your own.
 - Commit and push only when asked to. Finished work waits in the working tree until
   the user says to commit it.
+- **Gap days.** Before committing, compare today with the date of the last commit
+  (`git log -1 --format=%ad --date=short`). If any day in between carries no commit,
+  ask the user whether to backdate commits into those days and how many per day —
+  never decide it yourself. When they say yes, set both `GIT_AUTHOR_DATE` and
+  `GIT_COMMITTER_DATE`, and split the work finely enough that the count is real
+  rather than three commits wearing ten dates.
 
 ## Done means
 
 - `bun run typecheck` and `bun run lint` are clean.
 - The audit for what you touched has run: `bun run race:kerbs` for corner detection
   and kerbs, `bun run race:gaps` for timing-tower gaps, `bun run race:audit` for the
-  field over a full race, `bun run race:laptimes` for the speed model.
+  field over a full race, `bun run race:laptimes` for the speed model,
+  `bun run env:audit <circuitId>` for a baked city.
 - You say which of those you ran and what they reported.

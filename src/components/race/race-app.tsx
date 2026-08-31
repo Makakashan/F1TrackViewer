@@ -65,7 +65,7 @@ export default function RaceApp() {
     selectedId,
     setError,
   );
-  const { markers, widthProfile, environmentBundle, environmentAvailable } =
+  const { markers, widthProfile, environmentBundle, environmentAvailable, cityManifest } =
     useCircuitScene(selectedId, environmentEnabled);
 
   const [gridNonce, setGridNonce] = useState(0);
@@ -303,6 +303,7 @@ export default function RaceApp() {
             viewMode="realistic"
             markers={markers}
             environmentBundle={terrainModeActive ? environmentBundle ?? null : null}
+            cityManifest={cityManifest ?? null}
             environmentTerrain={environmentTerrain}
             widthProfile={widthProfile ?? null}
             realWidthEnabled={realWidthEnabled}
