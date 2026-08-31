@@ -10,7 +10,7 @@ meets the ground, and without a check that reads the shipped GLB we would be
 comparing screenshots again. Each step is its own commit and is verifiable on its
 own.
 
-**Where it stands (2026-08-31).** Steps 1–8 are in. `env:audit mc-1929` is green on
+**Where it stands (2026-08-31).** Steps 1–9 are in, and the ground work is done. `env:audit mc-1929` is green on
 every check, the ground has one definition, one judge and three numbers saying the
 filter neither aliases nor flattens, and `bun run test` holds those properties on
 ground small enough to check by hand and over a committed slice of the real thing. What is left of the original complaint is a
@@ -211,14 +211,40 @@ file: the city/far boundary, because it sits inside 600 m of the centreline and 
 far belt ships only water there, and the asset kit, which is left empty so a
 checkout without `bun run assets:fetch` gets the same answer as one with it.
 
-### 9. The fixed shots — **next**
+### 9. The fixed shots — **done**
 
-The eight cameras in [`scene-goals.md`](scene-goals.md) §4, snapped after a bake via
-`env:preview`'s `?shot=` and looked at by a person. No pixel diff.
+`bun run env:shots` — the eight cameras of [`scene-goals.md`](scene-goals.md) §4 as
+data in `scripts/env/shots.ts`, taken by headless Chromium over the preview page and
+written to `images/<circuitId>-<shot>.png`. It borrows a preview server if one is
+already up and starts its own if not. No pixel diff: every bake moves every vertex,
+so the frames are for a person.
+
+`?shot=` already wrote a PNG; what was missing was the eight cameras. Three of them
+are placed from the geometry rather than by eye — the tunnel shot stands off the
+bore's own end, and the ravine and both seam shots sit on the steepest ground their
+boundary crosses, found by walking the drawn surface. The rest were framed by taking
+the frame and looking at it, which took three rounds.
+
+**What the eight show.** The complaint that started all of this is answered: the
+hillside reads as terraces and streets rather than as a smear, Le Rocher's face
+stands vertical out of the water, the quay line is a wall with hulls against it, the
+portal is a mouth in a cutting. Neither belt boundary shows a tear at any angle
+tried. Two things worth writing down came out of looking, and both are parked below
+rather than fixed here: the sea is a slab with an edge, and the bore is unlit.
 
 ---
 
 ## Parked — Monaco, after the ground work
+
+- **The sea has an edge.** The far belt's water is one quad over the bbox, so in a
+  wide shot from the north-west the sky shows past a straight diagonal where it
+  stops (`images/mc-1929-seam-city-far.png`). Nothing is wrong with the geometry —
+  the bbox ends — but the eye reads a slab. A skirt, a fog band or simply a larger
+  quad would answer it; which one is a look decision.
+- **The bore is unlit.** The tunnel reads as a black hole from the portal
+  (`images/mc-1929-tunnel-mouth.png`). Correct, in that nothing lights it, and wrong
+  in that a real one has a lit road in it. A dim emissive on the bore's inner face
+  would cost nothing per frame.
 
 - **Kit houses have never been looked at.** 75 modelled on the current bake, 92,406
   triangles, inside budget; 1,976 footprints fit the shape and 369 had no model at
