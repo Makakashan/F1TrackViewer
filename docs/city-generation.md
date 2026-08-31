@@ -12,7 +12,7 @@ do not let the code and this file disagree in silence.
 
 Three companions carry the rest. What the scene has to look like, and the invariants
 that decide it: [`scene-goals.md`](scene-goals.md). What is planned next:
-[`roadmap.md`](roadmap.md). What was already built, phase by phase:
+[`roadmap.md`](roadmap.md); what was already built is in `history/`. Phase by phase:
 [`history/city-generation-p0-p4.md`](history/city-generation-p0-p4.md).
 
 ---
@@ -122,7 +122,8 @@ scene can draw.
 | **D16** | Props whose absence reads as a bug — barriers, fences, grandstands, tunnel portals — ship in the core belt, instanced, one draw call per type. Trees and yachts follow via D10 props. | Detail without spending the draw-call budget. |
 | **D18** | A belt coarser than the field averages it, and the average stops at a **breakline** — a line OSM surveyed as a cliff, a retaining wall, a quay or a breakwater. Soft edge-preserving kernels were measured first and rejected: at equal kink, a bilateral against the local mean keeps exactly the fraction of the step a plain box keeps, because the DTM already smears a wall across the width of the filter window. | The one thing that separates a wall from a metre of ripple is knowing where the wall is, and that is surveyed data rather than a cleverer average. Off a line, the summed-area tables answer as before and the bake pays nothing. |
 | **D19** | The bake reads its inputs in one place (`loadBakeInputs`) and bakes from them (`bakeFrom`), so a committed fixture goes through the same pipeline a circuit does. | Layer B of the test plan is the real bake over 200 × 200 nodes of Monaco in under a second, not a second implementation of it that could drift. |
-| **D20** | Terrain normals are split where two faces disagree by more than 25°. Below that a hillside still shades as one surface; above it a cliff top, a quay and a terrace riser keep their edge. | A belt at 8 or 16 m with fully averaged normals reads as poured wax — the cliff face and the ground over it share a corner whose normal points at neither. Costs 1–4% more vertices and no triangles: Monaco went 5.90 to 6.02 MB. |
+| **D20** | Terrain normals are split where two faces disagree by more than 15°. Below that a hillside still shades as one surface; above it a cliff top, a quay and a terrace riser keep their edge. | A belt at 8 or 16 m with fully averaged normals reads as poured wax — the cliff face and the ground over it share a corner whose normal points at neither. Costs no triangles and a few per cent more vertices: Monaco went 5.90 to 6.16 MB. The angle was chosen by looking — 25° still left Le Rocher as drapery, 10° was not visibly better than 15°. |
+| **D21** | The pit a portal cuts is walled along its own rim — every edge where a dropped cell meets a built one — rather than closed by a rectangle sized from the void's own numbers. The sleeve carries an outer skin as well as an inner one. | A cell is dropped by its centre, so the hole runs up to half a cell past the nominal width and follows the belt's lattice; the rectangle was two metres narrow and daylight showed either side of the arch. And a tube whose faces all point inward is invisible from outside: the camera looks through the near wall at the lit far one and the opening reads as a film over the cutting. An emissive bore was tried for the same complaint and taken out — on a near-black base it came out olive and made the film worse. |
 | **D17** | Both paths live side by side while circuits migrate: a baked GLB is used when present, otherwise the old runtime path. The last migrated circuit deletes `environment-layer.tsx`. | A safety net with a written termination condition, so the dead branch actually dies. |
 
 ---

@@ -102,7 +102,8 @@ docs/
   architecture.md            how the app runs
   project-map.md             where things live, by symptom
   scene-goals.md             what the baked scene must be, and its invariants
-  roadmap.md                 what is next
+  roadmap.md                 what is next, in priority order
+  history/                   what already happened: P0–P4, and the ground work
   city-generation.md         why the bake is shaped this way (D1-D17)
   history/                   what was already built, phase by phase
 ```
