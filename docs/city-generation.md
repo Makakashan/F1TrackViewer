@@ -12,7 +12,7 @@ do not let the code and this file disagree in silence.
 
 Three companions carry the rest. What the scene has to look like, and the invariants
 that decide it: [`scene-goals.md`](scene-goals.md). What is planned next:
-[`roadmap.md`](roadmap.md). What was already built, phase by phase:
+[`roadmap.md`](roadmap.md); what was already built is in `history/`. Phase by phase:
 [`history/city-generation-p0-p4.md`](history/city-generation-p0-p4.md).
 
 ---

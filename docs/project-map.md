@@ -5,7 +5,7 @@ given symptom.
 
 Its companions, one question each: [`architecture.md`](architecture.md) — how the app
 runs. [`scene-goals.md`](scene-goals.md) — what the baked scene has to be, and the
-invariants that decide it. [`roadmap.md`](roadmap.md) — what is next.
+invariants that decide it. [`roadmap.md`](roadmap.md) — what is next, in the order it is worth doing; `history/` — what already happened.
 [`city-generation.md`](city-generation.md) — why the pipeline is shaped this way
 (D1–D17). [`history/city-generation-p0-p4.md`](history/city-generation-p0-p4.md) —
 what was already built.
