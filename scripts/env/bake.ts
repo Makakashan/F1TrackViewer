@@ -464,6 +464,13 @@ function straddlesWater(
  * rather than the grid (P4.0), because a grid edge is a staircase and no cell
  * size makes it not one.
  */
+/**
+ * How far two terrain faces may disagree before the corner they share stops
+ * being one surface. Below it the hillside shades smoothly; above it — a cliff
+ * top, a quay, a terrace riser — the edge stays an edge.
+ */
+const TERRAIN_CREASE_DEG = 25;
+
 function bakeTerrain(
   field: HeightField,
   ground: Ground,
@@ -769,7 +776,7 @@ function bakeTerrain(
       }
     }
 
-    const mesh = grid.finish();
+    const mesh = grid.finish(TERRAIN_CREASE_DEG);
     addTerrainSkirts(mesh, scalarAt, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
     addShoreSkirts(mesh, shoreEdges);
     meshes[belt] = mesh;
