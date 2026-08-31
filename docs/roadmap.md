@@ -39,7 +39,41 @@ bake work and is a style call as much as a bug.
 This is first because it is the only thing left that spoils the scene in the app
 rather than in a screenshot of it.
 
-### 1.2 The tunnel mouth, properly
+### 1.2 The diorama has no body
+
+Turn the camera down towards the horizon and the illusion goes: there is no rock
+under the landscape, only a sheet with a landscape printed on it. The terrain runs
+from −3 m to 452 m and its outer edge drops by `SKIRT_M` — three metres — and stops.
+No sides, no bottom. The water is the other half of the same complaint: one quad over
+the bbox, so in a wide shot from the north-west the sky shows past a straight diagonal
+where it ends (`images/mc-1929-seam-city-far.png`).
+
+The answer is a plinth. The far belt's outer rim goes down to a common base instead of
+three metres, the base is capped, and the sides are painted as rock rather than as the
+ground's own colour — a cut block of earth with a city on top, which is what a diorama
+is. Measured: the bbox is 2,736 × 2,974 m, so the rim is 11,420 m and at the far
+belt's 16 m cell that is 714 quads — **1,428 triangles** and two more for the floor.
+The far belt is at 88,969 of 120,000 and 1.51 MB of 2 MB, so it costs nothing worth
+counting.
+
+Three calls, in the order they matter:
+
+- **How deep.** A flat floor at a fixed level — around −60 m reads as a block without
+  turning the model into a column — or the lowest ground less a margin.
+- **What the cut looks like.** The sides and floor want their own material. Left the
+  terrain's colour, the cut reads as paper again.
+- **Where the water stops.** Clipping the quad to the plinth's own outline closes the
+  sea's edge with the same move, instead of leaving two edges to explain.
+
+The alternative is to stop the camera before the angle that shows it — `track-viewer.tsx:240`
+allows `maxPolarAngle = π / 2 − 0.02`, which is as good as level. That is cheaper and
+it treats the symptom; it also belongs to 2.4 either way.
+
+Worth doing early despite being cosmetic: it is cheap, it is the same "rotate and it
+breaks" family as the light rig, and a ninth fixed shot from a low angle is what
+proves it.
+
+### 1.3 The tunnel mouth, properly
 
 Step 11 closed the pit and gave the sleeve an outside, so it is a mouth rather than a
 hole with a film over it. It is still a bare concrete ring standing in bare ground.
@@ -54,7 +88,7 @@ One pass over `bakePortals` and `bakeTunnelBody` in `bake.ts`, judged from the
 `tunnel-mouth` shot and from the same camera at the western portal, which the eight
 do not cover.
 
-### 1.3 Kit houses, looked at
+### 1.4 Kit houses, looked at
 
 75 modelled on the current bake, 92,406 triangles, inside budget; 1,976 footprints fit
 the shape and 369 had no model at their proportion. The numbers are plausible and
@@ -63,14 +97,6 @@ would be a fitting complaint.
 
 Cheap and worth doing here: it is a camera and an hour, and it decides whether the
 modelled-asset direction needs more models or better fitting.
-
-### 1.4 The sea's edge
-
-The far belt's water is one quad over the bbox, so in a wide shot from the north-west
-the sky shows past a straight diagonal where it stops
-(`images/mc-1929-seam-city-far.png`). Nothing is wrong with the geometry — the bbox
-ends — but the eye reads a slab. A skirt, a fog band or simply a larger quad would
-answer it; which one is a look decision.
 
 ---
 
@@ -97,7 +123,8 @@ only a person looking at the city can decide.
 ### 2.4 Camera distance limits
 
 The polar-angle floor is set; the distance limits are deliberately still open and
-want their own pass.
+want their own pass. 1.2 is the other half of it: how low the camera may go decides
+how much of the model's underside has to exist.
 
 ---
 
