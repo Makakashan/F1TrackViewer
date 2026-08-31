@@ -53,6 +53,7 @@ bun run dev     # http://localhost:4000
 | `bun run build` | Production build |
 | `bun run build:pages` | Static export for GitHub Pages |
 | `bun run lint` | ESLint |
+| `bun run test` | Invariant tests on synthetic ground — no network, milliseconds |
 | `bun run elevations:generate` | Static elevation profiles |
 | `bun run widths:generate` | TUMFTM real-width profiles |
 | `bun run environment:generate` | Diorama bundles (terrain, buildings, water, roads) |
