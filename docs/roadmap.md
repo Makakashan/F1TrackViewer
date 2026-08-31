@@ -242,8 +242,9 @@ wall weld into one. Nothing was misplaced. What was wrong was that every terrain
 vertex carried one averaged normal, so a cliff edge shaded as a curve.
 
 `GridMesh.finish(creaseDeg)` now splits a corner whose faces disagree by more than
-25° (D20). Nothing moves and no triangle is added — only how many normals a corner
-may have. Monaco: 5.90 MB to 6.02 MB, triangle counts identical, every audit number
+15° (D20). The angle was settled by looking: at 25° the rock still read as drapery,
+at 10° nothing visibly improved over 15° and the core belt cost another 0.07 MB. Nothing moves and no triangle is added — only how many normals a corner
+may have. Monaco: 5.90 MB to 6.16 MB, triangle counts identical, every audit number
 unchanged. `mesh.test.ts` holds the two halves of it: a flat sheet keeps one vertex
 per node at any crease angle, and a 90° fold gets a flat side and a steep side that
 each keep their own normal.
@@ -268,8 +269,14 @@ The old side walls, which stood at a guessed ±12 m and were mostly inside the h
 came out — checked by rebaking without them and looking, not by reading. Cost: 48
 triangles on the core belt, 1.12 MB unchanged to two decimals.
 
-The bore also carries a dim warm emissive now, because nothing in the scene lights
-the inside of a tunnel and black is not the same as dark.
+The mouth then read as a film rather than a hole, because every face of the sleeve
+pointed inward: from outside the camera looked straight through the near wall at the
+lit far one. `?sides=double` in the preview is what settled that — the arch came back
+solid the moment culling was off. The tube now carries a second skin 0.8 m out, wound
+the other way and joined by an annulus at the front, so what stands in the cutting is
+a length of concrete with a dark hole in it. A dim emissive on the bore was tried
+first for the same complaint and taken out: on a near-black base it came out olive
+and made the film worse.
 
 ---
 
