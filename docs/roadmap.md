@@ -10,10 +10,10 @@ meets the ground, and without a check that reads the shipped GLB we would be
 comparing screenshots again. Each step is its own commit and is verifiable on its
 own.
 
-**Where it stands (2026-08-30).** Steps 1–4 are in. `env:audit mc-1929` is green on
-every check: 0 floating of 1,259 pieces, terrain within 0.40 m of the surface it
-meshes, 5.90 MB over three belts, all inside budget. What is left of the original
-complaint is the look of the hillside, which is step 5.
+**Where it stands (2026-08-31).** Steps 1–5 are in. `env:audit mc-1929` is green on
+every check, and the ground now has one definition, one judge and three numbers
+saying the filter neither aliases nor flattens. What is left of the original
+complaint is a matter for the eye, which is step 9.
 
 ---
 
@@ -67,25 +67,58 @@ ends up in the air; this leaves one.
 Walls also gained vertices where the ground under an edge strays from the line
 between its corners, which is what a footprint bridging a gully needs.
 
-### 5. The edge-preserving filter — **next**
+### 5. The filter stops at surveyed lines — **done**
 
-Step 3 landed a box filter, which is the right shape of fix and the wrong kernel: it
-cannot tell a 6 m quay wall from a metre of ripple, so it softens both. On the
-hillside shots the ravine's edge now reads blurred rather than sooty. That is the
-trade the box filter makes, and it is why this step exists.
+Step 3's box filter is the right shape of fix and it has one blind spot: it cannot
+tell a 6 m quay wall from a metre of ripple, so it softens both. Measured on the
+city belt, it keeps 85% of the step across a surveyed cliff or retaining wall — a
+10 m drop arrives a metre and a half short on each side.
 
-Bilateral over the field — spatial radius ~2 cells, height threshold ~1.5 m — so a
-mapped quay's 3–8 m step survives untouched and the ±1 m ripple does not. It replaces
-the kernel inside `windowMean` (`scripts/env/ground.ts`); nothing outside that
-function has to know.
+The plan was an edge-preserving kernel. **It was measured first and it does not
+work.** Bilateral weighted against the raw centre keeps the centre's own noise and
+filters nothing (kink 2.36 m, the same as no filter at all). Weighted against the
+local mean it lands on the box filter's own noise-against-edges curve: on the far
+belt, `box r2` gives kink 2.89 m and keeps 85% of the step, `guided r3 t4` gives
+2.86 m and keeps 85% — the same point, reached the long way. A least-squares plane
+read at the centre of a symmetric window *is* the mean, and measures as it. The
+reason is in the data: the IGN DTM smears a wall over two or three of its own
+3.9 m cells, and the filter window is two or three cells wide, so there is no
+height gap left for a range weight to find.
 
-Acceptance is **I7**'s three numbers, fixed before the change rather than after it:
-kink RMS at the 8 m belt ≤ 2.6 m, mean slope within 0.5° of 16.6°, and the step across
-any mapped quay or retaining wall within 0.3 m of the raw field. The third needs the
-second layer — `natural=cliff`, `barrier=retaining_wall`, `man_made=quay` and the
-coastline as lines the filter may not cross — which needs Overpass to answer.
+What works is knowing where the wall is. `scripts/env/breaklines.ts` indexes the
+lines OSM surveyed — `natural=cliff` and `barrier=retaining_wall` from their own
+query, quays and breakwaters out of the shore layer already cached — and
+`windowMean` refuses to average across one. Each side of a wall is then averaged
+against itself. On the shipped bake the step comes back to 118% of what the raw
+field shows — past 100%, because the raster smeared the wall in the first place —
+the mean slope holds at 16.76° against the field's own 16.88°, and the kink is
+1.73 m against the field's 2.04 m. All three are `env:audit` checks now.
 
-### 6. Tests A — invariants on synthetic ground
+Cost is nothing away from a wall: the summed-area tables still answer in four
+lookups, and only a window with a line running through it is walked node by node.
+
+**I7** now has three numbers in `env:audit` rather than a plan, and its ceiling
+was set from the point-sampled and box-filtered measurements before the breaklines
+were built.
+
+### 6. The belt seam gets a judge, then a fix — **next**
+
+**I3** has been `planned` since it was written, and a seam that no check measures is
+a seam nobody sees a number for. Measured now, over the shipped GLBs: where `core`
+and `city` overlap in plan, 5,690 vertices disagree about the height by 1.56 m on
+average and 2,432 of them by more than 2 m; the worst is 14.59 m, at x −480 z 657.
+It shows on screen as a staircase along the boundary with the background visible
+through it. The disagreement is old — the same measurement on the previous bake
+gives 1.52 m and 2,415 — but step 5 made that one worst spot worse, from 9.21 m,
+because a surveyed wall runs along the seam there and the two belts break it in
+different places.
+
+The judge first, as in step 2: `env:audit` gets a real I3 check over the overlap
+band, watched fail on those 2,432 vertices, and only then the conform pass in
+`bake.ts` is changed. A finer belt's edge has to land on the coarser belt's chord —
+including where a breakline cuts one of them and not the other.
+
+### 7. Tests A — invariants on synthetic ground
 
 There is no test runner in the repository yet, so this step installs one. A plane, a
 30° slope, a vertical cut, a terrace, a ravine; the invariants of
@@ -97,12 +130,12 @@ rule**: pieces that overlap in plan and meet in height are welded into one build
 which is loose enough to miss a slab hanging beside a tower at the tower's own
 height. A synthetic scene is the only cheap way to pin either.
 
-### 7. Test B — the Monaco fixture
+### 8. Test B — the Monaco fixture
 
 A committed slice: ~200 × 200 field nodes (~160 KB) and about fifty footprints, run
 through the real pipeline in seconds. Catches what only real data expresses.
 
-### 8. The fixed shots
+### 9. The fixed shots
 
 The eight cameras in [`scene-goals.md`](scene-goals.md) §4, snapped after a bake via
 `env:preview`'s `?shot=` and looked at by a person. No pixel diff.
@@ -122,9 +155,19 @@ The eight cameras in [`scene-goals.md`](scene-goals.md) §4, snapped after a bak
 - **No pool.** The Stade Nautique and the pitches need one successful Overpass answer;
   all three endpoints have been down for days. `OVERPASS_OFFLINE=1` bakes from cache
   meanwhile.
-- **The red rim light.** `track-viewer.tsx:186` throws a `#E10600` directional at 0.55
-  from behind the scene, pinking whatever faces away from the camera. Predates the
-  bake work; a style call, not a bug. Decide whether it stays.
+- **The scene goes black when it is turned round.** Rotate to look at the city from
+  the north — the side away from the key light — and the hill reads as an unlit
+  silhouette with a red patch over Port Hercule. Seen in the app, not the preview,
+  so it is lighting rather than geometry. The lights are all in
+  `track-viewer.tsx:169–189`: `ambientLight` 0.42, a `hemisphereLight` whose ground
+  colour is `#07080C` (all but black), a key directional at `[500, 800, 400]`, a blue
+  fill at `[-400, 300, -500]` 0.5, and the `#E10600` at `[0, 260, -900]` 0.55 that
+  paints the red patch. Baked AO and slope shading multiply on top, and their floor
+  is 0.278. Which of those is doing it is unmeasured; the fix is one pass over the
+  rig, judged from `scene-goals.md` §4's cameras with the scene turned.
+- **The red rim light.** The `#E10600` directional above. Predates the bake work; a
+  style call as much as a bug, and probably answered by the same pass. Decide whether
+  it stays.
 - **Landmarks** — the Casino, the Hôtel de Paris — built parametrically. No CC0 model
   of either exists.
 - **Buoys** from `seamark:*`, once Overpass answers, for honest clutter on the water.

@@ -42,10 +42,13 @@ rest are single-purpose modules it calls.
 | `shore.ts` | Quay/seawall geometry. |
 | `piers.ts` | Piers, breakwaters, groynes. |
 | `tunnels.ts` | Tunnel mask; bore + portals + buried-span fractions come out of `bake.ts`. |
-| `overpass.ts` | All OSM queries (buildings, coastline, structures). |
+| `overpass.ts` | All OSM queries (buildings, coastline, structures, breaklines). |
 | `building-heights.ts` | MNH raster → per-building height. |
 | `roofs.ts` | Roof kind planning + geometry. Winding matters — flat caps face **up**. |
 | `belts.ts` | Detail belts: core 4 m ≤150 m, city 8 m ≤600 m, far 16 m. |
+| `ground.ts` | The one surface. Per-belt filtered nodes and triangle-exact height queries; everything that stands on the ground reads this, never the raw field. |
+| `breaklines.ts` | Surveyed cliffs, retaining walls, quays and breakwaters — the lines `ground.ts` may not average across (D18). |
+| `baked-scene.ts` | Reads shipped GLBs back: belt meshes, a terrain index, and the welding that turns flat-shaded triangles into buildings again. |
 | `mesh.ts` | Shared mesh/vertex helpers. |
 | `ao.ts` | Baked ambient occlusion into COLOR_0. |
 | `greenery.ts` | Green areas: ground tint from parks/woods/lawns, plus pool and pitch surfaces. No trees — they were built here once and removed. |
@@ -55,8 +58,10 @@ rest are single-purpose modules it calls.
 | `overrides.ts` | Per-circuit manual corrections. |
 | `preview.ts` | Local bake preview server on **:4010** (separate from the app on :4000). |
 
-Audit: `bun run env:audit` → `scripts/audit-environment.ts` (D11 checks, 18/18 ok on
-Monaco). Run it after every bake; it is the thing that has caught most regressions.
+Audit: `bun run env:audit` → `scripts/audit-environment.ts` (D11 checks, green on
+Monaco). It reads the shipped GLB, not the intermediates — see
+[`scene-goals.md`](scene-goals.md) for what each check judges. Run it after every
+bake; it is the thing that has caught most regressions.
 
 Other bake-time scripts (not environment): `generate-circuits.ts`,
 `generate-elevations.ts`, `generate-track-widths.ts`, `generate-car-manifest.ts`,
