@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "mnh",
+  "provider": "ign-geoplateforme",
+  "layer": "IGNF_LIDAR-HD_MNH_ELEVATION.ELEVATIONGRIDCOVERAGE.WGS84G",
+  "width": 200,
+  "height": 200,
+  "bbox": {
+    "minLon": 7.421349867894719,
+    "maxLon": 7.431005461216587,
+    "minLat": 43.732916101887824,
+    "maxLat": 43.739893695688956
+  },
+  "supersample": 2,
+  "flatWaterCells": 0,
+  "pixelSizeM": {
+    "x": 3.8970167535626166,
+    "y": 3.898129279162226
+  },
+  "nativeCellM": 3.9,
+  "fetchedAt": "2026-08-16",
+  "validCount": 40000,
+  "nodataCount": 0,
+  "minValue": -0.6634639501571655,
+  "maxValue": 73.49742126464844
+}

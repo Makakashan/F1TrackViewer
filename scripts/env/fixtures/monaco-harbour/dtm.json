@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "kind": "dtm",
+  "provider": "ign-geoplateforme",
+  "layer": "ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES",
+  "width": 200,
+  "height": 200,
+  "bbox": {
+    "minLon": 7.421349867894719,
+    "maxLon": 7.431005461216587,
+    "minLat": 43.732916101887824,
+    "maxLat": 43.739893695688956
+  },
+  "supersample": 2,
+  "flatWaterCells": 27968,
+  "pixelSizeM": {
+    "x": 3.8970167535626166,
+    "y": 3.898129279162226
+  },
+  "nativeCellM": 3.9,
+  "fetchedAt": "2026-08-17",
+  "validCount": 20632,
+  "nodataCount": 19368,
+  "minValue": 0.26048898696899414,
+  "maxValue": 90.5349349975586
+}
