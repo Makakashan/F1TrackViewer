@@ -1388,6 +1388,8 @@ const PORTAL_VOID_PAD_M = 3;
  * cell early. The collar stands in front of all of it.
  */
 const PORTAL_OUT_M = 5;
+/** Wall thickness of the sleeve — what the ring at the mouth shows of itself. */
+const PORTAL_RING_M = 0.8;
 const PORTAL_IN_M = 8;
 const PORTAL_ARCH_SEGMENTS = 8;
 
@@ -1581,6 +1583,48 @@ function bakePortals(
         // Wound so the faces look in at the road: the near side of the sleeve
         // is culled and the camera sees the dark far side through the opening.
         addFlatQuad(mesh, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
+      }
+
+      // The ring that makes it a mouth rather than a hole.
+      //
+      // A sleeve whose faces all point inward is invisible from outside: the
+      // camera looks straight through the near wall at the lit far one, and the
+      // opening reads as a film stretched over the cutting rather than as a way
+      // in. So the tube carries a second skin, `PORTAL_RING_M` thick, wound
+      // outward, and the two are joined by a flat annulus at the front. What
+      // stands in the cutting is then a length of concrete tube with a dark
+      // hole in it, which is what a portal is.
+      const ringAt = (index: number, along: number) => {
+        const point = profile[index];
+        const outward = point.offset === 0 ? 0 : Math.sign(point.offset);
+        const spread = point.offset + outward * PORTAL_RING_M;
+        return {
+          x: mouth.x + nx * spread + mouth.ux * along,
+          y: roadY + point.height * scale + PORTAL_RING_M,
+          z: mouth.z + nz * spread + mouth.uz * along,
+        };
+      };
+      const ringBack = 0;
+      for (let i = 0; i < profile.length - 1; i++) {
+        const a = ringAt(i, outside);
+        const b = ringAt(i + 1, outside);
+        const c = ringAt(i + 1, ringBack);
+        const d = ringAt(i, ringBack);
+        // The other way round from the sleeve: this skin faces the weather.
+        addFlatQuad(surround, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z);
+      }
+      for (let i = 0; i < profile.length - 1; i++) {
+        const inner1 = at(i, outside);
+        const inner2 = at(i + 1, outside);
+        const outer1 = ringAt(i, outside);
+        const outer2 = ringAt(i + 1, outside);
+        addFlatQuad(
+          surround,
+          inner1.x, inner1.y, inner1.z,
+          outer1.x, outer1.y, outer1.z,
+          outer2.x, outer2.y, outer2.z,
+          inner2.x, inner2.y, inner2.z,
+        );
       }
 
       // The headwall closes the cutting, and the void behind it.
