@@ -121,8 +121,24 @@ Two chords between the same two places, drawn from different numbers. Step 5 wid
 the gap further where a surveyed wall runs along a seam and only one belt breaks at
 it: worst 7.22 m before, 11.68 m after.
 
-The fix is for the chord to read the coarse belt's nodes — `ground.nodeAt(coarse, …)`
-— rather than the fine belt's. The judge is in first, as in step 2.
+The fix, in three parts, each of which the judge scored on its own:
+
+1. The chord reads the coarse belt's nodes rather than the fine belt's own
+   (`drawnHeightOn` in `bake.ts`): **583 → 210 apart**, worst 11.68 → 6.89 m.
+2. A block **corner** takes the coarse belt's node outright. It used to keep its
+   own height on the grounds that it is a node of both lattices — true, and both
+   lattices give it a different height: **210 → 29**, worst 6.89 → 0.34 m.
+3. A belt asks its neighbour what it *draws*, not what it reads, so a node where
+   three belts meet resolves through the coarsest: **29 → 28**. Small, and it is
+   the part that makes the rule true rather than true on Monaco.
+
+**Still failing: 28 of 1,136 points, mean 0.06 m, worst 0.34 m.** All of them sit
+on a boundary node, 23 of them exactly on the grid. The staircase is gone from the
+picture — this residue is under half a metre where it was metres — but the cause is
+not identified. Quantisation does not explain it: the horizontal step is 0.045 m,
+which at the 64° slope these points sit on buys 0.09 m, not 0.34 m. Left failing
+rather than given a looser limit; a check tuned to pass is the thing this whole
+sequence exists to stop.
 
 ### 7. Tests A — invariants on synthetic ground
 
