@@ -51,6 +51,7 @@ rest are single-purpose modules it calls.
 | `shots.ts` | The eight fixed cameras of `scene-goals.md` §4 and the headless runner that takes them. `bun run env:shots`. |
 | `fixture.ts` | Cuts a window of a circuit's inputs out of the caches and reads it back as `BakeInputs`. `bun run env:fixture`; the slice is committed under `fixtures/`. |
 | `synthetic.ts` | Ground written by hand — a plane, a slope, a cut — built through the same `heightFieldFrom` the bake uses. Test material only. |
+| `mesh.test.ts` | The grid surface: how many normals a corner is allowed to have (D20). |
 | `ground.test.ts`, `breaklines.test.ts`, `baked-scene.test.ts` | Layer A of `scene-goals.md` §3: the invariants on that synthetic ground. `bun run test`. |
 | `bake.test.ts` | Layer B: the Monaco fixture through the real bake, judged with the audit's own checks. |
 | `baked-scene.ts` | Reads shipped GLBs back: belt meshes, a terrain index, and the welding that turns flat-shaded triangles into buildings again. |
