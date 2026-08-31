@@ -80,6 +80,11 @@ thrown away later.
 - **Stop at the end of a feature.** When the branch is finished, say so and wait: the
   user looks at it first. Push and merge only after they say it is fine, and never
   merge into `main` on your own.
+- **Merging happens through a pull request.** When the user says the branch is fine,
+  push it and open a PR into `dev` with `gh pr create` — title in the same form as a
+  commit subject, body saying what changed and what was run — then merge that PR
+  (`gh pr merge --no-ff`). No local `git merge` into `dev`: the PR is where the change
+  is read, and a merge that never was one leaves nothing to read.
 - Commit and push only when asked to. Finished work waits in the working tree until
   the user says to commit it.
 - **Gap days.** Before committing, compare today with the date of the last commit
