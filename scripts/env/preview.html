@@ -70,11 +70,19 @@
 
       await Promise.all(belts.map((belt) => new Promise((resolve, reject) => {
         loader.load(`/public/environments/${circuit}/${belt}.glb`, (gltf) => {
+          const only = (params.get("only") ?? "").split(",").filter(Boolean);
+          const drop = [];
           gltf.scene.traverse((node) => {
             if (!node.isMesh) return;
+            // ?only=portal,tunnel — one kind of mesh at a time, which is how a
+            // question about the portal stops being a question about the hill.
+            if (only.length && !only.includes(node.name)) { drop.push(node); return; }
             draws++;
             triangles += node.geometry.index.count / 3;
             node.material.flatShading = false;
+            // ?sides=double — is that hole a hole, or a face pointing the other
+            // way? The answer changes what is worth fixing.
+            if (params.get("sides") === "double") node.material.side = THREE.DoubleSide;
             // ?shading=ao shows the baked vertex colour alone, with no light in
             // the way, which is the only way to tell an AO bug from a lighting one.
             if (params.get("shading") === "ao") {
@@ -84,6 +92,7 @@
               });
             }
           });
+          for (const node of drop) node.removeFromParent();
           scene.add(gltf.scene);
           resolve();
         }, undefined, reject);

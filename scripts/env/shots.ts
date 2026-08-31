@@ -75,12 +75,12 @@ export const SHOTS: Record<string, Shot[]> = {
     {
       name: "tunnel-mouth",
       watch: "bore, portal, the buried span",
-      // The seaward portal. The bore runs from (370, -391) to (181, -111), so
-      // the camera stands off the mouth on the road's own line.
-      target: { x: 365, z: -385, y: 12 },
+      // The seaward portal, from the road's own line: the bore runs from
+      // (370, -391) to (181, -111), and the ring stands 5 m out of the cutting.
+      target: { x: 368, z: -389, y: 11 },
       azimuthDeg: 146,
-      elevationDeg: 3,
-      distanceM: 90,
+      elevationDeg: 2,
+      distanceM: 65,
     },
     {
       name: "rocher",

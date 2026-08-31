@@ -102,7 +102,8 @@ Some judgements stay visual, and those get a fixed camera so two bakes can be co
 honestly. `bun run env:shots [circuitId]` takes all eight: it borrows a preview server
 if one is already up, starts its own if not, drives headless Chromium over
 `preview.html`, and writes `images/<circuitId>-<shot>.png` (git-ignored). `--only=<name>`
-takes one. The cameras themselves are data in `scripts/env/shots.ts` — a polar target,
+takes one shot; the page's own `?only=terrain,portal` loads one kind of mesh at a
+time, which is how a question about the portal stops being a question about the hill. The cameras themselves are data in `scripts/env/shots.ts` — a polar target,
 a bearing, an elevation — so moving one is an edit to a list rather than a remembered
 URL.
 
