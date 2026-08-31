@@ -468,8 +468,13 @@ function straddlesWater(
  * How far two terrain faces may disagree before the corner they share stops
  * being one surface. Below it the hillside shades smoothly; above it — a cliff
  * top, a quay, a terrace riser — the edge stays an edge.
+ *
+ * Fifteen degrees, looked at rather than reasoned about: 25° left Le Rocher
+ * reading as drapery, 15° gives it faces, and 10° is not visibly different from
+ * 15° while costing another 0.07 MB on the core belt. The hillside is still
+ * smooth at 15° — that was the other half of the check.
  */
-const TERRAIN_CREASE_DEG = 25;
+const TERRAIN_CREASE_DEG = 15;
 
 function bakeTerrain(
   field: HeightField,
