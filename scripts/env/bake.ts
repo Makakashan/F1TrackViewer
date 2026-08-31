@@ -478,7 +478,7 @@ function bakeTerrain(
   corridor: Corridor,
   coast: Coastline,
   piers: PierResult,
-  isVoid: (x: number, z: number) => boolean,
+  hollow: PortalHollow,
 ): TerrainResult {
   // Where no surveyed line reaches — a third of a kilometre of Larvotto, among
   // others — the edge still has to come from somewhere smoother than a boolean
@@ -724,13 +724,21 @@ function bakeTerrain(
     // Land–water crossings, as vertex pairs, so the coast can drop a skirt once
     // the grid is finished and its positions are settled.
     const shoreEdges: [number, number][] = [];
+    // The cells a portal took out, and the ones that were built, so the pit can
+    // be walled along its own rim rather than along a guessed rectangle.
+    const voidCells: number[] = [];
+    const built = new Set<number>();
     // Counter-clockwise seen from above, so the normal points at the sky.
     const walk = [[0, 0], [1, 0], [1, 1], [0, 1]] as const;
 
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         if (beltOfCell(row, col, cell) !== belt) continue;
-        if (isVoid(minX + (col + 0.5) * cell, minZ + (row + 0.5) * cell)) continue;
+        if (hollow.at(minX + (col + 0.5) * cell, minZ + (row + 0.5) * cell)) {
+          voidCells.push(row * (cols + 2) + col);
+          continue;
+        }
+        built.add(row * (cols + 2) + col);
 
         const scalars = walk.map(([dr, dc]) => scalarAt(row + dr, col + dc));
         if (scalars.every((value) => value <= 0)) continue;
@@ -777,6 +785,7 @@ function bakeTerrain(
     }
 
     const mesh = grid.finish(TERRAIN_CREASE_DEG);
+    addVoidWalls(mesh, voidCells, built, hollow, surfaceHeightAt, minX, minZ, cell, cols);
     addTerrainSkirts(mesh, scalarAt, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
     addShoreSkirts(mesh, shoreEdges);
     meshes[belt] = mesh;
@@ -794,6 +803,69 @@ function bakeTerrain(
       over2M: conformOver2,
     },
   };
+}
+
+/**
+ * The pit a portal takes out of the hillside, walled along its own rim.
+ *
+ * The terrain drops the cells whose centre falls in a mouth's void, and what
+ * that leaves is a hole whose edge is the grid's, not the void's: a cell is in
+ * or out by its centre, so the rim runs up to half a cell past the nominal
+ * width and follows the belt's own lattice. Closing it with a rectangle sized
+ * from the void's numbers is what left daylight either side of the arch — the
+ * rim was two metres wider than the wall built to cover it.
+ *
+ * So the wall is built from the rim itself: every edge where a dropped cell
+ * meets a built one gets a vertical quad, from the ground the built side draws
+ * down to the cutting's floor. Nothing to keep in step with, and it cannot be
+ * short.
+ */
+function addVoidWalls(
+  mesh: Mesh,
+  voidCells: number[],
+  built: Set<number>,
+  hollow: PortalHollow,
+  surfaceHeightAt: (row: number, col: number) => number,
+  minX: number,
+  minZ: number,
+  cell: number,
+  cols: number,
+): void {
+  const stride = cols + 2;
+  for (const key of voidCells) {
+    const row = Math.floor(key / stride);
+    const col = key - row * stride;
+    const centreX = minX + (col + 0.5) * cell;
+    const centreZ = minZ + (row + 0.5) * cell;
+    const floor = hollow.floorAt(centreX, centreZ);
+    for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]] as const) {
+      if (!built.has((row + dr) * stride + col + dc)) continue;
+      // The two grid nodes the dropped cell and its neighbour share.
+      const nodes = dc !== 0
+        ? [[row, col + (dc > 0 ? 1 : 0)], [row + 1, col + (dc > 0 ? 1 : 0)]]
+        : [[row + (dr > 0 ? 1 : 0), col], [row + (dr > 0 ? 1 : 0), col + 1]];
+      const top = nodes.map(([r, c]) => ({
+        x: minX + c * cell,
+        y: surfaceHeightAt(r, c),
+        z: minZ + r * cell,
+      }));
+      if (top.some((point) => Number.isNaN(point.y))) continue;
+      const base = Math.min(floor, top[0].y, top[1].y) - 0.5;
+      // Wound so the face looks into the pit, which is the only side of it a
+      // camera can be on.
+      const intoVoid =
+        (centreX - (top[0].x + top[1].x) / 2) * (top[1].z - top[0].z) -
+        (centreZ - (top[0].z + top[1].z) / 2) * (top[1].x - top[0].x);
+      const [a, b] = intoVoid > 0 ? [top[0], top[1]] : [top[1], top[0]];
+      addFlatQuad(
+        mesh,
+        a.x, a.y, a.z,
+        b.x, b.y, b.z,
+        b.x, base, b.z,
+        a.x, base, a.z,
+      );
+    }
+  }
 }
 
 /**
@@ -1361,13 +1433,20 @@ function portalSection(): { offset: number; height: number }[] {
  */
 const PORTAL_VOID_IN_M = 8;
 
+/** Where the terrain stops, and how deep the cutting under it goes. */
+export interface PortalHollow {
+  at(x: number, z: number): boolean;
+  /** The cutting's floor — the road at the nearest mouth. */
+  floorAt(x: number, z: number): number;
+}
+
 function portalVoids(
   vaults: VaultedRuns,
   hill: HeightField,
   plane: ScenePlane,
-): (x: number, z: number) => boolean {
-  const { coords } = hill.trackProfile;
-  const boxes: { x: number; z: number; ux: number; uz: number }[] = [];
+): PortalHollow {
+  const { coords, elevations } = hill.trackProfile;
+  const boxes: { x: number; z: number; ux: number; uz: number; roadY: number }[] = [];
   for (const run of vaults.runs) {
     for (const end of [
       { index: run[0], into: 1 },
@@ -1381,10 +1460,10 @@ function portalVoids(
       let uz = plane.z(coords[neighbour][1]) - z;
       const length = Math.hypot(ux, uz);
       if (length < 1e-6) continue;
-      boxes.push({ x, z, ux: ux / length, uz: uz / length });
+      boxes.push({ x, z, ux: ux / length, uz: uz / length, roadY: elevations[end.index] });
     }
   }
-  return (x, z) => {
+  const inside = (x: number, z: number) => {
     for (const box of boxes) {
       const dx = x - box.x;
       const dz = z - box.z;
@@ -1395,9 +1474,29 @@ function portalVoids(
       ) {
         continue;
       }
-      if (Math.abs(dx * -box.uz + dz * box.ux) <= PORTAL_VOID_HALF_M) return true;
+      if (Math.abs(dx * -box.uz + dz * box.ux) <= PORTAL_VOID_HALF_M) return box;
     }
-    return false;
+    return null;
+  };
+
+  return {
+    at: (x, z) => inside(x, z) !== null,
+    floorAt: (x, z) => {
+      const box = inside(x, z);
+      if (box && !Number.isNaN(box.roadY)) return box.roadY;
+      // Off the void the question is not asked; a nearest-mouth answer keeps a
+      // caller that rounds to a cell centre from falling through to nothing.
+      let best = Number.NaN;
+      let bestDistance = Infinity;
+      for (const candidate of boxes) {
+        const distance = Math.hypot(x - candidate.x, z - candidate.z);
+        if (distance < bestDistance && !Number.isNaN(candidate.roadY)) {
+          bestDistance = distance;
+          best = candidate.roadY;
+        }
+      }
+      return best;
+    },
   };
 }
 
@@ -1569,29 +1668,6 @@ function bakePortals(
         const bl = at3(-PORTAL_FACE_HALF_M, backTop, back);
         const br = at3(PORTAL_FACE_HALF_M, backTop, back);
         addFlatQuad(surround, fl.x, fl.y, fl.z, fr.x, fr.y, fr.z, br.x, br.y, br.z, bl.x, bl.y, bl.z);
-      }
-
-      // And the two sides of the void, from the cut floor up to the ground the
-      // rim was taken from, so the slot is not open to the sky.
-      const SIDE_STEPS = 4;
-      for (const side of [-PORTAL_FACE_HALF_M, PORTAL_FACE_HALF_M]) {
-        for (let step = 0; step < SIDE_STEPS; step++) {
-          const a1 = front + ((back - front) * step) / SIDE_STEPS;
-          const a2 = front + ((back - front) * (step + 1)) / SIDE_STEPS;
-          const t1 = Math.max(0, groundOver(side, a1) - roadY);
-          const t2 = Math.max(0, groundOver(side, a2) - roadY);
-          const p1 = at3(side, 0, a1);
-          const p2 = at3(side, 0, a2);
-          const q1 = at3(side, t1, a1);
-          const q2 = at3(side, t2, a2);
-          // Facing in at the road, like the sleeve: the outer side is inside
-          // the hill and never seen.
-          if (side < 0) {
-            addFlatQuad(surround, p1.x, p1.y, p1.z, q1.x, q1.y, q1.z, q2.x, q2.y, q2.z, p2.x, p2.y, p2.z);
-          } else {
-            addFlatQuad(surround, p1.x, p1.y, p1.z, p2.x, p2.y, p2.z, q2.x, q2.y, q2.z, q1.x, q1.y, q1.z);
-          }
-        }
       }
 
       // No cap: the sleeve used to be closed 8 m in, so the mouth read as a
