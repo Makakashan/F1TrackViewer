@@ -91,7 +91,7 @@ thrown away later.
 
 ## Done means
 
-- `bun run typecheck` and `bun run lint` are clean.
+- `bun run typecheck`, `bun run lint` and `bun run test` are clean.
 - The audit for what you touched has run: `bun run race:kerbs` for corner detection
   and kerbs, `bun run race:gaps` for timing-tower gaps, `bun run race:audit` for the
   field over a full race, `bun run race:laptimes` for the speed model,
