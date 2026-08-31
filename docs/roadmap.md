@@ -10,7 +10,7 @@ meets the ground, and without a check that reads the shipped GLB we would be
 comparing screenshots again. Each step is its own commit and is verifiable on its
 own.
 
-**Where it stands (2026-08-31).** Steps 1–10 are in. `env:audit mc-1929` is green on
+**Where it stands (2026-08-31).** Steps 1–11 are in. `env:audit mc-1929` is green on
 every check, the ground has one definition, one judge and three numbers saying the
 filter neither aliases nor flattens, and `bun run test` holds those properties on
 ground small enough to check by hand and over a committed slice of the real thing. What is left of the original complaint is a
@@ -248,6 +248,29 @@ unchanged. `mesh.test.ts` holds the two halves of it: a flat sheet keeps one ver
 per node at any crease angle, and a 90° fold gets a flat side and a steep side that
 each keep their own normal.
 
+### 11. The tunnel mouth is a mouth — **done**
+
+The other thing step 9's frames found. The mouth was a ragged hole with daylight
+showing through the hill either side of the arch, and the bore behind it was pure
+black.
+
+Rendered one mesh at a time — `env:preview` takes `?only=terrain,portal` now — which
+is what settled it: the terrain's hole was wider than everything built to close it.
+A cell is dropped when its *centre* falls in the void, so the rim runs up to half a
+cell past the nominal width and follows the belt's own lattice, while the closure was
+a rectangle sized from the void's numbers. Two metres of open pit each side, and the
+sky behind it.
+
+The pit is now walled along its own rim: every edge where a dropped cell meets a
+built one gets a vertical quad, from the ground the built side draws down to the
+cutting's floor (D21). It cannot be short and there is nothing to keep in step with.
+The old side walls, which stood at a guessed ±12 m and were mostly inside the hill,
+came out — checked by rebaking without them and looking, not by reading. Cost: 48
+triangles on the core belt, 1.12 MB unchanged to two decimals.
+
+The bore also carries a dim warm emissive now, because nothing in the scene lights
+the inside of a tunnel and black is not the same as dark.
+
 ---
 
 ## Parked — Monaco, after the ground work
@@ -257,10 +280,6 @@ each keep their own normal.
   stops (`images/mc-1929-seam-city-far.png`). Nothing is wrong with the geometry —
   the bbox ends — but the eye reads a slab. A skirt, a fog band or simply a larger
   quad would answer it; which one is a look decision.
-- **The bore is unlit.** The tunnel reads as a black hole from the portal
-  (`images/mc-1929-tunnel-mouth.png`). Correct, in that nothing lights it, and wrong
-  in that a real one has a lit road in it. A dim emissive on the bore's inner face
-  would cost nothing per frame.
 
 - **Kit houses have never been looked at.** 75 modelled on the current bake, 92,406
   triangles, inside budget; 1,976 footprints fit the shape and 369 had no model at
