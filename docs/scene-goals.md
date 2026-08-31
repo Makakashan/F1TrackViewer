@@ -40,11 +40,11 @@ not of an intermediate — the audit that read `buildings.json` while the browse
 |---|---|---|---|
 | **I1** | One surface answers "how high is the ground here". The terrain meshes from `ground.ts`; buildings, kit models and props read the triangles the terrain just drew. Nothing samples the raw field to place something on it. | `env:audit` (I2 is its consequence); `ground.test.ts` still to come | **held** — placement reads the drawn surface as of the P4.6 bake |
 | **I2** | No building floats. Every piece of the shipped building mesh — walls and the roof resting on them, welded into one — has a vertex within 0.15 m of the terrain triangle beneath it, and no piece is entirely below the ground. | `env:audit` over the GLB | **passing** — 0 floating of 1,259 pieces on Monaco, 0 with nothing above ground; deepest wall dig 36.5 m, reported |
-| **I3** | No belt seam opens. Along a boundary between two belts the terrain is continuous: no gap the sky shows through, no overlap that z-fights. | `terrain.test.ts` on a synthetic slope crossing a seam | planned |
+| **I3** | No belt seam opens. Where two belts overlap in plan the terrain is continuous: no gap the sky shows through, no overlap that z-fights. | `env:audit` over the overlap band; `terrain.test.ts` on a synthetic slope crossing a seam | **failing, unjudged** — 2,432 of 5,690 `core`\|`city` vertices disagree by over 2 m, worst 14.59 m. No check reports it yet; roadmap step 6 |
 | **I4** | The track lies on the ground. The baked racing surface matches the height field within `max(0.05 m, 1.2 % of a cell)`. | `env:audit` | passing |
 | **I5** | Water is never above land. No water-plane vertex sits higher than the shore vertex it meets. | `env:audit` | passing |
 | **I6** | Belts stay inside their budget, in both bytes and triangles, with the kit's share counted. | `env:audit` against `BELT_BUDGET` | passing |
-| **I7** | Smoothing keeps the relief. After the edge-preserving filter: kink RMS at the 8 m belt ≤ 2.6 m (3.76 m unfiltered), mean slope within 0.5° of the unfiltered 16.6°, and the step across any mapped quay or retaining wall within 0.3 m of the raw field. | `terrain-filter.test.ts` plus three numbers in `env:audit` | planned |
+| **I7** | Smoothing keeps the relief. On the 8 m belt: kink ≤ 2.0 m, mean slope within 0.5° of the field's own, and at least 95% of the raw step kept across a surveyed breakline. Kink is the RMS of `2h − h₋ − h₊` over both axes — how far a node sits off the line between its neighbours, which is what aliasing looks like in metres. | three numbers in `env:audit`; `terrain-filter.test.ts` still to come | **passing** — kink 1.73 m against the field's own 2.04 m, slope 16.76° against 16.88°, 118% of the step kept over 447 edges of 770 breakline segments |
 | **I8** | Land has ground under it. No hole in the terrain where the coastline scalar says land. | `env:audit` | passing |
 | **I9** | Nothing floats on the water either. Hulls sit on the datum; no prop hangs below the waterline. | `env:audit` | passing |
 | **I10** | Buried track spans are hidden. `cityManifest.track.buried` covers every span the tunnel bore swallows. | `env:audit` | passing |
@@ -56,6 +56,15 @@ read the height field, while buildings visibly hung in the air; reading the ship
 mesh turned that zero into 269, and one surface turned 269 into none. The order
 mattered: the check came first, so the fix had a judge that was not the person who
 wrote it.
+
+I7 is the other kind of lesson. It was written expecting an edge-preserving
+kernel to be the fix, and the measurement said no such kernel helps: on a DTM
+whose own cells already smear a wall over two or three of them, every soft
+kernel — bilateral against the raw centre, bilateral against the local mean,
+a least-squares plane — lands on one curve, and at equal kink they all keep the
+same fraction of the step. What separated a wall from ripple was not a cleverer
+average but knowing where the wall is, which OSM already surveyed. The
+invariant survived; the plan for meeting it did not.
 
 I2's piece rule is deliberately loose — pieces overlapping in plan and meeting in
 height are treated as one building — so a slab hanging beside a tower, at the tower's

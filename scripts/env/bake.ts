@@ -43,12 +43,14 @@ import { buildRoof, PARAPET_M, planRoof, type RoofKind, type RoofTags } from "./
 import {
   fetchBuildingWays,
   fetchGreenWays,
+  fetchBreaklineWays,
   fetchShoreWays,
   fetchStructureWays,
   type BuildingWay,
 } from "./overpass";
 import { buildGreenery, type GreeneryResult } from "./greenery";
 import { buildSurfaceIndex } from "./baked-scene";
+import { buildBreaklines } from "./breaklines";
 import { buildGround, type Ground } from "./ground";
 import {
   chooseKitHouses,
@@ -2203,7 +2205,14 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const portals = bakePortals(vaults, hill, plane);
   const bore = bakeTunnelBody(hill, plane, vaults, portalSection());
   const barriers = bakeBarriers(field, plane, tunnels, DEFAULT_TRACK_HALF_WIDTH_M);
-  const ground = buildGround(field, plane);
+  // The surveyed lines the belts' filter may not average across: cliffs and
+  // retaining walls from their own query, quays and breakwaters from the shore.
+  const breaklines = buildBreaklines(
+    field,
+    await fetchBreaklineWays(circuitId, bbox, refresh),
+    shoreWays,
+  );
+  const ground = buildGround(field, plane, breaklines);
   const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, portalVoids(vaults, hill, plane));
   const water = bakeWater(field, plane);
 

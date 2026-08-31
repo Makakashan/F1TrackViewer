@@ -120,6 +120,7 @@ scene can draw.
 | **D14** | Three files per circuit: `far.glb`, `city.glb`, `core.glb`. Loaded far → city → core. No 3D Tiles streaming. | Fast first frame; per-belt byte budgets. 3 km² does not repay a streaming runtime. |
 | **D15** | Heights are metres above sea level as the DEM reports them. Water is a plane at `y = 0` in that datum. **The coastline is the DEM's nodata boundary for open sea, and the flat-constant rule of §5.6 for enclosed basins** — IGN carries no bathymetry, so the sea is nodata rather than negative depth (P0.1), while a harbour arrives stamped with one repeated value. OSM water polygons are used only for inland water and as an audit assertion — never to decide the coast. | One source for the boundary means it cannot disagree with itself. The implementation is the nodata mask, not a zero crossing, but the principle is unchanged. |
 | **D16** | Props whose absence reads as a bug — barriers, fences, grandstands, tunnel portals — ship in the core belt, instanced, one draw call per type. Trees and yachts follow via D10 props. | Detail without spending the draw-call budget. |
+| **D18** | A belt coarser than the field averages it, and the average stops at a **breakline** — a line OSM surveyed as a cliff, a retaining wall, a quay or a breakwater. Soft edge-preserving kernels were measured first and rejected: at equal kink, a bilateral against the local mean keeps exactly the fraction of the step a plain box keeps, because the DTM already smears a wall across the width of the filter window. | The one thing that separates a wall from a metre of ripple is knowing where the wall is, and that is surveyed data rather than a cleverer average. Off a line, the summed-area tables answer as before and the bake pays nothing. |
 | **D17** | Both paths live side by side while circuits migrate: a baked GLB is used when present, otherwise the old runtime path. The last migrated circuit deletes `environment-layer.tsx`. | A safety net with a written termination condition, so the dead branch actually dies. |
 
 ---
@@ -163,6 +164,8 @@ New:
 scripts/env/raster.ts        IGN WMS float32 fetch, nodata cleanup, disk cache
 scripts/env/heightfield.ts   adaptive grid, datum, constraint burn-in
 scripts/env/belts.ts         core/city/far classification from the centreline
+scripts/env/ground.ts        one filtered surface per belt, triangle-exact queries
+scripts/env/breaklines.ts    surveyed lines the filter may not average across (D18)
 scripts/env/bake-terrain.ts  terrain + water meshes
 scripts/env/bake-buildings.ts  footprint → archetype → extrusion
 scripts/env/bake-track.ts    ribbon, kerbs, apron, markings (shares code with lib/track)

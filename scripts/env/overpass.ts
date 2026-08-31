@@ -57,6 +57,22 @@ export interface GreenWay {
   points: [number, number][];
 }
 
+/**
+ * A surveyed line the ground is allowed to break along.
+ *
+ * The height field is a raster and it smears a wall over two or three cells,
+ * so a filter that averages across one turns a 6 m quay into a ramp. These are
+ * the lines it may not average across. Quays, breakwaters and the coastline
+ * arrive as `ShoreWay` already and are folded in by the caller.
+ */
+export interface BreaklineWay {
+  id: string;
+  kind: "cliff" | "retaining_wall";
+  points: [number, number][];
+  /** OSM draws a cliff with the drop on the right of the way's direction. */
+  name?: string;
+}
+
 export interface StructureWay {
   id: string;
   points: [number, number][];
@@ -291,6 +307,69 @@ export async function fetchShoreWays(
 
   // An empty answer is not written down: it is a refusal more often than it
   // is the truth, and cached it would never be asked again.
+  if (ways.length) {
+    await mkdir(CACHE_DIR, { recursive: true });
+    await writeFile(cachePath, JSON.stringify(ways));
+  }
+  return ways;
+}
+
+function breaklineQueries(bbox: RasterBBox): string[] {
+  const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
+  // One tag per query, for the reason `greenQueries` gives: asked together
+  // these two answer 504, asked apart they answer in seconds.
+  return [`way["natural"="cliff"](${box});`, `way["barrier"="retaining_wall"](${box});`].map(
+    (clause) => `[out:json][timeout:90];\n${clause}\nout geom tags;`,
+  );
+}
+
+/** Cliffs and retaining walls: the ground's own edges, as OSM surveyed them. */
+export async function fetchBreaklineWays(
+  circuitId: string,
+  bbox: RasterBBox,
+  refresh = false,
+): Promise<BreaklineWay[]> {
+  const cachePath = join(CACHE_DIR, `${circuitId}-breaklines.json`);
+  if (!refresh) {
+    try {
+      return JSON.parse(await readFile(cachePath, "utf8")) as BreaklineWay[];
+    } catch {
+      // not cached yet
+    }
+  }
+
+  // Like greenery, a layer a circuit can be baked without: no barrier line
+  // means the filter averages as it did before, which is where we came from.
+  const elements: OverpassWay[] = [];
+  let unanswered = 0;
+  const queries = breaklineQueries(bbox);
+  for (const [index, query] of queries.entries()) {
+    const response = await run(query);
+    if (!response) {
+      unanswered = queries.length - index;
+      break;
+    }
+    elements.push(...response.elements);
+  }
+  if (unanswered) {
+    console.warn(`  overpass: ${unanswered} breakline quer(y|ies) unanswered for ${circuitId}`);
+  }
+
+  const ways: BreaklineWay[] = [];
+  for (const element of elements) {
+    if (element.type !== "way" || !element.geometry?.length) continue;
+    const tags = element.tags ?? {};
+    const kind: BreaklineWay["kind"] | null =
+      tags.natural === "cliff" ? "cliff" : tags.barrier === "retaining_wall" ? "retaining_wall" : null;
+    if (!kind) continue;
+    ways.push({
+      id: `way/${element.id}`,
+      kind,
+      points: element.geometry.map((p) => [p.lon, p.lat] as [number, number]),
+      ...(tags.name ? { name: tags.name } : {}),
+    });
+  }
+
   if (ways.length) {
     await mkdir(CACHE_DIR, { recursive: true });
     await writeFile(cachePath, JSON.stringify(ways));
