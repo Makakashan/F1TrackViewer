@@ -103,20 +103,26 @@ were built.
 
 ### 6. The belt seam gets a judge, then a fix — **next**
 
-**I3** has been `planned` since it was written, and a seam that no check measures is
-a seam nobody sees a number for. Measured now, over the shipped GLBs: where `core`
-and `city` overlap in plan, 5,690 vertices disagree about the height by 1.56 m on
-average and 2,432 of them by more than 2 m; the worst is 14.59 m, at x −480 z 657.
-It shows on screen as a staircase along the boundary with the background visible
-through it. The disagreement is old — the same measurement on the previous bake
-gives 1.52 m and 2,415 — but step 5 made that one worst spot worse, from 9.21 m,
-because a surveyed wall runs along the seam there and the two belts break it in
-different places.
+**I3** had been `planned` since it was written, and a seam that no check measures is
+a seam nobody sees a number for. The check exists now and fails: **583 of 1,136
+points the two belts share are more than 0.15 m apart, mean 0.41 m, worst 11.68 m.**
+It shows on screen as a staircase along the boundary with the background through it.
 
-The judge first, as in step 2: `env:audit` gets a real I3 check over the overlap
-band, watched fail on those 2,432 vertices, and only then the conform pass in
-`bake.ts` is changed. A finer belt's edge has to land on the coarser belt's chord —
-including where a breakline cuts one of them and not the other.
+Both numbers had to be measured twice. The first attempt compared vertex against
+vertex and reported 2,432 points over 2 m — nearly all of them the feet of the
+skirts a belt hems its edge with, which nobody can see. Measuring surface against
+surface, with the skirts dropped from both, gives the real figure.
+
+The cause is in `bake.ts`'s `surfaceHeightAt`. A belt boundary is a T-junction, and
+the fine side is meant to give up its own readings and take the coarse side's chord.
+It takes a chord — but between **its own** heights at the coarse lattice nodes, and
+since step 3 those are filtered with a narrower window than the coarse belt's own.
+Two chords between the same two places, drawn from different numbers. Step 5 widened
+the gap further where a surveyed wall runs along a seam and only one belt breaks at
+it: worst 7.22 m before, 11.68 m after.
+
+The fix is for the chord to read the coarse belt's nodes — `ground.nodeAt(coarse, …)`
+— rather than the fine belt's. The judge is in first, as in step 2.
 
 ### 7. Tests A — invariants on synthetic ground
 
