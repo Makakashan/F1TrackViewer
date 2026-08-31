@@ -8,20 +8,16 @@ import type { TrackWidthProfile } from "@/lib/track/track-width";
 import type { StartFinishPlacement } from "@/lib/track/start-finish";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import type { TrackMarkers, TrackViewMode } from "@/lib/track/track-markers";
+import type { CityManifest } from "@/lib/env/city-loader";
 import type { EnvironmentBundle } from "@/lib/env/environment-types";
 import type { QualityMode } from "@/lib/url-state";
 import type { GridEntry } from "@/lib/race/f1-teams";
 import type { RaceController } from "@/hooks/use-race-simulation";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 import TrackMesh from "@/components/three/track-mesh";
-import {
-  RACE_FOLLOW_MIN_DISTANCE_M,
-  RACE_FREE_MIN_DISTANCE_M,
-} from "@/components/three/race-camera-rig";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useStartFinishCalibration } from "@/hooks/use-start-finish-calibration";
 import { canCreateWebGLContext, getSceneBackground } from "@/lib/scene-config";
-import { computeBounds, sceneRadiusFromBounds } from "@/lib/geo-utils";
 import CalibrationPanel from "@/components/three/calibration-panel";
 import SceneDebugHandle from "@/components/three/scene-debug-handle";
 
@@ -39,6 +35,7 @@ export interface TrackViewerProps {
   viewMode?: TrackViewMode;
   markers?: TrackMarkers | null;
   environmentBundle?: EnvironmentBundle | null;
+  cityManifest?: CityManifest | null;
   environmentTerrain?: boolean;
   widthProfile?: TrackWidthProfile | null;
   realWidthEnabled?: boolean;
@@ -79,6 +76,7 @@ export default function TrackViewer({
   viewMode = "normal",
   markers,
   environmentBundle,
+  cityManifest,
   environmentTerrain = true,
   widthProfile,
   realWidthEnabled = true,
@@ -111,13 +109,6 @@ export default function TrackViewer({
   const calibration = useStartFinishCalibration(circuitId, resolvedStartFinishS);
 
   const { bgGradient, sceneBackgroundColor } = getSceneBackground(resolvedTheme);
-
-  // Compute scene radius for dynamic camera limits (must match TrackMesh).
-  const sceneRadius = useMemo(() => {
-    const coords = geojson.features[0]?.geometry.coordinates;
-    if (!coords) return 1000;
-    return sceneRadiusFromBounds(computeBounds(coords));
-  }, [geojson]);
 
   return (
     <PointerCaptureBoundary>
@@ -215,6 +206,7 @@ export default function TrackViewer({
                 viewMode={viewMode}
                 markers={markers}
                 environmentBundle={environmentBundle}
+                cityManifest={cityManifest}
                 environmentTerrain={environmentTerrain}
                 widthProfile={widthProfile}
                 realWidthEnabled={realWidthEnabled}
@@ -230,27 +222,22 @@ export default function TrackViewer({
               />
             </Suspense>
 
-            {/* The overview limits keep the whole circuit in frame and are a
-                fraction of the scene radius — on a 3 km lap that is a floor of
-                250 m, which makes standing next to a car impossible. Race mode
-                gets limits in car lengths instead, and lets the camera drop
-                almost to the horizon for a trackside view. */}
+            {/* Distance limits are off while the city rebuild is being looked
+                at: inspecting the ground means getting under the eaves and down
+                to street level, which every one of the old bounds forbade.
+
+                The floor stays. Terrain is a surface, not a solid, and its
+                back faces are culled, so from below the whole city is
+                see-through — the road shows through the hillside and the water
+                shows through the ground. Stopping just short of the horizon
+                keeps the camera above the surface it is looking at. */}
             <OrbitControls
               makeDefault
               enableDamping
               dampingFactor={0.08}
               autoRotate={autoRotate}
               autoRotateSpeed={0.5}
-              minDistance={
-                raceMode
-                  ? cameraFollow
-                    ? RACE_FOLLOW_MIN_DISTANCE_M
-                    : RACE_FREE_MIN_DISTANCE_M
-                  : sceneRadius * 0.4
-              }
-              maxDistance={raceMode ? sceneRadius * 4 : sceneRadius * 4}
-              minPolarAngle={Math.PI / 12}
-              maxPolarAngle={raceMode ? Math.PI / 2.12 : Math.PI / 2.8}
+              maxPolarAngle={Math.PI / 2 - 0.02}
             />
           </Canvas>
         ) : null}

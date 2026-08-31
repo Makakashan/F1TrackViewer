@@ -82,3 +82,12 @@ In terrain mode the curve's Y comes from the terrain sampler instead, smoothed o
 1. Static JSON under `public/` — the normal path
 2. localStorage, versioned (`f1tv:elevations:v2:`)
 3. Open-Meteo / OpenTopoData at runtime, as a fallback only
+
+## Globe textures
+
+`GlobeLanding` reads Earth maps from `public/textures/earth/` — `earth-day.jpg`,
+optionally `earth-clouds.png`, and `earth-night.jpg` for future night-side work.
+Equirectangular projection; 2048 or 4096 px wide is the target. A 16k texture slows
+the first paint and eats GPU memory for detail nobody sees at globe distance. Never
+load them from an external URL at runtime: the assets are local, like everything else
+under `public/`.

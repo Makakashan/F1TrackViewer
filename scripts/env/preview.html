@@ -1,0 +1,104 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>city bake preview</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #aebdc8; overflow: hidden; }
+      canvas { display: block; }
+      #hud {
+        position: fixed; left: 12px; bottom: 12px; font: 12px ui-monospace, monospace;
+        color: #1b2733; background: #ffffffcc; padding: 6px 9px; border-radius: 6px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="hud">loading…</div>
+    <!-- three's own addons import it by bare name. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "/node_modules/three/build/three.module.js",
+          "three/": "/node_modules/three/"
+        }
+      }
+    </script>
+    <script type="module">
+      import * as THREE from "three";
+      import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+      import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+
+      const params = new URLSearchParams(location.search);
+      const circuit = params.get("circuit") ?? "mc-1929";
+      const belts = (params.get("belts") ?? "far,city,core").split(",");
+      // Camera in polar terms around the origin, which is the circuit's centre.
+      const azimuth = Number(params.get("az") ?? 135) * Math.PI / 180;
+      const elevation = Number(params.get("el") ?? 38) * Math.PI / 180;
+      const distance = Number(params.get("dist") ?? 2400);
+      const targetY = Number(params.get("y") ?? 0);
+      // Aim somewhere other than the circuit's centre — a portal, a quay.
+      const targetX = Number(params.get("tx") ?? 0);
+      const targetZ = Number(params.get("tz") ?? 0);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setSize(innerWidth, innerHeight);
+      renderer.setPixelRatio(1);
+      document.body.appendChild(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color("#aebdc8");
+      // Fog follows the camera, or a wide shot washes the whole city out.
+      scene.fog = new THREE.Fog("#aebdc8", distance * 1.4, distance * 4);
+
+      const sun = new THREE.DirectionalLight("#fff6e8", 2.1);
+      sun.position.set(-800, 900, -600);
+      scene.add(sun);
+      scene.add(new THREE.HemisphereLight("#dceaf5", "#5d6470", 1.15));
+
+      const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 1, 12000);
+      camera.position.set(
+        targetX + Math.cos(elevation) * Math.sin(azimuth) * distance,
+        targetY + Math.sin(elevation) * distance,
+        targetZ + Math.cos(elevation) * Math.cos(azimuth) * distance,
+      );
+      camera.lookAt(targetX, targetY, targetZ);
+
+      const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+      const hud = document.getElementById("hud");
+      let triangles = 0;
+      let draws = 0;
+
+      await Promise.all(belts.map((belt) => new Promise((resolve, reject) => {
+        loader.load(`/public/environments/${circuit}/${belt}.glb`, (gltf) => {
+          gltf.scene.traverse((node) => {
+            if (!node.isMesh) return;
+            draws++;
+            triangles += node.geometry.index.count / 3;
+            node.material.flatShading = false;
+            // ?shading=ao shows the baked vertex colour alone, with no light in
+            // the way, which is the only way to tell an AO bug from a lighting one.
+            if (params.get("shading") === "ao") {
+              node.material = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                vertexColors: !!node.geometry.getAttribute("color"),
+              });
+            }
+          });
+          scene.add(gltf.scene);
+          resolve();
+        }, undefined, reject);
+      })));
+
+      renderer.render(scene, camera);
+
+      const shot = params.get("shot");
+      if (shot) {
+        const blob = await new Promise((resolve) => renderer.domElement.toBlob(resolve, "image/png"));
+        await fetch(`/shot?name=${encodeURIComponent(shot)}`, { method: "POST", body: blob });
+      }
+
+      hud.textContent = `${circuit} — ${belts.join(" + ")} — ${triangles.toLocaleString()} tris, ${draws} meshes`;
+      document.title = "ready";
+    </script>
+  </body>
+</html>

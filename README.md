@@ -98,8 +98,12 @@ public/
   cars/                      car models per team, with LODs
   textures/earth/            Earth textures
 docs/
-  architecture.md
-  earth-textures.md
+  architecture.md            how the app runs
+  project-map.md             where things live, by symptom
+  scene-goals.md             what the baked scene must be, and its invariants
+  roadmap.md                 what is next
+  city-generation.md         why the bake is shaped this way (D1-D17)
+  history/                   what was already built, phase by phase
 ```
 
 ## Earth textures

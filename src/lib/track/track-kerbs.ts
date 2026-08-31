@@ -66,6 +66,8 @@ export function buildKerbGeometry(
   raise: number,
   samples: number,
   options: KerbOptions = {},
+  /** Stretches the ribbon is not drawn on; see `buildExtrudedTrack`. */
+  hiddenAt?: (s: number) => boolean,
 ): THREE.BufferGeometry | null {
   const {
     maxCornerRadiusMeters,
@@ -158,6 +160,7 @@ export function buildKerbGeometry(
         const d0 = Math.max(stripe * stripeMeters, runStart);
         const d1 = Math.min((stripe + 1) * stripeMeters, runEnd);
         if (d1 - d0 < 1e-3) continue;
+        if (hiddenAt?.((((d0 + d1) / 2) / totalLength) % 1)) continue;
 
         const taper0 = taperAt(d0);
         const taper1 = taperAt(d1);
@@ -223,6 +226,8 @@ export function buildTrackEdgeLineGeometry(
   raise: number,
   samples: number,
   lineWidthMeters = 0.18,
+  /** Stretches the ribbon is not drawn on; see `buildExtrudedTrack`. */
+  hiddenAt?: (s: number) => boolean,
 ): THREE.BufferGeometry {
   const n = samples;
   const pts = curve.getSpacedPoints(n);
@@ -248,6 +253,7 @@ export function buildTrackEdgeLineGeometry(
 
   for (const edgeSign of [1, -1]) {
     for (let i = 0; i < n; i++) {
+      if (hiddenAt?.((i + 0.5) / n)) continue;
       const j = i + 1;
       const o0 = halfWidthAt(halfWidth, i / n) * edgeSign;
       const o1 = halfWidthAt(halfWidth, j / n) * edgeSign;
