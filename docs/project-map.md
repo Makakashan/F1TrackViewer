@@ -48,6 +48,8 @@ rest are single-purpose modules it calls.
 | `belts.ts` | Detail belts: core 4 m ≤150 m, city 8 m ≤600 m, far 16 m. |
 | `ground.ts` | The one surface. Per-belt filtered nodes and triangle-exact height queries; everything that stands on the ground reads this, never the raw field. |
 | `breaklines.ts` | Surveyed cliffs, retaining walls, quays and breakwaters — the lines `ground.ts` may not average across (D18). |
+| `synthetic.ts` | Ground written by hand — a plane, a slope, a cut — built through the same `heightFieldFrom` the bake uses. Test material only. |
+| `ground.test.ts`, `breaklines.test.ts`, `baked-scene.test.ts` | Layer A of `scene-goals.md` §3: the invariants on that synthetic ground. `bun run test`. |
 | `baked-scene.ts` | Reads shipped GLBs back: belt meshes, a terrain index, and the welding that turns flat-shaded triangles into buildings again. |
 | `mesh.ts` | Shared mesh/vertex helpers. |
 | `ao.ts` | Baked ambient occlusion into COLOR_0. |

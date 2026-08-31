@@ -368,6 +368,17 @@ function burnTrack(
 
 // ─── build ─────────────────────────────────────────────────────────────────
 
+/** What a field carries when nothing was burned into it — a synthetic one. */
+const EMPTY_STATS: HeightFieldStats = {
+  vaultedSamples: 0,
+  cellsBurned: 0,
+  maxLiftM: 0,
+  maxCutM: 0,
+  cellsCreatedOverWater: 0,
+  trackMinM: 0,
+  trackMaxM: 0,
+};
+
 export interface BuildHeightFieldOptions {
   dtm: Raster;
   track: TrackConstraint;
@@ -395,6 +406,33 @@ export function buildHeightField(options: BuildHeightFieldOptions): HeightField 
     track.vaulted ?? track.buried,
   );
 
+  return heightFieldFrom({
+    bbox,
+    width,
+    height,
+    data,
+    trackProfile: { coords, elevations },
+    stats,
+  });
+}
+
+export interface HeightFieldParts {
+  bbox: RasterBBox;
+  width: number;
+  height: number;
+  /** Row-major, north-up, NaN for nodata — the grid as it will be read. */
+  data: Float32Array;
+  trackProfile?: HeightField["trackProfile"];
+  stats?: HeightFieldStats;
+}
+
+/**
+ * A field over a grid that is already final. The bake reaches it through
+ * `buildHeightField`, which burns the track first; a test's synthetic ground
+ * comes straight in here, so both read heights through the same interpolation.
+ */
+export function heightFieldFrom(parts: HeightFieldParts): HeightField {
+  const { bbox, width, height, data } = parts;
   const cellSizeM = {
     x: bboxSizeMeters(bbox).width / (width - 1),
     y: bboxSizeMeters(bbox).height / (height - 1),
@@ -453,8 +491,8 @@ export function buildHeightField(options: BuildHeightFieldOptions): HeightField 
     height,
     cellSizeM,
     data,
-    trackProfile: { coords, elevations },
-    stats,
+    trackProfile: parts.trackProfile ?? { coords: [], elevations: [] },
+    stats: parts.stats ?? EMPTY_STATS,
     heightAt,
     heightAtNode,
     isWater: (lon, lat) => Number.isNaN(heightAt(lon, lat)),

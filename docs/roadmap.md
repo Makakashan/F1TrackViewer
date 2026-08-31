@@ -10,10 +10,11 @@ meets the ground, and without a check that reads the shipped GLB we would be
 comparing screenshots again. Each step is its own commit and is verifiable on its
 own.
 
-**Where it stands (2026-08-31).** Steps 1–6 are in. `env:audit mc-1929` is green on
-every check, and the ground now has one definition, one judge and three numbers
-saying the filter neither aliases nor flattens. What is left of the original
-complaint is a matter for the eye, which is step 9.
+**Where it stands (2026-08-31).** Steps 1–7 are in. `env:audit mc-1929` is green on
+every check, the ground has one definition, one judge and three numbers saying the
+filter neither aliases nor flattens, and `bun run test` holds those properties on
+ground small enough to check by hand. What is left of the original complaint is a
+matter for the eye, which is step 9.
 
 ---
 
@@ -138,19 +139,45 @@ cover it — the check keeps the same 0.15 m and keeps printing the count; it is
 reported rather than fatal, so the number stays in front of whoever runs the audit
 without failing every unrelated bake.
 
-### 7. Tests A — invariants on synthetic ground — **next**
+### 7. Tests A — invariants on synthetic ground — **done**
 
-There is no test runner in the repository yet, so this step installs one. A plane, a
-30° slope, a vertical cut, a terrace, a ravine; the invariants of
-[`scene-goals.md`](scene-goals.md); no network; milliseconds.
+`bun run test`: 40 tests over three files, 0.1 s, no network.
 
-Two of them are already owed. **I1**: a placement query and the triangle it names
-have to agree to a millimetre — held today by construction, untested. **I2's piece
-rule**: pieces that overlap in plan and meet in height are welded into one building,
-which is loose enough to miss a slab hanging beside a tower at the tower's own
-height. A synthetic scene is the only cheap way to pin either.
+No runner was installed. The step was written expecting to add one, and Bun ships
+`bun test` — same expect API, zero dependencies — so the work went into the ground
+the tests stand on instead. `scripts/env/synthetic.ts` writes a field by hand and
+hands it to `heightFieldFrom`, a factory split out of `buildHeightField` so a test
+reads heights through the same interpolation the bake does. Nothing in a test
+reimplements what it checks.
 
-### 8. Test B — the Monaco fixture
+What they hold:
+
+- **A plane and a 30° slope.** Every belt reads the plane exactly, and a box filter
+  of a ramp is the ramp — nodes on it to the millimetre, gradient to six places.
+  The filter flattens nothing by itself.
+- **A vertical cut** (I7). Left alone, a 16 m window brings a 10 m wall in at under
+  90% of its step; with the wall surveyed, at 100%. Both directions are asserted, so
+  the breakline path cannot quietly stop working and leave a green suite.
+- **A terrace and a ravine.** Every node keeps the level it stands on; a ravine
+  narrower than the window is filled in without banks and kept to the centimetre
+  with them, including the case `ground.ts` describes where a node is fenced on all
+  four sides and its own raw sample is the only answer left.
+- **Ripple** (I7 again). Deterministic noise on the slope: the filtered belt kinks
+  less than half as much as the same relief point-sampled, and the mean gradient
+  survives.
+- **I1**, the debt this step was for. The belt is meshed the way the mesher meshes
+  it, indexed with the shipped `buildSurfaceIndex`, and every query agrees with the
+  triangle to the millimetre — with a third test proving the teeth, since a bilinear
+  answer differs on any cell with a twist.
+- **I2's piece rule.** A roof sharing no vertex with its walls welds to them; a roof
+  hanging 3 m above them does not; and a slab inside a tower's plan at the tower's
+  own height welds — the documented miss, now stated as an expectation rather than
+  as a sentence in a doc.
+
+Two mutations were run to check the suite is not decorative: making `at()` read the
+wrong triangle fails I1, and disabling the breakline path fails five tests.
+
+### 8. Test B — the Monaco fixture — **next**
 
 A committed slice: ~200 × 200 field nodes (~160 KB) and about fifty footprints, run
 through the real pipeline in seconds. Catches what only real data expresses.

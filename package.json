@@ -26,6 +26,7 @@
     "race:kerbs": "bun scripts/audit-kerbs.ts",
     "race:laptimes": "bun scripts/audit-lap-times.ts",
     "start": "next start -p 4000",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "widths:generate": "bun scripts/generate-track-widths.ts"
   },
