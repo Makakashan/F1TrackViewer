@@ -282,6 +282,19 @@ and made the film worse.
 
 ## Parked — Monaco, after the ground work
 
+- **The tunnel mouth is a ring in a raw cutting, and no more than that.** Step 11
+  closed the pit and gave the sleeve an outside, so it is a mouth rather than a hole
+  with a film over it — but it is still a bare concrete ring standing in bare ground.
+  What is missing, in the order it shows: no headwall or wing walls, so the ring
+  meets the earth with nothing between them; the arch is scaled down by the cover
+  above it (`bakePortals`'s `available / crown`), so on a thin hill it comes out
+  squat; the bore behind it is black and empty — no road surface, no lining, and the
+  emissive tried in step 11 made it worse rather than better; and from above the
+  lid over the cutting reads as a grey plate lying on the slope. The work is one
+  pass over `bakePortals` and `bakeTunnelBody` in `bake.ts`, judged from the
+  `tunnel-mouth` shot and from the same camera at the western portal, which the
+  eight do not cover.
+
 - **The sea has an edge.** The far belt's water is one quad over the bbox, so in a
   wide shot from the north-west the sky shows past a straight diagonal where it
   stops (`images/mc-1929-seam-city-far.png`). Nothing is wrong with the geometry —
