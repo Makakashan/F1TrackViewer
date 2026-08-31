@@ -17,6 +17,7 @@ import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types"
 import {
   buildBeltBlocks,
   buildCircuitGround,
+  loadBakeInputs,
   fromOverpass,
   SHORE_EDGE_MAX_M,
   WATER_CLEARANCE_M,
@@ -525,7 +526,7 @@ function checkCoastline(water: WaterFile, field: HeightField): { agree: number; 
 
 async function audit(circuitId: string): Promise<Check[]> {
   // The same recipe the bake used, so a disagreement here is a real one.
-  const { coords, plane, field, corridor, tunnels } = await buildCircuitGround(circuitId);
+  const { coords, plane, field, corridor, tunnels } = buildCircuitGround(await loadBakeInputs(circuitId));
   const blocks = buildBeltBlocks(field, plane, corridor);
 
   const dir = join(ENVIRONMENTS, circuitId);

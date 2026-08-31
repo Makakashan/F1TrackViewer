@@ -46,7 +46,11 @@ import {
   fetchBreaklineWays,
   fetchShoreWays,
   fetchStructureWays,
+  type BreaklineWay,
   type BuildingWay,
+  type GreenWay,
+  type ShoreWay,
+  type StructureWay,
 } from "./overpass";
 import { buildGreenery, type GreeneryResult } from "./greenery";
 import { buildSurfaceIndex } from "./baked-scene";
@@ -57,9 +61,16 @@ import {
   KIT_BUDGET_SHARE,
   loadKitHouses,
   loadKitPaths,
+  type KitModel,
   type KitResult,
 } from "./kit";
-import { fetchElevationRaster, providerFor, sampleRaster } from "./raster";
+import {
+  fetchElevationRaster,
+  providerFor,
+  sampleRaster,
+  type Raster,
+  type RasterBBox,
+} from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
 import { buildPiers, type PierResult } from "./piers";
 import { berthYachts, buildProps, type PropResult } from "./props";
@@ -2127,6 +2138,69 @@ export interface BakeReport {
 }
 
 /**
+ * Everything the bake reads from outside itself: the network, the caches on
+ * disk, the asset packs. Nothing below this point fetches anything, so the same
+ * pipeline runs over a circuit and over a committed fixture — which is what
+ * makes layer B of `docs/scene-goals.md` §3 possible at all.
+ */
+export interface BakeInputs {
+  circuitId: string;
+  /** Centreline in lon/lat, the closed loop as the circuit is drawn. */
+  coords: [number, number][];
+  /** The window baked. A circuit's is its own padded bbox; a fixture's is smaller. */
+  bbox: RasterBBox;
+  dtm: Raster;
+  /** Surface model, where a provider has one. Building heights come off it. */
+  mnh: Raster | null;
+  structures: StructureWay[];
+  shoreWays: ShoreWay[];
+  buildingWays: BuildingWay[];
+  greenWays: GreenWay[];
+  breaklineWays: BreaklineWay[];
+  overrides: CityOverrides | null;
+  kitHouses: KitModel[];
+  /** Boat model paths, as the props pass wants them. */
+  kitBoats: string[];
+}
+
+/** The reads, all of them, in one place. */
+export async function loadBakeInputs(circuitId: string, refresh = false): Promise<BakeInputs> {
+  const coords = await loadCircuitCoords(circuitId);
+  const bbox = circuitBBox(coords);
+  const dtm = await fetchElevationRaster({ kind: "dtm", bbox, refresh });
+  // A surface model where one exists. Skadi has no layer for it at all, and
+  // IGN's box reaches into countries it holds nothing for, so the test is
+  // whether the raster came back with any data — not whether a provider claimed
+  // the ground. A circuit without measured heights is not a circuit without
+  // buildings; the tags carry it.
+  const surface = providerFor(bbox)?.layerFor("mnh")
+    ? await fetchElevationRaster({ kind: "mnh", bbox, refresh })
+    : null;
+
+  return {
+    circuitId,
+    coords,
+    bbox,
+    dtm,
+    mnh: surface && surface.header.validCount > 0 ? surface : null,
+    structures: await fetchStructureWays(circuitId, bbox, refresh),
+    shoreWays: await fetchShoreWays(circuitId, bbox, refresh),
+    buildingWays: await fetchBuildingWays(circuitId, bbox, refresh),
+    greenWays: await fetchGreenWays(circuitId, bbox, refresh),
+    breaklineWays: await fetchBreaklineWays(circuitId, bbox, refresh),
+    overrides: await loadOverrides(circuitId),
+    // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
+    kitHouses: await loadKitHouses(REPO_ROOT, "assets/models/kenney-city-suburban"),
+    kitBoats: await loadKitPaths(REPO_ROOT, "assets/models/kenney-watercraft", [
+      "boat-speed",
+      "boat-row",
+      "boat-fishing",
+      "boat-sail",
+    ]),
+  };
+}
+
+/**
  * Everything the bake and the audit both need, built once from one recipe.
  * Two callers building the field with different inputs is the bug this whole
  * document exists to stop, so neither of them builds it alone.
@@ -2150,16 +2224,9 @@ export interface CircuitGround {
   vaults: VaultedRuns;
 }
 
-export async function buildCircuitGround(
-  circuitId: string,
-  refresh = false,
-): Promise<CircuitGround> {
-  const coords = await loadCircuitCoords(circuitId);
-  const bbox = circuitBBox(coords);
+export function buildCircuitGround(inputs: BakeInputs): CircuitGround {
+  const { circuitId, coords, bbox, dtm, structures, overrides } = inputs;
   const plane = scenePlaneFor(coords);
-  const dtm = await fetchElevationRaster({ kind: "dtm", bbox, refresh });
-  const structures = await fetchStructureWays(circuitId, bbox, refresh);
-  const overrides = await loadOverrides(circuitId);
   const overrideStats = emptyOverrideStats();
 
   const found = buildTunnelMask(coords, structures, plane, {
@@ -2222,22 +2289,25 @@ export async function buildCircuitGround(
 }
 
 export async function bakeCircuit(circuitId: string, refresh = false): Promise<BakeReport> {
-  const { coords, bbox, plane, field, hill, corridor, tunnels, vaults, overrides, overrideStats } =
-    await buildCircuitGround(circuitId, refresh);
-  const shoreWays = overrideShoreWays(
-    await fetchShoreWays(circuitId, bbox, refresh),
-    overrides,
-    overrideStats,
-  );
+  return bakeFrom(await loadBakeInputs(circuitId, refresh));
+}
+
+export interface BakeOptions {
+  /** Where the GLBs and the manifest land. Defaults to `public/environments/<id>`. */
+  outDir?: string;
+}
+
+/** The pipeline itself, over inputs somebody else read. */
+export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): Promise<BakeReport> {
+  const { circuitId, buildingWays, greenWays, breaklineWays, mnh, kitHouses, kitBoats } = inputs;
+  const { coords, plane, field, hill, corridor, tunnels, vaults, overrides, overrideStats } =
+    buildCircuitGround(inputs);
+  const shoreWays = overrideShoreWays(inputs.shoreWays, overrides, overrideStats);
   const coast = buildCoastline(shoreWays, field, plane);
   const shore = bakeShoreWalls(shoreWays, field, plane, coast);
   const piers = buildPiers(shoreWays, field, plane);
   const pierDecks = bakePierDecks(piers);
-  const greenery = buildGreenery(
-    await fetchGreenWays(circuitId, bbox, refresh),
-    field,
-    plane,
-  );
+  const greenery = buildGreenery(greenWays, field, plane);
   const greeneryStats = { ...greenery.stats };
 
   const elevations = trackElevations(field, coords, plane);
@@ -2246,44 +2316,21 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
   const barriers = bakeBarriers(field, plane, tunnels, DEFAULT_TRACK_HALF_WIDTH_M);
   // The surveyed lines the belts' filter may not average across: cliffs and
   // retaining walls from their own query, quays and breakwaters from the shore.
-  const breaklines = buildBreaklines(
-    field,
-    await fetchBreaklineWays(circuitId, bbox, refresh),
-    shoreWays,
-  );
+  const breaklines = buildBreaklines(field, breaklineWays, shoreWays);
   const ground = buildGround(field, plane, breaklines);
   const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, portalVoids(vaults, hill, plane));
   const water = bakeWater(field, plane);
 
-  const buildingWays = await fetchBuildingWays(circuitId, bbox, refresh);
   const buildingsFile = applyBuildingOverrides(
     fromOverpass(buildingWays),
     overrides,
     overrideStats,
   );
   const heightStats = { value: { measured: 0, fellBack: 0, medianDeltaM: 0, tallest: 0 } };
-  // A surface model where one exists. Skadi has no layer for it at all, and
-  // IGN's box reaches into countries it holds nothing for, so the test is
-  // whether the raster came back with any data — not whether a provider claimed
-  // the ground. A circuit without measured heights is not a circuit without
-  // buildings; the tags carry it.
-  const surface = providerFor(bbox)?.layerFor("mnh")
-    ? await fetchElevationRaster({ kind: "mnh", bbox, refresh })
-    : null;
-  const mnh = surface && surface.header.validCount > 0 ? surface : null;
   const measured = measureBuildingHeights(buildingsFile.buildings, mnh, heightStats);
   const roofTags = new Map<string, RoofTags>(
     buildingWays.map((way) => [way.id, way.tags as RoofTags]),
   );
-  // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
-  const kitHouses = await loadKitHouses(REPO_ROOT, "assets/models/kenney-city-suburban");
-  const kitBoats = await loadKitPaths(REPO_ROOT, "assets/models/kenney-watercraft", [
-    "boat-speed",
-    "boat-row",
-    "boat-fishing",
-    "boat-sail",
-  ]);
-
   const buildings = emptyBuildingResult();
   // The one surface, and it is the drawn one. The mesher's own node table would
   // be a second derivation: the coast is cut inside a cell, a seam node is
@@ -2377,7 +2424,7 @@ export async function bakeCircuit(circuitId: string, refresh = false): Promise<B
     slopeShaded += shadeBySlope(terrain.meshes[belt]);
   }
 
-  const outDir = join(OUTPUT_ROOT, circuitId);
+  const outDir = options.outDir ?? join(OUTPUT_ROOT, circuitId);
   await mkdir(outDir, { recursive: true });
 
   const layout: Record<Belt, { kind: MeshKind; mesh: Mesh }[]> = {
