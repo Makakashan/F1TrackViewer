@@ -301,6 +301,16 @@ and made the film worse.
   the bbox ends — but the eye reads a slab. A skirt, a fog band or simply a larger
   quad would answer it; which one is a look decision.
 
+- **Roofs missing in the app, not in the bake.** Seen from above, some houses show
+  no roof — you look into the shell — and from an angle only one wall reads. Measured
+  over the shipped Monaco GLB: 0 pieces of 1,213 in the building meshes and 0 of 67
+  kit models lack an up-facing face, so the geometry that ships has its roofs. The
+  suspect is therefore the runtime, and most likely a circuit still on the old JSON
+  path — `environment-layer.tsx` extrudes a footprint without capping it — which is
+  what **P4.4** exists to delete. One step to confirm: which circuit the screenshot
+  was taken on. Left alone for now, since the plan is to replace these houses with
+  modelled assets anyway.
+
 - **Kit houses have never been looked at.** 75 modelled on the current bake, 92,406
   triangles, inside budget; 1,976 footprints fit the shape and 369 had no model at
   their proportion. The numbers are plausible and nobody has looked at one. The
