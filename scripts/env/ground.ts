@@ -17,14 +17,15 @@
  *    point-samples a fine field is aliasing, plainly: the kink between
  *    neighbouring faces measures 3.76 m at 8 m and 7.70 m at 16 m, against
  *    2.55 m and 4.97 m for the same nodes box-averaged, while the mean slope
- *    moves 16.6° → 16.3°. The noise goes and the relief stays. (The box filter
- *    is the first kernel, not the last: an edge-preserving one, pinned by the
- *    surveyed walls, is roadmap step 5.)
+ *    moves 16.6° → 16.3°. The noise goes and the relief stays. The window stops
+ *    at a surveyed cliff, wall or quay (`breaklines.ts`), which is what keeps the
+ *    averaging from turning one into a ramp.
  * 2. **`at()` interpolates the way the mesh triangulates.** Not bilinear — the
  *    terrain splits each cell across its main diagonal, so a query has to pick
  *    the same triangle or it answers about a surface nobody drew.
  */
 
+import type { Breaklines } from "./breaklines";
 import { BELT_CELL_M, type Belt } from "./belts";
 import type { HeightField } from "./heightfield";
 import type { ScenePlane } from "./plane";
@@ -80,7 +81,7 @@ function summedArea(field: HeightField): { sums: Float64Array; counts: Uint32Arr
   return { sums, counts };
 }
 
-export function buildGround(field: HeightField, plane: ScenePlane): Ground {
+export function buildGround(field: HeightField, plane: ScenePlane, breaklines?: Breaklines): Ground {
   const { sums, counts } = summedArea(field);
   const stride = field.width + 1;
   const fieldCellM = (field.cellSizeM.x + field.cellSizeM.y) / 2;
@@ -90,12 +91,39 @@ export function buildGround(field: HeightField, plane: ScenePlane): Ground {
   const minZ = plane.z(field.bbox.maxLat); // the north edge is the smaller Z
   const maxZ = plane.z(field.bbox.minLat);
 
+  const clampRow = (row: number) => Math.max(0, Math.min(field.height - 1, row));
+  const clampCol = (col: number) => Math.max(0, Math.min(field.width - 1, col));
+
   /** Mean of the valid field nodes in a square window, NaN if there are none. */
   const windowMean = (row: number, col: number, radius: number): number => {
-    const rowFrom = Math.max(0, Math.min(field.height - 1, row - radius));
-    const rowTo = Math.max(0, Math.min(field.height - 1, row + radius));
-    const colFrom = Math.max(0, Math.min(field.width - 1, col - radius));
-    const colTo = Math.max(0, Math.min(field.width - 1, col + radius));
+    const rowFrom = clampRow(row - radius);
+    const rowTo = clampRow(row + radius);
+    const colFrom = clampCol(col - radius);
+    const colTo = clampCol(col + radius);
+
+    // The window is walked node by node only where a surveyed line runs through
+    // it. Everywhere else — nearly everywhere — the summed-area tables answer in
+    // four lookups, so the breaklines cost the bake nothing away from a wall.
+    // The question is whether a line is *in* the window, not whether it crosses
+    // the window's diagonal: a wall clipping a corner still splits the average.
+    if (breaklines?.count && breaklines.near(colFrom, rowFrom, colTo, rowTo)) {
+      let sum = 0;
+      let count = 0;
+      for (let r = rowFrom; r <= rowTo; r++) {
+        for (let c = colFrom; c <= colTo; c++) {
+          const value = field.data[r * field.width + c];
+          if (Number.isNaN(value)) continue;
+          // A node on the far side of a wall says nothing about this side.
+          if ((r !== row || c !== col) && breaklines.crosses(col, row, c, r)) continue;
+          sum += value;
+          count++;
+        }
+      }
+      // Only its own node is left when a line runs between it and every
+      // neighbour, which is the answer: an unfiltered sample on a knife edge.
+      return count === 0 ? field.data[clampRow(row) * field.width + clampCol(col)] : sum / count;
+    }
+
     const bottom = (rowTo + 1) * stride;
     const top = rowFrom * stride;
     const right = colTo + 1;
