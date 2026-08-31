@@ -51,6 +51,11 @@ thrown away later.
   `frameloop="demand"` — so a new effect goes behind them rather than on top of
   everyone. Budget it: how many draw calls, how much per frame, on the mobile path
   too.
+- **A replacement is measured before it is written.** When the plan is to swap one
+  algorithm for a better one — a filter kernel, a heuristic, a fit — take the number
+  on what is there now and on the candidate first, on real data, and only then write
+  it. If they come out the same, say so and stop: an approved plan that measures
+  as a tie is a finding, not a licence to ship the more complicated half of it.
 - **Write the simplest version that keeps the performance.** This scene runs per
   frame and the simulation steps at a fixed `dt`, so the hot paths earn their
   complexity — everything else takes the plain formulation.
