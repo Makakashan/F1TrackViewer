@@ -16,6 +16,7 @@
     "assets:fetch": "bun scripts/fetch-assets.ts",
     "env:bake": "bun scripts/env/bake.ts",
     "env:bake:all": "bun scripts/env/bake-all.ts",
+    "env:fixture": "bun scripts/env/fixture.ts",
     "env:field": "bun scripts/env/heightfield.ts",
     "env:preview": "bun scripts/env/preview.ts",
     "env:raster": "bun scripts/env/raster.ts",
