@@ -181,9 +181,6 @@ type MeshKind =
   | "pool"
   | "pitch";
 
-/** What the bore lights itself with, in linear RGB. */
-const TUNNEL_GLOW: [number, number, number] = [0.1, 0.085, 0.06];
-
 const MESH_COLOR: Record<MeshKind, string> = {
   terrain: DIORAMA_COLORS.terrain,
   // A deck is ground you can walk on, not a wall, so it reads as terrain.
@@ -2159,11 +2156,6 @@ async function writeGlb(path: string, parts: { kind: MeshKind; mesh: Mesh }[]): 
       .setRoughnessFactor(kind === "water" ? 0.25 : 0.95)
       .setMetallicFactor(0)
       .setDoubleSided(false);
-    // A bore is the one surface no light in the scene can reach, so without a
-    // little of its own it is not dark, it is absent: the mouth reads as a hole
-    // punched in the hill rather than as a road going into it. Dim and warm,
-    // the colour of the lamps in one.
-    if (kind === "tunnel") material.setEmissiveFactor(TUNNEL_GLOW);
 
     const primitive = document
       .createPrimitive()
