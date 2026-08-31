@@ -99,8 +99,12 @@ Three layers, cheapest first. All three have to be green before a bake is called
 ## 4. The eye, from fixed positions
 
 Some judgements stay visual, and those get a fixed camera so two bakes can be compared
-honestly. `bun run env:preview` serves them; `?shot=<name>` writes a PNG to `images/`
-(git-ignored).
+honestly. `bun run env:shots [circuitId]` takes all eight: it borrows a preview server
+if one is already up, starts its own if not, drives headless Chromium over
+`preview.html`, and writes `images/<circuitId>-<shot>.png` (git-ignored). `--only=<name>`
+takes one. The cameras themselves are data in `scripts/env/shots.ts` — a polar target,
+a bearing, an elevation — so moving one is an edit to a list rather than a remembered
+URL.
 
 | Shot | Camera | Watching for |
 |---|---|---|
@@ -115,3 +119,9 @@ honestly. `bun run env:preview` serves them; `?shot=<name>` writes a PNG to `ima
 
 No pixel diff. Every bake moves every vertex a little, so a strict comparison would
 fail always and be switched off within a week; the shots are for a person to look at.
+
+Where the cameras came from: the tunnel mouth is the bore's own end, the ravine and
+the two seam shots are the steepest ground the boundary crosses, found by walking the
+drawn surface rather than by eye. The preview's lighting is its own — one sun, one
+hemisphere — so these frames say nothing about the app's light rig, which is what the
+parked rotation artefact is about.
