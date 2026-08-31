@@ -29,10 +29,11 @@ import {
   type BakedMesh,
   type GroundIndex,
 } from "./env/baked-scene";
+import { buildBreaklines, type Breaklines } from "./env/breaklines";
 import { buildCoastline, type Coastline } from "./env/coastline";
 import { buildGround, type Ground } from "./env/ground";
 import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
-import { fetchBuildingWays, fetchShoreWays } from "./env/overpass";
+import { fetchBreaklineWays, fetchBuildingWays, fetchShoreWays } from "./env/overpass";
 import { BELT_BUDGET, BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
 import type { HeightField } from "./env/heightfield";
 import type { ScenePlane } from "./env/plane";
@@ -81,6 +82,28 @@ interface Check {
   limit: string;
   ok: boolean;
   fatal: boolean;
+}
+
+/** The raw step across a breakline that is a wall rather than ripple (I7). */
+const BREAKLINE_STEP_M = 2;
+
+/**
+ * I7's three limits, on the city belt.
+ *
+ * The kink ceiling sits between what point sampling gives (2.36 m on Monaco)
+ * and what the box filter gives (1.55 m): the filter has to be doing real work
+ * and is allowed to give some of it back at a wall. The slope band is the
+ * relief the filter may not flatten. The step floor is what a surveyed wall
+ * keeps — the box filter alone manages 85%, and cutting the window at the line
+ * overshoots past 100%, because the raster smeared the wall in the first place.
+ */
+const RELIEF_KINK_M = 2;
+const RELIEF_SLOPE_DEG = 0.5;
+const RELIEF_STEP_KEPT = 0.95;
+
+/** Slope of a belt cell from its central differences, in degrees. */
+function slopeDeg(dEast: number, dSouth: number, cellM: number): number {
+  return (Math.atan(Math.hypot(dEast / (2 * cellM), dSouth / (2 * cellM))) * 180) / Math.PI;
 }
 
 function check(name: string, measured: string, limit: string, ok: boolean, fatal = true): Check {
@@ -196,6 +219,97 @@ function checkTerrain(
     }
   }
   return { worst, sampled, shore, worstShore, seam, worstSeam };
+}
+
+interface Relief {
+  /** RMS of the second difference between neighbouring belt nodes, in metres. */
+  kinkM: number;
+  /** The same for the unfiltered field, sampled at the same nodes. */
+  rawKinkM: number;
+  meanSlopeDeg: number;
+  rawSlopeDeg: number;
+  /** Height kept across a surveyed breakline, as a fraction of the raw step. */
+  stepKept: number;
+  stepEdges: number;
+}
+
+/**
+ * I7: the filter takes the ripple out and leaves the relief in.
+ *
+ * Three numbers, on the belt the filter first bites: how much a node disagrees
+ * with the line between its neighbours (the aliasing the filter is for), what
+ * the mean slope does (the relief it must not flatten), and how much of a
+ * surveyed wall's step survives (the edge it must not ramp).
+ */
+function checkRelief(
+  surface: Ground,
+  field: HeightField,
+  plane: ScenePlane,
+  breaklines: Breaklines,
+  belt: Belt,
+): Relief {
+  const grid = surface.gridFor(belt);
+  const height = (row: number, col: number) => surface.nodeAt(belt, row, col);
+  const raw = (row: number, col: number) =>
+    field.heightAt(plane.lon(grid.minX + col * grid.cell), plane.lat(grid.minZ + row * grid.cell));
+
+  let kinkSq = 0;
+  let rawKinkSq = 0;
+  let kinks = 0;
+  let slopeSum = 0;
+  let rawSlopeSum = 0;
+  let slopes = 0;
+  for (let row = 1; row < grid.rows; row++) {
+    for (let col = 1; col < grid.cols; col++) {
+      const c = height(row, col);
+      const west = height(row, col - 1);
+      const east = height(row, col + 1);
+      const north = height(row - 1, col);
+      const south = height(row + 1, col);
+      const rc = raw(row, col);
+      const rw = raw(row, col - 1);
+      const re = raw(row, col + 1);
+      const rn = raw(row - 1, col);
+      const rs = raw(row + 1, col);
+      if ([c, west, east, north, south, rc, rw, re, rn, rs].some(Number.isNaN)) continue;
+      kinkSq += (2 * c - west - east) ** 2 + (2 * c - north - south) ** 2;
+      rawKinkSq += (2 * rc - rw - re) ** 2 + (2 * rc - rn - rs) ** 2;
+      kinks += 2;
+      slopeSum += slopeDeg(east - west, south - north, grid.cell);
+      rawSlopeSum += slopeDeg(re - rw, rs - rn, grid.cell);
+      slopes++;
+    }
+  }
+
+  // Only edges the raw field says something across: a metre of ripple beside a
+  // wall would otherwise count as a wall the filter failed to keep.
+  let keptSum = 0;
+  let rawSum = 0;
+  let stepEdges = 0;
+  for (let row = 0; row <= grid.rows; row++) {
+    for (let col = 0; col < grid.cols; col++) {
+      const rawStep = Math.abs(raw(row, col + 1) - raw(row, col));
+      if (!(rawStep >= BREAKLINE_STEP_M)) continue;
+      const step = Math.abs(height(row, col + 1) - height(row, col));
+      if (Number.isNaN(step)) continue;
+      const lon0 = plane.lon(grid.minX + col * grid.cell);
+      const lon1 = plane.lon(grid.minX + (col + 1) * grid.cell);
+      const lat = plane.lat(grid.minZ + row * grid.cell);
+      if (!breaklines.crossesLonLat(lon0, lat, lon1, lat)) continue;
+      rawSum += rawStep;
+      keptSum += step;
+      stepEdges++;
+    }
+  }
+
+  return {
+    kinkM: Math.sqrt(kinkSq / kinks),
+    rawKinkM: Math.sqrt(rawKinkSq / kinks),
+    meanSlopeDeg: slopeSum / slopes,
+    rawSlopeDeg: rawSlopeSum / slopes,
+    stepKept: stepEdges ? keptSum / rawSum : 1,
+    stepEdges,
+  };
 }
 
 interface BuildingFit {
@@ -358,7 +472,8 @@ async function audit(circuitId: string): Promise<Check[]> {
   const buildings = fromOverpass(await fetchBuildingWays(circuitId, field.bbox));
   // The line the terrain was cut against, rebuilt the same way (P4.0).
   const rasterShore = buildShoreDistance(field);
-  const cutLine = buildCoastline(await fetchShoreWays(circuitId, field.bbox), field, plane);
+  const shoreWays = await fetchShoreWays(circuitId, field.bbox);
+  const cutLine = buildCoastline(shoreWays, field, plane);
   const water = JSON.parse(await readFile(join(dir, "water.json"), "utf8")) as WaterFile;
 
   const checks: Check[] = [];
@@ -391,7 +506,12 @@ async function audit(circuitId: string): Promise<Check[]> {
   const ground = buildGroundIndex(baked);
   // The same surface definition the bake meshed from, rebuilt here rather than
   // trusted: if the two disagree, that is the check firing, not an excuse.
-  const surface = buildGround(field, plane);
+  const breaklines = buildBreaklines(
+    field,
+    await fetchBreaklineWays(circuitId, field.bbox),
+    shoreWays,
+  );
+  const surface = buildGround(field, plane, breaklines);
 
   for (const { belt, bytes, meshes } of baked) {
     const triangles = meshes.reduce((sum, mesh) => sum + mesh.triangles, 0);
@@ -485,6 +605,34 @@ async function audit(circuitId: string): Promise<Check[]> {
         + ` ${seamSamples.toLocaleString()} at a belt seam, worst ${worstSeam.toFixed(2)} m)`,
       `${TERRAIN_TOLERANCE_M} m`,
       worstTerrain <= TERRAIN_TOLERANCE_M,
+    ),
+  );
+  // I7, on the city belt: the first one the filter touches, and the one the
+  // eye is closest to.
+  const relief = checkRelief(surface, field, plane, breaklines, "city");
+  checks.push(
+    check(
+      "the filter takes the ripple out",
+      `kink ${relief.kinkM.toFixed(2)} m against the field's own ${relief.rawKinkM.toFixed(2)} m`,
+      `${RELIEF_KINK_M} m`,
+      relief.kinkM <= RELIEF_KINK_M,
+    ),
+  );
+  checks.push(
+    check(
+      "the filter leaves the relief in",
+      `mean slope ${relief.meanSlopeDeg.toFixed(2)}° against the field's ${relief.rawSlopeDeg.toFixed(2)}°`,
+      `${RELIEF_SLOPE_DEG}°`,
+      Math.abs(relief.meanSlopeDeg - relief.rawSlopeDeg) <= RELIEF_SLOPE_DEG,
+    ),
+  );
+  checks.push(
+    check(
+      "a surveyed wall keeps its step",
+      `${(relief.stepKept * 100).toFixed(0)}% of the raw step over ${relief.stepEdges} edges`
+        + ` across ${breaklines.count.toLocaleString()} breakline segments`,
+      `${(RELIEF_STEP_KEPT * 100).toFixed(0)}%`,
+      relief.stepKept >= RELIEF_STEP_KEPT,
     ),
   );
   checks.push(check("water sits on the datum", `${waterOffDatum} vertices off`, "0", waterOffDatum === 0));
