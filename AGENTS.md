@@ -69,7 +69,12 @@ thrown away later.
 - Subject: lowercase `feat|fix|refactor|docs|test:` followed by what the change makes
   true — `fix: roads lie on the terrain instead of hovering over it`.
 - No `Co-Authored-By` trailer and no AI attribution anywhere in a commit or PR.
-- Work on a branch off `main`.
+- **Branches.** `main` is what is deployed — nothing lands there except a release the
+  user calls. `dev` is where work accumulates. A feature branches off `dev` and merges
+  back into `dev` with `--no-ff`, so the feature reads as one block in the history.
+- **Stop at the end of a feature.** When the branch is finished, say so and wait: the
+  user looks at it first. Push and merge only after they say it is fine, and never
+  merge into `main` on your own.
 - Commit and push only when asked to. Finished work waits in the working tree until
   the user says to commit it.
 - **Gap days.** Before committing, compare today with the date of the last commit
