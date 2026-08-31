@@ -396,7 +396,7 @@ export function buildBeltBlocks(
       Math.abs(offset / blockM - Math.round(offset / blockM)) * blockM < 0.15;
     const onVertical = onLine(offsetX);
     const onHorizontal = onLine(offsetZ);
-    if (onVertical === onHorizontal) return false; // interior, or a block corner
+    if (!onVertical && !onHorizontal) return false; // interior
 
     let finest = Infinity;
     let coarsest = 0;
@@ -411,10 +411,11 @@ export function buildBeltBlocks(
         if (cell < finest) finest = cell;
       }
     }
-    if (coarsest <= finest) return false;
-    // A node of the coarse lattice is shared outright and keeps its own height.
-    const along = onVertical ? offsetZ : offsetX;
-    return Math.abs(along / coarsest - Math.round(along / coarsest)) * coarsest > 0.15;
+    // Every node along the boundary takes the coarse belt's chord, the nodes of
+    // the coarse lattice included: those sit at t = 0 or t = 1 and so take one
+    // of its endpoints outright, which is still the coarse belt's height and
+    // not this belt's own.
+    return coarsest > finest;
   };
 
   return { blockM, blockRows, blockCols, blockBelt, beltOfCell, conformsAt };
@@ -506,106 +507,144 @@ function bakeTerrain(
   const blocks = buildBeltBlocks(field, plane, corridor);
   const { blockM, blockRows, blockCols, blockBelt, beltOfCell } = blocks;
 
+  /**
+   * A height for a node the terrain is going to stand on, on any belt's grid.
+   *
+   * The raster and the surveyed line disagree by a few metres in places, so a
+   * node the line puts on land can be one the raster calls sea and has no
+   * height for. Rather than drop it to the datum — which ramps the quay into
+   * the water like a beach — it takes the nearest dry reading, widening until
+   * it finds one.
+   *
+   * It takes the belt rather than closing over one because a seam node has to
+   * ask what the *coarser* belt thinks the ground is: each belt averages the
+   * field over its own cell (`ground.ts`), so the same place has a different
+   * height on each, and a chord drawn from the wrong belt's numbers is a chord
+   * the other side never drew.
+   */
+  const solidHeightOn = (belt: Belt, row: number, col: number): number => {
+    const own = ground.nodeAt(belt, row, col);
+    if (!Number.isNaN(own)) return own;
+    for (let radius = 1; radius <= 3; radius++) {
+      let sum = 0;
+      let count = 0;
+      for (let dr = -radius; dr <= radius; dr++) {
+        for (let dc = -radius; dc <= radius; dc++) {
+          if (Math.max(Math.abs(dr), Math.abs(dc)) !== radius) continue;
+          const value = ground.nodeAt(belt, row + dr, col + dc);
+          if (Number.isNaN(value)) continue;
+          sum += value;
+          count++;
+        }
+      }
+      if (count > 0) return sum / count;
+    }
+    return 0;
+  };
+
+  const surfaceHeightOn = (belt: Belt, row: number, col: number): number =>
+    Math.max(solidHeightOn(belt, row, col), WATER_CLEARANCE_M);
+
+  /** The coarsest cell of the blocks meeting at a node's own position. */
+  const coarsestAt = (offsetX: number, offsetZ: number): number => {
+    let coarsest = 0;
+    for (const dx of [-0.5, 0.5]) {
+      for (const dz of [-0.5, 0.5]) {
+        const blockCol = Math.floor((offsetX + dx) / blockM);
+        const blockRow = Math.floor((offsetZ + dz) / blockM);
+        if (blockRow < 0 || blockCol < 0 || blockRow >= blockRows || blockCol >= blockCols) {
+          continue;
+        }
+        const other = BELT_CELL_M[BELT_ORDER[blockBelt[blockRow * blockCols + blockCol]]];
+        if (other > coarsest) coarsest = other;
+      }
+    }
+    return coarsest;
+  };
+
+  /**
+   * The height a belt actually draws at one of its own nodes.
+   *
+   * Away from a boundary that is the belt's own reading of the surface. On a
+   * boundary with a coarser belt it is the coarse belt's — its node outright at
+   * a block corner, the chord between two of its nodes anywhere else along the
+   * line. Read the coarse belt's *drawn* height rather than its raw one, so a
+   * node where three belts meet resolves through the coarsest of them: a chord
+   * to a point the other side never draws is how the two part company.
+   *
+   * A belt boundary is a T-junction: the coarse side draws one straight chord
+   * across 8 or 16 m while the fine side follows the ground every 4 m. On
+   * Monaco the two disagree by metres, and the skirt that stops it being a hole
+   * leaves it a ledge instead — a step through the middle of flat ground. So on
+   * a shared boundary the fine side gives up its own readings and takes the
+   * coarse one's. Every cell size divides every coarser one, so the coarse node
+   * a chord runs between is always a node of the fine grid too.
+   */
+  const drawnHeightOn = (belt: Belt, row: number, col: number): number => {
+    const cell = BELT_CELL_M[belt];
+    const offsetX = col * cell;
+    const offsetZ = row * cell;
+    const coarsest = coarsestAt(offsetX, offsetZ);
+    const own = surfaceHeightOn(belt, row, col);
+    if (coarsest <= cell) return own;
+    const onVertical = offsetX % blockM === 0;
+    const onHorizontal = offsetZ % blockM === 0;
+    if (!onVertical && !onHorizontal) return own;
+    const coarseBelt = BELT_ORDER.find((other) => BELT_CELL_M[other] === coarsest);
+    if (!coarseBelt) return own;
+
+    if (onVertical && onHorizontal) {
+      return drawnHeightOn(coarseBelt, offsetZ / coarsest, offsetX / coarsest);
+    }
+
+    const step = coarsest / cell;
+    const index = onVertical ? row : col;
+    const low = Math.floor(index / step) * step;
+    const high = low + step;
+    const t = (index - low) / step;
+    const across = (onVertical ? offsetX : offsetZ) / coarsest;
+    const lowIndex = (low * cell) / coarsest;
+    const highIndex = (high * cell) / coarsest;
+    const a = onVertical
+      ? drawnHeightOn(coarseBelt, lowIndex, across)
+      : drawnHeightOn(coarseBelt, across, lowIndex);
+    const b = onVertical
+      ? drawnHeightOn(coarseBelt, highIndex, across)
+      : drawnHeightOn(coarseBelt, across, highIndex);
+    return a + (b - a) * t;
+  };
+
   for (const belt of BELT_ORDER) {
     const cell = BELT_CELL_M[belt];
     const cols = Math.floor((maxX - minX) / cell);
     const rows = Math.floor((maxZ - minZ) / cell);
     const grid = new GridMesh();
 
-    // One surface, and this belt's view of it. A coarse belt averages the field
-    // over its own cell rather than sampling it, which is the difference
-    // between relief and aliasing — see `ground.ts`.
-    const heightAt = (row: number, col: number): number => ground.nodeAt(belt, row, col);
-
     const nodes = (rows + 2) * (cols + 2);
 
-    /**
-     * A height for a node the terrain is going to stand on. The raster and the
-     * surveyed line disagree by a few metres in places, so a node the line puts
-     * on land can be one the raster calls sea and has no height for. Rather
-     * than drop it to the datum — which ramps the quay into the water like a
-     * beach — it takes the nearest dry reading, widening until it finds one.
-     */
-    const solidHeightAt = (row: number, col: number): number => {
-      const own = heightAt(row, col);
-      if (!Number.isNaN(own)) return own;
-      for (let radius = 1; radius <= 3; radius++) {
-        let sum = 0;
-        let count = 0;
-        for (let dr = -radius; dr <= radius; dr++) {
-          for (let dc = -radius; dc <= radius; dc++) {
-            if (Math.max(Math.abs(dr), Math.abs(dc)) !== radius) continue;
-            const value = heightAt(row + dr, col + dc);
-            if (Number.isNaN(value)) continue;
-            sum += value;
-            count++;
-          }
-        }
-        if (count > 0) return sum / count;
-      }
-      return 0;
-    };
+    // This belt's own view of the one surface: it averages the field over its
+    // own cell rather than sampling it — see `ground.ts`.
+    const heightAt = (row: number, col: number): number => ground.nodeAt(belt, row, col);
 
-    const ownHeightAt = (row: number, col: number): number =>
-      Math.max(solidHeightAt(row, col), WATER_CLEARANCE_M);
+    const solidHeightAt = (row: number, col: number): number => solidHeightOn(belt, row, col);
 
-    /** The coarsest cell of the blocks meeting at this node's own position. */
-    const coarsestAt = (offsetX: number, offsetZ: number): number => {
-      let coarsest = 0;
-      for (const dx of [-0.5, 0.5]) {
-        for (const dz of [-0.5, 0.5]) {
-          const blockCol = Math.floor((offsetX + dx) / blockM);
-          const blockRow = Math.floor((offsetZ + dz) / blockM);
-          if (blockRow < 0 || blockCol < 0 || blockRow >= blockRows || blockCol >= blockCols) {
-            continue;
-          }
-          const other = BELT_CELL_M[BELT_ORDER[blockBelt[blockRow * blockCols + blockCol]]];
-          if (other > coarsest) coarsest = other;
-        }
-      }
-      return coarsest;
-    };
+    const ownHeightAt = (row: number, col: number): number => surfaceHeightOn(belt, row, col);
 
     /**
-     * The surface height at a node, conforming to the coarser belt where the
-     * two meet.
-     *
-     * A belt boundary is a T-junction: the coarse side draws one straight chord
-     * across 8 or 16 m while the fine side follows the ground every 4 m. On
-     * Monaco the two disagree by metres, and the skirt that stops it being a
-     * hole leaves it a ledge instead — a step through the middle of flat
-     * ground, which is what the coastal band put all over the city. So on a
-     * shared boundary the fine side gives up its own readings and takes the
-     * chord: the two surfaces then meet exactly, and there is nothing left to
-     * hide. Every cell size divides every coarser one, so the coarse node the
-     * chord runs between is always a node of this grid too.
+     * The height this belt draws at one of its nodes, and the record of what
+     * the boundary cost. `drawnHeightOn` holds the rule; this counts.
      */
     const surfaceHeightAt = (row: number, col: number): number => {
-      const offsetX = col * cell;
-      const offsetZ = row * cell;
-      const coarsest = coarsestAt(offsetX, offsetZ);
-      if (coarsest <= cell) return ownHeightAt(row, col);
-      const step = coarsest / cell;
-      const onVertical = offsetX % blockM === 0;
-      const onHorizontal = offsetZ % blockM === 0;
-      // A block corner is a node of every lattice, so it needs no chord.
-      if (onVertical === onHorizontal) return ownHeightAt(row, col);
-
-      const index = onVertical ? row : col;
-      const low = Math.floor(index / step) * step;
-      const high = low + step;
-      if (low < 0 || high > (onVertical ? rows + 1 : cols + 1)) return ownHeightAt(row, col);
-      const t = (index - low) / step;
-      const a = onVertical ? ownHeightAt(low, col) : ownHeightAt(row, low);
-      const b = onVertical ? ownHeightAt(high, col) : ownHeightAt(row, high);
-      const chord = a + (b - a) * t;
+      const drawn = drawnHeightOn(belt, row, col);
+      const own = ownHeightAt(row, col);
+      const moved = Math.abs(drawn - own);
+      if (moved < 1e-6) return drawn;
       conformed++;
-      const moved = Math.abs(chord - ownHeightAt(row, col));
       if (moved > worstConform) worstConform = moved;
       conformSum += moved;
       if (moved > 1) conformOver1++;
       if (moved > 2) conformOver2++;
-      return chord;
+      return drawn;
     };
 
     const vertexAt = (row: number, col: number): number =>

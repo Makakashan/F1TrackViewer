@@ -24,6 +24,7 @@ import {
 } from "./env/bake";
 import {
   buildGroundIndex,
+  buildSurfaceIndex,
   buildingPieces,
   readBakedCircuit,
   type BakedMesh,
@@ -83,6 +84,9 @@ interface Check {
   ok: boolean;
   fatal: boolean;
 }
+
+/** How far apart two belts may claim the ground is, where they share a point (I3). */
+const SEAM_TOLERANCE_M = 0.15;
 
 /** The raw step across a breakline that is a wall rather than ripple (I7). */
 const BREAKLINE_STEP_M = 2;
@@ -219,6 +223,66 @@ function checkTerrain(
     }
   }
   return { worst, sampled, shore, worstShore, seam, worstSeam };
+}
+
+interface Seam {
+  points: number;
+  worstM: number;
+  meanM: number;
+  overToleranceM: number;
+}
+
+/**
+ * I3: where two belts meet, they draw the same ground.
+ *
+ * Measured between the two surfaces, not between their vertices: a belt hems its
+ * edge with a vertical skirt, and counting a skirt's foot as a disagreement
+ * reports metres of trouble that nobody can see. Both indexes drop the skirts,
+ * so what is left is the ground each belt claims at a point they share.
+ */
+function checkSeams(
+  belts: { belt: Belt; meshes: BakedMesh[] }[],
+  tolerance: number,
+): Seam {
+  const index = new Map<Belt, ReturnType<typeof buildSurfaceIndex>>();
+  const terrain = new Map<Belt, BakedMesh[]>();
+  for (const { belt, meshes } of belts) {
+    const ground = meshes.filter((mesh) => mesh.name === "terrain");
+    terrain.set(belt, ground);
+    index.set(belt, buildSurfaceIndex([ground]));
+  }
+
+  const seam: Seam = { points: 0, worstM: 0, meanM: 0, overToleranceM: 0 };
+  let sum = 0;
+  for (let i = 1; i < BELT_ORDER.length; i++) {
+    const fine = BELT_ORDER[i - 1];
+    const coarse = BELT_ORDER[i];
+    const fineIndex = index.get(fine);
+    const coarseIndex = index.get(coarse);
+    if (!fineIndex || !coarseIndex) continue;
+    const seen = new Set<string>();
+    for (const mesh of terrain.get(fine) ?? []) {
+      for (let v = 0; v < mesh.positions.length; v += 3) {
+        const x = mesh.positions[v];
+        const z = mesh.positions[v + 2];
+        const key = `${x.toFixed(2)},${z.toFixed(2)}`;
+        if (seen.has(key)) continue;
+        const here = fineIndex.at(x, z);
+        const there = coarseIndex.at(x, z);
+        // Both belts answer only along the boundary they share, which is the
+        // only place the question means anything.
+        if (Number.isNaN(here) || Number.isNaN(there)) continue;
+        seen.add(key);
+        const apart = Math.abs(here - there);
+        seam.points++;
+        sum += apart;
+        if (apart > tolerance) seam.overToleranceM++;
+        if (apart > seam.worstM) seam.worstM = apart;
+      }
+    }
+  }
+  seam.meanM = seam.points ? sum / seam.points : 0;
+  return seam;
 }
 
 interface Relief {
@@ -607,6 +671,21 @@ async function audit(circuitId: string): Promise<Check[]> {
       worstTerrain <= TERRAIN_TOLERANCE_M,
     ),
   );
+  const seam = checkSeams(baked, SEAM_TOLERANCE_M);
+  checks.push(
+    check(
+      "belts agree where they meet",
+      `${seam.overToleranceM} of ${seam.points.toLocaleString()} shared points apart,`
+        + ` mean ${seam.meanM.toFixed(2)} m, worst ${seam.worstM.toFixed(2)} m`,
+      `${SEAM_TOLERANCE_M} m`,
+      seam.overToleranceM === 0,
+      // Reported, not fatal. What is left is 28 points under half a metre on a
+      // boundary node, against the metres that were there before; the limit is
+      // kept where it is and the count kept in view rather than tuned away.
+      false,
+    ),
+  );
+
   // I7, on the city belt: the first one the filter touches, and the one the
   // eye is closest to.
   const relief = checkRelief(surface, field, plane, breaklines, "city");
