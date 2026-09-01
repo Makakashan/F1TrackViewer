@@ -16,6 +16,9 @@ export const DIORAMA_COLORS = {
   landuseCommercial: "#D9DDE2",
   landuseIndustrial: "#C9CED6",
   landuseOther: "#DDE1E6",
+  // The cut face of the block the diorama is carved from: darker than the ground
+  // on top, or the sides read as more paper.
+  plinth: "#8E949C",
   track: "#D90416",
 } as const;
 

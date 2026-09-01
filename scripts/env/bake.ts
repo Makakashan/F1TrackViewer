@@ -102,6 +102,16 @@ const TRACK_CLEARANCE_M = 8;
 /** How far a terrain edge drops where its neighbour is missing, to hide the seam. */
 const SKIRT_M = 3;
 /**
+ * The bottom of the block the landscape is cut from.
+ *
+ * A skirt is the wrong answer at the edge of the bbox: three metres of hem under
+ * a hill that stands 452 m up reads as a sheet of paper, not as ground. The rim
+ * goes to one flat floor instead, deep enough to look like rock and shallow
+ * enough that the model does not become a column — the terrain's own relief is
+ * 455 m, so a 60 m block is under a seventh of it.
+ */
+const PLINTH_FLOOR_M = -60;
+/**
  * Where the coast's skirt ends. A fixed drop is wrong at the water: a cliff
  * standing 30 m up gets a 3 m hem and the rest is open air, so from the sea the
  * headland reads as a shelf hanging over nothing. Going to a fixed depth below
@@ -179,7 +189,8 @@ type MeshKind =
   | "propDark"
   | "model"
   | "pool"
-  | "pitch";
+  | "pitch"
+  | "plinth";
 
 const MESH_COLOR: Record<MeshKind, string> = {
   terrain: DIORAMA_COLORS.terrain,
@@ -196,6 +207,7 @@ const MESH_COLOR: Record<MeshKind, string> = {
   model: "#FFFFFF",
   pool: DIORAMA_COLORS.waterTop,
   pitch: DIORAMA_COLORS.landuseGrass,
+  plinth: DIORAMA_COLORS.plinth,
   // A hull, a crane leg, a stand frame: what sits below the deck line.
   propDark: DIORAMA_COLORS.buildingSide,
 };
@@ -204,6 +216,8 @@ const MESH_COLOR: Record<MeshKind, string> = {
 
 interface TerrainResult {
   meshes: Record<Belt, Mesh>;
+  /** The block's sides and its floor, cut from the far belt's own rim. */
+  plinth: Mesh;
   cellsByBelt: Record<Belt, number>;
   /** Cells of water that never reached the sea and were filled as holes. */
   holesFilled: number;
@@ -517,6 +531,7 @@ function bakeTerrain(
   let conformOver2 = 0;
   let holesFilled = 0;
   const meshes = {} as Record<Belt, Mesh>;
+  const plinth = createMesh();
   const cellsByBelt = { core: 0, city: 0, far: 0 } as Record<Belt, number>;
 
   const minX = plane.x(field.bbox.minLon);
@@ -793,11 +808,17 @@ function bakeTerrain(
     addVoidWalls(mesh, voidCells, built, hollow, surfaceHeightAt, minX, minZ, cell, cols);
     addTerrainSkirts(mesh, scalarAt, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
     addShoreSkirts(mesh, shoreEdges);
+    // The bbox rim is the far belt's: the finer belts sit inside the track's
+    // radius and never reach it.
+    if (belt === "far") {
+      addPlinth(plinth, scalarAt, surfaceHeightAt, minX, minZ, cell, rows, cols);
+    }
     meshes[belt] = mesh;
   }
 
   return {
     meshes,
+    plinth,
     cellsByBelt,
     holesFilled,
     conform: {
@@ -874,6 +895,68 @@ function addVoidWalls(
 }
 
 /**
+ * The block the landscape is cut from: a wall around the bbox down to one floor,
+ * and the floor itself.
+ *
+ * The top of the wall is the far belt's own rim vertex wherever the rim is land,
+ * so the two meet exactly rather than nearly; where the rim is sea it is the
+ * datum, which is where the water quad lies. Land that reads below the datum —
+ * a metre of beach — takes the datum too, so the wall is never under the water
+ * it is supposed to hold in.
+ */
+function addPlinth(
+  mesh: Mesh,
+  scalarAt: (row: number, col: number) => number,
+  surfaceHeightAt: (row: number, col: number) => number,
+  minX: number,
+  minZ: number,
+  cell: number,
+  rows: number,
+  cols: number,
+): void {
+  const top = (row: number, col: number): number =>
+    scalarAt(row, col) > 0 ? Math.max(surfaceHeightAt(row, col), 0) : 0;
+  const xAt = (col: number): number => minX + col * cell;
+  const zAt = (row: number): number => minZ + row * cell;
+
+  // Each wall is wound so its face looks away from the model.
+  for (let col = 0; col < cols; col++) {
+    const x0 = xAt(col);
+    const x1 = xAt(col + 1);
+    const north = zAt(0);
+    const south = zAt(rows);
+    const n0 = top(0, col);
+    const n1 = top(0, col + 1);
+    addFlatQuad(mesh, x0, n0, north, x1, n1, north, x1, PLINTH_FLOOR_M, north, x0, PLINTH_FLOOR_M, north);
+    const s0 = top(rows, col);
+    const s1 = top(rows, col + 1);
+    addFlatQuad(mesh, x1, s1, south, x0, s0, south, x0, PLINTH_FLOOR_M, south, x1, PLINTH_FLOOR_M, south);
+  }
+  for (let row = 0; row < rows; row++) {
+    const z0 = zAt(row);
+    const z1 = zAt(row + 1);
+    const west = xAt(0);
+    const east = xAt(cols);
+    const w0 = top(row, 0);
+    const w1 = top(row + 1, 0);
+    addFlatQuad(mesh, west, w1, z1, west, w0, z0, west, PLINTH_FLOOR_M, z0, west, PLINTH_FLOOR_M, z1);
+    const e0 = top(row, cols);
+    const e1 = top(row + 1, cols);
+    addFlatQuad(mesh, east, e0, z0, east, e1, z1, east, PLINTH_FLOOR_M, z1, east, PLINTH_FLOOR_M, z0);
+  }
+
+  // The floor is two triangles nobody sees — the camera stops at the horizon —
+  // but a block with an open bottom is not a block.
+  addFlatQuad(
+    mesh,
+    xAt(0), PLINTH_FLOOR_M, zAt(0),
+    xAt(cols), PLINTH_FLOOR_M, zAt(0),
+    xAt(cols), PLINTH_FLOOR_M, zAt(rows),
+    xAt(0), PLINTH_FLOOR_M, zAt(rows),
+  );
+}
+
+/**
  * A vertical drop on every edge whose neighbour cell was not built — the belt
  * boundary and the edge of the bbox. The water's edge is not one of these: it
  * is cut inside the cell and gets its skirt from `addShoreSkirts`.
@@ -899,10 +982,19 @@ function addTerrainSkirts(
   rows: number,
   cols: number,
 ): void {
+  // Off the grid altogether is the outside of the model. For the far belt that
+  // edge is the plinth's, and a hem there would hang inside the block's own
+  // wall; the finer belts end on their own cell size — up to 12 m further out
+  // than the far belt does — so out there a hem is still all they have.
+  const rimIsPlinth = belt === "far";
+  const offGrid = (row: number, col: number): boolean =>
+    row < 0 || col < 0 || row >= rows || col >= cols;
+  const outside = (row: number, col: number): boolean => rimIsPlinth && offGrid(row, col);
+
   // Built by the same test the emitter used, or a cell would drop a skirt
   // against a neighbour that is standing right there.
   const built = (row: number, col: number): boolean => {
-    if (row < 0 || col < 0 || row >= rows || col >= cols) return false;
+    if (offGrid(row, col)) return false;
     if (beltOfCell(row, col, cell) !== belt) return false;
     return (
       scalarAt(row, col) > 0 ||
@@ -932,16 +1024,16 @@ function addTerrainSkirts(
       const h01 = surfaceHeightAt(row + 1, col);
       const h11 = surfaceHeightAt(row + 1, col + 1);
 
-      if (!built(row - 1, col) && dry(row, col, row, col + 1)) {
+      if (!built(row - 1, col) && !outside(row - 1, col) && dry(row, col, row, col + 1)) {
         addFlatQuad(mesh, x0, h00, z0, x1, h10, z0, x1, h10 - SKIRT_M, z0, x0, h00 - SKIRT_M, z0);
       }
-      if (!built(row + 1, col) && dry(row + 1, col, row + 1, col + 1)) {
+      if (!built(row + 1, col) && !outside(row + 1, col) && dry(row + 1, col, row + 1, col + 1)) {
         addFlatQuad(mesh, x1, h11, z1, x0, h01, z1, x0, h01 - SKIRT_M, z1, x1, h11 - SKIRT_M, z1);
       }
-      if (!built(row, col - 1) && dry(row, col, row + 1, col)) {
+      if (!built(row, col - 1) && !outside(row, col - 1) && dry(row, col, row + 1, col)) {
         addFlatQuad(mesh, x0, h01, z1, x0, h00, z0, x0, h00 - SKIRT_M, z0, x0, h01 - SKIRT_M, z1);
       }
-      if (!built(row, col + 1) && dry(row, col + 1, row + 1, col + 1)) {
+      if (!built(row, col + 1) && !outside(row, col + 1) && dry(row, col + 1, row + 1, col + 1)) {
         addFlatQuad(mesh, x1, h10, z0, x1, h11, z1, x1, h11 - SKIRT_M, z1, x1, h10 - SKIRT_M, z0);
       }
     }
@@ -2592,6 +2684,9 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
       { kind: "terrain", mesh: terrain.meshes.far },
       { kind: "building", mesh: buildings.meshes.far },
       { kind: "water", mesh: water },
+      // The block the whole thing is cut from: it arrives with the belt that
+      // owns the rim, so a wide shot never shows the model without its body.
+      { kind: "plinth", mesh: terrain.plinth },
     ],
   };
 
