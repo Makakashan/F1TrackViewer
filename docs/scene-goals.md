@@ -103,7 +103,11 @@ honestly. `bun run env:shots [circuitId]` takes all nine: it borrows a preview s
 if one is already up, starts its own if not, drives headless Chromium over
 `preview.html`, and writes `images/<circuitId>-<shot>.png` (git-ignored). `--only=<name>`
 takes one shot; the page's own `?only=terrain,portal` loads one kind of mesh at a
-time, which is how a question about the portal stops being a question about the hill. The cameras themselves are data in `scripts/env/shots.ts` — a polar target,
+time, which is how a question about the portal stops being a question about the hill.
+When even that leaves the answer open, `window.pick(ndcX, ndcY)` in the preview names
+what is under a point of the frame, nearest hit first — which is how the pale wall
+inside the tunnel mouth turned out to be terrain rather than any part of the portal.
+The cameras themselves are data in `scripts/env/shots.ts` — a polar target,
 a bearing, an elevation — so moving one is an edit to a list rather than a remembered
 URL.
 
