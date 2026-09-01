@@ -1225,6 +1225,7 @@ function prepareBuildings(
   plane: ScenePlane,
   corridor: Corridor,
   hollow: PortalHollow,
+  road: RoadIndex,
   measured: Map<string, { measured: number }>,
   result: BuildingResult,
 ): PreparedBuilding[] {
@@ -1252,16 +1253,23 @@ function prepareBuildings(
       continue;
     }
     const carved = carveOutOfCut(pushed.ring, hollow);
-    if (!carved.rings.length) {
+    const pieces: { x: number; z: number }[][] = [];
+    let carvedOffRoad = false;
+    for (const piece of carved.rings) {
+      const split = carveOffRoad(piece, road);
+      carvedOffRoad ||= split.carved;
+      pieces.push(...split.rings);
+    }
+    if (!pieces.length) {
       result.droppedOnTrack++;
       continue;
     }
-    if (pushed.moved || carved.carved) result.pushedOffTrack++;
+    if (pushed.moved || carved.carved || carvedOffRoad) result.pushedOffTrack++;
 
     // One entry per piece: a carved footprint is two or three buildings now,
     // and each stands on its own ground.
-    for (let piece = 0; piece < carved.rings.length; piece++) {
-      const shape = carved.rings[piece];
+    for (let piece = 0; piece < pieces.length; piece++) {
+      const shape = pieces[piece];
 
       // Fontvieille stands on reclaimed land and Monaco's quays are built to the
       // water, so a footprint with a corner over a water cell is normal. Only a
@@ -1421,6 +1429,85 @@ function pushOffTrack(
   if (out.length < 3) return null;
   if (!moved) return { ring, moved: false };
   return { ring: out, moved: true };
+}
+
+/**
+ * The road, taken out of a footprint that stands over it.
+ *
+ * `pushOffTrack` moves vertices and the points where an edge crosses; neither
+ * exists when a small block sits astride the road with its corners well clear —
+ * way/1470365896 by the harbour is one, and the lap ran straight through it.
+ * The band around the local centreline is subtracted instead, which leaves the
+ * building either side of the road and a gap between: the opening a road makes
+ * through a building.
+ */
+function carveOffRoad(
+  ring: { x: number; z: number }[],
+  road: RoadIndex,
+): { rings: { x: number; z: number }[][]; carved: boolean } {
+  const inside = road.inside(ring);
+  if (inside.length < 2) return { rings: [ring], carved: false };
+
+  const first = inside[0];
+  const last = inside[inside.length - 1];
+  let ux = last.x - first.x;
+  let uz = last.z - first.z;
+  const length = Math.hypot(ux, uz);
+  if (length < 1e-6) return { rings: [ring], carved: false };
+  ux /= length;
+  uz /= length;
+  const midX = (first.x + last.x) / 2;
+  const midZ = (first.z + last.z) / 2;
+  const across = (p: { x: number; z: number }) => (p.x - midX) * -uz + (p.z - midZ) * ux;
+
+  const pieces = [
+    clipHalfPlane(ring, (p) => across(p) - TRACK_CLEARANCE_M),
+    clipHalfPlane(ring, (p) => -TRACK_CLEARANCE_M - across(p)),
+  ].filter((piece) => piece.length >= 3 && ringAreaXZ(piece) >= MIN_CARVED_AREA_M2);
+  if (!pieces.length) return { rings: [], carved: true };
+  return { rings: pieces, carved: true };
+}
+
+/** The centreline, in buckets, so "is the road inside this footprint" is cheap. */
+export interface RoadIndex {
+  inside(ring: { x: number; z: number }[]): { x: number; z: number }[];
+}
+
+const ROAD_BUCKET_M = 32;
+
+function buildRoadIndex(points: { x: number; z: number }[]): RoadIndex {
+  const buckets = new Map<string, { x: number; z: number }[]>();
+  const key = (x: number, z: number) =>
+    `${Math.floor(x / ROAD_BUCKET_M)},${Math.floor(z / ROAD_BUCKET_M)}`;
+  for (const point of points) {
+    const at = key(point.x, point.z);
+    const bucket = buckets.get(at);
+    if (bucket) bucket.push(point);
+    else buckets.set(at, [point]);
+  }
+  return {
+    inside(ring) {
+      let minX = Infinity;
+      let minZ = Infinity;
+      let maxX = -Infinity;
+      let maxZ = -Infinity;
+      for (const point of ring) {
+        if (point.x < minX) minX = point.x;
+        if (point.x > maxX) maxX = point.x;
+        if (point.z < minZ) minZ = point.z;
+        if (point.z > maxZ) maxZ = point.z;
+      }
+      const found: { x: number; z: number }[] = [];
+      for (let bx = Math.floor(minX / ROAD_BUCKET_M); bx <= Math.floor(maxX / ROAD_BUCKET_M); bx++) {
+        for (let bz = Math.floor(minZ / ROAD_BUCKET_M); bz <= Math.floor(maxZ / ROAD_BUCKET_M); bz++) {
+          for (const point of buckets.get(`${bx},${bz}`) ?? []) {
+            if (pointInRingXZ(ring, point.x, point.z)) found.push(point);
+          }
+        }
+      }
+      return found;
+    },
+  };
 }
 
 /**
@@ -2831,7 +2918,16 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // ground is gets the triangle it will stand on.
   const drawnGround = buildSurfaceIndex(BELT_ORDER.map((belt) => [terrain.meshes[belt]]));
   const standOn = (x: number, z: number): number => drawnGround.at(x, z);
-  const prepared = prepareBuildings(buildingsFile, standOn, plane, corridor, hollow, measured, buildings);
+  // Only where the road is actually drawn: a building over a tunnel is a
+  // building over a tunnel, and cutting a slot through it would open the hill.
+  const roadIndex = buildRoadIndex(
+    field.trackProfile.coords
+      .filter(([lon, lat]) => !vaults.covers(lon, lat))
+      .map(([lon, lat]) => ({ x: plane.x(lon), z: plane.z(lat) })),
+  );
+  const prepared = prepareBuildings(
+    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings,
+  );
 
   // The kit runs before the props are merged, because its houses are props: it
   // decides which footprints it can do better than an extrusion, and the rest
