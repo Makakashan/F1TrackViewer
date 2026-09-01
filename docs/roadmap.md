@@ -18,7 +18,31 @@ whose fix is invisible waits behind something that is not.
 
 ## 1. What the eye catches now
 
-### 1.1 Kit houses, looked at
+### 1.1 The parks flicker, and they are green paint
+
+Two complaints about the same new thing, one a bug and one a design question.
+
+**The flicker.** A park, a pool and a pitch are lids `SURFACE_LIFT_M` — 0.12 m —
+above the drawn ground, and from a wide shot they z-fight with the terrain along
+their whole area, badly. Twelve centimetres is nothing against the depth buffer at
+2 km, and the desktop path has no logarithmic depth buffer to hide it. Three ways
+out, in the order worth trying: `polygonOffset` on the material, which is what the
+offset exists for and costs no geometry; a lift that grows with the belt's cell,
+since the coarser the ground the further the drawn surface is from the reading the
+lid took; or making the lid part of the terrain mesh rather than a decal over it,
+which is the honest fix and the expensive one.
+
+**The paint.** The outlines are right — the placement matches the survey — but a park
+reads as a flat green shape lying on grey, which is the same complaint that killed
+the green ground tint. It wants something that says *volume* without going back to a
+tree per tree: a low rim or hedge around the edge, a metre or so, so the shape has a
+side the light catches; a slight lift so it sits like a terrace rather than a decal;
+maybe two greens, one for the mass and one for the border. Trees stay deleted.
+
+This is first because it is new, it is visible from the default camera, and half of
+it is a bug.
+
+### 1.2 Kit houses, looked at
 
 75 modelled on the current bake, 92,406 triangles, inside budget; 1,976 footprints fit
 the shape and 369 had no model at their proportion. The numbers are plausible and
@@ -28,7 +52,7 @@ would be a fitting complaint.
 Cheap and worth doing here: it is a camera and an hour, and it decides whether the
 modelled-asset direction needs more models or better fitting.
 
-### 1.2 The light rig
+### 1.3 The light rig
 
 Left for last, on purpose: the rig is what settles once the things it lights are
 finished, and the measurement below says nothing in it is urgent.
