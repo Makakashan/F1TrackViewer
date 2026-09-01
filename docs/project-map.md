@@ -57,7 +57,7 @@ rest are single-purpose modules it calls.
 | `baked-scene.ts` | Reads shipped GLBs back: belt meshes, a terrain index, and the welding that turns flat-shaded triangles into buildings again. |
 | `mesh.ts` | Shared mesh/vertex helpers. |
 | `ao.ts` | Baked ambient occlusion into COLOR_0. |
-| `greenery.ts` | Green areas: ground tint from parks/woods/lawns, plus pool and pitch surfaces. No trees — they were built here once and removed. |
+| `greenery.ts` | Surveyed areas that are things rather than ground: parks and gardens, pools and fountains, pitches. Each follows the terrain vertex by vertex. No trees, and no green tint on the ground — both were built here once and removed (D28). |
 | `props.ts` | Berthed yachts, cranes, grandstands; parametric or from a `.glb`. |
 | `skadi.ts` | SRTM Skadi global elevation, used where IGN has no coverage. |
 | `bake-all.ts` | `env:bake:all` — sweeps every circuit, keeps going past failures. |
