@@ -59,7 +59,7 @@ export interface BuildingWay {
  */
 export interface GreenWay {
   id: string;
-  kind: "tree" | "tree_row" | "wood" | "scrub" | "park" | "grass" | "pool" | "pitch";
+  kind: "tree" | "tree_row" | "wood" | "scrub" | "park" | "grass" | "pool" | "pitch" | "fountain";
   /** One point for a tree, a polyline for a row, a closed ring for an area. */
   points: [number, number][];
 }
@@ -454,32 +454,50 @@ export async function fetchBreaklineWays(
  * larger one; asked one plain equality at a time they each come back in
  * seconds. Eleven cheap requests beat one that times out.
  */
+/** What the cached greenery was asked for, so a longer list invalidates it. */
+interface GreenCache {
+  asked: string;
+  ways: GreenWay[];
+}
+
+/** The tag clauses greenery is fetched by, as the cache's own fingerprint. */
+function greenTags(): string[] {
+  return [
+    "natural=tree",
+    "natural=tree_row",
+    "natural=wood",
+    "natural=scrub",
+    "landuse=forest",
+    "landuse=grass",
+    "landuse=meadow",
+    "landuse=village_green",
+    "landuse=cemetery",
+    "leisure=park",
+    "leisure=garden",
+    "leisure=swimming_pool",
+    "leisure=pitch",
+    "amenity=fountain",
+  ];
+}
+
 function greenQueries(bbox: RasterBBox): string[] {
   const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
-  const clauses = [
-    `node["natural"="tree"](${box});`,
-    `way["natural"="tree_row"](${box});`,
-    `way["natural"="wood"](${box});`,
-    `way["natural"="scrub"](${box});`,
-    `way["landuse"="forest"](${box});`,
-    `way["landuse"="grass"](${box});`,
-    `way["landuse"="meadow"](${box});`,
-    `way["landuse"="village_green"](${box});`,
-    `way["landuse"="cemetery"](${box});`,
-    `way["leisure"="park"](${box});`,
-    `way["leisure"="garden"](${box});`,
-    // Not greenery, but the same shape of answer: a surveyed area that is not a
-    // building and is not bare ground. Monaco's pool quay reads as empty
-    // concrete without them — the halls beside it are the Grand Prix's own and
-    // nobody maps those, but the Stade Nautique is permanent and is drawn.
-    `way["leisure"="swimming_pool"](${box});`,
-    `way["leisure"="pitch"](${box});`,
-  ];
-  return clauses.map((clause) => `[out:json][timeout:120];\n${clause}\nout geom tags;`);
+  // One tag per query: asked together these answer 504, asked apart they answer
+  // in seconds. A tree is a node and everything else is a way.
+  //
+  // The last three are not greenery but the same shape of answer: a surveyed
+  // area that is neither a building nor bare ground. Monaco's pool quay reads
+  // as empty concrete without them.
+  return greenTags().map((tag) => {
+    const [key, value] = tag.split("=");
+    const type = tag === "natural=tree" ? "node" : "way";
+    return `[out:json][timeout:120];\n${type}["${key}"="${value}"](${box});\nout geom tags;`;
+  });
 }
 
 function greenKind(tags: Record<string, string>): GreenWay["kind"] | null {
   if (tags.leisure === "swimming_pool") return "pool";
+  if (tags.amenity === "fountain") return "fountain";
   if (tags.leisure === "pitch") return "pitch";
   if (tags.natural === "tree") return "tree";
   if (tags.natural === "tree_row") return "tree_row";
@@ -497,11 +515,18 @@ export async function fetchGreenWays(
   refresh = false,
 ): Promise<GreenWay[]> {
   const cachePath = join(CACHE_DIR, `${circuitId}-green.json`);
+  // The cache remembers which questions produced it. Pools and pitches were
+  // added to the query list months after Monaco's cache was written, and
+  // because a cache that exists is never asked again the bake reported zero
+  // pools on a circuit whose pool is a corner name. A cache answering an older
+  // list is a stale cache, and the tags are what the list is.
+  const asked = greenTags().join(",");
   if (!refresh) {
     try {
-      return JSON.parse(await readFile(cachePath, "utf8")) as GreenWay[];
+      const cached = JSON.parse(await readFile(cachePath, "utf8")) as GreenCache;
+      if (cached.asked === asked) return cached.ways;
     } catch {
-      // not cached yet
+      // not cached yet, or written before the cache carried its question
     }
   }
 
@@ -555,7 +580,7 @@ export async function fetchGreenWays(
   }
   if (ways.length && !unanswered) {
     await mkdir(CACHE_DIR, { recursive: true });
-    await writeFile(cachePath, JSON.stringify(ways));
+    await writeFile(cachePath, JSON.stringify({ asked, ways } satisfies GreenCache));
   }
   return ways;
 }

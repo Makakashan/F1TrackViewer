@@ -58,7 +58,8 @@ export type BakedMeshKind =
   | "pool"
   | "pitch"
   | "plinth"
-  | "boreRoad";
+  | "boreRoad"
+  | "park";
 
 /**
  * What each baked mesh is painted, per theme.
@@ -89,6 +90,9 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     model: "#FFFFFF",
     pool: DIORAMA_COLORS.waterTop,
     pitch: DIORAMA_COLORS.landuseGrass,
+    // A park is planting seen from above, so it is the wood's green rather than
+    // a lawn's — the lawn tone read as paint when it was tried on the terrain.
+    park: DIORAMA_COLORS.landusePark,
     plinth: DIORAMA_COLORS.plinth,
     // The road going in, which is what says the hole leads somewhere.
     boreRoad: "#4A4F56",
@@ -117,6 +121,7 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     pitch: "#306A29",
     plinth: "#51565E",
     boreRoad: "#282C32",
+    park: "#205B1F",
     propDark: "#7D828A",
   },
 };

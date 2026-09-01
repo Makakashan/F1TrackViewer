@@ -2885,8 +2885,6 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const shore = bakeShoreWalls(shoreWays, field, plane, coast);
   const piers = buildPiers(shoreWays, field, plane);
   const pierDecks = bakePierDecks(piers);
-  const greenery = buildGreenery(greenWays, field, plane);
-  const greeneryStats = { ...greenery.stats };
 
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(vaults, hill, plane);
@@ -2925,6 +2923,11 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
       .filter(([lon, lat]) => !vaults.covers(lon, lat))
       .map(([lon, lat]) => ({ x: plane.x(lon), z: plane.z(lat) })),
   );
+  // After the terrain, because these lie on the ground that is drawn rather
+  // than on the field the belts filtered.
+  const greenery = buildGreenery(greenWays, standOn, plane);
+  const greeneryStats = { ...greenery.stats };
+
   const prepared = prepareBuildings(
     buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings,
   );
@@ -3045,6 +3048,9 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
       { kind: "propDark", mesh: props.dark },
       { kind: "prop", mesh: props.light },
       { kind: "model", mesh: props.models },
+      // Parks are ground cover and reach well past the core's 150 m, so they
+      // ship with the belt that covers the city rather than with the track.
+      { kind: "park", mesh: greenery.parks },
     ],
     far: [
       { kind: "terrain", mesh: terrain.meshes.far },
@@ -3214,7 +3220,8 @@ async function main() {
       `${report.piers.skippedSolid} already solid ground`,
   );
   console.log(
-    `  surfaces ${report.greenery.pools} pools, ${report.greenery.pitches} pitches`
+    `  surfaces ${report.greenery.pools} pools, ${report.greenery.pitches} pitches, `
+      + `${report.greenery.parks} parks`
       + `; ${report.slopeShaded} ground nodes shaded by slope`,
   );
   console.log(
