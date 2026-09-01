@@ -18,22 +18,7 @@ whose fix is invisible waits behind something that is not.
 
 ## 1. What the eye catches now
 
-### 1.1 The tunnel mouth, properly
-
-Step 11 closed the pit and gave the sleeve an outside, so it is a mouth rather than a
-hole with a film over it. It is still a bare concrete ring standing in bare ground.
-In the order it shows: no headwall or wing walls, so the ring meets the earth with
-nothing between them; the arch is scaled down by the cover above it
-(`bakePortals`'s `available / crown`), so on a thin hill it comes out squat; the bore
-behind it is black and empty — no road surface, no lining, and the emissive tried in
-step 11 made it worse rather than better; and from above the lid over the cutting
-reads as a grey plate lying on the slope.
-
-One pass over `bakePortals` and `bakeTunnelBody` in `bake.ts`, judged from the
-`tunnel-mouth` shot and from the same camera at the western portal, which the nine
-do not cover.
-
-### 1.2 Kit houses, looked at
+### 1.1 Kit houses, looked at
 
 75 modelled on the current bake, 92,406 triangles, inside budget; 1,976 footprints fit
 the shape and 369 had no model at their proportion. The numbers are plausible and
@@ -43,7 +28,7 @@ would be a fitting complaint.
 Cheap and worth doing here: it is a camera and an hour, and it decides whether the
 modelled-asset direction needs more models or better fitting.
 
-### 1.3 The light rig
+### 1.2 The light rig
 
 Left for last, on purpose: the rig is what settles once the things it lights are
 finished, and the measurement below says nothing in it is urgent.
@@ -123,6 +108,10 @@ upwards is the right default, but a cliff foot is a place someone will want to s
   they always had and now hang past the block's wall. Predates the plinth and reads
   as a fringe on the `plinth` shot's right-hand rim; the fix is to clip every belt to
   the coarsest extent, which is a change to the grid rather than to the wall.
+- **The portal has no wing walls.** The mouth is a cut face with the arch taken out
+  of it, and where that face meets the slope there is nothing between them. The
+  cutting's own sides are terrain, so they are as lumpy as the belt that draws them.
+  Real work here means excavating the approach properly, which is P4.1.
 - **P2.1 — roads carry `tunnel`, `bridge`, `layer`** from Overpass into `RoadLine`
   and the building schema.
 - **The city belt's triangle count.** 110,850 to 213,627 after the kit and the
