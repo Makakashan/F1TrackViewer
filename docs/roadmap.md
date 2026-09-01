@@ -116,10 +116,15 @@ only a person looking at the city can decide.
 
 ### 2.4 Camera distance limits
 
-The polar-angle floor is set; the distance limits are deliberately still open and
-want their own pass. The model has a body now — sides and a floor at −60 m — so the
-question is no longer what breaks when the camera drops, only how far out it may go
-before the block stops filling the frame.
+The polar-angle floor is set, the model has a body, and the camera is now held 2 m
+above the ground by `camera-ground-clamp.tsx`, so neither going under the model nor
+flying into it is reachable. What is left is the distance: how far out before the
+block stops filling the frame, and how close before the near plane eats the street.
+
+One cost to look at in the same pass: the clamp reads the highest corner of every
+triangle whose footprint touches a cell, so at the foot of a vertical cliff it holds
+the camera at the clifftop — 29 m of headroom under Le Rocher, measured. Erring
+upwards is the right default, but a cliff foot is a place someone will want to stand.
 
 ---
 
