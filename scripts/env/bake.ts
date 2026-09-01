@@ -1224,6 +1224,7 @@ function prepareBuildings(
   groundAt: (x: number, z: number) => number,
   plane: ScenePlane,
   corridor: Corridor,
+  hollow: PortalHollow,
   measured: Map<string, { measured: number }>,
   result: BuildingResult,
 ): PreparedBuilding[] {
@@ -1250,65 +1251,78 @@ function prepareBuildings(
       result.droppedOnTrack++;
       continue;
     }
-    if (pushed.moved) result.pushedOffTrack++;
-
-    // Fontvieille stands on reclaimed land and Monaco's quays are built to the
-    // water, so a footprint with a corner over a water cell is normal. Only a
-    // footprint with no ground under it at all is not a building we can place.
-    const grounds: number[] = [];
-    for (const point of pushed.ring) {
-      const h = groundAt(point.x, point.z);
-      if (!Number.isNaN(h)) grounds.push(h);
-    }
-    if (!grounds.length) {
-      result.droppedOverWater++;
+    const carved = carveOutOfCut(pushed.ring, hollow);
+    if (!carved.rings.length) {
+      result.droppedOnTrack++;
       continue;
     }
-    grounds.sort((a, b) => a - b);
-    // The floor sits at the middle of the ground it covers and the walls run
-    // down to the lowest corner. Standing everything on its lowest corner turns
-    // a terraced block on a Monaco hillside into a cliff of wall, and standing
-    // it on the middle alone would leave the downhill side in the air.
-    const base = grounds[Math.floor(grounds.length / 2)];
-    // Each wall vertex meets the ground where it stands, so a block on a slope
-    // is neither buried on its uphill side nor left on stilts downhill. There
-    // is no floor under how far it may dig: the clamp that used to be here
-    // existed because the wall read one surface and the terrain drew another,
-    // and a wall that stopped at the clamp stopped in mid-air. It now reads the
-    // surface that is drawn, so where it reaches is where the ground is.
-    // The corners were pushed clear of the track; a vertex added between two of
-    // them lands on the chord, and a chord across a corner can cut inside the
-    // corridor the push exists to keep clear. Where the denser ring cannot be
-    // pushed clear, the corner ring stands: a wall that follows the ground into
-    // the road is worse than one that spans a dip.
-    const followed = followGround(pushed.ring, groundAt, (x, z) =>
-      corridor.distance(x, z) >= TRACK_CLEARANCE_M);
-    const wallRing = pushOffTrack(followed, corridor)?.ring ?? pushed.ring;
-    const footAt = wallRing.map((point) => {
-      const under = groundAt(point.x, point.z);
-      return Math.min(Number.isNaN(under) ? base : under, base);
-    });
+    if (pushed.moved || carved.carved) result.pushedOffTrack++;
 
-    let centreX = 0;
-    let centreZ = 0;
-    for (const point of pushed.ring) {
-      centreX += point.x;
-      centreZ += point.z;
+    // One entry per piece: a carved footprint is two or three buildings now,
+    // and each stands on its own ground.
+    for (let piece = 0; piece < carved.rings.length; piece++) {
+      const shape = carved.rings[piece];
+
+      // Fontvieille stands on reclaimed land and Monaco's quays are built to the
+      // water, so a footprint with a corner over a water cell is normal. Only a
+      // footprint with no ground under it at all is not a building we can place.
+      const grounds: number[] = [];
+      for (const point of shape) {
+        const h = groundAt(point.x, point.z);
+        if (!Number.isNaN(h)) grounds.push(h);
+      }
+      if (!grounds.length) {
+        result.droppedOverWater++;
+        continue;
+      }
+      grounds.sort((a, b) => a - b);
+      // The floor sits at the middle of the ground it covers and the walls run
+      // down to the lowest corner. Standing everything on its lowest corner turns
+      // a terraced block on a Monaco hillside into a cliff of wall, and standing
+      // it on the middle alone would leave the downhill side in the air.
+      const base = grounds[Math.floor(grounds.length / 2)];
+      // Each wall vertex meets the ground where it stands, so a block on a slope
+      // is neither buried on its uphill side nor left on stilts downhill. There
+      // is no floor under how far it may dig: the clamp that used to be here
+      // existed because the wall read one surface and the terrain drew another,
+      // and a wall that stopped at the clamp stopped in mid-air. It now reads the
+      // surface that is drawn, so where it reaches is where the ground is.
+      // The corners were pushed clear of the track; a vertex added between two of
+      // them lands on the chord, and a chord across a corner can cut inside the
+      // corridor the push exists to keep clear. Where the denser ring cannot be
+      // pushed clear, the corner ring stands: a wall that follows the ground into
+      // the road is worse than one that spans a dip.
+      const followed = followGround(shape, groundAt, (x, z) =>
+        corridor.distance(x, z) >= TRACK_CLEARANCE_M);
+      const wallRing = pushOffTrack(followed, corridor)?.ring ?? shape;
+      const footAt = wallRing.map((point) => {
+        const under = groundAt(point.x, point.z);
+        return Math.min(Number.isNaN(under) ? base : under, base);
+      });
+
+      let centreX = 0;
+      let centreZ = 0;
+      for (const point of shape) {
+        centreX += point.x;
+        centreZ += point.z;
+      }
+      centreX /= shape.length;
+      centreZ /= shape.length;
+
+      prepared.push({
+        // A piece keeps its building's id up to the hash, which is what the roof
+        // tags and the kit are keyed on.
+        id: piece === 0 ? building.id : `${building.id}#${piece}`,
+        ring: shape,
+        wallRing,
+        footAt,
+        base,
+        heightM: height,
+        centreX,
+        centreZ,
+        belt: beltAtDistance(corridor.distance(centreX, centreZ)),
+      });
     }
-    centreX /= pushed.ring.length;
-    centreZ /= pushed.ring.length;
-
-    prepared.push({
-      id: building.id,
-      ring: pushed.ring,
-      wallRing,
-      footAt,
-      base,
-      heightM: height,
-      centreX,
-      centreZ,
-      belt: beltAtDistance(corridor.distance(centreX, centreZ)),
-    });
   }
 
   return prepared;
@@ -1326,7 +1340,7 @@ function bakeBuildings(
     if (taken.has(building.id)) continue;
     const { ring, wallRing, footAt, base, heightM, belt } = building;
     const top = base + heightM;
-    const plan = planRoof(ring, tags.get(building.id) ?? {}, heightM);
+    const plan = planRoof(ring, tags.get(building.id.split("#")[0]) ?? {}, heightM);
     result.roofs[plan.kind]++;
 
     if (plan.kind === "flat") {
@@ -1407,6 +1421,99 @@ function pushOffTrack(
   if (out.length < 3) return null;
   if (!moved) return { ring, moved: false };
   return { ring: out, moved: true };
+}
+
+/**
+ * The cutting, taken out of a footprint that stands over it.
+ *
+ * `pushOffTrack` slides vertices out of the corridor, which cannot help here:
+ * Monaco's inland mouth is under a block whose footprint *contains* the whole
+ * cutting, so there is neither a vertex nor an edge inside it to move. The
+ * rectangle is subtracted instead, as three half-plane clips that do not
+ * overlap — everything left of it, everything right of it, and whatever lies
+ * beyond its far end between the two. The front is open because that is where
+ * the road comes in.
+ */
+function carveOutOfCut(
+  ring: { x: number; z: number }[],
+  hollow: PortalHollow,
+): { rings: { x: number; z: number }[][]; carved: boolean } {
+  let rings = [ring];
+  let carved = false;
+  for (const cut of hollow.cuts) {
+    const along = (p: { x: number; z: number }) => (p.x - cut.x) * cut.ux + (p.z - cut.z) * cut.uz;
+    const across = (p: { x: number; z: number }) => (p.x - cut.x) * -cut.uz + (p.z - cut.z) * cut.ux;
+    const next: { x: number; z: number }[][] = [];
+    for (const current of rings) {
+      const touches = current.some(
+        (p) => Math.abs(across(p)) <= cut.halfM && along(p) >= cut.frontM && along(p) <= cut.backM,
+      );
+      // A footprint can swallow the cutting whole, so "does any vertex sit in
+      // it" is not the test — the centre of the cutting being inside is.
+      const swallows = pointInRingXZ(current, cut.x, cut.z);
+      if (!touches && !swallows) {
+        next.push(current);
+        continue;
+      }
+      const pieces = [
+        clipHalfPlane(current, (p) => across(p) - cut.halfM),
+        clipHalfPlane(current, (p) => -cut.halfM - across(p)),
+        clipHalfPlane(
+          clipHalfPlane(
+            clipHalfPlane(current, (p) => along(p) - cut.backM),
+            (p) => cut.halfM - across(p),
+          ),
+          (p) => across(p) + cut.halfM,
+        ),
+      ].filter((piece) => piece.length >= 3 && ringAreaXZ(piece) >= MIN_CARVED_AREA_M2);
+      carved = true;
+      next.push(...pieces);
+    }
+    rings = next;
+  }
+  return { rings, carved };
+}
+
+/** Smallest piece of a carved footprint worth building: below this it is a sliver. */
+const MIN_CARVED_AREA_M2 = 12;
+
+/** Sutherland–Hodgman against one half-plane: `keep(point) >= 0` survives. */
+function clipHalfPlane(
+  ring: { x: number; z: number }[],
+  keep: (point: { x: number; z: number }) => number,
+): { x: number; z: number }[] {
+  const out: { x: number; z: number }[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const da = keep(a);
+    const db = keep(b);
+    if (da >= 0) out.push(a);
+    if ((da >= 0) === (db >= 0)) continue;
+    const t = da / (da - db);
+    out.push({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+  }
+  return out;
+}
+
+function pointInRingXZ(ring: { x: number; z: number }[], x: number, z: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const a = ring[i];
+    const b = ring[j];
+    if ((a.z > z) !== (b.z > z) && x < ((b.x - a.x) * (z - a.z)) / (b.z - a.z) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function ringAreaXZ(ring: { x: number; z: number }[]): number {
+  let twice = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    twice += (ring[j].x + ring[i].x) * (ring[i].z - ring[j].z);
+  }
+  return Math.abs(twice) / 2;
 }
 
 /** Points every two metres along the stretch of an edge that lies in the corridor. */
@@ -1585,11 +1692,30 @@ function portalSection(): { offset: number; height: number }[] {
  */
 const PORTAL_VOID_IN_M = 8;
 
+/** A portal's own keep-out: a rectangle along the mouth's axis, open at the front. */
+export interface PortalCut {
+  x: number;
+  z: number;
+  ux: number;
+  uz: number;
+  halfM: number;
+  frontM: number;
+  backM: number;
+}
+
 /** Where the terrain stops, and how deep the cutting under it goes. */
 export interface PortalHollow {
   at(x: number, z: number): boolean;
   /** Where the sleeve runs: ground walled across here would stand in the bore. */
   boreAt(x: number, z: number): boolean;
+  /**
+   * The cuttings a portal needs kept clear of buildings.
+   *
+   * A 36 m block stands over Monaco's inland mouth — measured straight down at
+   * the mouth — so the arch was built inside a building and none of it could be
+   * seen. A footprint over a cutting has the cutting taken out of it.
+   */
+  cuts: PortalCut[];
   /** The cutting's floor — the road at the nearest mouth. */
   floorAt(x: number, z: number): number;
 }
@@ -1644,9 +1770,20 @@ function portalVoids(
     return false;
   };
 
+  const cuts: PortalCut[] = boxes.map((box) => ({
+    x: box.x,
+    z: box.z,
+    ux: box.ux,
+    uz: box.uz,
+    halfM: PORTAL_VOID_HALF_M + PORTAL_CUT_MARGIN_M,
+    frontM: -PORTAL_APPROACH_M - PORTAL_CUT_MARGIN_M,
+    backM: PORTAL_VOID_IN_M,
+  }));
+
   return {
     at: (x, z) => inside(x, z) !== null,
     boreAt: inBore,
+    cuts,
     floorAt: (x, z) => {
       const box = inside(x, z);
       if (box && !Number.isNaN(box.roadY)) return box.roadY;
@@ -2672,7 +2809,8 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // retaining walls from their own query, quays and breakwaters from the shore.
   const breaklines = buildBreaklines(field, breaklineWays, shoreWays);
   const ground = buildGround(field, plane, breaklines);
-  const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, portalVoids(vaults, hill, plane));
+  const hollow = portalVoids(vaults, hill, plane);
+  const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, hollow);
   const water = bakeWater(field, plane);
 
   const buildingsFile = applyBuildingOverrides(
@@ -2693,7 +2831,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // ground is gets the triangle it will stand on.
   const drawnGround = buildSurfaceIndex(BELT_ORDER.map((belt) => [terrain.meshes[belt]]));
   const standOn = (x: number, z: number): number => drawnGround.at(x, z);
-  const prepared = prepareBuildings(buildingsFile, standOn, plane, corridor, measured, buildings);
+  const prepared = prepareBuildings(buildingsFile, standOn, plane, corridor, hollow, measured, buildings);
 
   // The kit runs before the props are merged, because its houses are props: it
   // decides which footprints it can do better than an extrusion, and the rest
