@@ -1,4 +1,4 @@
-# The ground work — steps 1 to 12
+# The ground work — steps 1 to 13
 
 What was built after the P0–P4 phases, in the order it happened: the audit that reads
 the shipped GLB, the one ground surface, the breaklines, the belt seam, the two layers
@@ -289,5 +289,37 @@ or the outside of the block, which now has a wall.
 Cost, measured on the rebake: far belt 88,969 → 89,713 triangles and 1.51 → 1.52 MB,
 one draw call. A ninth fixed shot, `plinth`, is what proves it — from a corner,
 below the horizon, the angle that used to show paper.
+
+---
+
+### 13. The tunnel mouth is a tunnel — **done**
+
+Step 11 made the mouth a hole rather than a film over one. Head-on it still was not a
+tunnel: the ground outside stood about two metres above the road and buried the arch's
+lower half, so the opening read as a crescent; through it the eye met a pale wall
+square across the road; and past the sleeve's end the sky came through the hill.
+
+Four things, each measured before it was believed (`window.pick` in the preview names
+what a pixel is standing on, which is what settled the pale wall — terrain, at 51 m,
+the pit's own far rim):
+
+- An approach cut, 16 m out in front of each mouth at the road's level, floored by the
+  portal's own slab. The slab runs wider than the void's nominal half for the reason
+  D21 gives: a cell is dropped on its centre, so the hole overshoots.
+- No pit wall where the sleeve passes. `PortalHollow` gained `boreAt`, and the rim
+  that used to close the excavation across the road is simply not drawn.
+- The sleeve runs 14 m instead of 8, carries its outer skin the whole length rather
+  than as a collar, and is capped at the far end. Open, it looked clean through the
+  hill: the ground's back faces are culled, so the sky sat where the tunnel goes.
+- The lid over the cutting follows the hill node by node, with its end rows taking the
+  faces' own top so the two meet along one line.
+
+The arch was left alone. Both Monaco mouths already build at full scale — cover 9.88 m
+and 9.54 m against a 6.5 m crown — so the squat arch the plan worried about is not a
+Monaco problem, and shrinking is only ever a thin-hill case.
+
+Cost: portals 196 → 276 triangles, core belt 122,356 → 122,354. A tenth fixed shot,
+`tunnel-west`, covers the inland mouth, and what it shows is that the Fairmont stands
+over it: from outside there is no portal to look at, which is the honest answer.
 
 ---
