@@ -99,11 +99,15 @@ Three layers, cheapest first. All three have to be green before a bake is called
 ## 4. The eye, from fixed positions
 
 Some judgements stay visual, and those get a fixed camera so two bakes can be compared
-honestly. `bun run env:shots [circuitId]` takes all nine: it borrows a preview server
+honestly. `bun run env:shots [circuitId]` takes all ten: it borrows a preview server
 if one is already up, starts its own if not, drives headless Chromium over
 `preview.html`, and writes `images/<circuitId>-<shot>.png` (git-ignored). `--only=<name>`
 takes one shot; the page's own `?only=terrain,portal` loads one kind of mesh at a
-time, which is how a question about the portal stops being a question about the hill. The cameras themselves are data in `scripts/env/shots.ts` — a polar target,
+time, which is how a question about the portal stops being a question about the hill.
+When even that leaves the answer open, `window.pick(ndcX, ndcY)` in the preview names
+what is under a point of the frame, nearest hit first — which is how the pale wall
+inside the tunnel mouth turned out to be terrain rather than any part of the portal.
+The cameras themselves are data in `scripts/env/shots.ts` — a polar target,
 a bearing, an elevation — so moving one is an edit to a list rather than a remembered
 URL.
 
@@ -116,6 +120,7 @@ URL.
 | `rocher` | from the harbour toward Le Rocher | cliff kept vertical by the filter |
 | `seam-core-city` | across a belt boundary | I3 by eye |
 | `seam-city-far` | across the outer boundary | the same, at 16 m |
+| `tunnel-west` | the inland portal, from above | what stands over that mouth: the Fairmont, not a hillside |
 | `plinth` | from a corner, below the horizon | the block's sides and floor, where the sea stops |
 | `overview` | the default wide shot | silhouette, budget, the whole thing at once |
 
