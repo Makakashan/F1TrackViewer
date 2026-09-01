@@ -1365,22 +1365,78 @@ function pushOffTrack(
   ring: { x: number; z: number }[],
   corridor: Corridor,
 ): { ring: { x: number; z: number }[]; moved: boolean } | null {
-  let inside = 0;
-  const out = ring.map((point) => {
+  // "Mostly inside" is judged on the footprint as it was mapped. Judging it
+  // after the densification below would drop a long block for the crossing it
+  // is about to be notched around.
+  const insideAsMapped = ring.filter(
+    (point) => corridor.measure(point.x, point.z).distanceM < TRACK_CLEARANCE_M,
+  ).length;
+  if (insideAsMapped >= ring.length * 0.6) return null;
+
+  // A wall can cross the corridor between two vertices that are both well
+  // outside it — three of Monaco's footprints do, and one of them is the block
+  // the tunnel's inland mouth sits under, so the road ran into its side with
+  // nowhere to go. Pushing vertices cannot help a footprint with no vertex to
+  // push, so an edge that crosses is given some: sampled every metre while it
+  // is inside, they are pushed out like any other and the building closes
+  // around the road rather than over it.
+  const dense = densifyAcrossCorridor(ring, corridor);
+  let moved = false;
+  // Which side of the road the wall was last seen on. A vertex landing dead on
+  // the centreline has no side of its own — the old code left it there, and
+  // after densification that put wall vertices 8 m inside the corridor, which
+  // the audit reads as a wall on the track. It takes the side its neighbour had.
+  let side: { x: number; z: number } | null = null;
+  const out: { x: number; z: number }[] = [];
+  for (const point of dense) {
     const { distanceM, footX, footZ } = corridor.measure(point.x, point.z);
-    if (distanceM >= TRACK_CLEARANCE_M || !Number.isFinite(distanceM)) return point;
-    inside++;
-    if (distanceM < 1e-3) return point; // dead on the centreline: no way to know which side
-    // Slide the vertex out along the ray from the centreline through it.
-    const scale = TRACK_CLEARANCE_M / distanceM;
-    return {
-      x: footX + (point.x - footX) * scale,
-      z: footZ + (point.z - footZ) * scale,
-    };
-  });
-  if (inside === 0) return { ring, moved: false };
-  if (inside >= ring.length * 0.6) return null;
+    if (distanceM >= TRACK_CLEARANCE_M || !Number.isFinite(distanceM)) {
+      out.push(point);
+      continue;
+    }
+    moved = true;
+    if (distanceM >= 1e-3) {
+      const scale = TRACK_CLEARANCE_M / distanceM;
+      side = { x: (point.x - footX) / distanceM, z: (point.z - footZ) / distanceM };
+      out.push({ x: footX + (point.x - footX) * scale, z: footZ + (point.z - footZ) * scale });
+      continue;
+    }
+    if (!side) continue; // nothing to go on yet; the ring closes without it
+    out.push({ x: footX + side.x * TRACK_CLEARANCE_M, z: footZ + side.z * TRACK_CLEARANCE_M });
+  }
+  if (out.length < 3) return null;
+  if (!moved) return { ring, moved: false };
   return { ring: out, moved: true };
+}
+
+/** Points every two metres along the stretch of an edge that lies in the corridor. */
+function densifyAcrossCorridor(
+  ring: { x: number; z: number }[],
+  corridor: Corridor,
+): { x: number; z: number }[] {
+  const out: { x: number; z: number }[] = [];
+  let added = false;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    out.push(a);
+    const length = Math.hypot(b.x - a.x, b.z - a.z);
+    if (length < 2) continue;
+    const steps = Math.min(32, Math.max(2, Math.round(length / 2)));
+    const inserted: { x: number; z: number }[] = [];
+    for (let t = 1; t < steps; t++) {
+      const x = a.x + ((b.x - a.x) * t) / steps;
+      const z = a.z + ((b.z - a.z) * t) / steps;
+      if (corridor.measure(x, z).distanceM >= TRACK_CLEARANCE_M) continue;
+      inserted.push({ x, z });
+    }
+    if (!inserted.length) continue;
+    // Keep the run's own ends too, so the notch has square shoulders rather
+    // than a chamfer running the length of the wall.
+    out.push(...inserted);
+    added = true;
+  }
+  return added ? out : ring;
 }
 
 function extrude(
@@ -2259,7 +2315,7 @@ function bakeBarriers(
 function buriedSpans(
   plane: ScenePlane,
   field: HeightField,
-  tunnels: TunnelMask,
+  vaults: VaultedRuns,
 ): [number, number][] {
   // Walked along the field's own densified profile, not the drawn centreline.
   // Both describe the same polyline, so a distance fraction means the same
@@ -2268,7 +2324,6 @@ function buriedSpans(
   // those left 51 m of ribbon drawn inside the hill at the entry. The profile
   // is sampled every 3 m.
   const points = field.trackProfile.coords;
-  const road = field.trackProfile.elevations;
   if (points.length < 2) return [];
 
   // Fractions of lap length, not of vertex count. The runtime samples its curve
@@ -2297,26 +2352,19 @@ function buriedSpans(
       );
   if (total <= 0) return [];
 
-  // Hidden where there is ground over the road, however little.
+  // Hidden exactly where the vault covers the road, and nowhere else.
   //
-  // Not the tag: OSM marks the whole 455 m, but under the Fairmont and the
-  // waterfront the thing overhead is a building and the field reads ground at
-  // road level, so hiding by the tag took the ribbon away while the car is
-  // still out in the open — missing road before the tunnel.
-  //
-  // Since P4.1 the approaches are cut down to the road, so there is nothing
-  // over them to hide behind and this test now lands on the vault's own mouths.
-  // It is still the measurement rather than the vault, because what the ribbon
-  // has to survive is the ground, not the geometry the bake chose to build.
-  const clearance = 0.3;
+  // Not the tag: OSM marks the whole 455 m, but at both ends the thing overhead
+  // is a building or nothing at all, and hiding by the tag took the ribbon away
+  // while the car was still in the open. Measuring the ground instead was
+  // closer but still early — the mouth is pushed inland to where the hill is
+  // deep enough for a full-height portal, so between the first centimetre of
+  // cover and the portal itself the road went missing with nothing to go into.
+  // The vault knows where its own mouths are; the ribbon stops at them.
   const spans: [number, number][] = [];
   let start = -1;
   for (let i = 0; i < points.length; i++) {
-    const ground = tunnels.buried(points[i][0], points[i][1])
-      ? field.heightAt(points[i][0], points[i][1])
-      : Number.NaN;
-    const covered =
-      !Number.isNaN(ground) && !Number.isNaN(road[i]) && ground - road[i] >= clearance;
+    const covered = vaults.covers(points[i][0], points[i][1]);
     if (covered && start < 0) start = i;
     if (!covered && start >= 0) {
       spans.push([distances[start] / total, distances[i - 1] / total]);
@@ -2807,7 +2855,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     slopeShaded,
     overrides: overrideStats,
   };
-  await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(plane, field, tunnels));
+  await writeManifest(outDir, circuitId, field, plane, report, elevations, buriedSpans(plane, field, vaults));
   return report;
 }
 
