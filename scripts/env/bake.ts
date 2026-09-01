@@ -836,6 +836,12 @@ function addVoidWalls(
     for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]] as const) {
       if (!built.has((row + dr) * stride + col + dc)) continue;
       // The two grid nodes the dropped cell and its neighbour share.
+      // A rim that crosses the bore is a wall across the road: the sleeve
+      // covers that stretch, and what shows through the arch has to be the
+      // tunnel rather than the far side of the excavation.
+      const edgeX = minX + (col + 0.5 + dc * 0.5) * cell;
+      const edgeZ = minZ + (row + 0.5 + dr * 0.5) * cell;
+      if (hollow.boreAt(edgeX, edgeZ)) continue;
       const nodes = dc !== 0
         ? [[row, col + (dc > 0 ? 1 : 0)], [row + 1, col + (dc > 0 ? 1 : 0)]]
         : [[row + (dr > 0 ? 1 : 0), col], [row + (dr > 0 ? 1 : 0), col + 1]];
@@ -1447,6 +1453,18 @@ const PORTAL_FACE_HALF_M = PORTAL_HALF_WIDTH_M + 5;
  *  before the back one. */
 const PORTAL_VOID_PAD_M = 3;
 /**
+ * How far the cutting runs out in front of a mouth.
+ *
+ * Without one the ground outside the portal stands at hill level — measured at
+ * the seaward mouth, about two metres above the road — so it buried the arch's
+ * lower half and the opening read as a crescent with the road nowhere in sight.
+ * A tunnel has an approach cut; this is it, at the road's own level.
+ */
+const PORTAL_APPROACH_M = 16;
+/** How far the cutting's floor reaches past the void it fills — half a core cell,
+ *  plus a little, since a cell is dropped on its centre. */
+const PORTAL_CUT_MARGIN_M = 2.5;
+/**
  * How far the sleeve stands out of the face, and how far it reaches in.
  *
  * Three metres out, not one: the cut floor meets the hill somewhere inside the
@@ -1456,8 +1474,18 @@ const PORTAL_VOID_PAD_M = 3;
 const PORTAL_OUT_M = 5;
 /** Wall thickness of the sleeve — what the ring at the mouth shows of itself. */
 const PORTAL_RING_M = 0.8;
-const PORTAL_IN_M = 8;
+/**
+ * The sleeve reaches past the pit it stands in.
+ *
+ * At 8 m it ended exactly where the excavation does, so looking into the mouth
+ * showed the pit's own far wall — lit terrain, square across the road. Six
+ * metres further in is buried in solid hill, costs no triangles (the tube is
+ * two rings either way) and puts dark sleeve where the eye follows the road.
+ */
+const PORTAL_IN_M = 14;
 const PORTAL_ARCH_SEGMENTS = 8;
+/** How finely the lid over the cutting follows the hill it replaces. */
+const PORTAL_LID_STEPS = 4;
 
 /**
  * A portal is a short arched sleeve standing out of the hillside at each mouth
@@ -1504,6 +1532,8 @@ const PORTAL_VOID_IN_M = 8;
 /** Where the terrain stops, and how deep the cutting under it goes. */
 export interface PortalHollow {
   at(x: number, z: number): boolean;
+  /** Where the sleeve runs: ground walled across here would stand in the bore. */
+  boreAt(x: number, z: number): boolean;
   /** The cutting's floor — the road at the nearest mouth. */
   floorAt(x: number, z: number): number;
 }
@@ -1536,10 +1566,7 @@ function portalVoids(
       const dx = x - box.x;
       const dz = z - box.z;
       const along = dx * box.ux + dz * box.uz;
-      if (
-        along < -PORTAL_OUT_M + PORTAL_VOID_PAD_M ||
-        along > PORTAL_VOID_IN_M - PORTAL_VOID_PAD_M
-      ) {
+      if (along < -PORTAL_APPROACH_M || along > PORTAL_VOID_IN_M - PORTAL_VOID_PAD_M) {
         continue;
       }
       if (Math.abs(dx * -box.uz + dz * box.ux) <= PORTAL_VOID_HALF_M) return box;
@@ -1547,8 +1574,23 @@ function portalVoids(
     return null;
   };
 
+  // The sleeve's own footprint, which is narrower than the cutting and runs
+  // further in. A pit rim that crosses it would be a wall built across the road,
+  // and it is exactly what the eye meets looking into the mouth.
+  const inBore = (x: number, z: number) => {
+    for (const box of boxes) {
+      const dx = x - box.x;
+      const dz = z - box.z;
+      const along = dx * box.ux + dz * box.uz;
+      if (along < -PORTAL_APPROACH_M || along > PORTAL_IN_M) continue;
+      if (Math.abs(dx * -box.uz + dz * box.ux) <= PORTAL_HALF_WIDTH_M) return true;
+    }
+    return false;
+  };
+
   return {
     at: (x, z) => inside(x, z) !== null,
+    boreAt: inBore,
     floorAt: (x, z) => {
       const box = inside(x, z);
       if (box && !Number.isNaN(box.roadY)) return box.roadY;
@@ -1572,9 +1614,10 @@ function bakePortals(
   vaults: VaultedRuns,
   hill: HeightField,
   plane: ScenePlane,
-): { sleeve: Mesh; surround: Mesh } {
+): { sleeve: Mesh; surround: Mesh; road: Mesh } {
   const mesh = createMesh();
   const surround = createMesh();
+  const road = createMesh();
   const profile = portalSection();
 
   const { coords, elevations } = hill.trackProfile;
@@ -1651,6 +1694,30 @@ function bakePortals(
         addFlatQuad(mesh, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
       }
 
+      // The road the sleeve stands over. The bore has its own floor, but it
+      // starts further in than the sleeve does, so without this the first
+      // metres of the opening show nothing at all and the mouth reads as a
+      // patch of black rather than as somewhere a road goes.
+      {
+        // As wide as the cutting, not just as the arch: the approach the void
+        // takes out of the hill has no bottom of its own, and without one the
+        // trench shows the sea through it. Wider than the void's nominal half,
+        // for the same reason the face is (D21): a cell is dropped on its own
+        // centre, so the hole runs up to half a cell past where it was asked to.
+        const left = -PORTAL_VOID_HALF_M - PORTAL_CUT_MARGIN_M;
+        const right = PORTAL_VOID_HALF_M + PORTAL_CUT_MARGIN_M;
+        const floor = (offset: number, along: number) => ({
+          x: mouth.x + nx * offset + mouth.ux * along,
+          y: roadY - BORE_FLOOR_DROP_M,
+          z: mouth.z + nz * offset + mouth.uz * along,
+        });
+        const a = floor(left, -PORTAL_APPROACH_M - PORTAL_CUT_MARGIN_M);
+        const b = floor(right, -PORTAL_APPROACH_M - PORTAL_CUT_MARGIN_M);
+        const c = floor(right, inside);
+        const d = floor(left, inside);
+        addFlatQuad(road, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z);
+      }
+
       // The ring that makes it a mouth rather than a hole.
       //
       // A sleeve whose faces all point inward is invisible from outside: the
@@ -1670,7 +1737,12 @@ function bakePortals(
           z: mouth.z + nz * spread + mouth.uz * along,
         };
       };
-      const ringBack = 0;
+      // The skin runs the sleeve's whole length, not just the collar at its
+      // mouth. Inward-facing walls are culled from outside, so through the
+      // opening the eye went past the tube and landed on the pit's own far
+      // wall — lit terrain, square across the road. With an outside all the way
+      // in, what stands there is the tube.
+      const ringBack = inside;
       for (let i = 0; i < profile.length - 1; i++) {
         const a = ringAt(i, outside);
         const b = ringAt(i + 1, outside);
@@ -1743,7 +1815,7 @@ function bakePortals(
         const reach = Math.max(0, Math.min(toSide, toCap));
         return { offset: point.offset + ox * reach, height: height + oy * reach };
       };
-      const facePlane = (along: number, flip: boolean) => {
+      const facePlane = (target: Mesh, along: number, flip: boolean) => {
         const top = topOf(along);
         for (let i = 0; i < profile.length - 1; i++) {
           const inner = [profile[i], profile[i + 1]];
@@ -1754,38 +1826,78 @@ function bakePortals(
           const c = at3(ob.offset, ob.height, along);
           const d = at3(oa.offset, oa.height, along);
           if (flip) {
-            addFlatQuad(surround, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z);
+            addFlatQuad(target, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z);
           } else {
-            addFlatQuad(surround, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
+            addFlatQuad(target, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
           }
         }
       };
       const front = outside;
       const back = PORTAL_VOID_IN_M;
       // The sides run between the faces, so the void is closed all round.
-      facePlane(front, false);
-      facePlane(back, true);
+      facePlane(surround, front, false);
+      facePlane(surround, back, true);
 
       // A lid over the void. The sleeve's back is 6.5 m below the hilltop, so
       // without one the excavation reads from above as a black rectangle cut
       // into the slope — the hole is closed at the road's level and open at the
       // sky's.
+      //
+      // It follows the hill rather than spanning it flat. One quad corner to
+      // corner read as a grey plate laid on the slope, because the ground it
+      // stands in for falls across its width as well as along it; a grid of
+      // them, each node taking the hill's own height wherever that is above the
+      // arch, reads as ground.
       {
-        const frontTop = topOf(front);
-        const backTop = topOf(back);
-        const fl = at3(-PORTAL_FACE_HALF_M, frontTop, front);
-        const fr = at3(PORTAL_FACE_HALF_M, frontTop, front);
-        const bl = at3(-PORTAL_FACE_HALF_M, backTop, back);
-        const br = at3(PORTAL_FACE_HALF_M, backTop, back);
-        addFlatQuad(surround, fl.x, fl.y, fl.z, fr.x, fr.y, fr.z, br.x, br.y, br.z, bl.x, bl.y, bl.z);
+        // The two end rows take the faces' own top, so lid and face meet along
+        // one line: a face is flat-topped and the hill is not, and the gap that
+        // left showed the void through the hilltop.
+        const lidNode = (offset: number, along: number, end: number | null) => {
+          if (end !== null) return at3(offset, end, along);
+          const floor = crown * scale + PORTAL_SURROUND_M;
+          return at3(offset, Math.max(floor, groundOver(offset, along) - roadY), along);
+        };
+        const endAt = (j: number) =>
+          j === 0 ? topOf(front) : j === PORTAL_LID_STEPS ? topOf(back) : null;
+        for (let i = 0; i < PORTAL_LID_STEPS; i++) {
+          const o0 = -PORTAL_FACE_HALF_M + (2 * PORTAL_FACE_HALF_M * i) / PORTAL_LID_STEPS;
+          const o1 = -PORTAL_FACE_HALF_M + (2 * PORTAL_FACE_HALF_M * (i + 1)) / PORTAL_LID_STEPS;
+          for (let j = 0; j < PORTAL_LID_STEPS; j++) {
+            const a0 = front + ((back - front) * j) / PORTAL_LID_STEPS;
+            const a1 = front + ((back - front) * (j + 1)) / PORTAL_LID_STEPS;
+            const p00 = lidNode(o0, a0, endAt(j));
+            const p10 = lidNode(o1, a0, endAt(j));
+            const p11 = lidNode(o1, a1, endAt(j + 1));
+            const p01 = lidNode(o0, a1, endAt(j + 1));
+            addFlatQuad(surround, p00.x, p00.y, p00.z, p10.x, p10.y, p10.z, p11.x, p11.y, p11.z, p01.x, p01.y, p01.z);
+          }
+        }
       }
 
-      // No cap: the sleeve used to be closed 8 m in, so the mouth read as a
-      // black patch painted on the hill. It now opens into the bore below.
+      // The sleeve is capped at its far end, in its own dark material.
+      //
+      // Open, it looked through the hill: the ground's back faces are culled,
+      // so past the tube's end the eye ran out the other side of the slope and
+      // found the sky — a bright patch sitting where the tunnel should be
+      // going. The cap is what the road disappears into until the bore, which
+      // only exists where the hill genuinely covers it, takes over.
+      {
+        const capAt = (index: number) => at(index, inside);
+        const centre = {
+          x: mouth.x + mouth.ux * inside,
+          y: roadY + (PORTAL_WALL_M * 0.5) * scale,
+          z: mouth.z + mouth.uz * inside,
+        };
+        for (let i = 0; i < profile.length - 1; i++) {
+          const a = capAt(i);
+          const b = capAt(i + 1);
+          addFlatTriangle(mesh, centre.x, centre.y, centre.z, b.x, b.y, b.z, a.x, a.y, a.z);
+        }
+      }
     }
   }
 
-  return { sleeve: mesh, surround };
+  return { sleeve: mesh, surround, road };
 }
 
 /**
@@ -1932,8 +2044,9 @@ function bakeTunnelBody(
   plane: ScenePlane,
   vaults: VaultedRuns,
   section: { offset: number; height: number }[],
-): Mesh {
+): { lining: Mesh; road: Mesh } {
   const mesh = createMesh();
+  const road = createMesh();
   const { coords, elevations } = field.trackProfile;
 
   for (const run of vaults.runs) {
@@ -2010,7 +2123,7 @@ function bakeTunnelBody(
       const farLeft = at(far, { offset: left.offset, height: -BORE_FLOOR_DROP_M });
       const farRight = at(far, { offset: right.offset, height: -BORE_FLOOR_DROP_M });
       addFlatQuad(
-        mesh,
+        road,
         nearLeft.x, nearLeft.y, nearLeft.z,
         nearRight.x, nearRight.y, nearRight.z,
         farRight.x, farRight.y, farRight.z,
@@ -2019,7 +2132,7 @@ function bakeTunnelBody(
     }
   }
 
-  return mesh;
+  return { lining: mesh, road };
 }
 
 /** The road's own height at a point, which under a hill only the profile knows. */
@@ -2625,7 +2738,9 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
       { kind: "terrain", mesh: terrain.meshes.core },
       { kind: "building", mesh: buildings.meshes.core },
       { kind: "tunnel", mesh: portals.sleeve },
-      { kind: "tunnel", mesh: bore },
+      { kind: "tunnel", mesh: bore.lining },
+      { kind: "boreRoad", mesh: bore.road },
+      { kind: "boreRoad", mesh: portals.road },
       // Its own mesh, not merged into the buildings: a headwall stands over the
       // road on purpose, and the corridor check would read it as a wall in the
       // way.
