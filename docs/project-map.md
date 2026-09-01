@@ -93,7 +93,8 @@ app/page.tsx → home-router → globe/ | track/f1-track-app | race/race-app
 **Scene assembly** — `components/three/`:
 - `track-mesh.tsx` (965) — the scene. Curve, ribbon, kerbs, apron, markings, gantry,
   fleet, environment, camera. Reads `cityManifest.track.buried` to hide tunnel spans.
-- `city-layer.tsx` — mounts the baked GLB belts, far first. Builds nothing.
+- `city-layer.tsx` — mounts the baked GLB belts, far first. Builds nothing; repaints
+  each belt for the theme from `diorama-palette.ts` (D23).
 - `camera-ground-clamp.tsx` — holds the camera 2 m above the ground. Reads the loaded
   belts once into an 8 m max-height grid; two lookups per frame, no raycast.
 - `environment-layer.tsx` (1024) — the **old** JSON runtime path. Dies at P4.4.
