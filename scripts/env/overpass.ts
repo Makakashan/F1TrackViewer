@@ -14,6 +14,13 @@ import type { RasterBBox } from "./raster";
 const ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
+  // Last, and only useful for a Swiss circuit: this one serves a Switzerland
+  // extract, not the planet. Asked for Monaco it answers 200 with nothing —
+  // measured, zero buildings in the Casino block where the global mirrors
+  // report 33 ways and 8 relations. `run` treats an empty answer as a failed
+  // one and moves on, and no fetch caches an empty result, so it costs a retry
+  // rather than an empty city; it is here for the day the other two are down
+  // and the circuit happens to be in Switzerland.
   "https://overpass.osm.ch/api/interpreter",
 ];
 const USER_AGENT = "F1TrackViewer/0.1 (https://github.com/Makakashan/F1TrackViewer)";
@@ -99,6 +106,8 @@ interface OverpassWay {
   /** Nodes carry their position directly rather than a geometry array. */
   lat?: number;
   lon?: number;
+  /** A relation's parts, each with its own geometry under `out geom`. */
+  members?: { type: string; ref: number; role: string; geometry?: { lat: number; lon: number }[] }[];
 }
 
 function query(bbox: RasterBBox): string {
@@ -208,11 +217,58 @@ async function runOnce(body: string, waitMs: number): Promise<OverpassResponse |
 
 function buildingQuery(bbox: RasterBBox): string {
   const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
-  // Ways only. A multipolygon building is a courtyard block whose outer ring is
-  // what the city silhouette needs, and Overpass returns those rings as ways.
+  // Ways and relations. A multipolygon building carries `building` on the
+  // relation and usually not on its rings, so a ways-only query loses it
+  // entirely — 34 of them over Monaco, and eight of those are the Casino block,
+  // which is the part of the model somebody notices missing first.
+  // `out geom`, not `out geom tags`: with the `tags` modifier Overpass returns
+  // a relation as an id, a bounding box and its tags, and drops the members —
+  // measured, eight relations came back with zero members each. Ways survive it
+  // either way, which is why it went unnoticed until relations were asked for.
   return `[out:json][timeout:180];
-way["building"](${box});
-out geom tags;`;
+(
+  way["building"](${box});
+  relation["building"](${box});
+);
+out geom;`;
+}
+
+/**
+ * The outer ring of a multipolygon, stitched from its outer members.
+ *
+ * Overpass hands back each member's geometry separately and in no particular
+ * order or direction, so the ring is walked: start with one part, then keep
+ * taking whichever unused part begins or ends where the ring currently does.
+ * Only the outer ring is kept — a courtyard is a hole, and the silhouette is
+ * what the bake extrudes.
+ */
+function outerRing(element: OverpassWay): [number, number][] | null {
+  const parts = (element.members ?? [])
+    .filter((member) => member.type === "way" && member.role !== "inner" && member.geometry?.length)
+    .map((member) => member.geometry!.map((p) => [p.lon, p.lat] as [number, number]));
+  if (!parts.length) return null;
+
+  const close = (a: [number, number], b: [number, number]) =>
+    Math.abs(a[0] - b[0]) < 1e-9 && Math.abs(a[1] - b[1]) < 1e-9;
+  const ring = parts.shift()!.slice();
+  let joined = true;
+  while (parts.length && joined) {
+    joined = false;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const head = ring[0];
+      const tail = ring[ring.length - 1];
+      if (close(tail, part[0])) ring.push(...part.slice(1));
+      else if (close(tail, part[part.length - 1])) ring.push(...part.slice(0, -1).reverse());
+      else if (close(head, part[part.length - 1])) ring.unshift(...part.slice(0, -1));
+      else if (close(head, part[0])) ring.unshift(...part.slice(1).reverse());
+      else continue;
+      parts.splice(i, 1);
+      joined = true;
+      break;
+    }
+  }
+  return ring.length >= 4 ? ring : null;
 }
 
 /** Building footprints with the tags a roof and a height are decided from. */
@@ -235,13 +291,19 @@ export async function fetchBuildingWays(
 
   const ways: BuildingWay[] = [];
   for (const element of response.elements) {
-    if (element.type !== "way" || !element.geometry || element.geometry.length < 4) continue;
     const tags = (element.tags ?? {}) as BuildingWay["tags"];
-    ways.push({
-      id: `way/${element.id}`,
-      footprint: element.geometry.map((p) => [p.lon, p.lat] as [number, number]),
-      tags,
-    });
+    if (element.type === "way" && element.geometry && element.geometry.length >= 4) {
+      ways.push({
+        id: `way/${element.id}`,
+        footprint: element.geometry.map((p) => [p.lon, p.lat] as [number, number]),
+        tags,
+      });
+      continue;
+    }
+    if (element.type !== "relation") continue;
+    const ring = outerRing(element);
+    if (!ring) continue;
+    ways.push({ id: `relation/${element.id}`, footprint: ring, tags });
   }
 
   // Nothing is never written down: an empty answer is a failed query wearing a
