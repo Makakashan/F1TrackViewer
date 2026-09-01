@@ -221,12 +221,16 @@ function buildingQuery(bbox: RasterBBox): string {
   // relation and usually not on its rings, so a ways-only query loses it
   // entirely — 34 of them over Monaco, and eight of those are the Casino block,
   // which is the part of the model somebody notices missing first.
+  // `out geom`, not `out geom tags`: with the `tags` modifier Overpass returns
+  // a relation as an id, a bounding box and its tags, and drops the members —
+  // measured, eight relations came back with zero members each. Ways survive it
+  // either way, which is why it went unnoticed until relations were asked for.
   return `[out:json][timeout:180];
 (
   way["building"](${box});
   relation["building"](${box});
 );
-out geom tags;`;
+out geom;`;
 }
 
 /**
