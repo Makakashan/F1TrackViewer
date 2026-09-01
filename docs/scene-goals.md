@@ -99,7 +99,7 @@ Three layers, cheapest first. All three have to be green before a bake is called
 ## 4. The eye, from fixed positions
 
 Some judgements stay visual, and those get a fixed camera so two bakes can be compared
-honestly. `bun run env:shots [circuitId]` takes all eight: it borrows a preview server
+honestly. `bun run env:shots [circuitId]` takes all nine: it borrows a preview server
 if one is already up, starts its own if not, drives headless Chromium over
 `preview.html`, and writes `images/<circuitId>-<shot>.png` (git-ignored). `--only=<name>`
 takes one shot; the page's own `?only=terrain,portal` loads one kind of mesh at a
@@ -116,6 +116,7 @@ URL.
 | `rocher` | from the harbour toward Le Rocher | cliff kept vertical by the filter |
 | `seam-core-city` | across a belt boundary | I3 by eye |
 | `seam-city-far` | across the outer boundary | the same, at 16 m |
+| `plinth` | from a corner, below the horizon | the block's sides and floor, where the sea stops |
 | `overview` | the default wide shot | silhouette, budget, the whole thing at once |
 
 No pixel diff. Every bake moves every vertex a little, so a strict comparison would

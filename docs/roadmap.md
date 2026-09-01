@@ -49,7 +49,7 @@ step 11 made it worse rather than better; and from above the lid over the cuttin
 reads as a grey plate lying on the slope.
 
 One pass over `bakePortals` and `bakeTunnelBody` in `bake.ts`, judged from the
-`tunnel-mouth` shot and from the same camera at the western portal, which the eight
+`tunnel-mouth` shot and from the same camera at the western portal, which the nine
 do not cover.
 
 ### 1.3 Kit houses, looked at

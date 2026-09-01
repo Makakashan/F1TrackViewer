@@ -48,7 +48,7 @@ rest are single-purpose modules it calls.
 | `belts.ts` | Detail belts: core 4 m ≤150 m, city 8 m ≤600 m, far 16 m. |
 | `ground.ts` | The one surface. Per-belt filtered nodes and triangle-exact height queries; everything that stands on the ground reads this, never the raw field. |
 | `breaklines.ts` | Surveyed cliffs, retaining walls, quays and breakwaters — the lines `ground.ts` may not average across (D18). |
-| `shots.ts` | The eight fixed cameras of `scene-goals.md` §4 and the headless runner that takes them. `bun run env:shots`. |
+| `shots.ts` | The nine fixed cameras of `scene-goals.md` §4 and the headless runner that takes them. `bun run env:shots`. |
 | `fixture.ts` | Cuts a window of a circuit's inputs out of the caches and reads it back as `BakeInputs`. `bun run env:fixture`; the slice is committed under `fixtures/`. |
 | `synthetic.ts` | Ground written by hand — a plane, a slope, a cut — built through the same `heightFieldFrom` the bake uses. Test material only. |
 | `mesh.test.ts` | The grid surface: how many normals a corner is allowed to have (D20). |
