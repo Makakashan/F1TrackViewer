@@ -124,5 +124,5 @@ fail always and be switched off within a week; the shots are for a person to loo
 Where the cameras came from: the tunnel mouth is the bore's own end, the ravine and
 the two seam shots are the steepest ground the boundary crosses, found by walking the
 drawn surface rather than by eye. The preview's lighting is its own — one sun, one
-hemisphere — so these frames say nothing about the app's light rig, which is what the
-parked rotation artefact is about.
+hemisphere — so these frames say nothing about the app's light rig, which is measured
+in the app instead (roadmap 1.5).

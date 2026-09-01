@@ -18,26 +18,24 @@ whose fix is invisible waits behind something that is not.
 
 ## 1. What the eye catches now
 
-### 1.1 The light rig
+### 1.1 The diorama ignores the theme
 
-The scene goes black when it is turned round. Look at the city from the north — the
-side away from the key light — and the hill reads as an unlit silhouette with a red
-patch over Port Hercule. Seen in the app, not the preview, so it is lighting rather
-than geometry.
+The app has a dark theme and the baked city does not know about it: the terrain and
+the houses arrive off the GLB in one palette and read as a white model dropped into a
+black room. `THEME_COLORS` in `environment-layer.tsx:93` still holds a `light` and a
+`dark` set — but that is the old procedural path. `city-layer.tsx` takes no theme at
+all; the colours come from `MESH_COLOR` in `bake.ts:184`, written into each
+material's base-colour factor at bake time.
 
-Everything is in `track-viewer.tsx:169–189`: `ambientLight` 0.42, a `hemisphereLight`
-whose ground colour is `#07080C` (all but black), a key directional at
-`[500, 800, 400]`, a blue fill at `[-400, 300, -500]` 0.5, and the `#E10600` at
-`[0, 260, -900]` 0.55 that paints the red patch. Baked AO and slope shading multiply
-on top and their floor is 0.278. Which of them is doing it is unmeasured.
+The cheap fix needs no rebake: the meshes are named by kind (`terrain`, `building`,
+`water`, `portal`, `model`, …), so the loader can multiply a per-kind factor over the
+baked colour once per belt. Two palettes in one place, the theme picks one. The
+awkward case is `model`, which is white on purpose because a merged kit house carries
+its colour per vertex — tinting that one is a multiply over vertex colour, so check
+it by eye rather than assuming.
 
-One pass over the rig, judged from [`scene-goals.md`](scene-goals.md) §4's cameras
-with the scene turned, and `?shading=ao` in the preview to separate what is baked
-from what is lit. The red rim light is decided in the same pass: it predates the
-bake work and is a style call as much as a bug.
-
-This is first because it is the only thing left that spoils the scene in the app
-rather than in a screenshot of it.
+First because it is one file, no rebake, and it is what makes the scene look wrong the
+moment the app opens in the dark.
 
 ### 1.2 The diorama has no body
 
@@ -69,8 +67,8 @@ The alternative is to stop the camera before the angle that shows it — `track-
 allows `maxPolarAngle = π / 2 − 0.02`, which is as good as level. That is cheaper and
 it treats the symptom; it also belongs to 2.4 either way.
 
-Worth doing early despite being cosmetic: it is cheap, it is the same "rotate and it
-breaks" family as the light rig, and a ninth fixed shot from a low angle is what
+Worth doing early despite being cosmetic: it is cheap, it is the one thing left that
+rotating the camera still breaks, and a ninth fixed shot from a low angle is what
 proves it.
 
 ### 1.3 The tunnel mouth, properly
@@ -97,6 +95,36 @@ would be a fitting complaint.
 
 Cheap and worth doing here: it is a camera and an hour, and it decides whether the
 modelled-asset direction needs more models or better fitting.
+
+### 1.5 The light rig
+
+Left for last, on purpose: the rig is what settles once the things it lights are
+finished, and the measurement below says nothing in it is urgent.
+
+**What was measured** (2026-09-01, in the app over `window.__f1three`, 24 cameras —
+azimuth every 45°, elevation 5/15/35°, 3500 m out, mean/sd/clipping read back
+with `readPixels`):
+
+- The reported black side does not reproduce. Mean luminance runs 85–140 of 255,
+  dark pixels stay under 1 %, nothing clips. The shaded quadrant (azimuth 225) is not
+  black, it is flat: mean 85 and sd 27 against 140 and sd 45 on the lit side.
+- The key directional carries the picture — 45 of ~110 mean. Ambient is worth 17,
+  the hemisphere 10. **The blue fill and the red rim are worth 2 each**: they do not
+  light anything.
+- A sweep of five rigs (fill 1.0 and 1.2, ambient down to 0.36, a lifted hemisphere
+  ground colour, key down to 1.2) measured as a tie — light/dark spread 1.58–1.64
+  against the current 1.64, dark-side sd 27 → 29. Turning the fill knob moves the
+  frame by 3 units of 255. There is no win in the numbers as the rig stands.
+- The red rim does not light, it dyes. It shifts mean r−g by 8–20 and puts up to
+  6.7 % of the frame into visible red at low elevation. From the north the whole city
+  goes pink; with it off the scene is a clean cool grey. That is a style call.
+
+**The open question**, which is why this is not just "delete two lights": everything
+outside the diorama is black, so nothing in the picture explains where the light comes
+from. A sun that is nowhere, over a model in an unlit room. Decide what the scene is
+lit *by* — a sky the camera can see, an environment map, or an honest studio look with
+the plinth (1.2) as the table — and the intensities follow from that answer instead of
+being tuned against nothing.
 
 ---
 
