@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect, useCallback, useRef } from "react";
+import { useMemo, useEffect, useCallback, useRef, useState } from "react";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import {
@@ -62,6 +62,7 @@ import type { EnvironmentBundle } from "@/lib/env/environment-types";
 import { buildTerrainSampler } from "@/lib/env/terrain-sampler";
 import EnvironmentLayer from "@/components/three/environment-layer";
 import CityLayer from "@/components/three/city-layer";
+import CameraGroundClamp from "@/components/three/camera-ground-clamp";
 import type { CityManifest } from "@/lib/env/city-loader";
 import StudioStage from "@/components/three/studio-stage";
 import type { CameraPreset } from "@/components/track/track-viewer";
@@ -163,6 +164,9 @@ export default function TrackMesh({
   const coords = feature.geometry.coordinates;
   // A baked city and the runtime diorama are the same job; only one may run.
   const cityActive = !!cityManifest;
+  // Each belt that lands is more ground for the camera clamp to read.
+  const [beltsLoaded, setBeltsLoaded] = useState(0);
+  const onBeltLoaded = useCallback(() => setBeltsLoaded((count) => count + 1), []);
   const hasEnvironment = cityActive || !!environmentBundle;
 
   // Race view is the "what it actually looks like" mode.
@@ -726,7 +730,16 @@ export default function TrackMesh({
         />
       )}
 
-      {cityActive && <CityLayer manifest={cityManifest!} lowDetail={lowDetail} />}
+      {cityActive && (
+        <>
+          <CityLayer
+            manifest={cityManifest!}
+            lowDetail={lowDetail}
+            onBeltLoaded={onBeltLoaded}
+          />
+          <CameraGroundClamp version={beltsLoaded} />
+        </>
+      )}
 
       {hasEnvironment && !cityActive && (
         <EnvironmentLayer

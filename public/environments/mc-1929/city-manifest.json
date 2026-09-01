@@ -32,17 +32,17 @@
     },
     "far": {
       "file": "far.glb",
-      "bytes": 1507760,
-      "triangles": 88969,
-      "drawCalls": 3,
+      "bytes": 1515312,
+      "triangles": 89713,
+      "drawCalls": 4,
       "radiusM": null,
       "cellM": 16
     }
   },
   "counts": {
     "buildings": 4700,
-    "triangles": 424897,
-    "drawCalls": 16
+    "triangles": 425641,
+    "drawCalls": 17
   },
   "track": {
     "elevations": [
@@ -220,5 +220,5 @@
     "centreline": "bacinger/f1-circuits"
   },
   "attribution": "© OpenStreetMap contributors",
-  "generatedAt": "2026-08-31"
+  "generatedAt": "2026-09-01"
 }

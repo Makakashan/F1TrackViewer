@@ -4,7 +4,7 @@
  *
  * Some judgements about a bake stay visual — a hillside reads as a smear or it
  * does not — and a judgement made from a different angle every time is not a
- * comparison. These are the same eight frames every bake, written to `images/`
+ * comparison. These are the same nine frames every bake, written to `images/`
  * for a person to look at. No pixel diff: every bake moves every vertex a
  * little, so a strict comparison would fail always and be switched off within a
  * week.
@@ -33,7 +33,7 @@ export interface Shot {
 }
 
 /**
- * Monaco's eight. The targets are scene metres from the circuit's own centre,
+ * Monaco's nine. The targets are scene metres from the circuit's own centre,
  * which is the middle of the harbour; X runs east and Z runs south.
  */
 export const SHOTS: Record<string, Shot[]> = {
@@ -101,6 +101,16 @@ export const SHOTS: Record<string, Shot[]> = {
       azimuthDeg: 250,
       elevationDeg: 40,
       distanceM: 600,
+    },
+    {
+      name: "plinth",
+      watch: "the block under the landscape: sides, floor, where the sea stops",
+      // From below the horizon, far enough out to hold the whole bbox: this is
+      // the angle that used to show a sheet of paper.
+      target: { x: 0, z: 0, y: 0 },
+      azimuthDeg: 225,
+      elevationDeg: 11,
+      distanceM: 3900,
     },
     {
       name: "seam-city-far",
