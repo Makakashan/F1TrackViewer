@@ -57,7 +57,8 @@ export type BakedMeshKind =
   | "model"
   | "pool"
   | "pitch"
-  | "plinth";
+  | "plinth"
+  | "boreRoad";
 
 /**
  * What each baked mesh is painted, per theme.
@@ -78,7 +79,9 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     pier: DIORAMA_COLORS.terrain,
     building: DIORAMA_COLORS.building,
     water: DIORAMA_COLORS.water,
-    tunnel: "#14161A",
+    // Not black: a black bore reads as a hole painted on the hill, because
+    // nothing in it changes with depth. Dark enough to stay a tunnel.
+    tunnel: "#23272D",
     portal: DIORAMA_COLORS.buildingSide,
     shore: DIORAMA_COLORS.buildingSide,
     barrier: "#C9CFD6",
@@ -87,6 +90,8 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     pool: DIORAMA_COLORS.waterTop,
     pitch: DIORAMA_COLORS.landuseGrass,
     plinth: DIORAMA_COLORS.plinth,
+    // The road going in, which is what says the hole leads somewhere.
+    boreRoad: "#4A4F56",
     // A hull, a crane leg, a stand frame: what sits below the deck line.
     propDark: DIORAMA_COLORS.buildingSide,
   },
@@ -101,7 +106,7 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     pier: "#8B8E95",
     building: "#909399",
     water: "#0E3F55",
-    tunnel: "#07080B",
+    tunnel: "#101317",
     portal: "#7D828A",
     shore: "#7D828A",
     barrier: "#757B83",
@@ -111,6 +116,7 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     pool: "#146282",
     pitch: "#306A29",
     plinth: "#51565E",
+    boreRoad: "#282C32",
     propDark: "#7D828A",
   },
 };

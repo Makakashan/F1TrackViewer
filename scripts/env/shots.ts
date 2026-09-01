@@ -4,7 +4,7 @@
  *
  * Some judgements about a bake stay visual — a hillside reads as a smear or it
  * does not — and a judgement made from a different angle every time is not a
- * comparison. These are the same nine frames every bake, written to `images/`
+ * comparison. These are the same ten frames every bake, written to `images/`
  * for a person to look at. No pixel diff: every bake moves every vertex a
  * little, so a strict comparison would fail always and be switched off within a
  * week.
@@ -33,7 +33,7 @@ export interface Shot {
 }
 
 /**
- * Monaco's nine. The targets are scene metres from the circuit's own centre,
+ * Monaco's ten. The targets are scene metres from the circuit's own centre,
  * which is the middle of the harbour; X runs east and Z runs south.
  */
 export const SHOTS: Record<string, Shot[]> = {
@@ -77,10 +77,22 @@ export const SHOTS: Record<string, Shot[]> = {
       watch: "bore, portal, the buried span",
       // The seaward portal, from the road's own line: the bore runs from
       // (370, -391) to (181, -111), and the ring stands 5 m out of the cutting.
-      target: { x: 368, z: -389, y: 11 },
-      azimuthDeg: 146,
-      elevationDeg: 2,
-      distanceM: 65,
+      target: { x: 363, z: -385, y: 9.7 },
+      azimuthDeg: 171,
+      elevationDeg: 4,
+      distanceM: 45,
+    },
+    {
+      name: "tunnel-west",
+      watch: "the other mouth: headwall, lid, the road going in",
+      // The inland portal, square on to its own bore: the mouth stands at
+      // (188.6, -119.7) and the bore heads inland along (0.898, -0.441). From
+      // further out and higher than the seaward one, because the buildings of
+      // the Fairmont stand over this mouth — which is the point of the frame.
+      target: { x: 189, z: -120, y: 9.5 },
+      azimuthDeg: 296,
+      elevationDeg: 20,
+      distanceM: 140,
     },
     {
       name: "rocher",
