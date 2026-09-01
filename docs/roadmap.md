@@ -4,7 +4,7 @@ The one list of what is next, in the order it is worth doing. Monaco (`mc-1929`)
 the circuit in focus; every other circuit is at the bottom on purpose.
 
 What came before is not here. The P0–P4 phases are in
-[`history/city-generation-p0-p4.md`](history/city-generation-p0-p4.md), and the eleven
+[`history/city-generation-p0-p4.md`](history/city-generation-p0-p4.md), and the twelve
 steps of the ground work — the audit over the shipped GLB, the one ground surface,
 the breaklines, the belt seam, the two layers of tests, the fixed cameras — are in
 [`history/ground-work.md`](history/ground-work.md). Their decisions live in
@@ -18,62 +18,26 @@ whose fix is invisible waits behind something that is not.
 
 ## 1. What the eye catches now
 
-### 1.1 The light rig
+### 1.1 The diorama ignores the theme
 
-The scene goes black when it is turned round. Look at the city from the north — the
-side away from the key light — and the hill reads as an unlit silhouette with a red
-patch over Port Hercule. Seen in the app, not the preview, so it is lighting rather
-than geometry.
+The app has a dark theme and the baked city does not know about it: the terrain and
+the houses arrive off the GLB in one palette and read as a white model dropped into a
+black room. `THEME_COLORS` in `environment-layer.tsx:93` still holds a `light` and a
+`dark` set — but that is the old procedural path. `city-layer.tsx` takes no theme at
+all; the colours come from `MESH_COLOR` in `bake.ts:184`, written into each
+material's base-colour factor at bake time.
 
-Everything is in `track-viewer.tsx:169–189`: `ambientLight` 0.42, a `hemisphereLight`
-whose ground colour is `#07080C` (all but black), a key directional at
-`[500, 800, 400]`, a blue fill at `[-400, 300, -500]` 0.5, and the `#E10600` at
-`[0, 260, -900]` 0.55 that paints the red patch. Baked AO and slope shading multiply
-on top and their floor is 0.278. Which of them is doing it is unmeasured.
+The cheap fix needs no rebake: the meshes are named by kind (`terrain`, `building`,
+`water`, `portal`, `model`, …), so the loader can multiply a per-kind factor over the
+baked colour once per belt. Two palettes in one place, the theme picks one. The
+awkward case is `model`, which is white on purpose because a merged kit house carries
+its colour per vertex — tinting that one is a multiply over vertex colour, so check
+it by eye rather than assuming.
 
-One pass over the rig, judged from [`scene-goals.md`](scene-goals.md) §4's cameras
-with the scene turned, and `?shading=ao` in the preview to separate what is baked
-from what is lit. The red rim light is decided in the same pass: it predates the
-bake work and is a style call as much as a bug.
+First because it is one file, no rebake, and it is what makes the scene look wrong the
+moment the app opens in the dark.
 
-This is first because it is the only thing left that spoils the scene in the app
-rather than in a screenshot of it.
-
-### 1.2 The diorama has no body
-
-Turn the camera down towards the horizon and the illusion goes: there is no rock
-under the landscape, only a sheet with a landscape printed on it. The terrain runs
-from −3 m to 452 m and its outer edge drops by `SKIRT_M` — three metres — and stops.
-No sides, no bottom. The water is the other half of the same complaint: one quad over
-the bbox, so in a wide shot from the north-west the sky shows past a straight diagonal
-where it ends (`images/mc-1929-seam-city-far.png`).
-
-The answer is a plinth. The far belt's outer rim goes down to a common base instead of
-three metres, the base is capped, and the sides are painted as rock rather than as the
-ground's own colour — a cut block of earth with a city on top, which is what a diorama
-is. Measured: the bbox is 2,736 × 2,974 m, so the rim is 11,420 m and at the far
-belt's 16 m cell that is 714 quads — **1,428 triangles** and two more for the floor.
-The far belt is at 88,969 of 120,000 and 1.51 MB of 2 MB, so it costs nothing worth
-counting.
-
-Three calls, in the order they matter:
-
-- **How deep.** A flat floor at a fixed level — around −60 m reads as a block without
-  turning the model into a column — or the lowest ground less a margin.
-- **What the cut looks like.** The sides and floor want their own material. Left the
-  terrain's colour, the cut reads as paper again.
-- **Where the water stops.** Clipping the quad to the plinth's own outline closes the
-  sea's edge with the same move, instead of leaving two edges to explain.
-
-The alternative is to stop the camera before the angle that shows it — `track-viewer.tsx:240`
-allows `maxPolarAngle = π / 2 − 0.02`, which is as good as level. That is cheaper and
-it treats the symptom; it also belongs to 2.4 either way.
-
-Worth doing early despite being cosmetic: it is cheap, it is the same "rotate and it
-breaks" family as the light rig, and a ninth fixed shot from a low angle is what
-proves it.
-
-### 1.3 The tunnel mouth, properly
+### 1.2 The tunnel mouth, properly
 
 Step 11 closed the pit and gave the sleeve an outside, so it is a mouth rather than a
 hole with a film over it. It is still a bare concrete ring standing in bare ground.
@@ -85,10 +49,10 @@ step 11 made it worse rather than better; and from above the lid over the cuttin
 reads as a grey plate lying on the slope.
 
 One pass over `bakePortals` and `bakeTunnelBody` in `bake.ts`, judged from the
-`tunnel-mouth` shot and from the same camera at the western portal, which the eight
+`tunnel-mouth` shot and from the same camera at the western portal, which the nine
 do not cover.
 
-### 1.4 Kit houses, looked at
+### 1.3 Kit houses, looked at
 
 75 modelled on the current bake, 92,406 triangles, inside budget; 1,976 footprints fit
 the shape and 369 had no model at their proportion. The numbers are plausible and
@@ -97,6 +61,36 @@ would be a fitting complaint.
 
 Cheap and worth doing here: it is a camera and an hour, and it decides whether the
 modelled-asset direction needs more models or better fitting.
+
+### 1.4 The light rig
+
+Left for last, on purpose: the rig is what settles once the things it lights are
+finished, and the measurement below says nothing in it is urgent.
+
+**What was measured** (2026-09-01, in the app over `window.__f1three`, 24 cameras —
+azimuth every 45°, elevation 5/15/35°, 3500 m out, mean/sd/clipping read back
+with `readPixels`):
+
+- The reported black side does not reproduce. Mean luminance runs 85–140 of 255,
+  dark pixels stay under 1 %, nothing clips. The shaded quadrant (azimuth 225) is not
+  black, it is flat: mean 85 and sd 27 against 140 and sd 45 on the lit side.
+- The key directional carries the picture — 45 of ~110 mean. Ambient is worth 17,
+  the hemisphere 10. **The blue fill and the red rim are worth 2 each**: they do not
+  light anything.
+- A sweep of five rigs (fill 1.0 and 1.2, ambient down to 0.36, a lifted hemisphere
+  ground colour, key down to 1.2) measured as a tie — light/dark spread 1.58–1.64
+  against the current 1.64, dark-side sd 27 → 29. Turning the fill knob moves the
+  frame by 3 units of 255. There is no win in the numbers as the rig stands.
+- The red rim does not light, it dyes. It shifts mean r−g by 8–20 and puts up to
+  6.7 % of the frame into visible red at low elevation. From the north the whole city
+  goes pink; with it off the scene is a clean cool grey. That is a style call.
+
+**The open question**, which is why this is not just "delete two lights": everything
+outside the diorama is black, so nothing in the picture explains where the light comes
+from. A sun that is nowhere, over a model in an unlit room. Decide what the scene is
+lit *by* — a sky the camera can see, an environment map, or an honest studio look with
+the plinth as the table — and the intensities follow from that answer instead of
+being tuned against nothing.
 
 ---
 
@@ -122,9 +116,15 @@ only a person looking at the city can decide.
 
 ### 2.4 Camera distance limits
 
-The polar-angle floor is set; the distance limits are deliberately still open and
-want their own pass. 1.2 is the other half of it: how low the camera may go decides
-how much of the model's underside has to exist.
+The polar-angle floor is set, the model has a body, and the camera is now held 2 m
+above the ground by `camera-ground-clamp.tsx`, so neither going under the model nor
+flying into it is reachable. What is left is the distance: how far out before the
+block stops filling the frame, and how close before the near plane eats the street.
+
+One cost to look at in the same pass: the clamp reads the highest corner of every
+triangle whose footprint touches a cell, so at the foot of a vertical cliff it holds
+the camera at the clifftop — 29 m of headroom under Le Rocher, measured. Erring
+upwards is the right default, but a cliff foot is a place someone will want to stand.
 
 ---
 
@@ -136,6 +136,12 @@ how much of the model's underside has to exist.
   Quantisation is not the cause (0.045 m at the 64° slope these sit on buys 0.09 m).
   `env:audit` reports it every run. Worth an hour when someone is next inside
   `bake.ts`'s boundary code.
+- **The 12 m lip past the plinth.** Each belt's grid ends on its own cell size, so
+  the core belt reaches up to 12 m further out than the far belt does — 120 cells of
+  it on Monaco, where the track runs close to the bbox edge. They keep the 3 m skirt
+  they always had and now hang past the block's wall. Predates the plinth and reads
+  as a fringe on the `plinth` shot's right-hand rim; the fix is to clip every belt to
+  the coarsest extent, which is a change to the grid rather than to the wall.
 - **P2.1 — roads carry `tunnel`, `bridge`, `layer`** from Overpass into `RoadLine`
   and the building schema.
 - **The city belt's triangle count.** 110,850 to 213,627 after the kit and the

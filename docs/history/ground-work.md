@@ -1,4 +1,4 @@
-# The ground work — steps 1 to 11
+# The ground work — steps 1 to 12
 
 What was built after the P0–P4 phases, in the order it happened: the audit that reads
 the shipped GLB, the one ground surface, the breaklines, the belt seam, the two layers
@@ -272,3 +272,22 @@ and made the film worse.
 
 ---
 
+### 12. The diorama has a body — **done**
+
+Turn the camera down towards the horizon and the illusion went: no rock under the
+landscape, only a sheet with a landscape printed on it. The terrain's outer edge
+dropped `SKIRT_M` — three metres — and stopped, and the water was one quad ending in
+mid-air at the same rim.
+
+The rim now goes to a flat floor at −60 m in its own darker material, and the floor
+is capped (D22). The wall's top is the far belt's own rim vertex where the rim is
+land, so the two meet exactly rather than nearly, and the datum where it is sea,
+which closes the water's edge without a second rule to explain. The skirts that used
+to hem the bbox are gone — an edge is either a belt boundary, which still gets one,
+or the outside of the block, which now has a wall.
+
+Cost, measured on the rebake: far belt 88,969 → 89,713 triangles and 1.51 → 1.52 MB,
+one draw call. A ninth fixed shot, `plinth`, is what proves it — from a corner,
+below the horizon, the angle that used to show paper.
+
+---

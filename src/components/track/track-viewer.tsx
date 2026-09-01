@@ -226,11 +226,12 @@ export default function TrackViewer({
                 at: inspecting the ground means getting under the eaves and down
                 to street level, which every one of the old bounds forbade.
 
-                The floor stays. Terrain is a surface, not a solid, and its
-                back faces are culled, so from below the whole city is
-                see-through — the road shows through the hillside and the water
-                shows through the ground. Stopping just short of the horizon
-                keeps the camera above the surface it is looking at. */}
+                The floor stays. Terrain is a surface, not a solid, and its back
+                faces are culled, so from below the whole city is see-through —
+                the road shows through the hillside and the water shows through
+                the ground. Stopping just short of the horizon keeps the camera
+                above the surface it is looking at, and `CameraGroundClamp`
+                keeps it out of the surface itself. */}
             <OrbitControls
               makeDefault
               enableDamping

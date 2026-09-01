@@ -48,7 +48,7 @@ rest are single-purpose modules it calls.
 | `belts.ts` | Detail belts: core 4 m ≤150 m, city 8 m ≤600 m, far 16 m. |
 | `ground.ts` | The one surface. Per-belt filtered nodes and triangle-exact height queries; everything that stands on the ground reads this, never the raw field. |
 | `breaklines.ts` | Surveyed cliffs, retaining walls, quays and breakwaters — the lines `ground.ts` may not average across (D18). |
-| `shots.ts` | The eight fixed cameras of `scene-goals.md` §4 and the headless runner that takes them. `bun run env:shots`. |
+| `shots.ts` | The nine fixed cameras of `scene-goals.md` §4 and the headless runner that takes them. `bun run env:shots`. |
 | `fixture.ts` | Cuts a window of a circuit's inputs out of the caches and reads it back as `BakeInputs`. `bun run env:fixture`; the slice is committed under `fixtures/`. |
 | `synthetic.ts` | Ground written by hand — a plane, a slope, a cut — built through the same `heightFieldFrom` the bake uses. Test material only. |
 | `mesh.test.ts` | The grid surface: how many normals a corner is allowed to have (D20). |
@@ -94,6 +94,8 @@ app/page.tsx → home-router → globe/ | track/f1-track-app | race/race-app
 - `track-mesh.tsx` (965) — the scene. Curve, ribbon, kerbs, apron, markings, gantry,
   fleet, environment, camera. Reads `cityManifest.track.buried` to hide tunnel spans.
 - `city-layer.tsx` — mounts the baked GLB belts, far first. Builds nothing.
+- `camera-ground-clamp.tsx` — holds the camera 2 m above the ground. Reads the loaded
+  belts once into an 8 m max-height grid; two lookups per frame, no raycast.
 - `environment-layer.tsx` (1024) — the **old** JSON runtime path. Dies at P4.4.
 - `race-camera-rig.tsx`, `car-fleet.tsx`, `start-grid-cars.tsx`, `studio-stage.tsx`.
 
