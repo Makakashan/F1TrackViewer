@@ -106,6 +106,18 @@
         await fetch(`/shot?name=${encodeURIComponent(shot)}`, { method: "POST", body: blob });
       }
 
+      // What is under a point of the frame, for a question the eye cannot settle:
+      // `pick(x, y)` in normalised device coordinates, nearest hit first.
+      window.pick = (ndcX, ndcY) => {
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+        return ray.intersectObjects(scene.children, true).map((hit) => ({
+          name: hit.object.name,
+          distance: Number(hit.distance.toFixed(1)),
+          y: Number(hit.point.y.toFixed(2)),
+        }));
+      };
+
       hud.textContent = `${circuit} — ${belts.join(" + ")} — ${triangles.toLocaleString()} tris, ${draws} meshes`;
       document.title = "ready";
     </script>
