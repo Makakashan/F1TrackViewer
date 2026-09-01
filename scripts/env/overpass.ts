@@ -14,6 +14,13 @@ import type { RasterBBox } from "./raster";
 const ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
+  // Last, and only useful for a Swiss circuit: this one serves a Switzerland
+  // extract, not the planet. Asked for Monaco it answers 200 with nothing —
+  // measured, zero buildings in the Casino block where the global mirrors
+  // report 33 ways and 8 relations. `run` treats an empty answer as a failed
+  // one and moves on, and no fetch caches an empty result, so it costs a retry
+  // rather than an empty city; it is here for the day the other two are down
+  // and the circuit happens to be in Switzerland.
   "https://overpass.osm.ch/api/interpreter",
 ];
 const USER_AGENT = "F1TrackViewer/0.1 (https://github.com/Makakashan/F1TrackViewer)";
