@@ -18,26 +18,7 @@ whose fix is invisible waits behind something that is not.
 
 ## 1. What the eye catches now
 
-### 1.1 The diorama ignores the theme
-
-The app has a dark theme and the baked city does not know about it: the terrain and
-the houses arrive off the GLB in one palette and read as a white model dropped into a
-black room. `THEME_COLORS` in `environment-layer.tsx:93` still holds a `light` and a
-`dark` set — but that is the old procedural path. `city-layer.tsx` takes no theme at
-all; the colours come from `MESH_COLOR` in `bake.ts:184`, written into each
-material's base-colour factor at bake time.
-
-The cheap fix needs no rebake: the meshes are named by kind (`terrain`, `building`,
-`water`, `portal`, `model`, …), so the loader can multiply a per-kind factor over the
-baked colour once per belt. Two palettes in one place, the theme picks one. The
-awkward case is `model`, which is white on purpose because a merged kit house carries
-its colour per vertex — tinting that one is a multiply over vertex colour, so check
-it by eye rather than assuming.
-
-First because it is one file, no rebake, and it is what makes the scene look wrong the
-moment the app opens in the dark.
-
-### 1.2 The tunnel mouth, properly
+### 1.1 The tunnel mouth, properly
 
 Step 11 closed the pit and gave the sleeve an outside, so it is a mouth rather than a
 hole with a film over it. It is still a bare concrete ring standing in bare ground.
@@ -52,7 +33,7 @@ One pass over `bakePortals` and `bakeTunnelBody` in `bake.ts`, judged from the
 `tunnel-mouth` shot and from the same camera at the western portal, which the nine
 do not cover.
 
-### 1.3 Kit houses, looked at
+### 1.2 Kit houses, looked at
 
 75 modelled on the current bake, 92,406 triangles, inside budget; 1,976 footprints fit
 the shape and 369 had no model at their proportion. The numbers are plausible and
@@ -62,7 +43,7 @@ would be a fitting complaint.
 Cheap and worth doing here: it is a camera and an hour, and it decides whether the
 modelled-asset direction needs more models or better fitting.
 
-### 1.4 The light rig
+### 1.3 The light rig
 
 Left for last, on purpose: the rig is what settles once the things it lights are
 finished, and the measurement below says nothing in it is urgent.

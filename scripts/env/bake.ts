@@ -15,7 +15,7 @@ import { meshopt } from "@gltf-transform/functions";
 import { MeshoptEncoder } from "meshoptimizer";
 import { ShapeUtils, Vector2 } from "three";
 
-import { DIORAMA_COLORS } from "../../src/lib/env/diorama-palette";
+import { BAKED_MESH_COLORS, DIORAMA_COLORS, type BakedMeshKind } from "../../src/lib/env/diorama-palette";
 import { ENVIRONMENT_ATTRIBUTION, type BuildingsFile } from "../../src/lib/env/environment-types";
 import {
   BELT_BUDGET,
@@ -176,41 +176,10 @@ const MODEL_TONE: [number, number, number] = (() => {
   return [rgb[0] / luminance, rgb[1] / luminance, rgb[2] / luminance];
 })();
 
-type MeshKind =
-  | "terrain"
-  | "building"
-  | "water"
-  | "tunnel"
-  | "portal"
-  | "shore"
-  | "pier"
-  | "barrier"
-  | "prop"
-  | "propDark"
-  | "model"
-  | "pool"
-  | "pitch"
-  | "plinth";
+type MeshKind = BakedMeshKind;
 
-const MESH_COLOR: Record<MeshKind, string> = {
-  terrain: DIORAMA_COLORS.terrain,
-  // A deck is ground you can walk on, not a wall, so it reads as terrain.
-  pier: DIORAMA_COLORS.terrain,
-  building: DIORAMA_COLORS.building,
-  water: DIORAMA_COLORS.water,
-  tunnel: "#14161A",
-  portal: DIORAMA_COLORS.buildingSide,
-  shore: DIORAMA_COLORS.buildingSide,
-  barrier: "#C9CFD6",
-  prop: DIORAMA_COLORS.building,
-  // White on purpose: a merged model carries its own colour per vertex.
-  model: "#FFFFFF",
-  pool: DIORAMA_COLORS.waterTop,
-  pitch: DIORAMA_COLORS.landuseGrass,
-  plinth: DIORAMA_COLORS.plinth,
-  // A hull, a crane leg, a stand frame: what sits below the deck line.
-  propDark: DIORAMA_COLORS.buildingSide,
-};
+/** The light set is what the bake writes; the dark one is the runtime's. */
+const MESH_COLOR = BAKED_MESH_COLORS.light;
 
 // ─── terrain ───────────────────────────────────────────────────────────────
 
