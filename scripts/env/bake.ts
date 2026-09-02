@@ -1375,6 +1375,53 @@ function bakeBuildings(
   }
 }
 
+/** Below this the plinth is a lid on the ground rather than a terrace. */
+const KIT_PLINTH_MIN_M = 0.2;
+/**
+ * How far its walls go under the ground they read.
+ *
+ * A vertex reads the ground at its own point and the terrain between two of
+ * them can sit lower; without the dig the audit reads the difference as a house
+ * on stilts.
+ */
+const KIT_PLINTH_DIG_M = 0.3;
+
+/**
+ * The terrace a modelled house stands on.
+ *
+ * A kit house stands on the floor an extrusion would have used — the middle of
+ * the ground under its plot — and this is what holds it up on the downhill
+ * side: the fitted rectangle walled from the ground to that floor. Standing the
+ * model on the plot's lowest corner instead buried it, half its height and more
+ * on 12 of the 75 plots. The rectangle rather than the surveyed ring, because
+ * the rectangle is what the model covers.
+ */
+function bakeKitPlinths(
+  kit: KitResult,
+  meshes: Record<Belt, Mesh>,
+  groundAt: (x: number, z: number) => number,
+  corridor: Corridor,
+): number {
+  let built = 0;
+  for (const plinth of kit.plinths) {
+    const footAt = plinth.ring.map((point) => {
+      const under = groundAt(point.x, point.z);
+      return Math.min(Number.isNaN(under) ? plinth.top : under, plinth.top);
+    });
+    if (plinth.top - Math.min(...footAt) < KIT_PLINTH_MIN_M) continue;
+    let centreX = 0;
+    let centreZ = 0;
+    for (const point of plinth.ring) {
+      centreX += point.x / plinth.ring.length;
+      centreZ += point.z / plinth.ring.length;
+    }
+    const belt = beltAtDistance(corridor.distance(centreX, centreZ));
+    extrude(meshes[belt], plinth.ring, footAt.map((y) => y - KIT_PLINTH_DIG_M), plinth.top, 0);
+    built++;
+  }
+  return built;
+}
+
 function emptyBuildingResult(): BuildingResult {
   return {
     meshes: { core: createMesh(), city: createMesh(), far: createMesh() } as Record<Belt, Mesh>,
@@ -2719,7 +2766,7 @@ export interface BakeReport {
   vaults: VaultedRuns["stats"];
   props: PropResult["stats"];
   greenery: GreeneryResult["stats"];
-  kit: KitResult["stats"];
+  kit: KitResult["stats"] & { plinths: number };
   slopeShaded: number;
   overrides: OverrideStats;
 }
@@ -2952,9 +2999,9 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     prepared.map((building) => ({
       id: building.id,
       ring: building.ring,
-      // The lowest corner the walls were going to reach, so a modelled house on
-      // a slope is buried rather than left standing on air.
-      groundY: Math.min(...building.footAt),
+      // The floor an extrusion would have used. What the downhill side stands
+      // on is the plinth `bakeBuildings` walls up to it.
+      groundY: building.base,
       heightM: building.heightM,
       centreX: building.centreX,
       centreZ: building.centreZ,
@@ -2972,6 +3019,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     },
   );
   bakeBuildings(prepared, roofTags, buildings, kit.taken);
+  const kitPlinths = bakeKitPlinths(kit, buildings.meshes, standOn, corridor);
 
   // Berthed from the harbour survey, the kit's houses, then whatever the
   // overrides add by hand.
@@ -3109,7 +3157,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     vaults: vaults.stats,
     props: props.stats,
     greenery: greeneryStats,
-    kit: kit.stats,
+    kit: { ...kit.stats, plinths: kitPlinths },
     slopeShaded,
     overrides: overrideStats,
   };
@@ -3245,7 +3293,8 @@ async function main() {
   console.log(
     `  kit ${report.kit.models} houses modelled (${report.kit.triangles.toLocaleString()} tris) — `
       + `${report.kit.eligible} footprints fit the shape, ${report.kit.aloneInTheStreet} stood alone, `
-      + `${report.kit.noModelFits} had no model at their proportion, ${report.kit.overBudget} over budget`,
+      + `${report.kit.noModelFits} had no model at their proportion, ${report.kit.overBudget} over budget, `
+      + `${report.kit.plinths} on a plinth`,
   );
   console.log(
     `  props ${report.props.placed} placed — ${report.props.berthed} yachts berthed along the pontoons`

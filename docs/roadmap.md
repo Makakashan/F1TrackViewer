@@ -20,13 +20,23 @@ whose fix is invisible waits behind something that is not.
 
 ### 1.1 Kit houses, looked at
 
-75 modelled on the current bake, 92,406 triangles, inside budget; 1,976 footprints fit
-the shape and 369 had no model at their proportion. The numbers are plausible and
-nobody has looked at one. The ground under them is honest now, so a fitting complaint
-would be a fitting complaint.
+Looked at, 2026-09-02. The direction holds — the silhouettes fit the plots — and the
+pass found three things. One is fixed (D32): the houses stood on their plot's lowest
+corner and 12 of 75 were buried past half their height, so they now stand on the
+middle of the ground with a walled terrace under them. Two are open and are the
+user's call:
 
-Cheap and worth doing here: it is a camera and an hour, and it decides whether the
-modelled-asset direction needs more models or better fitting.
+- **The kit paints itself.** Green roofs and charcoal walls in a city that is white.
+  From above they read as green and black patches rather than as houses. Bringing
+  them into the palette — walls the building colour, roofs one dark tone — is a style
+  decision, not a bug.
+- **Half of them are sheds.** The shape test has a ceiling (400 m²) and no floor:
+  31 of 75 plots are under 8 m long and the shortest is 3.6 m, which is a two-storey
+  house squashed to the size of a garage. A floor near 8 m would leave about 44.
+
+Coverage is thin on purpose and could be widened: of 1,975 footprints that fit the
+shape, 75 got a model. The budget is not the limit — 92,406 of 175,000 triangles —
+the neighbour rule (1,086 stood alone) and the proportion tolerance (369) are.
 
 ### 1.2 The light rig
 
