@@ -140,12 +140,7 @@ export default function TrackViewer({
         ) : canvasEventSource ? (
           <Canvas
             eventSource={canvasEventSource}
-            // The city casts: a block's own shadow is what says it has depth,
-            // and without one the diorama reads as paper. Off on the
-            // performance path, where the map is the whole budget.
-            // PCF rather than the soft variant: three deprecated that one, and
-            // it falls back to this anyway.
-            shadows={lowDetail ? false : { type: THREE.PCFShadowMap }}
+            shadows={false}
             // Nothing in this scene animates on its own — no useFrame outside the globe's own canvas.
             frameloop={autoRotate || raceSim?.racing ? "always" : "demand"}
             dpr={[1, 1.5]}
@@ -182,21 +177,6 @@ export default function TrackViewer({
             <directionalLight
               position={[500, 800, 400]}
               intensity={resolvedTheme === "dark" ? 1.45 : 1.05}
-              castShadow={!lowDetail}
-              // The diorama is about 3 km across and centred on the origin, so
-              // the sun's own camera is a box around it rather than a frustum
-              // fitted per frame. At 2048 that is 1.2 m to a texel — a wall's
-              // shadow, not a windowsill's, which is the scale this reads at.
-              shadow-mapSize-width={2048}
-              shadow-mapSize-height={2048}
-              shadow-camera-near={100}
-              shadow-camera-far={3000}
-              shadow-camera-left={-1250}
-              shadow-camera-right={1250}
-              shadow-camera-top={1250}
-              shadow-camera-bottom={-1250}
-              shadow-bias={-0.0006}
-              shadow-normalBias={0.6}
             />
             <directionalLight
               position={[-400, 300, -500]}

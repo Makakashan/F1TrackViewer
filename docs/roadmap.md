@@ -61,10 +61,6 @@ took.
 
 ### 1.2 The light rig
 
-**The sun casts now (D41)** — 2048 over a 2.5 km box, gated with the rest behind the
-quality lever, measured at 1.32× the frame or worse. What is below is the measurement
-from before it, and the open question at the end still stands.
-
 Left for last, on purpose: the rig is what settles once the things it lights are
 finished, and the measurement below says nothing in it is urgent.
 

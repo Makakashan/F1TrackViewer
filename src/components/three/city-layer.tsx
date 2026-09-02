@@ -28,8 +28,6 @@ export interface CityLayerProps {
   resolvedTheme: "light" | "dark";
   /** Weaker devices stop at the city belt and skip the core's detail. */
   lowDetail?: boolean;
-  /** Whether the sun casts a shadow map this scene has to take part in. */
-  shadows?: boolean;
   onBeltLoaded?: (belt: CityBelt) => void;
 }
 
@@ -82,51 +80,6 @@ function liftDecals(group: THREE.Group) {
   });
 }
 
-/**
- * Which meshes take part in the sun's shadow.
- *
- * A wall casts and takes one; the ground only takes. Water takes nothing — a
- * shadow on the sea reads as a stain, and the quad is one triangle pair over
- * the whole bay. The far belt is in it too: at a kilometre a block's shadow is
- * the only thing that says the block has depth.
- */
-const SHADOW_CASTERS = new Set<BakedMeshKind>([
-  "building",
-  "model",
-  "prop",
-  "propDark",
-  "barrier",
-  "portal",
-  "plinth",
-]);
-const SHADOW_CATCHERS = new Set<BakedMeshKind>([
-  "terrain",
-  "pier",
-  "shore",
-  "park",
-  "pitch",
-  "building",
-  "model",
-  "prop",
-  "propDark",
-  "plinth",
-  "boreRoad",
-]);
-
-function setShadows(group: THREE.Group, on: boolean): void {
-  group.traverse((node) => {
-    if (!(node instanceof THREE.Mesh)) return;
-    const kind = node.name as BakedMeshKind;
-    // The far belt takes shadow but does not cast one: at 600 m and beyond a
-    // block's own shadow is a few pixels, and it is a third of the geometry
-    // the sun's pass would have to draw.
-    const belt = node.parent?.name ?? node.name;
-    const casts = SHADOW_CASTERS.has(kind) && belt !== "city-far";
-    node.castShadow = on && casts;
-    node.receiveShadow = on && SHADOW_CATCHERS.has(kind);
-  });
-}
-
 function disposeGroup(group: THREE.Group) {
   group.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
@@ -141,7 +94,6 @@ export default function CityLayer({
   manifest,
   resolvedTheme,
   lowDetail,
-  shadows = false,
   onBeltLoaded,
 }: CityLayerProps) {
   const invalidate = useThree((state) => state.invalidate);
@@ -150,10 +102,6 @@ export default function CityLayer({
   // loader reads the theme through a ref rather than depending on it — a
   // dependency there would refetch every belt on a theme switch.
   const themeRef = useRef(resolvedTheme);
-  // Read through a ref for the same reason the theme is: a belt lands between
-  // renders and has to arrive already set, and a dependency here would refetch
-  // every belt when the quality setting changes.
-  const shadowsRef = useRef(shadows);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -176,7 +124,6 @@ export default function CityLayer({
           gltf.scene.name = `city-${belt}`;
           paintForTheme(gltf.scene, themeRef.current);
           liftDecals(gltf.scene);
-          setShadows(gltf.scene, shadowsRef.current);
           root.add(gltf.scene);
           loaded.push(gltf.scene);
           onBeltLoaded?.(belt);
@@ -207,14 +154,6 @@ export default function CityLayer({
     paintForTheme(root, resolvedTheme);
     invalidate();
   }, [resolvedTheme, invalidate]);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    shadowsRef.current = shadows;
-    if (!root) return;
-    setShadows(root, shadows);
-    invalidate();
-  }, [shadows, invalidate]);
 
   useEffect(() => {
     if (error) console.warn(`city layer: ${error}`);
