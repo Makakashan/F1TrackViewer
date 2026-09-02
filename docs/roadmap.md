@@ -112,6 +112,10 @@ upwards is the right default, but a cliff foot is a place someone will want to s
   of it, and where that face meets the slope there is nothing between them. The
   cutting's own sides are terrain, so they are as lumpy as the belt that draws them.
   Real work here means excavating the approach properly, which is P4.1.
+- **The 28 props with no ground under them.** Trees mapped over water or past the belt
+  the ground stops at. They are skipped, which is right, but nobody has looked at where
+  they are — a tree on a quay that the coast cut away is a different bug from a tree
+  outside the bbox.
 - **P2.1 — roads carry `tunnel`, `bridge`, `layer`** from Overpass into `RoadLine`
   and the building schema.
 - **The city belt's triangle count.** 110,850 to 213,627 after the kit and the
@@ -128,6 +132,16 @@ upwards is the right default, but a cliff foot is a place someone will want to s
 - **Buoys** from `seamark:*`, once Overpass answers, for honest clutter on the water.
 - **Landmarks** — the Casino, the Hôtel de Paris. No CC0 model of either exists, so
   they are parametric or they are nothing.
+
+---
+
+### 4.4 The ground's own colour
+
+A terrain that is grey or white is a model of a landscape, not a landscape. Once the
+city is standing in modelled assets rather than extruded boxes, the ground wants a
+range — light green to dark — rather than the one stone tone it has now. It waits for
+the assets on purpose: the colour that reads under boxes is not the colour that reads
+under models, and doing it twice is doing it wrong.
 
 ---
 

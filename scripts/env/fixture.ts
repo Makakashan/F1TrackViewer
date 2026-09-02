@@ -200,6 +200,7 @@ export async function loadFixture(name: string): Promise<BakeInputs> {
     overrides: file.overrides,
     kitHouses: [],
     kitBoats: [],
+    kitTrees: [],
   };
 }
 

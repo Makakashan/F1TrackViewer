@@ -52,7 +52,7 @@ import {
   type ShoreWay,
   type StructureWay,
 } from "./overpass";
-import { buildGreenery, type GreeneryResult } from "./greenery";
+import { buildGreenery, plantTrees, type GreeneryResult } from "./greenery";
 import { buildSurfaceIndex } from "./baked-scene";
 import { buildBreaklines } from "./breaklines";
 import { buildGround, type Ground } from "./ground";
@@ -99,6 +99,15 @@ const TRACK_RAISE_M = 0.05;
 const DEFAULT_TRACK_HALF_WIDTH_M = 6;
 /** Ground the track corridor owns; a footprint inside it is pushed out. */
 const TRACK_CLEARANCE_M = 8;
+/**
+ * How far a tree stands from the racing line.
+ *
+ * Wider than the corridor: a kit tree is a canopy on a trunk, and its branches
+ * reach past the point it is planted at. Monaco's street trees are mapped at
+ * the kerb, so without this the lap ran through the planting — `env:audit`
+ * counted 417 vertices of it inside the corridor.
+ */
+const TREE_CLEARANCE_M = 11;
 /** How far a terrain edge drops where its neighbour is missing, to hide the seam. */
 const SKIRT_M = 3;
 /**
@@ -2739,6 +2748,8 @@ export interface BakeInputs {
   kitHouses: KitModel[];
   /** Boat model paths, as the props pass wants them. */
   kitBoats: string[];
+  /** Kit trees, planted at the survey's own tree nodes. */
+  kitTrees: string[];
 }
 
 /** The reads, all of them, in one place. */
@@ -2769,6 +2780,7 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
     overrides: await loadOverrides(circuitId),
     // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
     kitHouses: await loadKitHouses(REPO_ROOT, "assets/models/kenney-city-suburban"),
+    kitTrees: await loadKitPaths(REPO_ROOT, "assets/models/kenney-city-suburban", ["tree-"]),
     kitBoats: await loadKitPaths(REPO_ROOT, "assets/models/kenney-watercraft", [
       "boat-speed",
       "boat-row",
@@ -2877,7 +2889,8 @@ export interface BakeOptions {
 
 /** The pipeline itself, over inputs somebody else read. */
 export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): Promise<BakeReport> {
-  const { circuitId, buildingWays, greenWays, breaklineWays, mnh, kitHouses, kitBoats } = inputs;
+  const { circuitId, buildingWays, greenWays, breaklineWays, mnh, kitHouses, kitBoats, kitTrees } =
+    inputs;
   const { coords, plane, field, hill, corridor, tunnels, vaults, overrides, overrideStats } =
     buildCircuitGround(inputs);
   const shoreWays = overrideShoreWays(inputs.shoreWays, overrides, overrideStats);
@@ -2885,8 +2898,6 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const shore = bakeShoreWalls(shoreWays, field, plane, coast);
   const piers = buildPiers(shoreWays, field, plane);
   const pierDecks = bakePierDecks(piers);
-  const greenery = buildGreenery(greenWays, field, plane);
-  const greeneryStats = { ...greenery.stats };
 
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(vaults, hill, plane);
@@ -2925,6 +2936,11 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
       .filter(([lon, lat]) => !vaults.covers(lon, lat))
       .map(([lon, lat]) => ({ x: plane.x(lon), z: plane.z(lat) })),
   );
+  // After the terrain, because these lie on the ground that is drawn rather
+  // than on the field the belts filtered.
+  const greenery = buildGreenery(greenWays, standOn, plane);
+  const greeneryStats = { ...greenery.stats };
+
   const prepared = prepareBuildings(
     buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings,
   );
@@ -2962,7 +2978,12 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const overrideProps = overrides?.props ?? [];
   overrideStats.props = overrideProps.length;
   const props = await buildProps(
-    [...berthYachts(piers, field, plane, kitBoats), ...kit.placements, ...overrideProps],
+    [
+      ...berthYachts(piers, field, plane, kitBoats),
+      ...plantTrees(greenWays, kitTrees, plane, (x, z) => corridor.distance(x, z) >= TREE_CLEARANCE_M),
+      ...kit.placements,
+      ...overrideProps,
+    ],
     standOn,
     plane,
     REPO_ROOT,
@@ -3045,6 +3066,9 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
       { kind: "propDark", mesh: props.dark },
       { kind: "prop", mesh: props.light },
       { kind: "model", mesh: props.models },
+      // Parks are ground cover and reach well past the core's 150 m, so they
+      // ship with the belt that covers the city rather than with the track.
+      { kind: "park", mesh: greenery.parks },
     ],
     far: [
       { kind: "terrain", mesh: terrain.meshes.far },
@@ -3214,7 +3238,8 @@ async function main() {
       `${report.piers.skippedSolid} already solid ground`,
   );
   console.log(
-    `  surfaces ${report.greenery.pools} pools, ${report.greenery.pitches} pitches`
+    `  surfaces ${report.greenery.pools} pools, ${report.greenery.pitches} pitches, `
+      + `${report.greenery.parks} parks`
       + `; ${report.slopeShaded} ground nodes shaded by slope`,
   );
   console.log(
