@@ -24,8 +24,8 @@
     },
     "city": {
       "file": "city.glb",
-      "bytes": 3483456,
-      "triangles": 214682,
+      "bytes": 3491052,
+      "triangles": 215078,
       "drawCalls": 8,
       "radiusM": 600,
       "cellM": 8
@@ -41,7 +41,7 @@
   },
   "counts": {
     "buildings": 4737,
-    "triangles": 433233,
+    "triangles": 433629,
     "drawCalls": 22
   },
   "track": {
@@ -220,5 +220,5 @@
     "centreline": "bacinger/f1-circuits"
   },
   "attribution": "© OpenStreetMap contributors",
-  "generatedAt": "2026-09-01"
+  "generatedAt": "2026-09-02"
 }
