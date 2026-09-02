@@ -7,3 +7,5 @@ not this file.
 - **Watercraft Kit** by Kenney — CC0-1.0 — <https://kenney.nl/assets/watercraft-kit>
 - **City Kit (Commercial) 2.1** by Kenney — CC0-1.0 — <https://kenney.nl/assets/city-kit-commercial>
 - **City Kit (Suburban) 2.0** by Kenney — CC0-1.0 — <https://kenney.nl/assets/city-kit-suburban>
+- **City Kit (Industrial) 2.0** by Kenney — CC0-1.0 — <https://kenney.nl/assets/city-kit-industrial>
+- **Modular Buildings 2.1** by Kenney — CC0-1.0 — <https://kenney.nl/assets/modular-buildings>
