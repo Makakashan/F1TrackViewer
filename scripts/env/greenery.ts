@@ -13,8 +13,9 @@
 
 import { ShapeUtils, Vector2 } from "three";
 
-import { addFlatQuad, addFlatTriangle, createMesh, type Mesh } from "./mesh";
+import { addFlatTriangle, createMesh, type Mesh } from "./mesh";
 import type { GreenWay } from "./overpass";
+import type { PropPlacement } from "./props";
 import type { ScenePlane } from "./plane";
 
 /**
@@ -24,17 +25,6 @@ import type { ScenePlane } from "./plane";
  * the centroid — these are simple convex-ish rings and a fan holds them.
  */
 const SURFACE_LIFT_M = 0.12;
-/**
- * How high a park stands over the ground around it.
- *
- * Flat, it read as green paint on grey — the same complaint that killed the
- * ground tint. Monte-Carlo's gardens are terraces held by a wall, and that is
- * what gives the shape a side for the light to find: three quarters of a metre
- * is enough to read from the air and small enough to walk over at street level.
- */
-const PARK_RIM_M = 0.75;
-/** How much darker the terrace wall is than the planting it holds up. */
-const PARK_RIM_SHADE = 0.72;
 
 export interface GreeneryResult {
   /** Water surfaces at ground level: swimming pools and fountains. */
@@ -84,6 +74,72 @@ function ringArea(ring: { x: number; z: number }[], signed = false): number {
 
 // ─── build ─────────────────────────────────────────────────────────────────
 
+/** How tall a kit tree is planted. Monaco's street planting is a small tree. */
+const TREE_HEIGHT_M = 7;
+/** Spacing along a surveyed tree row, which OSM gives as a line and not as trees. */
+const TREE_ROW_STEP_M = 9;
+
+/**
+ * The survey's own trees, as kit models.
+ *
+ * Trees were built here once from a canopy and a trunk and read as one shape
+ * repeated a thousand times; these are somebody else's models, and there are
+ * enough of them in the kit to alternate. The positions are not scattered
+ * either: OSM has 662 of Monaco's trees as nodes, which is where they are.
+ */
+export function plantTrees(
+  ways: GreenWay[],
+  models: string[],
+  plane: ScenePlane,
+  /**
+   * False where the corridor owns the ground. Monaco's street trees are mapped
+   * at the kerb, which on a race weekend is behind the barrier and in our
+   * geometry is inside the racing surface — `env:audit` counted 417 vertices of
+   * planting standing in the corridor.
+   */
+  clear: (x: number, z: number) => boolean,
+): PropPlacement[] {
+  if (!models.length) return [];
+  const planted: PropPlacement[] = [];
+  const pick = (lon: number, lat: number) => {
+    // A repeatable choice of model and size, so a rebake plants the same wood.
+    let hash = Math.imul(Math.round(lon * 1e5) | 0, 0x27d4eb2d) ^ Math.imul(Math.round(lat * 1e5) | 0, 0x165667b1);
+    hash = Math.imul(hash ^ (hash >>> 15), 0x2545f491) >>> 0;
+    return {
+      model: models[hash % models.length],
+      fitLengthM: TREE_HEIGHT_M * (0.8 + ((hash >>> 8) % 100) / 250),
+      headingDeg: (hash >>> 16) % 360,
+    };
+  };
+
+  for (const way of ways) {
+    if (way.kind === "tree") {
+      const [lon, lat] = way.points[0];
+      if (!clear(plane.x(lon), plane.z(lat))) continue;
+      planted.push({ lon, lat, ...pick(lon, lat) });
+      continue;
+    }
+    if (way.kind !== "tree_row" || way.points.length < 2) continue;
+    // A row is a line somebody drew down an avenue; the trees are ours to space.
+    for (let i = 0; i < way.points.length - 1; i++) {
+      const [aLon, aLat] = way.points[i];
+      const [bLon, bLat] = way.points[i + 1];
+      const ax = plane.x(aLon);
+      const az = plane.z(aLat);
+      const length = Math.hypot(plane.x(bLon) - ax, plane.z(bLat) - az);
+      const steps = Math.max(1, Math.round(length / TREE_ROW_STEP_M));
+      for (let step = 0; step < steps; step++) {
+        const t = step / steps;
+        const lon = aLon + (bLon - aLon) * t;
+        const lat = aLat + (bLat - aLat) * t;
+        if (!clear(plane.x(lon), plane.z(lat))) continue;
+        planted.push({ lon, lat, ...pick(lon, lat) });
+      }
+    }
+  }
+  return planted;
+}
+
 export function buildGreenery(
   ways: GreenWay[],
   /**
@@ -129,9 +185,6 @@ export function buildGreenery(
     const heights = ring.map((point) => groundAt(point.x, point.z));
     if (heights.some((height) => Number.isNaN(height))) continue;
 
-    // A park stands on its own rim; a pool or a pitch lies flat.
-    const lift = way.kind === "park" ? SURFACE_LIFT_M + PARK_RIM_M : SURFACE_LIFT_M;
-
     // Triangulated as the polygon it is, rather than fanned from the middle:
     // a garden is concave often enough that a fan spills over its own edge.
     //
@@ -144,9 +197,9 @@ export function buildGreenery(
       const from = target.positions.length / 3;
       addFlatTriangle(
         target,
-        ring[a].x, heights[a] + lift, ring[a].z,
-        ring[b].x, heights[b] + lift, ring[b].z,
-        ring[c].x, heights[c] + lift, ring[c].z,
+        ring[a].x, heights[a] + SURFACE_LIFT_M, ring[a].z,
+        ring[b].x, heights[b] + SURFACE_LIFT_M, ring[b].z,
+        ring[c].x, heights[c] + SURFACE_LIFT_M, ring[c].z,
       );
       // Per triangle, not per park: a hectare of one green is the paint the
       // ground tint was, and the triangulation's own patches are the shape the
@@ -154,24 +207,6 @@ export function buildGreenery(
       if (way.kind === "park") {
         paint(target, from, dapple((ring[a].x + ring[b].x + ring[c].x) / 3, (ring[a].z + ring[b].z + ring[c].z) / 3));
       }
-    }
-
-    // The wall that holds the terrace up, wound so it faces away from the park.
-    if (way.kind === "park") {
-      const rimFrom = target.positions.length / 3;
-      const clockwise = ringArea(ring, true) < 0;
-      for (let i = 0; i < ring.length; i++) {
-        const next = (i + 1) % ring.length;
-        const [from, to] = clockwise ? [next, i] : [i, next];
-        addFlatQuad(
-          target,
-          ring[from].x, heights[from] + lift, ring[from].z,
-          ring[to].x, heights[to] + lift, ring[to].z,
-          ring[to].x, heights[to] - SURFACE_LIFT_M, ring[to].z,
-          ring[from].x, heights[from] - SURFACE_LIFT_M, ring[from].z,
-        );
-      }
-      paint(target, rimFrom, PARK_RIM_SHADE);
     }
 
     if (way.kind === "pitch") stats.pitches++;
