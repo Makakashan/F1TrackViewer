@@ -27,10 +27,17 @@ middle of the ground with a terrace under them); the kit painted itself green an
 charcoal in a white city, and a plot could be 3.6 m long (D33, the paint is remapped
 into the palette and the shape test has an 8 m floor).
 
-48 houses now, 58,657 triangles, shortest plot 8.3 m. What is left to decide is
-coverage: 791 footprints fit the shape and the budget is not the limit (58,657 of
-175,000 triangles) — the neighbour rule and the proportion tolerance are, and both
-are calibrated rather than derived.
+Then the ask changed: model every building where a model fits (D34). The commercial
+pack joined the library, the plot ceilings and the district rule went, and the budget
+became one number. **173 buildings are modelled now** of the 1,445 that fit the shape,
+and the city belt is at 337,715 triangles of its 350,000.
+
+What holds coverage down, in order: **571 plots ran out of triangles**, 244 have no
+model at their proportion, 4 stand where the road reaches into them. The first is the
+one with room to move — every model ships in the city belt's mesh, while the core belt
+sits at 135,235 of its own 450,000. Splitting the models mesh per belt would put the
+near ones on the core belt's budget and roughly triple what the city can afford. That
+is the next lever if more coverage is wanted.
 
 ### 1.2 The light rig
 
