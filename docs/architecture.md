@@ -47,8 +47,11 @@ Everything downstream of the centerline reads one curvature profile
 
 ## Terrain
 
-`lib/env/terrain-sampler` owns the rendered height field: the raw elevation grid with
-water flattened, a trench carved along the track, and interpolation across the same
+Where a city is baked, the ground is the bake's: the belts carry it as geometry and
+`city-manifest.json` carries the track's own profile along it, which is what the
+ribbon and the info panel both read. `lib/env/terrain-sampler` serves the older
+path — the one `environment-layer` draws — and owns its rendered height field: the raw
+elevation grid with water flattened, a trench carved along the track, and interpolation across the same
 two triangles the terrain mesh builds per cell. The mesh reads its vertex heights back
 from the sampler, and everything draped on the terrain — roads, buildings, the track
 ribbon — samples through it, so nothing has to guess a clearance that keeps it above a

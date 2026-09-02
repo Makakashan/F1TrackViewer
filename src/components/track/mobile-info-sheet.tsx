@@ -18,6 +18,7 @@ interface MobileInfoSheetProps {
 	loadingTrack: boolean;
 	pointCount: number | undefined;
 	elevations: number[] | null;
+	elevationsBaked?: boolean;
 	elevationEnabled: boolean;
 	markers?: TrackMarkers | null;
 	viewMode?: TrackViewMode;
@@ -37,6 +38,7 @@ export default function MobileInfoSheet({
 	loadingTrack,
 	pointCount,
 	elevations,
+	elevationsBaked,
 	elevationEnabled,
 	markers,
 	viewMode,
@@ -81,6 +83,7 @@ export default function MobileInfoSheet({
 					loading={loadingTrack}
 					pointCount={pointCount}
 					elevations={elevations}
+					elevationsBaked={elevationsBaked}
 					elevationEnabled={elevationEnabled}
 					markers={markers}
 					viewMode={viewMode}

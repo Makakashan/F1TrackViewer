@@ -444,12 +444,41 @@ export interface Standing {
   deepestDigM: number;
 }
 
+/** Plan cell of the built-surface index. A house sits on several of them. */
+const BUILT_CELL_M = 1;
+
+/**
+ * The highest built surface in each plan cell.
+ *
+ * A kit house on a hillside stands on the plinth the bake walls up for it, not
+ * on the terrain, so measured against the ground alone it reads as floating by
+ * the height of its own terrace. What it stands on is geometry that ships, and
+ * this is where that geometry is.
+ */
+function builtSurface(meshes: BakedMesh[], names: string[]): Map<number, number> {
+  const top = new Map<number, number>();
+  for (const mesh of meshes) {
+    if (!names.includes(mesh.name)) continue;
+    for (let i = 0; i < mesh.positions.length / 3; i++) {
+      const col = Math.round(mesh.positions[i * 3] / BUILT_CELL_M);
+      const row = Math.round(mesh.positions[i * 3 + 2] / BUILT_CELL_M);
+      const key = row * 1e6 + col;
+      const y = mesh.positions[i * 3 + 1];
+      const at = top.get(key);
+      if (at === undefined || y > at) top.set(key, y);
+    }
+  }
+  return top;
+}
+
 export function checkStanding(
   meshes: BakedMesh[],
   names: string[],
   ground: GroundIndex,
   into: Standing,
 ): void {
+  // What the models may stand on besides the ground.
+  const built = builtSurface(meshes, ["building"]);
   for (const mesh of meshes) {
     if (!names.includes(mesh.name)) continue;
     const { labels, count } = buildingPieces(mesh);
@@ -457,13 +486,22 @@ export function checkStanding(
     const highest = new Float64Array(count).fill(-Infinity);
     const onGround = new Uint8Array(count);
     for (let i = 0; i < mesh.positions.length / 3; i++) {
-      const under = ground.at(mesh.positions[i * 3], mesh.positions[i * 3 + 2]);
+      const x = mesh.positions[i * 3];
+      const y = mesh.positions[i * 3 + 1];
+      const z = mesh.positions[i * 3 + 2];
+      const terrain = ground.at(x, z);
       // No ground under it at all is water: a hull floats on the datum, and a
       // quay's own edge hangs over the basin on purpose.
-      if (Number.isNaN(under)) continue;
+      if (Number.isNaN(terrain)) continue;
+      // A model rests on the ground or on what was built on it, whichever is
+      // higher under the vertex; a building's own walls only ever mean ground.
+      const under =
+        mesh.name === "building"
+          ? terrain
+          : Math.max(terrain, built.get(Math.round(z / BUILT_CELL_M) * 1e6 + Math.round(x / BUILT_CELL_M)) ?? -Infinity);
       const label = labels[i];
       onGround[label] = 1;
-      const gap = mesh.positions[i * 3 + 1] - under;
+      const gap = y - under;
       if (gap < lowest[label]) lowest[label] = gap;
       if (gap > highest[label]) highest[label] = gap;
     }

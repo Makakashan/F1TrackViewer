@@ -22,6 +22,8 @@ export interface TrackInfoProps {
   loading?: boolean;
   pointCount?: number;
   elevations?: number[] | null;
+  /** The profile came off the baked ground rather than the elevation API. */
+  elevationsBaked?: boolean;
   elevationEnabled?: boolean;
   markers?: TrackMarkers | null;
   viewMode?: TrackViewMode;
@@ -67,6 +69,7 @@ export default function TrackInfo({
   loading,
   pointCount,
   elevations,
+  elevationsBaked,
   elevationEnabled,
   markers,
   viewMode = "normal",
@@ -258,7 +261,7 @@ export default function TrackInfo({
               </div>
             </div>
             <div className="mt-1 text-[10px] text-muted-foreground">
-              {t.elevationSource}
+              {elevationsBaked ? t.elevationSourceBaked : t.elevationSource}
             </div>
           </>
         ) : (
