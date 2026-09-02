@@ -58,6 +58,7 @@ import { buildBreaklines } from "./breaklines";
 import { buildGround, type Ground } from "./ground";
 import {
   chooseKitHouses,
+  repaintKitHouse,
   KIT_BUDGET_SHARE,
   loadKitHouses,
   loadKitPaths,
@@ -3018,6 +3019,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
       city: Math.round(BELT_BUDGET.city.triangles * KIT_BUDGET_SHARE),
     },
   );
+  const kitHousePaths = new Set(kitHouses.map((model) => model.path));
   bakeBuildings(prepared, roofTags, buildings, kit.taken);
   const kitPlinths = bakeKitPlinths(kit, buildings.meshes, standOn, corridor);
 
@@ -3035,6 +3037,12 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     standOn,
     plane,
     REPO_ROOT,
+    // The kit's houses take this scene's paint; its trees and its boats keep
+    // their own, because a green tree and a white hull are already the colours
+    // the thing is.
+    (path, mesh) => {
+      if (kitHousePaths.has(path)) repaintKitHouse(mesh);
+    },
   );
   props.stats.berthed = props.stats.byKind.yacht ?? 0;
   props.stats.fromOverrides = overrideProps.length;

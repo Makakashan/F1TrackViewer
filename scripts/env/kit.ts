@@ -19,13 +19,24 @@
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 
+import { DIORAMA_COLORS } from "../../src/lib/env/diorama-palette";
 import type { Corridor } from "./belts";
-import { modelSize, type ModelSize, type PropPlacement, readModel } from "./props";
+import { modelSize, type ModelSize, type PropPlacement, readModel, toLinear } from "./props";
+import type { Mesh } from "./mesh";
 import type { ScenePlane } from "./plane";
 import { triangleCount } from "./mesh";
 
 /** Big enough for a villa, too small for a block of flats. */
 const MAX_FOOTPRINT_M2 = 400;
+/**
+ * Too short for a house.
+ *
+ * The ceiling above kept blocks of flats out; nothing kept sheds and garages
+ * out, and 31 of the 75 plots that took a model were under this — the shortest
+ * 3.6 m, which is a two-storey house shrunk to the size of a car. A model at
+ * that size is not a house the survey found, it is a toy on a garage.
+ */
+const MIN_FOOTPRINT_LENGTH_M = 8;
 /** A kit house has four walls and maybe a wing. More corners is a building. */
 const MIN_CORNERS = 4;
 const MAX_CORNERS = 6;
@@ -35,9 +46,19 @@ const MIN_RECTANGULARITY = 0.8;
 const MAX_HEIGHT_M = 12;
 /** A model is only used where its own proportion is near the measured one. */
 const RATIO_TOLERANCE = 0.25;
-/** Neighbourhood radius, and the share of it that has to qualify too. */
+/**
+ * Neighbourhood radius, and the share of it that has to qualify too.
+ *
+ * The share is calibrated against the size floor above, because the two knobs
+ * are one rule: before the floor, sheds and garages counted as qualifying
+ * neighbours and voted each other in, so 0.6 of a neighbourhood was reachable.
+ * With only house-sized plots qualifying it is not — measured on Monaco at a
+ * 8 m floor, 0.6 leaves 7 houses of 791 eligible plots and 0.4 leaves 12, which
+ * is the feature switched off. 0.3 leaves 48, 0.25 leaves 85 with no district
+ * test left worth the name.
+ */
 const NEIGHBOUR_M = 40;
-const NEIGHBOUR_SHARE = 0.6;
+const NEIGHBOUR_SHARE = 0.3;
 /** A lone qualifying footprint with nobody around it stays a box. */
 const MIN_NEIGHBOURS = 2;
 /** What models may take of a belt's triangle budget. */
@@ -91,6 +112,55 @@ export async function loadKitHouses(repoRoot: string, dir: string): Promise<KitM
     models.push({ path, size: modelSize(mesh), triangles: triangleCount(mesh) });
   }
   return models;
+}
+
+// ─── paint ─────────────────────────────────────────────────────────────────
+
+/**
+ * The two ends of the kit's own range, in this diorama's paint: a wall in
+ * daylight and the darkest thing on a house.
+ */
+const KIT_WALL = DIORAMA_COLORS.building;
+const KIT_DARK = "#6E747C";
+/**
+ * The cool tilt the rest of the scene's greys carry, so a repainted house sits
+ * in the same light as the block beside it.
+ */
+const KIT_TINT: [number, number, number] = [0.97, 0.99, 1.04];
+
+function linearOf(hex: string): number {
+  const value = Number.parseInt(hex.slice(1), 16);
+  return (
+    0.2126 * toLinear((value >> 16) & 255)
+    + 0.7152 * toLinear((value >> 8) & 255)
+    + 0.0722 * toLinear(value & 255)
+  );
+}
+
+/**
+ * Brings a kit house into the diorama's palette.
+ *
+ * Kenney's houses are painted for their own scene — green roofs, brown doors,
+ * one of them charcoal all over — and in a city of white extrusions they read
+ * as coloured patches rather than as houses. What carries the shape is not the
+ * hue but the order of the tones: roof darker than wall, window darker than
+ * both. So the hue goes and the order stays: each vertex keeps its own place
+ * between the darkest tone on a house and the colour every other building here
+ * is painted.
+ */
+export function repaintKitHouse(mesh: Mesh): void {
+  const albedo = mesh.albedo;
+  if (!albedo) return;
+  const dark = linearOf(KIT_DARK);
+  const wall = linearOf(KIT_WALL);
+  for (let i = 0; i < albedo.length; i += 3) {
+    const luminance =
+      0.2126 * albedo[i] + 0.7152 * albedo[i + 1] + 0.0722 * albedo[i + 2];
+    const level = dark + (wall - dark) * Math.min(1, Math.max(0, luminance));
+    albedo[i] = level * KIT_TINT[0];
+    albedo[i + 1] = level * KIT_TINT[1];
+    albedo[i + 2] = level * KIT_TINT[2];
+  }
 }
 
 // ─── footprint shape ───────────────────────────────────────────────────────
@@ -271,6 +341,7 @@ export function chooseKitHouses(
       footprint.ring.length >= MIN_CORNERS &&
       footprint.ring.length <= MAX_CORNERS &&
       area <= MAX_FOOTPRINT_M2 &&
+      rectangle.lengthM >= MIN_FOOTPRINT_LENGTH_M &&
       footprint.heightM <= MAX_HEIGHT_M &&
       rectangle.areaM2 > 0 &&
       area / rectangle.areaM2 >= MIN_RECTANGULARITY;

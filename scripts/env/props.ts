@@ -490,7 +490,7 @@ interface Texel {
 }
 
 /** Texture bytes are sRGB; vertex colours are linear. */
-function toLinear(channel: number): number {
+export function toLinear(channel: number): number {
   const value = channel / 255;
   return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
 }
@@ -658,6 +658,12 @@ export async function buildProps(
   groundAt: (x: number, z: number) => number,
   plane: ScenePlane,
   repoRoot: string,
+  /**
+   * A last word on a model's own paint, by the path it was loaded from. A kit
+   * is authored in its author's palette, and some of them do not belong in
+   * this one; what to do about that is the caller's business, not the loader's.
+   */
+  recolour?: (path: string, mesh: Mesh) => void,
 ): Promise<PropResult> {
   const dark = createMesh();
   const light = createMesh();
@@ -675,7 +681,9 @@ export async function buildProps(
   const library = new Map<string, Mesh>();
   for (const placement of placements) {
     if (!placement.model || library.has(placement.model)) continue;
-    library.set(placement.model, await readModel(`${repoRoot}/${placement.model}`));
+    const mesh = await readModel(`${repoRoot}/${placement.model}`);
+    recolour?.(placement.model, mesh);
+    library.set(placement.model, mesh);
   }
 
   for (const placement of placements) {
