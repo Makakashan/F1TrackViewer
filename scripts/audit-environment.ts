@@ -471,6 +471,24 @@ function builtSurface(meshes: BakedMesh[], names: string[]): Map<number, number>
   return top;
 }
 
+/**
+ * The built surface under a point, read from the cell it stands in and the ring
+ * around it. A model fitted to its plot has vertices on the plot's own edge,
+ * and on the edge the cell the vertex falls in can be the one past the terrace.
+ */
+function builtAt(built: Map<number, number>, x: number, z: number): number {
+  const col = Math.round(x / BUILT_CELL_M);
+  const row = Math.round(z / BUILT_CELL_M);
+  let top = -Infinity;
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const at = built.get((row + dr) * 1e6 + (col + dc));
+      if (at !== undefined && at > top) top = at;
+    }
+  }
+  return top;
+}
+
 export function checkStanding(
   meshes: BakedMesh[],
   names: string[],
@@ -495,10 +513,7 @@ export function checkStanding(
       if (Number.isNaN(terrain)) continue;
       // A model rests on the ground or on what was built on it, whichever is
       // higher under the vertex; a building's own walls only ever mean ground.
-      const under =
-        mesh.name === "building"
-          ? terrain
-          : Math.max(terrain, built.get(Math.round(z / BUILT_CELL_M) * 1e6 + Math.round(x / BUILT_CELL_M)) ?? -Infinity);
+      const under = mesh.name === "building" ? terrain : Math.max(terrain, builtAt(built, x, z));
       const label = labels[i];
       onGround[label] = 1;
       const gap = y - under;

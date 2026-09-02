@@ -58,6 +58,15 @@ export interface PropPlacement {
    */
   fitLengthM?: number;
   /**
+   * Fit the short horizontal side and the height too, in metres. A model
+   * placed by its length alone stands to its own proportion, which is the
+   * author's rather than the survey's: measured over Monaco's modelled
+   * buildings, that came out 10 % off the surveyed height at the median and
+   * covered anywhere from half to three times the plot's width.
+   */
+  fitWidthM?: number;
+  fitHeightM?: number;
+  /**
    * Where the model's floor goes, in scene metres. The default is the ground
    * under the placement, which is right for a thing standing on its own plot
    * and wrong for one covering several metres of slope — a caller that has
@@ -628,19 +637,39 @@ export function modelSize(mesh: Mesh): ModelSize {
   };
 }
 
-function placeModel(target: Mesh, source: Mesh, frame: Frame, scale: number) {
+/**
+ * How much the model is stretched on each of its own axes.
+ *
+ * One number for all three is a kit placed by its own proportion; three is a
+ * kit fitted to a measurement. A building has a surveyed footprint and a
+ * measured height and no reason to disagree with any of them.
+ */
+export interface ModelScale {
+  x: number;
+  y: number;
+  z: number;
+}
+
+function placeModel(target: Mesh, source: Mesh, frame: Frame, scale: ModelScale) {
   const base = target.positions.length / 3;
   for (let i = 0; i < source.positions.length; i += 3) {
-    const along = source.positions[i + 2] * scale;
-    const across = source.positions[i] * scale;
-    const point = at(frame, along, across, source.positions[i + 1] * scale);
+    const along = source.positions[i + 2] * scale.z;
+    const across = source.positions[i] * scale.x;
+    const point = at(frame, along, across, source.positions[i + 1] * scale.y);
     target.positions.push(point.x, point.y, point.z);
-    const nAlong = source.normals[i + 2];
-    const nAcross = source.normals[i];
+    // A normal does not stretch with the surface: it goes the other way, or a
+    // stretched wall lights as if it were still square to the sun.
+    let nx = source.normals[i] / scale.x;
+    let ny = source.normals[i + 1] / scale.y;
+    let nz = source.normals[i + 2] / scale.z;
+    const length = Math.hypot(nx, ny, nz) || 1;
+    nx /= length;
+    ny /= length;
+    nz /= length;
     target.normals.push(
-      frame.ux * nAlong + frame.nx * nAcross,
-      source.normals[i + 1],
-      frame.uz * nAlong + frame.nz * nAcross,
+      frame.ux * nz + frame.nx * nx,
+      ny,
+      frame.uz * nz + frame.nz * nx,
     );
   }
   for (const index of source.indices) target.indices.push(base + index);
@@ -711,9 +740,20 @@ export async function buildProps(
     const model = placement.model ? library.get(placement.model) : undefined;
     if (model) {
       const size = modelSize(model);
-      const scale = placement.fitLengthM && size.lengthM > 0
+      const uniform = placement.fitLengthM && size.lengthM > 0
         ? placement.fitLengthM / size.lengthM
         : placement.scale ?? 1;
+      // Width and height are fitted only where the placement asked for them:
+      // a boat and a tree have no measured footprint to fill, so they keep
+      // their own proportion and take the one scale.
+      const across =
+        placement.fitWidthM && size.widthM > 0 ? placement.fitWidthM / size.widthM : uniform;
+      const up =
+        placement.fitHeightM && size.heightM > 0 ? placement.fitHeightM / size.heightM : uniform;
+      const scale: ModelScale =
+        size.lengthAxis === "x"
+          ? { x: uniform, y: up, z: across }
+          : { x: across, y: up, z: uniform };
       // The heading names the long side of the thing, so a model authored
       // across its own x is turned a quarter turn to match. Without this a kit
       // house sits across its plot and a boat lies athwart its berth.

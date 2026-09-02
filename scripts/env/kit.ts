@@ -48,8 +48,18 @@ const MIN_RECTANGULARITY = 0.8;
 const TRACK_CLEARANCE_M = 8;
 /** Above this a model is the detailed tier: eaves, awnings, balconies. */
 const LOW_DETAIL_MAX_TRIS = 500;
-/** A model is only used where its own proportion is near the measured one. */
-const RATIO_TOLERANCE = 0.25;
+/**
+ * How far a model may be bent to fit the plot it stands on.
+ *
+ * The measure is anisotropy — the largest of the three fitted scales over the
+ * smallest — so growing a model as a whole is free and reshaping it is what is
+ * bounded. Placed by its own proportion instead, a model came out 10 % off the
+ * surveyed height at the median and covered between half and three times the
+ * plot's width; stretched, it is exactly the footprint that was surveyed and
+ * exactly the height that was measured, at the price of a window that is not
+ * square. Past this the window stops being a window.
+ */
+const MAX_STRETCH = 1.7;
 /** What models may take of the city belt's triangle budget. */
 const BUDGET_SHARE = 0.5;
 
@@ -84,16 +94,25 @@ export async function loadKitPaths(
   }
 }
 
+/** A pack's folder and which of its files are whole buildings. */
+export interface KitSource {
+  dir: string;
+  prefixes: string[];
+}
+
 /**
- * Every modelled building in a pack.
+ * Every modelled building in the packs.
  *
- * `building-` is a house or a block, `low-detail-building-` the same idea at a
- * tenth of the triangles — a tower with windows and nothing else, which is what
- * a block two streets back is worth.
+ * The prefixes are per pack because the packs do not agree with each other. In
+ * the city kits `building-` is a house or a block and `low-detail-building-`
+ * the same idea at a tenth of the triangles — a tower with windows and nothing
+ * else, which is what a block two streets back is worth. In Modular Buildings
+ * `building-` is a wall, a corner or a door, and only `building-sample-` is a
+ * building somebody already assembled.
  */
-export async function loadKitHouses(repoRoot: string, dirs: string[]): Promise<KitModel[]> {
+export async function loadKitHouses(repoRoot: string, sources: KitSource[]): Promise<KitModel[]> {
   const models: KitModel[] = [];
-  for (const dir of dirs) {
+  for (const { dir, prefixes } of sources) {
     let names: string[];
     try {
       names = await readdir(join(repoRoot, dir));
@@ -104,7 +123,7 @@ export async function loadKitHouses(repoRoot: string, dirs: string[]): Promise<K
     }
     for (const name of names.sort()) {
       if (!name.endsWith(".glb")) continue;
-      if (!name.startsWith("building-") && !name.startsWith("low-detail-building-")) continue;
+      if (!prefixes.some((prefix) => name.startsWith(prefix))) continue;
       const path = `${dir}/${name}`;
       const mesh = await readModel(join(repoRoot, path));
       models.push({ path, size: modelSize(mesh), triangles: triangleCount(mesh) });
@@ -300,6 +319,19 @@ function rectangleRing(rectangle: Rectangle): { x: number; z: number }[] {
   }));
 }
 
+/**
+ * How much this model has to be reshaped to fill this plot: the largest of the
+ * three fitted scales over the smallest.
+ */
+function stretchOf(model: KitModel, shape: { rectangle: Rectangle; footprint: Footprint }): number {
+  const along = shape.rectangle.lengthM / model.size.lengthM;
+  const across = shape.rectangle.widthM / model.size.widthM;
+  const up = shape.footprint.heightM / model.size.heightM;
+  const most = Math.max(along, across, up);
+  const least = Math.min(along, across, up);
+  return least > 0 ? most / least : Infinity;
+}
+
 /** Repeatable: the same plot gets the same house every bake. */
 function hashed(x: number, z: number): number {
   const value = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
@@ -399,14 +431,21 @@ export function chooseKitHouses(
   let spent = 0;
   for (const { shape, distanceM } of ordered) {
     const { footprint, rectangle } = shape;
-    // What proportion the measurement asks for, and the models that have it.
-    const wanted = footprint.heightM / rectangle.lengthM;
-    const candidates = models.filter((model) => {
-      const ratio = model.size.heightM / model.size.lengthM;
-      return Math.abs(ratio - wanted) <= wanted * RATIO_TOLERANCE;
-    });
+    // The plot the model has to fill: its own rectangle and its own height.
+    // A model is stretched to all three, so what decides whether one can be
+    // used is not its proportion but how far from its proportion this is.
+    const candidates = models.filter((model) => stretchOf(model, shape) <= MAX_STRETCH);
     if (!candidates.length) {
       result.stats.noModelFits++;
+      continue;
+    }
+
+    // The corridor owns its ground. An extrusion is pushed off the road vertex
+    // by vertex; a model cannot be, so a plot the road reaches into keeps the
+    // extrusion that can bend around it.
+    const ring = rectangleRing(rectangle);
+    if (ring.some((point) => corridor.distance(point.x, point.z) < TRACK_CLEARANCE_M)) {
+      result.stats.onTheTrack++;
       continue;
     }
 
@@ -419,28 +458,15 @@ export function chooseKitHouses(
     // buys ten times as many buildings that are modelled at all.
     const cheap = candidates.filter((model) => model.triangles <= LOW_DETAIL_MAX_TRIS);
     const pool = belt === "city" && cheap.length ? cheap : candidates;
+    // Least stretched first, so the choice among a dozen that fit is the one
+    // that had to be bent least; the hash only breaks the tie, which keeps a
+    // street from taking one silhouette twice for the same reason.
+    const ranked = [...pool].sort((a, b) => stretchOf(a, shape) - stretchOf(b, shape));
     const roll = hashed(footprint.centreX, footprint.centreZ);
-    const model = pool[Math.min(pool.length - 1, Math.floor(roll * pool.length))];
+    const shortlist = ranked.slice(0, Math.max(1, Math.ceil(ranked.length / 3)));
+    const model = shortlist[Math.min(shortlist.length - 1, Math.floor(roll * shortlist.length))];
     if (spent + model.triangles > budget) {
       result.stats.overBudget++;
-      continue;
-    }
-    // What the model will actually cover. It is fitted by length and scaled
-    // uniformly, so where its own proportion is wider than the plot's it
-    // stands out past the rectangle the plot measured.
-    const covered: Rectangle = {
-      ...rectangle,
-      widthM: Math.max(
-        rectangle.widthM,
-        (rectangle.lengthM * model.size.widthM) / model.size.lengthM,
-      ),
-    };
-    const ring = rectangleRing(covered);
-    // The corridor owns its ground. An extrusion is pushed off the road vertex
-    // by vertex; a model cannot be, so a plot the road reaches into keeps the
-    // extrusion that can bend around it.
-    if (ring.some((point) => corridor.distance(point.x, point.z) < TRACK_CLEARANCE_M)) {
-      result.stats.onTheTrack++;
       continue;
     }
     spent += model.triangles;
@@ -451,6 +477,8 @@ export function chooseKitHouses(
       lat: plane.lat(rectangle.centreZ),
       headingDeg: (rectangle.headingRad * 180) / Math.PI,
       fitLengthM: rectangle.lengthM,
+      fitWidthM: rectangle.widthM,
+      fitHeightM: footprint.heightM,
       groundY: footprint.groundY,
     });
     result.plinths.push({ ring, top: footprint.groundY });
