@@ -1703,6 +1703,8 @@ function densifyAcrossCorridor(
  */
 const GROUND_FLOOR_M = 4;
 const CORNICE_M = 1.4;
+/** The most storeys a wall is split into; the height above is what one is. */
+const MAX_STOREYS = 12;
 /**
  * What each band multiplies the wall's own colour by.
  *
@@ -1712,7 +1714,7 @@ const CORNICE_M = 1.4;
  * I11 — nothing in the scene goes below 0.278 — and the occlusion floor is
  * 0.45, so a band cannot take more than a third of the wall's own colour.
  */
-const BAND_TONE = { ground: 0.65, body: 1, cornice: 0.8 };
+const BAND_TONE = { ground: 0.65, body: 1, cornice: 0.8, floor: 0.86 };
 /** Under this a building is one storey and takes one tone. */
 const BANDED_MIN_M = 7;
 
@@ -1732,14 +1734,22 @@ function wallBands(
     addFlatQuad(mesh, a.x, baseA, a.z, b.x, baseB, b.z, b.x, top, b.z, a.x, top, a.z);
     return;
   }
-  // The shop front follows the ground it stands on; what is over it is level,
-  // because a floor line is level whatever the street does. Two bands rather
-  // than three: the top of the wall already has the parapet's own edge, and a
-  // third band costs the city belt a third as much again in triangles.
+  // The shop front follows the ground it stands on; everything over it is
+  // level, because a floor line is level whatever the street does.
   mesh.tone = BAND_TONE.ground;
   addFlatQuad(mesh, a.x, baseA, a.z, b.x, baseB, b.z, b.x, shopTop, b.z, a.x, shopTop, a.z);
-  mesh.tone = BAND_TONE.body;
-  addFlatQuad(mesh, a.x, shopTop, a.z, b.x, shopTop, b.z, b.x, top, b.z, a.x, top, a.z);
+
+  // Then storey by storey, alternating: the band a window sits in is darker
+  // than the wall between two of them. Nothing protrudes — this is the
+  // cheapest thing that reads as floors, and a ledge would cost a shadow the
+  // occlusion pass has to bake and a triangle count that has to fit.
+  const storeys = Math.min(MAX_STOREYS, Math.max(1, Math.round((top - shopTop) / STOREY_M)));
+  for (let i = 0; i < storeys; i++) {
+    const from = shopTop + ((top - shopTop) * i) / storeys;
+    const to = shopTop + ((top - shopTop) * (i + 1)) / storeys;
+    mesh.tone = i % 2 === 0 ? BAND_TONE.floor : BAND_TONE.body;
+    addFlatQuad(mesh, a.x, from, a.z, b.x, from, b.z, b.x, to, b.z, a.x, to, a.z);
+  }
 }
 
 /**
@@ -1768,11 +1778,13 @@ function roofBox(
   const x1 = x + halfX;
   const z0 = z - halfZ;
   const z1 = z + halfZ;
-  addFlatQuad(mesh, x0, from, z0, x1, from, z0, x1, to, z0, x0, to, z0);
-  addFlatQuad(mesh, x1, from, z1, x0, from, z1, x0, to, z1, x1, to, z1);
-  addFlatQuad(mesh, x1, from, z0, x1, from, z1, x1, to, z1, x1, to, z0);
-  addFlatQuad(mesh, x0, from, z1, x0, from, z0, x0, to, z0, x0, to, z1);
-  addFlatQuad(mesh, x0, to, z0, x1, to, z0, x1, to, z1, x0, to, z1);
+  // Wound so every face looks outwards. Inside out, a box shows only the two
+  // walls facing away from the camera and reads as a hole in the roof.
+  addFlatQuad(mesh, x1, from, z0, x0, from, z0, x0, to, z0, x1, to, z0);
+  addFlatQuad(mesh, x0, from, z1, x1, from, z1, x1, to, z1, x0, to, z1);
+  addFlatQuad(mesh, x1, from, z1, x1, from, z0, x1, to, z0, x1, to, z1);
+  addFlatQuad(mesh, x0, from, z0, x0, from, z1, x0, to, z1, x0, to, z0);
+  addFlatQuad(mesh, x0, to, z1, x1, to, z1, x1, to, z0, x0, to, z0);
 }
 
 function roofClutter(mesh: Mesh, ring: { x: number; z: number }[], roofY: number): void {
@@ -1801,9 +1813,14 @@ function roofClutter(mesh: Mesh, ring: { x: number; z: number }[], roofY: number
     if (!pointInRingXZ(ring, x, z)) continue;
     mesh.tone = BAND_TONE.cornice;
     const roll = hashAt(x, z);
-    const halfX = Math.min(2, spanX / 4) * (0.7 + 0.3 * roll);
-    const halfZ = Math.min(2, spanZ / 4) * (0.7 + 0.3 * (1 - roll));
-    roofBox(mesh, x, z, halfX, halfZ, roofY, roofY + 1.6 + 1.4 * roll);
+    // Two kinds, because one repeated cube on every roof is its own pattern:
+    // a stair or lift head, which is wide and low, and a vent stack, which is
+    // narrow and tall.
+    const stack = roll > 0.62;
+    const halfX = Math.min(stack ? 0.7 : 2.2, spanX / 4) * (0.6 + 0.5 * roll);
+    const halfZ = Math.min(stack ? 0.7 : 2.2, spanZ / 4) * (0.6 + 0.5 * (1 - roll));
+    const height = stack ? 2.4 + 2 * roll : 1.4 + 1.6 * roll;
+    roofBox(mesh, x, z, halfX, halfZ, roofY, roofY + height);
   }
 }
 
@@ -2954,16 +2971,10 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
     breaklineWays: await fetchBreaklineWays(circuitId, bbox, refresh),
     overrides: await loadOverrides(circuitId),
     // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
-    kitHouses: await loadKitHouses(REPO_ROOT, [
-      { dir: "assets/models/kenney-city-suburban", prefixes: ["building-"] },
-      {
-        dir: "assets/models/kenney-city-commercial",
-        prefixes: ["building-", "low-detail-building-"],
-      },
-      { dir: "assets/models/kenney-city-industrial", prefixes: ["building-"] },
-      // Only the assembled samples: everything else in that pack is a wall.
-      { dir: "assets/models/kenney-modular-buildings", prefixes: ["building-sample-"] },
-    ]),
+    // No modelled buildings for now: a kit house is somebody else's house, and
+    // the extrusions carry their own detail since D36. The sources are here
+    // rather than deleted because turning them back on is this list.
+    kitHouses: await loadKitHouses(REPO_ROOT, []),
     kitTrees: await loadKitPaths(REPO_ROOT, "assets/models/kenney-city-suburban", ["tree-"]),
     kitBoats: await loadKitPaths(REPO_ROOT, "assets/models/kenney-watercraft", [
       "boat-speed",

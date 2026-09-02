@@ -40,14 +40,18 @@ move — every model ships in the city belt's mesh, while the core belt sits at 
 of its own 450,000. Splitting the models mesh per belt would put the near ones on the
 core belt's budget and roughly triple what the city can afford.
 
-Since then the extrusions carry their own detail (D36) — a shop-front band on every
-building and a lift head on every flat roof — which is what the other four thousand
-needed; the kit's share of the budget paid for it, so 173 buildings are modelled.
+**The kit is off (D37).** The models were somebody else's houses stretched onto
+Monaco's plots, and 173 of them against 4,572 extrusions did not stop the city reading
+as boxes. The extrusions carry the detail instead: a shop front, storeys painted band
+by band, and a stair head or a vent stack on every flat roof. City belt 304,293 of
+350,000, core 176,333 of 450,000 — more detail on every building than the kit put on
+a few.
 
-Still open, and the next thing a person would notice: **the same silhouette twice in a
-street.** 39 distinct models over 266 buildings, the most used one 41 times. The pick
-is already least-stretched-first with the hash breaking ties inside the top third; what
-it does not know is what its neighbours took.
+The selection code and the packs stay: `bake.ts` passes an empty list of sources, and
+turning the models back on is that list. If they come back, what is still unsolved
+there is **the same silhouette twice in a street** — 39 distinct models over 266
+buildings, the most used one 41 times — and the pick not knowing what its neighbours
+took.
 
 ### 1.2 The light rig
 
