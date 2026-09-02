@@ -88,6 +88,13 @@ export default function F1TrackApp({
   const { markers, widthProfile, environmentBundle, environmentAvailable, cityManifest } =
     useCircuitScene(selectedId, environmentEnabled);
 
+  // The panel shows the profile the scene is standing on. Where a city is baked
+  // that is the ground the bake drew, not the elevation API's reading of it —
+  // the two differ by metres in a tunnel, and the number under the sparkline
+  // was describing a track the app no longer draws.
+  const bakedProfile = cityManifest?.track?.elevations ?? null;
+  const panelElevations = bakedProfile?.length ? bakedProfile : elevations;
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       try {
@@ -309,7 +316,8 @@ export default function F1TrackApp({
             properties={properties}
             loadingTrack={loadingTrack}
             pointCount={pointCount}
-            elevations={elevations}
+            elevations={panelElevations}
+            elevationsBaked={!!bakedProfile?.length}
             elevationEnabled={elevationEnabled && !terrainModeActive}
             markers={markers}
             viewMode={viewMode}
@@ -330,7 +338,8 @@ export default function F1TrackApp({
             properties={properties}
             loading={loadingTrack}
             pointCount={pointCount}
-            elevations={elevations}
+            elevations={panelElevations}
+            elevationsBaked={!!bakedProfile?.length}
             elevationEnabled={elevationEnabled}
             markers={markers}
             viewMode={viewMode}
