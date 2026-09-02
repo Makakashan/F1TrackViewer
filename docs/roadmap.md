@@ -40,6 +40,10 @@ move — every model ships in the city belt's mesh, while the core belt sits at 
 of its own 450,000. Splitting the models mesh per belt would put the near ones on the
 core belt's budget and roughly triple what the city can afford.
 
+Since then the extrusions carry their own detail (D36) — a shop-front band on every
+building and a lift head on every flat roof — which is what the other four thousand
+needed; the kit's share of the budget paid for it, so 173 buildings are modelled.
+
 Still open, and the next thing a person would notice: **the same silhouette twice in a
 street.** 39 distinct models over 266 buildings, the most used one 41 times. The pick
 is already least-stretched-first with the hash breaking ties inside the top third; what
