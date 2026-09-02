@@ -74,15 +74,20 @@ being tuned against nothing.
 
 ### 2.1 P1.2b — the terrain sampler reads the baked field
 
-`src/lib/env/terrain-sampler.ts` still carries its own idea of the ground: a
-`Math.max(0, …)` clamp and a flattening where `isWater`. The bake has one surface and
-the runtime should read it rather than re-derive it — the same mistake, one layer up,
-that steps 3 and 4 spent themselves on.
+**Checked 2026-09-02, and it is smaller than it reads.** `terrain-sampler.ts` does
+still clamp with `Math.max(0, …)` and flatten where `isWater`, but nothing on the
+baked path asks it anything: `track-mesh.tsx` returns `null` for the sampler as soon
+as a city manifest is loaded — "the baked field already decided the ground" — and the
+only other caller is `environment-layer.tsx`, the old path P4.4 deletes. Rewriting the
+sampler to read the baked field is work on a file that is scheduled to lose its last
+reader. Do it as part of P4.4, or not at all.
 
 ### 2.2 The info panel's elevation profile
 
-Still reads the old SRTM array. Small, visible in the UI, and on the same thread as
-2.1.
+**Done 2026-09-02.** Where a city is baked the panel reads `track.elevations` off the
+manifest — the ground the bake drew, which is what the scene stands on — and says so
+under the sparkline. Monaco went from 0/55 m with 100 m of climb to 1/43 m with 46 m,
+because the API's reading is noise the bake has already filtered.
 
 ### 2.3 Hand overrides for Monaco
 
