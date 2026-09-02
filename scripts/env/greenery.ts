@@ -68,6 +68,26 @@ const LID_STEP_M = 3;
 /** Cap on the splitting, so a park the size of a hillside cannot run away. */
 const LID_SPLIT_DEPTH = 7;
 
+/**
+ * The highest ground within half a step of a point.
+ *
+ * A vertex that takes the reading directly under it leaves the lid free to dip
+ * below the terrain on the way to the next vertex, which is the grey stitching
+ * that showed through Monaco's gardens after the split. Reading the
+ * neighbourhood instead makes every vertex sit on the upper envelope of the
+ * ground it spans, so the surface between them cannot go under it.
+ */
+function groundTop(groundAt: (x: number, z: number) => number, x: number, z: number): number {
+  const reach = LID_STEP_M / 2;
+  let top = Number.NaN;
+  for (const [dx, dz] of [[0, 0], [reach, 0], [-reach, 0], [0, reach], [0, -reach]] as const) {
+    const height = groundAt(x + dx, z + dz);
+    if (Number.isNaN(height)) continue;
+    if (Number.isNaN(top) || height > top) top = height;
+  }
+  return top;
+}
+
 interface LidPoint {
   x: number;
   z: number;
@@ -102,7 +122,7 @@ function splitToGround(
   const cut = (from: LidPoint, to: LidPoint): LidPoint => {
     const x = (from.x + to.x) / 2;
     const z = (from.z + to.z) / 2;
-    const ground = groundAt(x, z);
+    const ground = groundTop(groundAt, x, z);
     return { x, z, y: (Number.isNaN(ground) ? (from.y + to.y) / 2 - lift : ground) + lift };
   };
   if (longest === ab) {
@@ -249,7 +269,7 @@ export function buildGreenery(
     // Every vertex takes the ground under it. A centroid fan on one height was
     // enough for a pool, which is flat and small; a park is neither, and on
     // Monaco's slopes a flat lid would bury its uphill half.
-    const heights = ring.map((point) => groundAt(point.x, point.z));
+    const heights = ring.map((point) => groundTop(groundAt, point.x, point.z));
     if (heights.some((height) => Number.isNaN(height))) continue;
 
     // Triangulated as the polygon it is, rather than fanned from the middle:
