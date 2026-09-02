@@ -34,8 +34,15 @@ const SURFACE_LIFT_M = 0.35;
  * much as 0.29 m above the pitch it contains — so the football field came out in
  * shreds. Stacking them settles the argument once, in the geometry, rather than
  * per pixel in the depth buffer.
+ *
+ * The step has to beat the two lids' disagreement about the ground, not just be
+ * positive: they sample the same envelope at different vertices, so between a
+ * park's vertices its surface runs above a pitch vertex by up to 0.097 m of the
+ * 4,671 measured. Half a metre carries that with a quarter of a metre spare, and
+ * costs nothing to look at because what a pitch's rim stands over is the park,
+ * not the ground.
  */
-const LID_FLOOR_M: Record<string, number> = { park: 0, pitch: 0.25, pool: 0.4 };
+const LID_FLOOR_M: Record<string, number> = { park: 0, pitch: 0.5, pool: 0.8 };
 
 export interface GreeneryResult {
   /** Water surfaces at ground level: swimming pools and fountains. */
