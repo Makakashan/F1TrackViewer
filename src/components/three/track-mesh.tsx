@@ -736,6 +736,9 @@ export default function TrackMesh({
             manifest={cityManifest!}
             resolvedTheme={resolvedTheme}
             lowDetail={lowDetail}
+            // The sun only casts where the detail is on, so the shadow map is
+            // not a cost the performance setting pays.
+            shadows={!lowDetail}
             onBeltLoaded={onBeltLoaded}
           />
           <CameraGroundClamp version={beltsLoaded} />
