@@ -1094,7 +1094,12 @@ function bakePierDecks(piers: PierResult): Mesh {
   const mesh = createMesh();
   for (const deck of piers.decks) {
     const foot = Math.min(SHORE_FOOT_M, deck.deckY - 1);
-    extrude({ storey: mesh, shop: mesh, plain: mesh }, deck.ring, deck.ring.map(() => foot), deck.deckY);
+    extrude(
+      { storey: mesh, shop: mesh, plain: mesh, deck: mesh },
+      deck.ring,
+      deck.ring.map(() => foot),
+      deck.deckY,
+    );
   }
   return mesh;
 }
@@ -1141,8 +1146,10 @@ interface BuildingResult {
    */
   walls: Record<Belt, Record<Facade, Mesh>>;
   shops: Record<Belt, Record<Facade, Mesh>>;
-  /** Roofs, parapets, roof boxes, terraces: everything with no facade. */
+  /** Parapets, terraces, balconies: wall-coloured, but with no facade tile. */
   plain: Record<Belt, Mesh>;
+  /** What the sky sees: roof decks, pitches, and the boxes standing on them. */
+  deck: Record<Belt, Mesh>;
   roofs: Record<RoofKind, number>;
   built: number;
   droppedOnTrack: number;
@@ -1389,6 +1396,7 @@ function bakeBuildings(
       storey: result.walls[belt][facade],
       shop: result.shops[belt][facade],
       plain: result.plain[belt],
+      deck: result.deck[belt],
     };
     const top = base + heightM;
     const plan = planRoof(ring, tags.get(building.id.split("#")[0]) ?? {}, heightM);
@@ -1424,11 +1432,11 @@ function bakeBuildings(
       // the walls run past the roof plane and turn back down inside it.
       const roofY = top - plan.heightM;
       extrude(target, wallRing, footAt, roofY, near ? PARAPET_M : 0, near, variant, colour, built);
-      if (near) roofClutter(result.plain[belt], ring, roofY);
+      if (near) roofClutter(result.deck[belt], ring, roofY);
     } else {
       const eaveY = top - plan.heightM;
       extrude(target, wallRing, footAt, eaveY, 0, near, variant, colour, built);
-      buildRoof(result.plain[belt], plan, eaveY);
+      buildRoof(result.deck[belt], plan, eaveY);
     }
     result.built++;
   }
@@ -1476,7 +1484,13 @@ function bakeKitPlinths(
     }
     const belt = beltAtDistance(corridor.distance(centreX, centreZ));
     const mesh = meshes[belt];
-    extrude({ storey: mesh, shop: mesh, plain: mesh }, plinth.ring, footAt.map((y) => y - KIT_PLINTH_DIG_M), plinth.top, 0);
+    extrude(
+      { storey: mesh, shop: mesh, plain: mesh, deck: mesh },
+      plinth.ring,
+      footAt.map((y) => y - KIT_PLINTH_DIG_M),
+      plinth.top,
+      0,
+    );
     built++;
   }
   return built;
@@ -1493,6 +1507,7 @@ function emptyBuildingResult(): BuildingResult {
     walls: byBeltAndFacade(),
     shops: byBeltAndFacade(),
     plain: Object.fromEntries(BELT_ORDER.map((belt) => [belt, createMesh()])) as Record<Belt, Mesh>,
+    deck: Object.fromEntries(BELT_ORDER.map((belt) => [belt, createMesh()])) as Record<Belt, Mesh>,
     roofs: { flat: 0, gabled: 0, hipped: 0, pyramidal: 0, skillion: 0 },
     built: 0,
     droppedOnTrack: 0,
@@ -1986,6 +2001,7 @@ interface WallTargets {
   storey: Mesh;
   shop: Mesh;
   plain: Mesh;
+  deck: Mesh;
 }
 
 /**
@@ -2137,10 +2153,12 @@ function extrude(
   // `triangulateShape` works in the contour's own plane, which is (x, -z); read
   // back in scene axes that winding already faces the sky, so it is kept as it
   // comes. Reversing it here is what made every flat roof invisible from above.
-  target.plain.tone = paint(colour);
+  // The lid goes to the deck: it is the one face of a building the sky sees,
+  // and it is not the colour of a wall.
+  target.deck.tone = paint(colour);
   for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
     addFlatTriangle(
-      target.plain,
+      target.deck,
       ordered[i].x, top, ordered[i].z,
       ordered[j].x, top, ordered[j].z,
       ordered[k].x, top, ordered[k].z,
@@ -3468,6 +3486,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // Every wall of every belt, whichever facade it wears.
   const buildingMeshes = BELT_ORDER.flatMap((belt) => [
     buildings.plain[belt],
+    buildings.deck[belt],
     ...FACADES.flatMap((f) => [buildings.walls[belt][f], buildings.shops[belt][f]]),
   ]);
 
@@ -3580,6 +3599,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     core: [
       { kind: "terrain", mesh: terrain.meshes.core },
       { kind: "building" as const, mesh: buildings.plain.core },
+      { kind: "roof" as const, mesh: buildings.deck.core },
       ...FACADES.flatMap((facade) => [
         { kind: "building" as const, mesh: buildings.walls.core[facade], facade, zone: "storey" as const },
         { kind: "building" as const, mesh: buildings.shops.core[facade], facade, zone: "shop" as const },
@@ -3600,6 +3620,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     city: [
       { kind: "terrain", mesh: terrain.meshes.city },
       { kind: "building" as const, mesh: buildings.plain.city },
+      { kind: "roof" as const, mesh: buildings.deck.city },
       ...FACADES.flatMap((facade) => [
         { kind: "building" as const, mesh: buildings.walls.city[facade], facade, zone: "storey" as const },
         { kind: "building" as const, mesh: buildings.shops.city[facade], facade, zone: "shop" as const },
@@ -3621,6 +3642,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     far: [
       { kind: "terrain", mesh: terrain.meshes.far },
       { kind: "building" as const, mesh: buildings.plain.far },
+      { kind: "roof" as const, mesh: buildings.deck.far },
       ...FACADES.flatMap((facade) => [
         { kind: "building" as const, mesh: buildings.walls.far[facade], facade, zone: "storey" as const },
         { kind: "building" as const, mesh: buildings.shops.far[facade], facade, zone: "shop" as const },

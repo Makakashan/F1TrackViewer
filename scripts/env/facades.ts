@@ -27,7 +27,7 @@ export const FACADES: Facade[] = ["tower", "block", "house", "retail", "plain"];
  * city of one building looks like. Repeated, four cells read as a facade that
  * was built rather than printed.
  */
-export const BAY_M = 2.7;
+export const BAY_M = 3.4;
 export const FACADE_STOREY_M = 3.1;
 export const TILE_BAYS = 2;
 export const TILE_STOREYS = 2;
@@ -45,11 +45,19 @@ const CELL = 96;
 const WIDTH = CELL * TILE_BAYS;
 const HEIGHT = CELL * TILE_STOREYS;
 
-/** Wall, frame, glass. Nothing goes near black: the AO pass multiplies over it. */
-const WALL = 1;
-const FRAME = 0.84;
-const GLASS = 0.52;
-const SLAB = 0.7;
+/**
+ * Wall, frame, glass, slab — as colours now, because glass is not grey.
+ *
+ * Nothing goes near black: the occlusion pass multiplies over this, and a
+ * window at a third of the wall is a hole rather than a window. The glass
+ * carries the sky it reflects, which is what tells it from a shadow.
+ */
+const WALL: Colour = [1, 1, 1];
+const FRAME: Colour = [0.92, 0.92, 0.9];
+const GLASS: Colour = [0.42, 0.5, 0.6];
+const SLAB: Colour = [0.78, 0.78, 0.76];
+
+type Colour = [number, number, number];
 
 interface Plan {
   /** Window opening as a share of the bay and of the storey. */
@@ -63,27 +71,35 @@ interface Plan {
   shopGlass: number;
 }
 
+/**
+ * The openings, as a share of one bay and one storey.
+ *
+ * Bigger than they were: two lights of 0.36 of a 2.7 m bay is a 0.97 m window,
+ * and a city of them reads as a rash of dots at any distance a whole building
+ * fits the frame. One light of 0.7 on a 3.4 m bay is 2.4 m — a window somebody
+ * could stand at, which is what the eye is looking for.
+ */
 const PLAN: Record<Facade, Plan> = {
-  // Tall and repetitive: a ribbon of glass, no balconies.
-  tower: { windowWidth: 0.72, windowHeight: 0.5, lights: 2, balcony: false, shopGlass: 0.8 },
-  // Somebody lives here, so it has a balcony every floor and one window a room.
-  block: { windowWidth: 0.5, windowHeight: 0.46, lights: 2, balcony: true, shopGlass: 0.55 },
-  // A house has fewer, smaller openings and more wall between them.
-  house: { windowWidth: 0.34, windowHeight: 0.4, lights: 1, balcony: false, shopGlass: 0.3 },
-  // A shop is glass at the bottom and almost nothing above it.
-  retail: { windowWidth: 0.3, windowHeight: 0.28, lights: 1, balcony: false, shopGlass: 0.92 },
+  // A ribbon of glass, nearly the width of the bay, no balconies.
+  tower: { windowWidth: 0.82, windowHeight: 0.62, lights: 1, balcony: false, shopGlass: 0.86 },
+  // Somebody lives here: one window a room, a balcony to open it onto.
+  block: { windowWidth: 0.62, windowHeight: 0.56, lights: 1, balcony: true, shopGlass: 0.6 },
+  // A house has fewer openings and more wall between them.
+  house: { windowWidth: 0.42, windowHeight: 0.48, lights: 1, balcony: false, shopGlass: 0.34 },
+  // A shop is glass at the bottom and little above it.
+  retail: { windowWidth: 0.4, windowHeight: 0.34, lights: 1, balcony: false, shopGlass: 0.94 },
   // A wall with a door in it somewhere: warehouses, plant rooms, car parks.
-  plain: { windowWidth: 0.18, windowHeight: 0.22, lights: 1, balcony: false, shopGlass: 0.12 },
+  plain: { windowWidth: 0.22, windowHeight: 0.26, lights: 1, balcony: false, shopGlass: 0.14 },
 };
 
-function fill(png: PNG, x0: number, y0: number, x1: number, y1: number, level: number): void {
-  const value = Math.round(Math.max(0, Math.min(1, level)) * 255);
+function fill(png: PNG, x0: number, y0: number, x1: number, y1: number, colour: Colour): void {
+  const channel = colour.map((c) => Math.round(Math.max(0, Math.min(1, c)) * 255));
   for (let y = Math.max(0, Math.round(y0)); y < Math.min(HEIGHT, Math.round(y1)); y++) {
     for (let x = Math.max(0, Math.round(x0)); x < Math.min(WIDTH, Math.round(x1)); x++) {
       const at = (y * WIDTH + x) * 4;
-      png.data[at] = value;
-      png.data[at + 1] = value;
-      png.data[at + 2] = value;
+      png.data[at] = channel[0];
+      png.data[at + 1] = channel[1];
+      png.data[at + 2] = channel[2];
       png.data[at + 3] = 255;
     }
   }

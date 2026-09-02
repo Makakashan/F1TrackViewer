@@ -494,9 +494,12 @@ function mergedByName(meshes: BakedMesh[], names: string[]): BakedMesh[] {
   const byName = new Map<string, BakedMesh[]>();
   for (const mesh of meshes) {
     if (!names.includes(mesh.name)) continue;
-    const list = byName.get(mesh.name);
+    // Walls and roofs ship apart because a roof is its own material; they are
+    // one building, and a roof welded on its own is a slab standing on air.
+    const group = mesh.name === "roof" ? "building" : mesh.name;
+    const list = byName.get(group);
     if (list) list.push(mesh);
-    else byName.set(mesh.name, [mesh]);
+    else byName.set(group, [mesh]);
   }
   const out: BakedMesh[] = [];
   for (const [name, list] of byName) {
@@ -539,7 +542,7 @@ export function checkStanding(
   into: Standing,
 ): void {
   // What the models may stand on besides the ground.
-  const built = builtSurface(meshes, ["building"]);
+  const built = builtSurface(meshes, ["building", "roof"]);
   // A building ships as several meshes — one per facade, one for its roofs —
   // because a facade is a material. Structurally it is one thing, so the walls
   // and the roof are welded back together before anything asks what stands on
@@ -705,7 +708,7 @@ async function audit(circuitId: string): Promise<Check[]> {
       // A kit house stands in for a building and owes the corridor the same
       // clearance: it is fitted to the footprint's own rectangle, and a
       // footprint pushed off the track has a rectangle that can still reach it.
-      if (mesh.name !== "building" && mesh.name !== "model") continue;
+      if (mesh.name !== "building" && mesh.name !== "roof" && mesh.name !== "model") continue;
       for (let i = 0; i < mesh.positions.length / 3; i++) {
         const x = mesh.positions[i * 3];
         const y = mesh.positions[i * 3 + 1];
@@ -737,7 +740,7 @@ async function audit(circuitId: string): Promise<Check[]> {
     // Buildings and kit models alike: does the thing that ships meet the ground
     // that ships. Measured per welded piece, so one answer per building rather
     // than one per face.
-    checkStanding(meshes, ["building", "model"], ground, standing);
+    checkStanding(meshes, ["building", "roof", "model"], ground, standing);
 
     const terrain = checkTerrain(meshes, belt, surface, plane, cutLine, rasterShore, blocks);
     if (terrain.worst > worstTerrain) worstTerrain = terrain.worst;
