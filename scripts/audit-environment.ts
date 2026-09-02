@@ -489,6 +489,49 @@ function builtAt(built: Map<number, number>, x: number, z: number): number {
   return top;
 }
 
+/** The meshes of each name, concatenated into one. */
+function mergedByName(meshes: BakedMesh[], names: string[]): BakedMesh[] {
+  const byName = new Map<string, BakedMesh[]>();
+  for (const mesh of meshes) {
+    if (!names.includes(mesh.name)) continue;
+    const list = byName.get(mesh.name);
+    if (list) list.push(mesh);
+    else byName.set(mesh.name, [mesh]);
+  }
+  const out: BakedMesh[] = [];
+  for (const [name, list] of byName) {
+    if (list.length === 1) {
+      out.push(list[0]);
+      continue;
+    }
+    const total = list.reduce((sum, mesh) => sum + mesh.positions.length, 0);
+    const positions = new Float32Array(total);
+    const indices = new Uint32Array(list.reduce((sum, mesh) => sum + mesh.indices.length, 0));
+    const colors = list.every((mesh) => mesh.colors)
+      ? new Float32Array(list.reduce((sum, mesh) => sum + (mesh.colors?.length ?? 0), 0))
+      : null;
+    let at = 0;
+    let index = 0;
+    let colour = 0;
+    for (const mesh of list) {
+      positions.set(mesh.positions, at);
+      for (let i = 0; i < mesh.indices.length; i++) indices[index + i] = mesh.indices[i] + at / 3;
+      if (colors && mesh.colors) colors.set(mesh.colors, colour);
+      at += mesh.positions.length;
+      index += mesh.indices.length;
+      colour += mesh.colors?.length ?? 0;
+    }
+    out.push({
+      name,
+      positions,
+      indices,
+      colors,
+      triangles: list.reduce((sum, mesh) => sum + mesh.triangles, 0),
+    });
+  }
+  return out;
+}
+
 export function checkStanding(
   meshes: BakedMesh[],
   names: string[],
@@ -497,8 +540,11 @@ export function checkStanding(
 ): void {
   // What the models may stand on besides the ground.
   const built = builtSurface(meshes, ["building"]);
-  for (const mesh of meshes) {
-    if (!names.includes(mesh.name)) continue;
+  // A building ships as several meshes — one per facade, one for its roofs —
+  // because a facade is a material. Structurally it is one thing, so the walls
+  // and the roof are welded back together before anything asks what stands on
+  // what; apart, a roof slab is a piece with no walls under it.
+  for (const mesh of mergedByName(meshes, names)) {
     const { labels, count } = buildingPieces(mesh);
     const lowest = new Float64Array(count).fill(Infinity);
     const highest = new Float64Array(count).fill(-Infinity);

@@ -40,6 +40,12 @@ move — every model ships in the city belt's mesh, while the core belt sits at 
 of its own 450,000. Splitting the models mesh per belt would put the near ones on the
 core belt's budget and roughly triple what the city can afford.
 
+**Walls are textured now (D38)**: every building is read as a tower, a block, a house,
+a shop or a plain shed, and wears a tile of that kind — one bay across, one storey up,
+repeating both ways. Storey bands are gone with it. What is left to do there is
+balconies as geometry on the blocks nearest the track, and a second variant per kind so
+a street does not repeat itself.
+
 **The kit is off (D37).** The models were somebody else's houses stretched onto
 Monaco's plots, and 173 of them against 4,572 extrusions did not stop the city reading
 as boxes. The extrusions carry the detail instead: a shop front, storeys painted band

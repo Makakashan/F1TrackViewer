@@ -9,9 +9,9 @@
 import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { Document, NodeIO } from "@gltf-transform/core";
+import { Document, NodeIO, TextureInfo, type Texture } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { meshopt } from "@gltf-transform/functions";
+import { meshopt, quantize } from "@gltf-transform/functions";
 import { MeshoptEncoder } from "meshoptimizer";
 import { ShapeUtils, Vector2 } from "three";
 
@@ -53,6 +53,15 @@ import {
   type StructureWay,
 } from "./overpass";
 import { buildGreenery, plantTrees, type GreeneryResult } from "./greenery";
+import {
+  BAY_M,
+  FACADES,
+  FACADE_STOREY_M,
+  facadeOf,
+  facadeTexture,
+  type Facade,
+  type FacadeZone,
+} from "./facades";
 import { buildSurfaceIndex } from "./baked-scene";
 import { buildBreaklines } from "./breaklines";
 import { buildGround, type Ground } from "./ground";
@@ -1083,7 +1092,7 @@ function bakePierDecks(piers: PierResult): Mesh {
   const mesh = createMesh();
   for (const deck of piers.decks) {
     const foot = Math.min(SHORE_FOOT_M, deck.deckY - 1);
-    extrude(mesh, deck.ring, deck.ring.map(() => foot), deck.deckY);
+    extrude({ storey: mesh, shop: mesh, plain: mesh }, deck.ring, deck.ring.map(() => foot), deck.deckY);
   }
   return mesh;
 }
@@ -1123,7 +1132,15 @@ export function fromOverpass(ways: BuildingWay[]): BuildingsFile {
 }
 
 interface BuildingResult {
-  meshes: Record<Belt, Mesh>;
+  /**
+   * Walls, split by belt and by facade because the facade is the material, and
+   * again by which of its two tiles they take. A storey tile repeats up the
+   * wall, a shop front does not, and a sampler cannot do both at once.
+   */
+  walls: Record<Belt, Record<Facade, Mesh>>;
+  shops: Record<Belt, Record<Facade, Mesh>>;
+  /** Roofs, parapets, roof boxes, terraces: everything with no facade. */
+  plain: Record<Belt, Mesh>;
   roofs: Record<RoofKind, number>;
   built: number;
   droppedOnTrack: number;
@@ -1166,6 +1183,8 @@ interface PreparedBuilding {
   centreX: number;
   centreZ: number;
   belt: Belt;
+  /** Which wall the building wears (D38). */
+  facade: Facade;
 }
 
 /**
@@ -1237,6 +1256,8 @@ function prepareBuildings(
   hollow: PortalHollow,
   road: RoadIndex,
   measured: Map<string, { measured: number }>,
+  /** The OSM `building` value, where the survey gave one. */
+  tagOf: (id: string) => string | undefined,
   result: BuildingResult,
 ): PreparedBuilding[] {
   const prepared: PreparedBuilding[] = [];
@@ -1339,6 +1360,11 @@ function prepareBuildings(
         centreX,
         centreZ,
         belt: beltAtDistance(corridor.distance(centreX, centreZ)),
+        facade: facadeOf({
+          heightM: height,
+          areaM2: ringAreaXZ(shape),
+          tag: tagOf(building.id),
+        }),
       });
     }
   }
@@ -1353,10 +1379,14 @@ function bakeBuildings(
   /** Footprints a kit model has already taken; their roofs come with it. */
   taken: Set<string>,
 ): void {
-  const meshes = result.meshes;
   for (const building of prepared) {
     if (taken.has(building.id)) continue;
-    const { ring, wallRing, footAt, base, heightM, belt } = building;
+    const { ring, wallRing, footAt, base, heightM, belt, facade } = building;
+    const target: WallTargets = {
+      storey: result.walls[belt][facade],
+      shop: result.shops[belt][facade],
+      plain: result.plain[belt],
+    };
     const top = base + heightM;
     const plan = planRoof(ring, tags.get(building.id.split("#")[0]) ?? {}, heightM);
     result.roofs[plan.kind]++;
@@ -1367,12 +1397,12 @@ function bakeBuildings(
       // The rim is what makes a flat roof read as a roof rather than a lid, so
       // the walls run past the roof plane and turn back down inside it.
       const roofY = top - plan.heightM;
-      extrude(meshes[belt], wallRing, footAt, roofY, near ? PARAPET_M : 0, near);
-      if (near) roofClutter(meshes[belt], ring, roofY);
+      extrude(target, wallRing, footAt, roofY, near ? PARAPET_M : 0, near);
+      if (near) roofClutter(result.plain[belt], ring, roofY);
     } else {
       const eaveY = top - plan.heightM;
-      extrude(meshes[belt], wallRing, footAt, eaveY, 0, near);
-      buildRoof(meshes[belt], plan, eaveY);
+      extrude(target, wallRing, footAt, eaveY, 0, near);
+      buildRoof(result.plain[belt], plan, eaveY);
     }
     result.built++;
   }
@@ -1419,15 +1449,24 @@ function bakeKitPlinths(
       centreZ += point.z / plinth.ring.length;
     }
     const belt = beltAtDistance(corridor.distance(centreX, centreZ));
-    extrude(meshes[belt], plinth.ring, footAt.map((y) => y - KIT_PLINTH_DIG_M), plinth.top, 0);
+    const mesh = meshes[belt];
+    extrude({ storey: mesh, shop: mesh, plain: mesh }, plinth.ring, footAt.map((y) => y - KIT_PLINTH_DIG_M), plinth.top, 0);
     built++;
   }
   return built;
 }
 
+function byBeltAndFacade(): Record<Belt, Record<Facade, Mesh>> {
+  return Object.fromEntries(
+    BELT_ORDER.map((belt) => [belt, Object.fromEntries(FACADES.map((f) => [f, createMesh()]))]),
+  ) as Record<Belt, Record<Facade, Mesh>>;
+}
+
 function emptyBuildingResult(): BuildingResult {
   return {
-    meshes: { core: createMesh(), city: createMesh(), far: createMesh() } as Record<Belt, Mesh>,
+    walls: byBeltAndFacade(),
+    shops: byBeltAndFacade(),
+    plain: Object.fromEntries(BELT_ORDER.map((belt) => [belt, createMesh()])) as Record<Belt, Mesh>,
     roofs: { flat: 0, gabled: 0, hipped: 0, pyramidal: 0, skillion: 0 },
     built: 0,
     droppedOnTrack: 0,
@@ -1719,7 +1758,7 @@ const BAND_TONE = { ground: 0.65, body: 1, cornice: 0.8, floor: 0.86 };
 const BANDED_MIN_M = 7;
 
 function wallBands(
-  mesh: Mesh,
+  target: WallTargets,
   a: { x: number; z: number },
   b: { x: number; z: number },
   baseA: number,
@@ -1729,27 +1768,41 @@ function wallBands(
 ): void {
   const foot = Math.min(baseA, baseB);
   const shopTop = foot + GROUND_FLOOR_M;
-  if (!banded || top - foot < BANDED_MIN_M || shopTop >= top - CORNICE_M) {
-    mesh.tone = BAND_TONE.body;
-    addFlatQuad(mesh, a.x, baseA, a.z, b.x, baseB, b.z, b.x, top, b.z, a.x, top, a.z);
+  if (!banded) {
+    // The far belt is silhouettes: no tile, and no coordinates to carry one.
+    target.plain.tone = BAND_TONE.body;
+    addFlatQuad(target.plain, a.x, baseA, a.z, b.x, baseB, b.z, b.x, top, b.z, a.x, top, a.z);
     return;
   }
-  // The shop front follows the ground it stands on; everything over it is
-  // level, because a floor line is level whatever the street does.
-  mesh.tone = BAND_TONE.ground;
-  addFlatQuad(mesh, a.x, baseA, a.z, b.x, baseB, b.z, b.x, shopTop, b.z, a.x, shopTop, a.z);
 
-  // Then storey by storey, alternating: the band a window sits in is darker
-  // than the wall between two of them. Nothing protrudes — this is the
-  // cheapest thing that reads as floors, and a ledge would cost a shadow the
-  // occlusion pass has to bake and a triangle count that has to fit.
-  const storeys = Math.min(MAX_STOREYS, Math.max(1, Math.round((top - shopTop) / STOREY_M)));
-  for (let i = 0; i < storeys; i++) {
-    const from = shopTop + ((top - shopTop) * i) / storeys;
-    const to = shopTop + ((top - shopTop) * (i + 1)) / storeys;
-    mesh.tone = i % 2 === 0 ? BAND_TONE.floor : BAND_TONE.body;
-    addFlatQuad(mesh, a.x, from, a.z, b.x, from, b.z, b.x, to, b.z, a.x, to, a.z);
-  }
+  // How many bays fit along the wall and how many storeys up it — whole
+  // numbers, so a window is never cut in half at a corner or at the roof.
+  const bays = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.z - a.z) / BAY_M));
+  const oneStorey = top - foot < BANDED_MIN_M;
+  const shopY = oneStorey ? top : Math.min(shopTop, top);
+
+  // The ground floor follows the ground it stands on, and it is its own tile:
+  // a shop front is not a storey repeated.
+  target.shop.tone = BAND_TONE.ground;
+  addFlatQuad(
+    target.shop,
+    a.x, baseA, a.z, b.x, baseB, b.z, b.x, shopY, b.z, a.x, shopY, a.z,
+    [[0, 0], [bays, 0], [bays, 1], [0, 1]],
+  );
+  if (oneStorey) return;
+
+  // Everything above it is one quad however tall the building is: the tile
+  // repeats up the wall by the floor, so the openings land where a floor
+  // actually is rather than stretched over whatever the building turned out
+  // to be. One quad rather than one per storey is what keeps this affordable —
+  // per storey, the city belt paid for six vertices a floor a wall.
+  const storeys = Math.max(1, Math.round((top - shopY) / FACADE_STOREY_M));
+  target.storey.tone = BAND_TONE.body;
+  addFlatQuad(
+    target.storey,
+    a.x, shopY, a.z, b.x, shopY, b.z, b.x, top, b.z, a.x, top, a.z,
+    [[0, 0], [bays, 0], [bays, storeys], [0, storeys]],
+  );
 }
 
 /**
@@ -1830,8 +1883,15 @@ function hashAt(x: number, z: number): number {
   return value - Math.floor(value);
 }
 
+/** Where a building's geometry goes: two tiled walls and everything else. */
+interface WallTargets {
+  storey: Mesh;
+  shop: Mesh;
+  plain: Mesh;
+}
+
 function extrude(
-  mesh: Mesh,
+  target: WallTargets,
   ring: { x: number; z: number }[],
   /**
    * Where each wall vertex meets the ground, one per ring point. A single
@@ -1857,21 +1917,21 @@ function extrude(
     const j = (i + 1) % ordered.length;
     const a = ordered[i];
     const b = ordered[j];
-    wallBands(mesh, a, b, orderedBase[i], orderedBase[j], wallTop, banded);
+    wallBands(target, a, b, orderedBase[i], orderedBase[j], wallTop, banded);
     if (parapetM > 0) {
       // Inside face of the rim, seen from anywhere above the roof.
-      mesh.tone = BAND_TONE.cornice;
-      addFlatQuad(mesh, b.x, top, b.z, a.x, top, a.z, a.x, wallTop, a.z, b.x, wallTop, b.z);
+      target.plain.tone = BAND_TONE.cornice;
+      addFlatQuad(target.plain, b.x, top, b.z, a.x, top, a.z, a.x, wallTop, a.z, b.x, wallTop, b.z);
     }
   }
 
   // `triangulateShape` works in the contour's own plane, which is (x, -z); read
   // back in scene axes that winding already faces the sky, so it is kept as it
   // comes. Reversing it here is what made every flat roof invisible from above.
-  mesh.tone = BAND_TONE.body;
+  target.plain.tone = BAND_TONE.body;
   for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
     addFlatTriangle(
-      mesh,
+      target.plain,
       ordered[i].x, top, ordered[i].z,
       ordered[j].x, top, ordered[j].z,
       ordered[k].x, top, ordered[k].z,
@@ -2839,19 +2899,53 @@ function srgbToLinear(hex: string): [number, number, number, number] {
   return [channel(16), channel(8), channel(0), 1];
 }
 
-async function writeGlb(path: string, parts: { kind: MeshKind; mesh: Mesh }[]): Promise<number> {
+/** The mesh's own coordinates, run out to one pair per vertex. */
+function paddedUV(mesh: Mesh): number[] {
+  const uv = mesh.uv ?? [];
+  const wanted = (mesh.positions.length / 3) * 2;
+  if (uv.length >= wanted) return uv.slice(0, wanted);
+  const pad = mesh.uvPad ?? [0, 0];
+  const out = uv.slice();
+  while (out.length < wanted) out.push(pad[0], pad[1]);
+  return out;
+}
+
+async function writeGlb(
+  path: string,
+  parts: { kind: MeshKind; mesh: Mesh; facade?: Facade; zone?: FacadeZone }[],
+): Promise<number> {
   const document = new Document();
   const buffer = document.createBuffer();
   const scene = document.createScene();
+  // One image per facade, made once and shared by whatever asks for it.
+  const tiles = new Map<string, Texture>();
 
-  for (const { kind, mesh } of parts) {
+  for (const { kind, mesh, facade, zone } of parts) {
     if (isEmpty(mesh)) continue;
     const material = document
-      .createMaterial(kind)
+      .createMaterial(facade ? `${kind}-${facade}-${zone}` : kind)
       .setBaseColorFactor(srgbToLinear(MESH_COLOR[kind]))
       .setRoughnessFactor(kind === "water" ? 0.25 : 0.95)
       .setMetallicFactor(0)
       .setDoubleSided(false);
+    if (facade && zone && mesh.uv) {
+      const key = `${facade}-${zone}`;
+      let tile = tiles.get(key);
+      if (!tile) {
+        tile = document
+          .createTexture(key)
+          .setImage(new Uint8Array(facadeTexture(facade, zone)))
+          .setMimeType("image/png");
+        tiles.set(key, tile);
+      }
+      material.setBaseColorTexture(tile);
+      // A storey repeats both ways; a shop front repeats across the wall and
+      // stands alone up it, which is what its coordinates already say.
+      material
+        .getBaseColorTextureInfo()
+        ?.setWrapS(TextureInfo.WrapMode.REPEAT)
+        .setWrapT(TextureInfo.WrapMode.REPEAT);
+    }
 
     const primitive = document
       .createPrimitive()
@@ -2874,6 +2968,18 @@ async function writeGlb(path: string, parts: { kind: MeshKind; mesh: Mesh }[]): 
               .setBuffer(buffer)
           : null,
       )
+      .setAttribute(
+        "TEXCOORD_0",
+        mesh.uv
+          ? document
+              .createAccessor()
+              .setType("VEC2")
+              // Every vertex needs one, including the ones added after the last
+              // textured triangle.
+              .setArray(new Float32Array(paddedUV(mesh)))
+              .setBuffer(buffer)
+          : null,
+      )
       .setIndices(
         document.createAccessor().setType("SCALAR").setArray(new Uint32Array(mesh.indices)).setBuffer(buffer),
       );
@@ -2882,7 +2988,13 @@ async function writeGlb(path: string, parts: { kind: MeshKind; mesh: Mesh }[]): 
   }
 
   await MeshoptEncoder.ready;
-  await document.transform(meshopt({ encoder: MeshoptEncoder }));
+  // Texture coordinates at half the width: a tile is 96 pixels across and the
+  // wall repeats it, so a short is finer than anything the sampler can show.
+  // Positions are left alone — the ground the walls stand on is measured.
+  await document.transform(
+    quantize({ pattern: /^TEXCOORD_0$/, quantizeTexcoord: 12 }),
+    meshopt({ encoder: MeshoptEncoder }),
+  );
   const glb = await new NodeIO()
     .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder })
@@ -2912,6 +3024,7 @@ export interface BakeReport {
   props: PropResult["stats"];
   greenery: GreeneryResult["stats"];
   kit: KitResult["stats"] & { plinths: number };
+  facades: Record<Facade, number>;
   slopeShaded: number;
   overrides: OverrideStats;
 }
@@ -3137,8 +3250,15 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const greeneryStats = { ...greenery.stats };
 
   const prepared = prepareBuildings(
-    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings,
+    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured,
+    (id) => (roofTags.get(id) as { building?: string } | undefined)?.building,
+    buildings,
   );
+  // Every wall of every belt, whichever facade it wears.
+  const buildingMeshes = BELT_ORDER.flatMap((belt) => [
+    buildings.plain[belt],
+    ...FACADES.flatMap((f) => [buildings.walls[belt][f], buildings.shops[belt][f]]),
+  ]);
 
   // The kit runs before the props are merged, because its houses are props: it
   // decides which footprints it can do better than an extrusion, and the rest
@@ -3165,7 +3285,13 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   );
   const kitHousePaths = new Set(kitHouses.map((model) => model.path));
   bakeBuildings(prepared, roofTags, buildings, kit.taken);
-  const kitPlinths = bakeKitPlinths(kit, buildings.meshes, standOn, corridor);
+  // A terrace is masonry, not a facade: it takes the plain wall.
+  const kitPlinths = bakeKitPlinths(
+    kit,
+    buildings.plain,
+    standOn,
+    corridor,
+  );
 
   // Berthed from the harbour survey, the kit's houses, then whatever the
   // overrides add by hand.
@@ -3193,9 +3319,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
 
   // Occlusion last: everything that casts it has to exist first.
   const standing = [
-    buildings.meshes.core,
-    buildings.meshes.city,
-    buildings.meshes.far,
+    ...buildingMeshes,
     portals.surround,
     // A kit house in a row of kit houses shades the one beside it, and a hull
     // shades the hull it is moored against. Props are built before this for
@@ -3227,7 +3351,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   applyAlbedo(props.models, MODEL_TONE);
   // The walls' own bands, over the occlusion that shares the array. Neutral
   // tone: a band is a shade of the colour the building already is.
-  for (const belt of BELT_ORDER) applyAlbedo(buildings.meshes[belt], [1, 1, 1]);
+  for (const mesh of buildingMeshes) applyAlbedo(mesh, [1, 1, 1]);
   // After the occlusion pass, which owns the same array: an open hillside sees
   // the whole sky, so AO says nothing about it and slope is what is left to
   // read the relief by.
@@ -3239,10 +3363,14 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const outDir = options.outDir ?? join(OUTPUT_ROOT, circuitId);
   await mkdir(outDir, { recursive: true });
 
-  const layout: Record<Belt, { kind: MeshKind; mesh: Mesh }[]> = {
+  const layout: Record<Belt, { kind: MeshKind; mesh: Mesh; facade?: Facade }[]> = {
     core: [
       { kind: "terrain", mesh: terrain.meshes.core },
-      { kind: "building", mesh: buildings.meshes.core },
+      { kind: "building" as const, mesh: buildings.plain.core },
+      ...FACADES.flatMap((facade) => [
+        { kind: "building" as const, mesh: buildings.walls.core[facade], facade, zone: "storey" as const },
+        { kind: "building" as const, mesh: buildings.shops.core[facade], facade, zone: "shop" as const },
+      ]),
       { kind: "tunnel", mesh: portals.sleeve },
       { kind: "tunnel", mesh: bore.lining },
       { kind: "boreRoad", mesh: bore.road },
@@ -3258,7 +3386,11 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     ],
     city: [
       { kind: "terrain", mesh: terrain.meshes.city },
-      { kind: "building", mesh: buildings.meshes.city },
+      { kind: "building" as const, mesh: buildings.plain.city },
+      ...FACADES.flatMap((facade) => [
+        { kind: "building" as const, mesh: buildings.walls.city[facade], facade, zone: "storey" as const },
+        { kind: "building" as const, mesh: buildings.shops.city[facade], facade, zone: "shop" as const },
+      ]),
       // The waterfront is one thing wherever it runs, so it ships whole rather
       // than split across belts by distance.
       { kind: "shore", mesh: shore.walls },
@@ -3275,7 +3407,11 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     ],
     far: [
       { kind: "terrain", mesh: terrain.meshes.far },
-      { kind: "building", mesh: buildings.meshes.far },
+      { kind: "building" as const, mesh: buildings.plain.far },
+      ...FACADES.flatMap((facade) => [
+        { kind: "building" as const, mesh: buildings.walls.far[facade], facade, zone: "storey" as const },
+        { kind: "building" as const, mesh: buildings.shops.far[facade], facade, zone: "shop" as const },
+      ]),
       { kind: "water", mesh: water },
       // The block the whole thing is cut from: it arrives with the belt that
       // owns the rim, so a wide shot never shows the model without its body.
@@ -3313,6 +3449,9 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     props: props.stats,
     greenery: greeneryStats,
     kit: { ...kit.stats, plinths: kitPlinths },
+    facades: Object.fromEntries(
+      FACADES.map((f) => [f, prepared.filter((b) => b.facade === f).length]),
+    ) as Record<Facade, number>,
     slopeShaded,
     overrides: overrideStats,
   };
@@ -3444,6 +3583,9 @@ async function main() {
     `  surfaces ${report.greenery.pools} pools, ${report.greenery.pitches} pitches, `
       + `${report.greenery.parks} parks`
       + `; ${report.slopeShaded} ground nodes shaded by slope`,
+  );
+  console.log(
+    `  facades ${FACADES.map((f) => `${f} ${report.facades[f]}`).join(", ")}`,
   );
   console.log(
     `  kit ${report.kit.models} houses modelled (${report.kit.triangles.toLocaleString()} tris) — `
