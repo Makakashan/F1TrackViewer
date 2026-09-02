@@ -95,8 +95,15 @@ function jitter(cell: number, salt: number): number {
   return value - Math.floor(value);
 }
 
-function storeyCell(png: PNG, plan: Plan, x0: number, y0: number, cell: number): void {
-  if (plan.balcony) {
+function storeyCell(
+  png: PNG,
+  plan: Plan,
+  x0: number,
+  y0: number,
+  cell: number,
+  paintBalcony: boolean,
+): void {
+  if (plan.balcony && paintBalcony) {
     // A slab across the bottom of the floor, which is what a balcony is from
     // the street: a line under the windows rather than a box. Not on every
     // cell — a block has a balcony where a room opens onto one.
@@ -125,8 +132,13 @@ function shopCell(png: PNG, plan: Plan, x0: number, y0: number, cell: number): v
   fill(png, centre - glassHalf, y0 + CELL * 0.22, centre + glassHalf, y0 + CELL * 0.88, GLASS);
 }
 
-/** One tile of one kind of building, as PNG bytes. */
-export function facadeTexture(facade: Facade, zone: FacadeZone): Buffer {
+/**
+ * One tile of one kind of building, as PNG bytes.
+ *
+ * `paintBalcony` is false where the belt builds them instead: a painted slab
+ * under a built one is the same balcony twice.
+ */
+export function facadeTexture(facade: Facade, zone: FacadeZone, paintBalcony = true): Buffer {
   const plan = PLAN[facade];
   const png = new PNG({ width: WIDTH, height: HEIGHT });
   fill(png, 0, 0, WIDTH, HEIGHT, WALL);
@@ -136,7 +148,7 @@ export function facadeTexture(facade: Facade, zone: FacadeZone): Buffer {
     for (let col = 0; col < TILE_BAYS; col++) {
       const x0 = col * CELL;
       const y0 = row * CELL;
-      if (zone === "storey") storeyCell(png, plan, x0, y0, cell);
+      if (zone === "storey") storeyCell(png, plan, x0, y0, cell, paintBalcony);
       else shopCell(png, plan, x0, y0, cell);
       cell++;
     }

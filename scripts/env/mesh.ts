@@ -20,14 +20,15 @@ export interface Mesh {
    */
   albedo?: number[];
   /**
-   * The tone every triangle added from now on is painted with, into `albedo`.
+   * The colour every triangle added from now on is painted with, into
+   * `albedo`, as a multiplier on the material's own.
    *
    * Set by the caller around a run of geometry — a band of wall, a box on a
    * roof — so the colour follows the triangle rather than a count of them.
    * Counting is what a parallel array cannot survive: a degenerate triangle is
    * dropped, and from there the two arrays are one wall apart for good.
    */
-  tone?: number;
+  tone?: [number, number, number];
   /** Texture coordinates, one pair per vertex, where a mesh has them. */
   uv?: number[];
   /**
@@ -84,7 +85,7 @@ export function addFlatTriangle(
     mesh.albedo ??= [];
     // Catch up over anything added before the first tone was set.
     while (mesh.albedo.length < base * 3) mesh.albedo.push(1);
-    for (let i = 0; i < 3; i++) mesh.albedo.push(mesh.tone, mesh.tone, mesh.tone);
+    for (let i = 0; i < 3; i++) mesh.albedo.push(mesh.tone[0], mesh.tone[1], mesh.tone[2]);
   }
   return true;
 }
