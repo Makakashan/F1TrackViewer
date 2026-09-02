@@ -2828,8 +2828,14 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
     overrides: await loadOverrides(circuitId),
     // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
     kitHouses: await loadKitHouses(REPO_ROOT, [
-      "assets/models/kenney-city-suburban",
-      "assets/models/kenney-city-commercial",
+      { dir: "assets/models/kenney-city-suburban", prefixes: ["building-"] },
+      {
+        dir: "assets/models/kenney-city-commercial",
+        prefixes: ["building-", "low-detail-building-"],
+      },
+      { dir: "assets/models/kenney-city-industrial", prefixes: ["building-"] },
+      // Only the assembled samples: everything else in that pack is a wall.
+      { dir: "assets/models/kenney-modular-buildings", prefixes: ["building-sample-"] },
     ]),
     kitTrees: await loadKitPaths(REPO_ROOT, "assets/models/kenney-city-suburban", ["tree-"]),
     kitBoats: await loadKitPaths(REPO_ROOT, "assets/models/kenney-watercraft", [

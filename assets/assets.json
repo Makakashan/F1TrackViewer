@@ -54,6 +54,34 @@
           "to": "Textures/"
         }
       ]
+    },
+    {
+      "id": "kenney-city-industrial",
+      "title": "City Kit (Industrial) 2.0",
+      "author": "Kenney",
+      "license": "CC0-1.0",
+      "source": "https://kenney.nl/assets/city-kit-industrial",
+      "url": "https://kenney.nl/media/pages/assets/city-kit-industrial/0ec35b139d-1788171848/kenney_city-kit-industrial_2.0.zip",
+      "take": [
+        {
+          "from": "Models/GLB format/",
+          "to": ""
+        }
+      ]
+    },
+    {
+      "id": "kenney-modular-buildings",
+      "title": "Modular Buildings 2.1",
+      "author": "Kenney",
+      "license": "CC0-1.0",
+      "source": "https://kenney.nl/assets/modular-buildings",
+      "url": "https://kenney.nl/media/pages/assets/modular-buildings/3253b4219a-1707397411/kenney_modular-buildings.zip",
+      "take": [
+        {
+          "from": "Models/GLB format/",
+          "to": ""
+        }
+      ]
     }
   ]
 }

@@ -27,17 +27,23 @@ middle of the ground with a terrace under them); the kit painted itself green an
 charcoal in a white city, and a plot could be 3.6 m long (D33, the paint is remapped
 into the palette and the shape test has an 8 m floor).
 
-Then the ask changed: model every building where a model fits (D34). The commercial
-pack joined the library, the plot ceilings and the district rule went, and the budget
-became one number. **173 buildings are modelled now** of the 1,445 that fit the shape,
-and the city belt is at 337,715 triangles of its 350,000.
+Then the ask changed: model every building where a model fits (D34), and then fit it
+properly (D35). Models are stretched to the surveyed rectangle and the measured
+height, chosen by how little they have to bend; the industrial pack and Modular
+Buildings' assembled samples joined the library. **266 buildings are modelled**, the
+city belt is at 336,464 triangles of its 350,000, and the fit is exact by construction
+where it used to be 10 % off the surveyed height at the median.
 
-What holds coverage down, in order: **571 plots ran out of triangles**, 244 have no
-model at their proportion, 4 stand where the road reaches into them. The first is the
-one with room to move — every model ships in the city belt's mesh, while the core belt
-sits at 135,235 of its own 450,000. Splitting the models mesh per belt would put the
-near ones on the core belt's budget and roughly triple what the city can afford. That
-is the next lever if more coverage is wanted.
+What holds coverage down, in order: **502 plots ran out of triangles**, 206 have no
+model within the stretch cap, 0 stand where the road reaches in. The first has room to
+move — every model ships in the city belt's mesh, while the core belt sits at 134,950
+of its own 450,000. Splitting the models mesh per belt would put the near ones on the
+core belt's budget and roughly triple what the city can afford.
+
+Still open, and the next thing a person would notice: **the same silhouette twice in a
+street.** 39 distinct models over 266 buildings, the most used one 41 times. The pick
+is already least-stretched-first with the hash breaking ties inside the top third; what
+it does not know is what its neighbours took.
 
 ### 1.2 The light rig
 
