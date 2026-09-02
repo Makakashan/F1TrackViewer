@@ -1361,15 +1361,17 @@ function bakeBuildings(
     const plan = planRoof(ring, tags.get(building.id.split("#")[0]) ?? {}, heightM);
     result.roofs[plan.kind]++;
 
+    // The far belt is silhouettes: no parapet, no bands.
+    const near = belt !== "far";
     if (plan.kind === "flat") {
       // The rim is what makes a flat roof read as a roof rather than a lid, so
-      // the walls run past the roof plane and turn back down inside it. Only
-      // where it can be seen: the far belt is silhouettes.
-      const parapet = belt === "far" ? 0 : PARAPET_M;
-      extrude(meshes[belt], wallRing, footAt, top - plan.heightM, parapet);
+      // the walls run past the roof plane and turn back down inside it.
+      const roofY = top - plan.heightM;
+      extrude(meshes[belt], wallRing, footAt, roofY, near ? PARAPET_M : 0, near);
+      if (near) roofClutter(meshes[belt], ring, roofY);
     } else {
       const eaveY = top - plan.heightM;
-      extrude(meshes[belt], wallRing, footAt, eaveY, 0);
+      extrude(meshes[belt], wallRing, footAt, eaveY, 0, near);
       buildRoof(meshes[belt], plan, eaveY);
     }
     result.built++;
@@ -1690,6 +1692,127 @@ function densifyAcrossCorridor(
   return added ? out : ring;
 }
 
+/**
+ * A wall in three tones: a shop front, the storeys over it, and the band under
+ * the roof.
+ *
+ * A prism painted one colour reads as a box whatever its outline, and the two
+ * lines that say otherwise from a street away are the ground floor and the
+ * cornice. Both are painted rather than modelled — the geometry is two extra
+ * rows of vertices per wall, and no ledge sticks out to catch a shadow.
+ */
+const GROUND_FLOOR_M = 4;
+const CORNICE_M = 1.4;
+/**
+ * What each band multiplies the wall's own colour by.
+ *
+ * Wide steps on purpose: the occlusion pass has already put most of this city's
+ * walls between 0.35 and 0.5, and a tenth either way disappears into that. A
+ * band has to be a step the eye catches, not a shade. The floor under it is
+ * I11 — nothing in the scene goes below 0.278 — and the occlusion floor is
+ * 0.45, so a band cannot take more than a third of the wall's own colour.
+ */
+const BAND_TONE = { ground: 0.65, body: 1, cornice: 0.8 };
+/** Under this a building is one storey and takes one tone. */
+const BANDED_MIN_M = 7;
+
+function wallBands(
+  mesh: Mesh,
+  a: { x: number; z: number },
+  b: { x: number; z: number },
+  baseA: number,
+  baseB: number,
+  top: number,
+  banded: boolean,
+): void {
+  const foot = Math.min(baseA, baseB);
+  const shopTop = foot + GROUND_FLOOR_M;
+  if (!banded || top - foot < BANDED_MIN_M || shopTop >= top - CORNICE_M) {
+    mesh.tone = BAND_TONE.body;
+    addFlatQuad(mesh, a.x, baseA, a.z, b.x, baseB, b.z, b.x, top, b.z, a.x, top, a.z);
+    return;
+  }
+  // The shop front follows the ground it stands on; what is over it is level,
+  // because a floor line is level whatever the street does. Two bands rather
+  // than three: the top of the wall already has the parapet's own edge, and a
+  // third band costs the city belt a third as much again in triangles.
+  mesh.tone = BAND_TONE.ground;
+  addFlatQuad(mesh, a.x, baseA, a.z, b.x, baseB, b.z, b.x, shopTop, b.z, a.x, shopTop, a.z);
+  mesh.tone = BAND_TONE.body;
+  addFlatQuad(mesh, a.x, shopTop, a.z, b.x, shopTop, b.z, b.x, top, b.z, a.x, top, a.z);
+}
+
+/**
+ * What stands on a flat roof: a lift head, a tank, a stair from the top floor.
+ *
+ * From above — the view a diorama is mostly seen from — a flat roof is a blank
+ * plate, and this is the cheapest thing that says a building is used. Boxes,
+ * not models: at this size a lift head is a box in life too, and it is ten
+ * triangles rather than a thousand.
+ */
+const ROOF_CLUTTER_MIN_M2 = 80;
+const ROOF_CLUTTER_SECOND_M2 = 260;
+/** Kept clear of the roof edge, so nothing overhangs the street. */
+const ROOF_CLUTTER_INSET_M = 2.5;
+
+function roofBox(
+  mesh: Mesh,
+  x: number,
+  z: number,
+  halfX: number,
+  halfZ: number,
+  from: number,
+  to: number,
+): void {
+  const x0 = x - halfX;
+  const x1 = x + halfX;
+  const z0 = z - halfZ;
+  const z1 = z + halfZ;
+  addFlatQuad(mesh, x0, from, z0, x1, from, z0, x1, to, z0, x0, to, z0);
+  addFlatQuad(mesh, x1, from, z1, x0, from, z1, x0, to, z1, x1, to, z1);
+  addFlatQuad(mesh, x1, from, z0, x1, from, z1, x1, to, z1, x1, to, z0);
+  addFlatQuad(mesh, x0, from, z1, x0, from, z0, x0, to, z0, x0, to, z1);
+  addFlatQuad(mesh, x0, to, z0, x1, to, z0, x1, to, z1, x0, to, z1);
+}
+
+function roofClutter(mesh: Mesh, ring: { x: number; z: number }[], roofY: number): void {
+  const area = ringAreaXZ(ring);
+  if (area < ROOF_CLUTTER_MIN_M2) return;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const point of ring) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minZ = Math.min(minZ, point.z);
+    maxZ = Math.max(maxZ, point.z);
+  }
+  const spanX = maxX - minX - 2 * ROOF_CLUTTER_INSET_M;
+  const spanZ = maxZ - minZ - 2 * ROOF_CLUTTER_INSET_M;
+  if (spanX <= 1 || spanZ <= 1) return;
+  const wanted = area >= ROOF_CLUTTER_SECOND_M2 ? 2 : 1;
+  const alongX = spanX >= spanZ;
+  for (let i = 0; i < wanted; i++) {
+    // Along the roof's own length, spaced so two never touch, and repeatable.
+    const t = (i + 1) / (wanted + 1);
+    const x = alongX ? minX + ROOF_CLUTTER_INSET_M + spanX * t : (minX + maxX) / 2;
+    const z = alongX ? (minZ + maxZ) / 2 : minZ + ROOF_CLUTTER_INSET_M + spanZ * t;
+    if (!pointInRingXZ(ring, x, z)) continue;
+    mesh.tone = BAND_TONE.cornice;
+    const roll = hashAt(x, z);
+    const halfX = Math.min(2, spanX / 4) * (0.7 + 0.3 * roll);
+    const halfZ = Math.min(2, spanZ / 4) * (0.7 + 0.3 * (1 - roll));
+    roofBox(mesh, x, z, halfX, halfZ, roofY, roofY + 1.6 + 1.4 * roll);
+  }
+}
+
+/** Repeatable per place: the same roof carries the same boxes every bake. */
+function hashAt(x: number, z: number): number {
+  const value = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
 function extrude(
   mesh: Mesh,
   ring: { x: number; z: number }[],
@@ -1702,6 +1825,8 @@ function extrude(
   baseAt: number[],
   top: number,
   parapetM = 0,
+  /** Whether the wall is painted in bands. The far belt is silhouettes. */
+  banded = false,
 ): void {
   const contour = ring.map((point) => new Vector2(point.x, -point.z));
   const clockwise = ShapeUtils.area(contour) < 0;
@@ -1715,9 +1840,10 @@ function extrude(
     const j = (i + 1) % ordered.length;
     const a = ordered[i];
     const b = ordered[j];
-    addFlatQuad(mesh, a.x, orderedBase[i], a.z, b.x, orderedBase[j], b.z, b.x, wallTop, b.z, a.x, wallTop, a.z);
+    wallBands(mesh, a, b, orderedBase[i], orderedBase[j], wallTop, banded);
     if (parapetM > 0) {
       // Inside face of the rim, seen from anywhere above the roof.
+      mesh.tone = BAND_TONE.cornice;
       addFlatQuad(mesh, b.x, top, b.z, a.x, top, a.z, a.x, wallTop, a.z, b.x, wallTop, b.z);
     }
   }
@@ -1725,6 +1851,7 @@ function extrude(
   // `triangulateShape` works in the contour's own plane, which is (x, -z); read
   // back in scene axes that winding already faces the sky, so it is kept as it
   // comes. Reversing it here is what made every flat roof invisible from above.
+  mesh.tone = BAND_TONE.body;
   for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
     addFlatTriangle(
       mesh,
@@ -3087,6 +3214,9 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // The tone is the city's own building colour normalised to its brightness, so
   // it shifts hue without lightening what it touches.
   applyAlbedo(props.models, MODEL_TONE);
+  // The walls' own bands, over the occlusion that shares the array. Neutral
+  // tone: a band is a shade of the colour the building already is.
+  for (const belt of BELT_ORDER) applyAlbedo(buildings.meshes[belt], [1, 1, 1]);
   // After the occlusion pass, which owns the same array: an open hillside sees
   // the whole sky, so AO says nothing about it and slope is what is left to
   // read the relief by.

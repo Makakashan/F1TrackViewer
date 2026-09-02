@@ -68,8 +68,16 @@ const LOW_DETAIL_MAX_TRIS = 500;
  * 1.3 gives 173, 1.2 gives 131.
  */
 const MAX_STRETCH: Record<"core" | "city", number> = { core: 1.2, city: 1.5 };
-/** What models may take of the city belt's triangle budget. */
-const BUDGET_SHARE = 0.5;
+/**
+ * What models may take of the city belt's triangle budget.
+ *
+ * Down from a half once the extrusions started carrying bands of their own:
+ * a shop front on every one of the 4,572 buildings and a lift head on every flat
+ * roof cost the city belt 32,394 triangles between them, and they are worth
+ * more than the models that money would have bought: a band is on every
+ * building, a model is on one.
+ */
+const BUDGET_SHARE = 0.42;
 
 /** The models available, measured once. */
 export interface KitModel {
