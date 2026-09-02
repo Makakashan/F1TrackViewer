@@ -20,23 +20,44 @@ whose fix is invisible waits behind something that is not.
 
 ### 1.1 Kit houses, looked at
 
-Looked at, 2026-09-02. The direction holds — the silhouettes fit the plots — and the
-pass found three things. One is fixed (D32): the houses stood on their plot's lowest
-corner and 12 of 75 were buried past half their height, so they now stand on the
-middle of the ground with a walled terrace under them. Two are open and are the
-user's call:
+Looked at and acted on, 2026-09-02. The direction holds — the silhouettes fit the
+plots — and all three findings are closed: the houses stood on their plot's lowest
+corner and 12 of 75 were buried past half their height (D32, they now stand on the
+middle of the ground with a terrace under them); the kit painted itself green and
+charcoal in a white city, and a plot could be 3.6 m long (D33, the paint is remapped
+into the palette and the shape test has an 8 m floor).
 
-- **The kit paints itself.** Green roofs and charcoal walls in a city that is white.
-  From above they read as green and black patches rather than as houses. Bringing
-  them into the palette — walls the building colour, roofs one dark tone — is a style
-  decision, not a bug.
-- **Half of them are sheds.** The shape test has a ceiling (400 m²) and no floor:
-  31 of 75 plots are under 8 m long and the shortest is 3.6 m, which is a two-storey
-  house squashed to the size of a garage. A floor near 8 m would leave about 44.
+Then the ask changed: model every building where a model fits (D34), and then fit it
+properly (D35). Models are stretched to the surveyed rectangle and the measured
+height, chosen by how little they have to bend; the industrial pack and Modular
+Buildings' assembled samples joined the library. **266 buildings are modelled**, the
+city belt is at 336,464 triangles of its 350,000, and the fit is exact by construction
+where it used to be 10 % off the surveyed height at the median.
 
-Coverage is thin on purpose and could be widened: of 1,975 footprints that fit the
-shape, 75 got a model. The budget is not the limit — 92,406 of 175,000 triangles —
-the neighbour rule (1,086 stood alone) and the proportion tolerance (369) are.
+What holds coverage down, in order: **468 plots ran out of triangles**, 87 have no
+model within the stretch cap, 0 stand where the road reaches in. The first has room to
+move — every model ships in the city belt's mesh, while the core belt sits at 134,950
+of its own 450,000. Splitting the models mesh per belt would put the near ones on the
+core belt's budget and roughly triple what the city can afford.
+
+**Walls are textured now (D38)**: every building is read as a tower, a block, a house,
+a shop or a plain shed, and wears a tile of that kind — one bay across, one storey up,
+repeating both ways. Storey bands are gone with it. Variety and balconies followed
+(D39): four cells to a tile, a per-building offset and tone, and real balconies on the
+blocks in the core belt.
+
+**The kit is off (D37).** The models were somebody else's houses stretched onto
+Monaco's plots, and 173 of them against 4,572 extrusions did not stop the city reading
+as boxes. The extrusions carry the detail instead: a shop front, storeys painted band
+by band, and a stair head or a vent stack on every flat roof. City belt 304,293 of
+350,000, core 176,333 of 450,000 — more detail on every building than the kit put on
+a few.
+
+The selection code and the packs stay: `bake.ts` passes an empty list of sources, and
+turning the models back on is that list. If they come back, what is still unsolved
+there is **the same silhouette twice in a street** — 39 distinct models over 266
+buildings, the most used one 41 times — and the pick not knowing what its neighbours
+took.
 
 ### 1.2 The light rig
 
@@ -157,6 +178,22 @@ city is standing in modelled assets rather than extruded boxes, the ground wants
 range — light green to dark — rather than the one stone tone it has now. It waits for
 the assets on purpose: the colour that reads under boxes is not the colour that reads
 under models, and doing it twice is doing it wrong.
+
+---
+
+## 4.5 Shadows, once the look is settled
+
+Tried and rolled back, 2026-09-03. A single sun casting over a fixed 2.5 km box at
+2048 gave a blocky, floating mess: at 1.2 m to a texel the shadow of a parapet is a
+rectangle of noise on the roof below, and the acne bias needed to stop the self-shadow
+pushed every shadow off its own building. Measured at 1.32× the frame or worse, which
+is a lot for something that then has to be argued about.
+
+What it would take to do properly, when the buildings themselves are finished: a
+cascaded map or one fitted to the camera's own view rather than to the whole city, a
+tighter bias tied to the belt's cell size, and the far belt out of the caster set (that
+part was right). Until then the scene reads on ambient occlusion, which is baked and
+free.
 
 ---
 

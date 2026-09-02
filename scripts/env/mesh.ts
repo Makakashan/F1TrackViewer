@@ -19,6 +19,23 @@ export interface Mesh {
    * from scratch; the two are multiplied together after it runs.
    */
   albedo?: number[];
+  /**
+   * The colour every triangle added from now on is painted with, into
+   * `albedo`, as a multiplier on the material's own.
+   *
+   * Set by the caller around a run of geometry — a band of wall, a box on a
+   * roof — so the colour follows the triangle rather than a count of them.
+   * Counting is what a parallel array cannot survive: a degenerate triangle is
+   * dropped, and from there the two arrays are one wall apart for good.
+   */
+  tone?: [number, number, number];
+  /** Texture coordinates, one pair per vertex, where a mesh has them. */
+  uv?: number[];
+  /**
+   * What to give a vertex nobody named a coordinate for — a roof, a chimney,
+   * anything on a textured mesh that is not a wall. Blank part of the tile.
+   */
+  uvPad?: [number, number];
 }
 
 export function createMesh(): Mesh {
@@ -64,6 +81,12 @@ export function addFlatTriangle(
   mesh.positions.push(ax, ay, az, bx, by, bz, cx, cy, cz);
   mesh.normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
   mesh.indices.push(base, base + 1, base + 2);
+  if (mesh.tone !== undefined) {
+    mesh.albedo ??= [];
+    // Catch up over anything added before the first tone was set.
+    while (mesh.albedo.length < base * 3) mesh.albedo.push(1);
+    for (let i = 0; i < 3; i++) mesh.albedo.push(mesh.tone[0], mesh.tone[1], mesh.tone[2]);
+  }
   return true;
 }
 
@@ -73,9 +96,33 @@ export function addFlatQuad(
   bx: number, by: number, bz: number,
   cx: number, cy: number, cz: number,
   dx: number, dy: number, dz: number,
+  /**
+   * Where each of the four corners lands on the material's texture, in the
+   * same order. Passed here rather than pushed by the caller afterwards
+   * because a degenerate triangle is dropped, and a parallel array that counts
+   * on it having been kept is a wall out of step from then on.
+   */
+  uv?: readonly [number, number][],
 ): void {
-  addFlatTriangle(mesh, ax, ay, az, bx, by, bz, cx, cy, cz);
-  addFlatTriangle(mesh, ax, ay, az, cx, cy, cz, dx, dy, dz);
+  if (addFlatTriangle(mesh, ax, ay, az, bx, by, bz, cx, cy, cz) && uv) {
+    pushUV(mesh, uv[0], uv[1], uv[2]);
+  }
+  if (addFlatTriangle(mesh, ax, ay, az, cx, cy, cz, dx, dy, dz) && uv) {
+    pushUV(mesh, uv[0], uv[2], uv[3]);
+  }
+}
+
+function pushUV(
+  mesh: Mesh,
+  a: readonly [number, number],
+  b: readonly [number, number],
+  c: readonly [number, number],
+): void {
+  mesh.uv ??= [];
+  // Catch up over anything added before the first textured triangle.
+  const pad = mesh.uvPad ?? [0, 0];
+  while (mesh.uv.length < (mesh.positions.length / 3 - 3) * 2) mesh.uv.push(pad[0], pad[1]);
+  mesh.uv.push(a[0], a[1], b[0], b[1], c[0], c[1]);
 }
 
 /**

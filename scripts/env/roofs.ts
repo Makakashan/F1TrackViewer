@@ -48,7 +48,7 @@ export interface RoofTags {
 /** A footprint this far from filling its own rectangle keeps a flat roof. */
 const RECTANGULARITY = 0.72;
 /** Pitched roofs above this are towers with plant rooms, not houses. */
-const MAX_PITCHED_HEIGHT_M = 16;
+const MAX_PITCHED_HEIGHT_M = 12;
 /** And above this footprint they are blocks, not houses. */
 const MAX_PITCHED_AREA_M2 = 900;
 const STOREY_M = 3.1;
@@ -170,9 +170,10 @@ export function planRoof(ring: XZ[], tags: RoofTags, totalHeightM: number): Roof
 
   const tagged = tags["roof:shape"] ? TAG_TO_KIND[tags["roof:shape"]] : undefined;
   let kind: RoofKind;
-  if (tagged) {
+  if (tagged && totalHeightM <= MAX_PITCHED_HEIGHT_M) {
     kind = tagged;
   } else if (
+    !tagged &&
     box &&
     fill >= RECTANGULARITY &&
     totalHeightM <= MAX_PITCHED_HEIGHT_M &&
@@ -233,10 +234,15 @@ export function buildRoof(mesh: Mesh, plan: RoofPlan, baseY: number): void {
   const halfLength = box.lengthM / 2;
   const centre = box.centre;
 
+  // Every face is wound the other way round from how this used to read them:
+  // taken in the order the corners go round, each one came out facing into the
+  // roof, so the whole cap was culled and you looked through it at the inside
+  // of the far slope. Measured: 6 of 6 faces inward on a gable, 4 of 4 on a
+  // pyramid, both windings of the ring.
   if (kind === "pyramidal") {
     const apex = { x: centre.x, y: topY, z: centre.z };
     for (const [p, q] of [[a, b], [b, c], [c, d], [d, a]] as const) {
-      addFlatTriangle(mesh, p.x, p.y, p.z, q.x, q.y, q.z, apex.x, apex.y, apex.z);
+      addFlatTriangle(mesh, q.x, q.y, q.z, p.x, p.y, p.z, apex.x, apex.y, apex.z);
     }
     return;
   }
@@ -245,9 +251,9 @@ export function buildRoof(mesh: Mesh, plan: RoofPlan, baseY: number): void {
     // One long edge lifted: the a–b side stays down, the c–d side rises.
     const cUp = { ...c, y: topY };
     const dUp = { ...d, y: topY };
-    addFlatQuad(mesh, a.x, a.y, a.z, b.x, b.y, b.z, cUp.x, cUp.y, cUp.z, dUp.x, dUp.y, dUp.z);
-    addFlatTriangle(mesh, b.x, b.y, b.z, c.x, c.y, c.z, cUp.x, cUp.y, cUp.z);
-    addFlatTriangle(mesh, d.x, d.y, d.z, a.x, a.y, a.z, dUp.x, dUp.y, dUp.z);
+    addFlatQuad(mesh, dUp.x, dUp.y, dUp.z, cUp.x, cUp.y, cUp.z, b.x, b.y, b.z, a.x, a.y, a.z);
+    addFlatTriangle(mesh, cUp.x, cUp.y, cUp.z, c.x, c.y, c.z, b.x, b.y, b.z);
+    addFlatTriangle(mesh, dUp.x, dUp.y, dUp.z, a.x, a.y, a.z, d.x, d.y, d.z);
     return;
   }
 
@@ -262,14 +268,12 @@ export function buildRoof(mesh: Mesh, plan: RoofPlan, baseY: number): void {
   const ridgeA = ridge(-halfLength + inset);
   const ridgeB = ridge(halfLength - inset);
 
-  addFlatQuad(mesh, a.x, a.y, a.z, b.x, b.y, b.z, ridgeB.x, ridgeB.y, ridgeB.z, ridgeA.x, ridgeA.y, ridgeA.z);
-  addFlatQuad(mesh, c.x, c.y, c.z, d.x, d.y, d.z, ridgeA.x, ridgeA.y, ridgeA.z, ridgeB.x, ridgeB.y, ridgeB.z);
+  addFlatQuad(mesh, ridgeA.x, ridgeA.y, ridgeA.z, ridgeB.x, ridgeB.y, ridgeB.z, b.x, b.y, b.z, a.x, a.y, a.z);
+  addFlatQuad(mesh, ridgeB.x, ridgeB.y, ridgeB.z, ridgeA.x, ridgeA.y, ridgeA.z, d.x, d.y, d.z, c.x, c.y, c.z);
 
-  if (kind === "hipped") {
-    addFlatTriangle(mesh, d.x, d.y, d.z, a.x, a.y, a.z, ridgeA.x, ridgeA.y, ridgeA.z);
-    addFlatTriangle(mesh, b.x, b.y, b.z, c.x, c.y, c.z, ridgeB.x, ridgeB.y, ridgeB.z);
-  } else {
-    addFlatTriangle(mesh, d.x, d.y, d.z, a.x, a.y, a.z, ridgeA.x, ridgeA.y, ridgeA.z);
-    addFlatTriangle(mesh, b.x, b.y, b.z, c.x, c.y, c.z, ridgeB.x, ridgeB.y, ridgeB.z);
-  }
+  // The ends: a hip closes with a slope, a gable with the wall that carries the
+  // ridge. Both are the same three points here — what differs is the inset that
+  // put the ridge short of the end above.
+  addFlatTriangle(mesh, ridgeA.x, ridgeA.y, ridgeA.z, a.x, a.y, a.z, d.x, d.y, d.z);
+  addFlatTriangle(mesh, ridgeB.x, ridgeB.y, ridgeB.z, c.x, c.y, c.z, b.x, b.y, b.z);
 }

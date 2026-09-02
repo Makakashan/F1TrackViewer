@@ -46,6 +46,7 @@ export function landuseColor(kind: string): string {
 export type BakedMeshKind =
   | "terrain"
   | "building"
+  | "roof"
   | "water"
   | "tunnel"
   | "portal"
@@ -79,6 +80,9 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     // A deck is ground you can walk on, not a wall, so it reads as terrain.
     pier: DIORAMA_COLORS.terrain,
     building: DIORAMA_COLORS.building,
+    // A roof is not a wall painted from above: it is felt, gravel or zinc, and
+    // it is what tells a block from a stack of paper when seen from the air.
+    roof: "#8A8F97",
     water: DIORAMA_COLORS.water,
     // Not black: a black bore reads as a hole painted on the hill, because
     // nothing in it changes with depth. Dark enough to stay a tunnel.
@@ -111,6 +115,7 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     terrain: "#8B8E95",
     pier: "#8B8E95",
     building: "#909399",
+    roof: "#565B62",
     water: "#0E3F55",
     tunnel: "#101317",
     portal: "#7D828A",

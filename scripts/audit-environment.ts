@@ -471,6 +471,70 @@ function builtSurface(meshes: BakedMesh[], names: string[]): Map<number, number>
   return top;
 }
 
+/**
+ * The built surface under a point, read from the cell it stands in and the ring
+ * around it. A model fitted to its plot has vertices on the plot's own edge,
+ * and on the edge the cell the vertex falls in can be the one past the terrace.
+ */
+function builtAt(built: Map<number, number>, x: number, z: number): number {
+  const col = Math.round(x / BUILT_CELL_M);
+  const row = Math.round(z / BUILT_CELL_M);
+  let top = -Infinity;
+  for (let dr = -1; dr <= 1; dr++) {
+    for (let dc = -1; dc <= 1; dc++) {
+      const at = built.get((row + dr) * 1e6 + (col + dc));
+      if (at !== undefined && at > top) top = at;
+    }
+  }
+  return top;
+}
+
+/** The meshes of each name, concatenated into one. */
+function mergedByName(meshes: BakedMesh[], names: string[]): BakedMesh[] {
+  const byName = new Map<string, BakedMesh[]>();
+  for (const mesh of meshes) {
+    if (!names.includes(mesh.name)) continue;
+    // Walls and roofs ship apart because a roof is its own material; they are
+    // one building, and a roof welded on its own is a slab standing on air.
+    const group = mesh.name === "roof" ? "building" : mesh.name;
+    const list = byName.get(group);
+    if (list) list.push(mesh);
+    else byName.set(group, [mesh]);
+  }
+  const out: BakedMesh[] = [];
+  for (const [name, list] of byName) {
+    if (list.length === 1) {
+      out.push(list[0]);
+      continue;
+    }
+    const total = list.reduce((sum, mesh) => sum + mesh.positions.length, 0);
+    const positions = new Float32Array(total);
+    const indices = new Uint32Array(list.reduce((sum, mesh) => sum + mesh.indices.length, 0));
+    const colors = list.every((mesh) => mesh.colors)
+      ? new Float32Array(list.reduce((sum, mesh) => sum + (mesh.colors?.length ?? 0), 0))
+      : null;
+    let at = 0;
+    let index = 0;
+    let colour = 0;
+    for (const mesh of list) {
+      positions.set(mesh.positions, at);
+      for (let i = 0; i < mesh.indices.length; i++) indices[index + i] = mesh.indices[i] + at / 3;
+      if (colors && mesh.colors) colors.set(mesh.colors, colour);
+      at += mesh.positions.length;
+      index += mesh.indices.length;
+      colour += mesh.colors?.length ?? 0;
+    }
+    out.push({
+      name,
+      positions,
+      indices,
+      colors,
+      triangles: list.reduce((sum, mesh) => sum + mesh.triangles, 0),
+    });
+  }
+  return out;
+}
+
 export function checkStanding(
   meshes: BakedMesh[],
   names: string[],
@@ -478,9 +542,12 @@ export function checkStanding(
   into: Standing,
 ): void {
   // What the models may stand on besides the ground.
-  const built = builtSurface(meshes, ["building"]);
-  for (const mesh of meshes) {
-    if (!names.includes(mesh.name)) continue;
+  const built = builtSurface(meshes, ["building", "roof"]);
+  // A building ships as several meshes — one per facade, one for its roofs —
+  // because a facade is a material. Structurally it is one thing, so the walls
+  // and the roof are welded back together before anything asks what stands on
+  // what; apart, a roof slab is a piece with no walls under it.
+  for (const mesh of mergedByName(meshes, names)) {
     const { labels, count } = buildingPieces(mesh);
     const lowest = new Float64Array(count).fill(Infinity);
     const highest = new Float64Array(count).fill(-Infinity);
@@ -495,10 +562,7 @@ export function checkStanding(
       if (Number.isNaN(terrain)) continue;
       // A model rests on the ground or on what was built on it, whichever is
       // higher under the vertex; a building's own walls only ever mean ground.
-      const under =
-        mesh.name === "building"
-          ? terrain
-          : Math.max(terrain, built.get(Math.round(z / BUILT_CELL_M) * 1e6 + Math.round(x / BUILT_CELL_M)) ?? -Infinity);
+      const under = mesh.name === "building" ? terrain : Math.max(terrain, builtAt(built, x, z));
       const label = labels[i];
       onGround[label] = 1;
       const gap = y - under;
@@ -644,7 +708,7 @@ async function audit(circuitId: string): Promise<Check[]> {
       // A kit house stands in for a building and owes the corridor the same
       // clearance: it is fitted to the footprint's own rectangle, and a
       // footprint pushed off the track has a rectangle that can still reach it.
-      if (mesh.name !== "building" && mesh.name !== "model") continue;
+      if (mesh.name !== "building" && mesh.name !== "roof" && mesh.name !== "model") continue;
       for (let i = 0; i < mesh.positions.length / 3; i++) {
         const x = mesh.positions[i * 3];
         const y = mesh.positions[i * 3 + 1];
@@ -676,7 +740,7 @@ async function audit(circuitId: string): Promise<Check[]> {
     // Buildings and kit models alike: does the thing that ships meet the ground
     // that ships. Measured per welded piece, so one answer per building rather
     // than one per face.
-    checkStanding(meshes, ["building", "model"], ground, standing);
+    checkStanding(meshes, ["building", "roof", "model"], ground, standing);
 
     const terrain = checkTerrain(meshes, belt, surface, plane, cutLine, rasterShore, blocks);
     if (terrain.worst > worstTerrain) worstTerrain = terrain.worst;

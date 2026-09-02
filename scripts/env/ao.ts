@@ -220,3 +220,17 @@ export function applyAlbedo(mesh: Mesh, tone: [number, number, number]): number 
 
 /** How much of a merged model's own colour survives. */
 const CHROMA_KEPT = 0.35;
+
+/**
+ * A mesh's own paint, multiplied into the occlusion verbatim.
+ *
+ * `applyAlbedo` above exists to tame somebody else's palette, and it takes two
+ * thirds of the chroma with it. What the bake paints itself — a wall's colour,
+ * a band's shade — is already this scene's own, so it goes on as written.
+ */
+export function applyPaint(mesh: Mesh): number {
+  if (!mesh.colors || !mesh.albedo) return 0;
+  const count = Math.min(mesh.colors.length, mesh.albedo.length) / 3;
+  for (let i = 0; i < count * 3; i++) mesh.colors[i] *= mesh.albedo[i];
+  return count;
+}
