@@ -1,19 +1,19 @@
 /**
- * Kit houses: where a modelled building beats an extruded footprint (P4.5).
+ * Kit buildings: where a modelled building beats an extruded footprint (P4.5).
  *
  * Everything else the bake draws is derived from a measurement, and a footprint
- * extruded to its measured height is the honest answer for a city block. It is
- * not the honest answer for a villa: a 9 m box on a 14 m plot is a box, and the
- * hillside above Monaco is four hundred of them. A kit model has a roof, eaves
- * and windows, and at the price of one it is worth more than the box it stands
- * in for.
+ * extruded to its measured height is an honest answer. It is a dull one: a 9 m
+ * box on a 14 m plot is a box, and Monaco is four thousand of them. A model has
+ * a roof, eaves, windows and balconies, and where one fits the plot it is worth
+ * more than the box it stands in for.
  *
- * The rule is that the model has to fit the survey rather than replace it. A
- * footprint qualifies only if it is small, simple, close to rectangular and low
- * — that is, if it is the shape a kit house actually is — and the model chosen
- * is the one whose own proportion matches the height that was measured. Where
- * nothing matches, the footprint is extruded as before. The survey decides;
- * the kit only supplies a silhouette.
+ * The rule is that the model fits the survey rather than replaces it. A
+ * footprint qualifies if it is simple and close to rectangular and long enough
+ * to be a building, and the model chosen is one whose own proportion matches
+ * the height that was measured — a house on a house plot, a tower on a tower's.
+ * Where nothing matches, or the road reaches into the plot, or the triangles
+ * have run out, the footprint is extruded as before. The survey decides; the
+ * kit only supplies a silhouette.
  */
 
 import { readdir } from "node:fs/promises";
@@ -26,15 +26,17 @@ import type { Mesh } from "./mesh";
 import type { ScenePlane } from "./plane";
 import { triangleCount } from "./mesh";
 
-/** Big enough for a villa, too small for a block of flats. */
-const MAX_FOOTPRINT_M2 = 400;
 /**
- * Too short for a house.
+ * Too short for a building.
  *
- * The ceiling above kept blocks of flats out; nothing kept sheds and garages
- * out, and 31 of the 75 plots that took a model were under this — the shortest
- * 3.6 m, which is a two-storey house shrunk to the size of a car. A model at
- * that size is not a house the survey found, it is a toy on a garage.
+ * The only bound left on the plot. There used to be a ceiling too — 400 m² and
+ * 12 m — because the library was one suburban pack and a block of flats wearing
+ * a bungalow is worse than a box; with the commercial pack loaded the library
+ * runs from a two-storey house to a skyscraper, so what decides the fit is the
+ * proportion match below rather than a size the kit no longer has trouble with.
+ * The floor stays: nothing kept sheds and garages out, and 31 of the 75 plots
+ * that took a model were under this — the shortest 3.6 m, which is a house
+ * shrunk to the size of a car.
  */
 const MIN_FOOTPRINT_LENGTH_M = 8;
 /** A kit house has four walls and maybe a wing. More corners is a building. */
@@ -42,27 +44,14 @@ const MIN_CORNERS = 4;
 const MAX_CORNERS = 6;
 /** Footprint area over the area of its own minimum rectangle. */
 const MIN_RECTANGULARITY = 0.8;
-/** Kenney's suburban kit is two storeys. Above this it would be a stretched toy. */
-const MAX_HEIGHT_M = 12;
+/** The corridor's own ground, matching the bake's. */
+const TRACK_CLEARANCE_M = 8;
+/** Above this a model is the detailed tier: eaves, awnings, balconies. */
+const LOW_DETAIL_MAX_TRIS = 500;
 /** A model is only used where its own proportion is near the measured one. */
 const RATIO_TOLERANCE = 0.25;
-/**
- * Neighbourhood radius, and the share of it that has to qualify too.
- *
- * The share is calibrated against the size floor above, because the two knobs
- * are one rule: before the floor, sheds and garages counted as qualifying
- * neighbours and voted each other in, so 0.6 of a neighbourhood was reachable.
- * With only house-sized plots qualifying it is not — measured on Monaco at a
- * 8 m floor, 0.6 leaves 7 houses of 791 eligible plots and 0.4 leaves 12, which
- * is the feature switched off. 0.3 leaves 48, 0.25 leaves 85 with no district
- * test left worth the name.
- */
-const NEIGHBOUR_M = 40;
-const NEIGHBOUR_SHARE = 0.3;
-/** A lone qualifying footprint with nobody around it stays a box. */
-const MIN_NEIGHBOURS = 2;
-/** What models may take of a belt's triangle budget. */
-const BUDGET_SHARE = 0.3;
+/** What models may take of the city belt's triangle budget. */
+const BUDGET_SHARE = 0.5;
 
 /** The models available, measured once. */
 export interface KitModel {
@@ -95,21 +84,31 @@ export async function loadKitPaths(
   }
 }
 
-export async function loadKitHouses(repoRoot: string, dir: string): Promise<KitModel[]> {
+/**
+ * Every modelled building in a pack.
+ *
+ * `building-` is a house or a block, `low-detail-building-` the same idea at a
+ * tenth of the triangles — a tower with windows and nothing else, which is what
+ * a block two streets back is worth.
+ */
+export async function loadKitHouses(repoRoot: string, dirs: string[]): Promise<KitModel[]> {
   const models: KitModel[] = [];
-  let names: string[];
-  try {
-    names = await readdir(join(repoRoot, dir));
-  } catch {
-    // The packs are downloaded, not committed: a checkout without them bakes
-    // the city the old way rather than failing.
-    return models;
-  }
-  for (const name of names.sort()) {
-    if (!name.endsWith(".glb") || !name.startsWith("building-")) continue;
-    const path = `${dir}/${name}`;
-    const mesh = await readModel(join(repoRoot, path));
-    models.push({ path, size: modelSize(mesh), triangles: triangleCount(mesh) });
+  for (const dir of dirs) {
+    let names: string[];
+    try {
+      names = await readdir(join(repoRoot, dir));
+    } catch {
+      // The packs are downloaded, not committed: a checkout without them bakes
+      // the city the old way rather than failing.
+      continue;
+    }
+    for (const name of names.sort()) {
+      if (!name.endsWith(".glb")) continue;
+      if (!name.startsWith("building-") && !name.startsWith("low-detail-building-")) continue;
+      const path = `${dir}/${name}`;
+      const mesh = await readModel(join(repoRoot, path));
+      models.push({ path, size: modelSize(mesh), triangles: triangleCount(mesh) });
+    }
   }
   return models;
 }
@@ -121,12 +120,24 @@ export async function loadKitHouses(repoRoot: string, dir: string): Promise<KitM
  * daylight and the darkest thing on a house.
  */
 const KIT_WALL = DIORAMA_COLORS.building;
-const KIT_DARK = "#6E747C";
+const KIT_DARK = "#8A9099";
 /**
  * The cool tilt the rest of the scene's greys carry, so a repainted house sits
  * in the same light as the block beside it.
  */
 const KIT_TINT: [number, number, number] = [0.97, 0.99, 1.04];
+/**
+ * Where a model's own average lands in the range, and how hard the rest of it
+ * leans that way.
+ *
+ * High, because the occlusion pass multiplies over this: a tower of balconies
+ * carries a lot of baked shadow, and at an average halfway up the range it came
+ * out a grey block among white ones. Measured against the flat-white control —
+ * the same bake with every model vertex on the wall tone — this is where the
+ * two stop being told apart at the wide shot.
+ */
+const KIT_MEAN_AT = 0.65;
+const KIT_LIFT = 0.8;
 
 function linearOf(hex: string): number {
   const value = Number.parseInt(hex.slice(1), 16);
@@ -153,13 +164,28 @@ export function repaintKitHouse(mesh: Mesh): void {
   if (!albedo) return;
   const dark = linearOf(KIT_DARK);
   const wall = linearOf(KIT_WALL);
-  for (let i = 0; i < albedo.length; i += 3) {
-    const luminance =
-      0.2126 * albedo[i] + 0.7152 * albedo[i + 1] + 0.0722 * albedo[i + 2];
-    const level = dark + (wall - dark) * Math.min(1, Math.max(0, luminance));
-    albedo[i] = level * KIT_TINT[0];
-    albedo[i + 1] = level * KIT_TINT[1];
-    albedo[i + 2] = level * KIT_TINT[2];
+
+  // Each model against its own average rather than against an absolute scale.
+  // The commercial pack has blocks that are dark all over — one is nine parts
+  // glazing — and on the absolute scale they came out as black towers in a
+  // white city, which is the patch this exists to remove, one tone down.
+  const luminance = new Float64Array(albedo.length / 3);
+  let mean = 0;
+  for (let i = 0; i < luminance.length; i++) {
+    const l = 0.2126 * albedo[i * 3] + 0.7152 * albedo[i * 3 + 1] + 0.0722 * albedo[i * 3 + 2];
+    luminance[i] = l;
+    mean += l / luminance.length;
+  }
+
+  for (let i = 0; i < luminance.length; i++) {
+    // The model's average lands halfway up the range whatever it was painted,
+    // and everything else keeps its distance from it: a window still reads as
+    // darker than the wall it is in, and no model is dark as a whole.
+    const place = mean > 1e-4 ? Math.min(1, (KIT_MEAN_AT * luminance[i]) / mean) : KIT_MEAN_AT;
+    const level = dark + (wall - dark) * place ** KIT_LIFT;
+    albedo[i * 3] = level * KIT_TINT[0];
+    albedo[i * 3 + 1] = level * KIT_TINT[1];
+    albedo[i * 3 + 2] = level * KIT_TINT[2];
   }
 }
 
@@ -299,8 +325,9 @@ export interface KitResult {
   stats: {
     models: number;
     eligible: number;
-    aloneInTheStreet: number;
     noModelFits: number;
+    /** Plots the racing surface reaches into, which keep their extrusion. */
+    onTheTrack: number;
     overBudget: number;
     triangles: number;
   };
@@ -313,8 +340,14 @@ export function chooseKitHouses(
   plane: ScenePlane,
   /** Which belt a distance falls in, or null where models are not drawn. */
   beltOf: (distanceM: number) => "core" | "city" | null,
-  /** Triangles each belt will lend to models.  */
-  budget: Record<"core" | "city", number>,
+  /**
+   * Triangles the models may spend between them.
+   *
+   * One number, not one per belt: every model ships in the city belt's mesh
+   * whichever belt's distance it stands at, so a per-belt allowance was two
+   * budgets spending one belt's triangles and the city belt went over.
+   */
+  budget: number,
 ): KitResult {
   const result: KitResult = {
     placements: [],
@@ -323,8 +356,8 @@ export function chooseKitHouses(
     stats: {
       models: 0,
       eligible: 0,
-      aloneInTheStreet: 0,
       noModelFits: 0,
+      onTheTrack: 0,
       overBudget: 0,
       triangles: 0,
     },
@@ -340,46 +373,30 @@ export function chooseKitHouses(
     const fits =
       footprint.ring.length >= MIN_CORNERS &&
       footprint.ring.length <= MAX_CORNERS &&
-      area <= MAX_FOOTPRINT_M2 &&
       rectangle.lengthM >= MIN_FOOTPRINT_LENGTH_M &&
-      footprint.heightM <= MAX_HEIGHT_M &&
       rectangle.areaM2 > 0 &&
       area / rectangle.areaM2 >= MIN_RECTANGULARITY;
     return { footprint, rectangle, fits };
   });
   result.stats.eligible = shapes.filter((shape) => shape.fits).length;
 
-  const inDistrict = shapes.map((shape, index) => {
-    if (!shape.fits) return false;
-    let neighbours = 0;
-    let qualifying = 0;
-    for (let other = 0; other < shapes.length; other++) {
-      if (other === index) continue;
-      const dx = shapes[other].footprint.centreX - shape.footprint.centreX;
-      const dz = shapes[other].footprint.centreZ - shape.footprint.centreZ;
-      if (dx * dx + dz * dz > NEIGHBOUR_M * NEIGHBOUR_M) continue;
-      neighbours++;
-      if (shapes[other].fits) qualifying++;
-    }
-    if (neighbours < MIN_NEIGHBOURS || qualifying / neighbours < NEIGHBOUR_SHARE) {
-      return false;
-    }
-    return true;
-  });
-  result.stats.aloneInTheStreet = result.stats.eligible - inDistrict.filter(Boolean).length;
+  // The district rule is gone with the ceilings that made it necessary. It
+  // existed because one toy house in a row of grey blocks reads as a mistake;
+  // now the blocks are modelled too, and what a plot gets is decided by the
+  // plot rather than by its neighbours.
 
   // Nearest the circuit first: the budget is a belt's, and what the camera
   // passes gets the model before what sits behind it.
   const ordered = shapes
     .map((shape, index) => ({ shape, index }))
-    .filter((entry) => inDistrict[entry.index])
+    .filter((entry) => entry.shape.fits)
     .map((entry) => ({
       ...entry,
       distanceM: corridor.distance(entry.shape.footprint.centreX, entry.shape.footprint.centreZ),
     }))
     .sort((a, b) => a.distanceM - b.distanceM);
 
-  const spent: Record<"core" | "city", number> = { core: 0, city: 0 };
+  let spent = 0;
   for (const { shape, distanceM } of ordered) {
     const { footprint, rectangle } = shape;
     // What proportion the measurement asks for, and the models that have it.
@@ -397,13 +414,36 @@ export function chooseKitHouses(
     // The far belt is silhouettes at 600 m; a modelled eave is invisible there
     // and would spend a third of its budget saying so.
     if (!belt) continue;
+    // In the city belt the cheap tier goes first where it exists: at a hundred
+    // metres and more a modelled cornice is a few pixels, and the same budget
+    // buys ten times as many buildings that are modelled at all.
+    const cheap = candidates.filter((model) => model.triangles <= LOW_DETAIL_MAX_TRIS);
+    const pool = belt === "city" && cheap.length ? cheap : candidates;
     const roll = hashed(footprint.centreX, footprint.centreZ);
-    const model = candidates[Math.min(candidates.length - 1, Math.floor(roll * candidates.length))];
-    if (spent[belt] + model.triangles > budget[belt]) {
+    const model = pool[Math.min(pool.length - 1, Math.floor(roll * pool.length))];
+    if (spent + model.triangles > budget) {
       result.stats.overBudget++;
       continue;
     }
-    spent[belt] += model.triangles;
+    // What the model will actually cover. It is fitted by length and scaled
+    // uniformly, so where its own proportion is wider than the plot's it
+    // stands out past the rectangle the plot measured.
+    const covered: Rectangle = {
+      ...rectangle,
+      widthM: Math.max(
+        rectangle.widthM,
+        (rectangle.lengthM * model.size.widthM) / model.size.lengthM,
+      ),
+    };
+    const ring = rectangleRing(covered);
+    // The corridor owns its ground. An extrusion is pushed off the road vertex
+    // by vertex; a model cannot be, so a plot the road reaches into keeps the
+    // extrusion that can bend around it.
+    if (ring.some((point) => corridor.distance(point.x, point.z) < TRACK_CLEARANCE_M)) {
+      result.stats.onTheTrack++;
+      continue;
+    }
+    spent += model.triangles;
 
     result.placements.push({
       model: model.path,
@@ -413,7 +453,7 @@ export function chooseKitHouses(
       fitLengthM: rectangle.lengthM,
       groundY: footprint.groundY,
     });
-    result.plinths.push({ ring: rectangleRing(rectangle), top: footprint.groundY });
+    result.plinths.push({ ring, top: footprint.groundY });
     result.taken.add(footprint.id);
     result.stats.models++;
     result.stats.triangles += model.triangles;

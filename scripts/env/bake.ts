@@ -2827,7 +2827,10 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
     breaklineWays: await fetchBreaklineWays(circuitId, bbox, refresh),
     overrides: await loadOverrides(circuitId),
     // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
-    kitHouses: await loadKitHouses(REPO_ROOT, "assets/models/kenney-city-suburban"),
+    kitHouses: await loadKitHouses(REPO_ROOT, [
+      "assets/models/kenney-city-suburban",
+      "assets/models/kenney-city-commercial",
+    ]),
     kitTrees: await loadKitPaths(REPO_ROOT, "assets/models/kenney-city-suburban", ["tree-"]),
     kitBoats: await loadKitPaths(REPO_ROOT, "assets/models/kenney-watercraft", [
       "boat-speed",
@@ -3014,10 +3017,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
       const belt = beltAtDistance(distanceM);
       return belt === "far" ? null : belt;
     },
-    {
-      core: Math.round(BELT_BUDGET.core.triangles * KIT_BUDGET_SHARE),
-      city: Math.round(BELT_BUDGET.city.triangles * KIT_BUDGET_SHARE),
-    },
+    Math.round(BELT_BUDGET.city.triangles * KIT_BUDGET_SHARE),
   );
   const kitHousePaths = new Set(kitHouses.map((model) => model.path));
   bakeBuildings(prepared, roofTags, buildings, kit.taken);
@@ -3300,8 +3300,9 @@ async function main() {
   );
   console.log(
     `  kit ${report.kit.models} houses modelled (${report.kit.triangles.toLocaleString()} tris) — `
-      + `${report.kit.eligible} footprints fit the shape, ${report.kit.aloneInTheStreet} stood alone, `
-      + `${report.kit.noModelFits} had no model at their proportion, ${report.kit.overBudget} over budget, `
+      + `${report.kit.eligible} footprints fit the shape, `
+      + `${report.kit.noModelFits} had no model at their proportion, `
+      + `${report.kit.onTheTrack} on the track, ${report.kit.overBudget} over budget, `
       + `${report.kit.plinths} on a plinth`,
   );
   console.log(
