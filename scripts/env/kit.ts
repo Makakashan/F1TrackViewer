@@ -181,6 +181,29 @@ function minimumRectangle(ring: { x: number; z: number }[]): Rectangle {
   );
 }
 
+/**
+ * The four corners of a fitted rectangle.
+ *
+ * The model covers this, not the surveyed ring — the rectangle is the smallest
+ * one that holds the ring, so it reaches past it — and what a house stands on
+ * has to be at least as wide as the house.
+ */
+function rectangleRing(rectangle: Rectangle): { x: number; z: number }[] {
+  const ux = Math.sin(rectangle.headingRad);
+  const uz = Math.cos(rectangle.headingRad);
+  const halfL = rectangle.lengthM / 2;
+  const halfW = rectangle.widthM / 2;
+  return [
+    [+1, +1],
+    [+1, -1],
+    [-1, -1],
+    [-1, +1],
+  ].map(([alongLength, alongWidth]) => ({
+    x: rectangle.centreX + ux * halfL * alongLength - uz * halfW * alongWidth,
+    z: rectangle.centreZ + uz * halfL * alongLength + ux * halfW * alongWidth,
+  }));
+}
+
 /** Repeatable: the same plot gets the same house every bake. */
 function hashed(x: number, z: number): number {
   const value = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
@@ -189,10 +212,20 @@ function hashed(x: number, z: number): number {
 
 // ─── selection ─────────────────────────────────────────────────────────────
 
+/** The terrace a modelled house stands on, in scene metres. */
+export interface KitPlinth {
+  /** The fitted rectangle, which is what the model covers. */
+  ring: { x: number; z: number }[];
+  /** The floor the model stands on: the middle of the ground under the plot. */
+  top: number;
+}
+
 export interface KitResult {
   placements: PropPlacement[];
   /** Footprint ids the extrusion must now skip. */
   taken: Set<string>;
+  /** One per placement, walled down to the ground by the bake. */
+  plinths: KitPlinth[];
   stats: {
     models: number;
     eligible: number;
@@ -216,6 +249,7 @@ export function chooseKitHouses(
   const result: KitResult = {
     placements: [],
     taken: new Set(),
+    plinths: [],
     stats: {
       models: 0,
       eligible: 0,
@@ -308,6 +342,7 @@ export function chooseKitHouses(
       fitLengthM: rectangle.lengthM,
       groundY: footprint.groundY,
     });
+    result.plinths.push({ ring: rectangleRing(rectangle), top: footprint.groundY });
     result.taken.add(footprint.id);
     result.stats.models++;
     result.stats.triangles += model.triangles;
