@@ -57,6 +57,8 @@ import {
   BAY_M,
   FACADES,
   FACADE_STOREY_M,
+  TILE_BAYS,
+  TILE_STOREYS,
   facadeOf,
   facadeTexture,
   type Facade,
@@ -1375,6 +1377,7 @@ function prepareBuildings(
 function bakeBuildings(
   prepared: PreparedBuilding[],
   tags: Map<string, RoofTags>,
+  corridor: Corridor,
   result: BuildingResult,
   /** Footprints a kit model has already taken; their roofs come with it. */
   taken: Set<string>,
@@ -1391,17 +1394,32 @@ function bakeBuildings(
     const plan = planRoof(ring, tags.get(building.id.split("#")[0]) ?? {}, heightM);
     result.roofs[plan.kind]++;
 
+    // Two rolls per building, so a street is not one paint and one window.
+    // A facade that is a few per cent lighter than its neighbour is what a
+    // row of buildings looks like; identical is what a texture looks like.
+    const roll = hashAt(building.centreX, building.centreZ);
+    const variant = roll;
+    const tone = BAND_TONE.body * (0.94 + 0.12 * hashAt(building.centreZ, building.centreX));
+
     // The far belt is silhouettes: no parapet, no bands.
     const near = belt !== "far";
+    // Balconies are built where the camera goes and painted everywhere else.
+    const built =
+      belt === "core" && facade === "block"
+        ? {
+            centre: { x: building.centreX, z: building.centreZ },
+            mayReach: (x: number, z: number) => corridor.distance(x, z) >= TRACK_CLEARANCE_M,
+          }
+        : undefined;
     if (plan.kind === "flat") {
       // The rim is what makes a flat roof read as a roof rather than a lid, so
       // the walls run past the roof plane and turn back down inside it.
       const roofY = top - plan.heightM;
-      extrude(target, wallRing, footAt, roofY, near ? PARAPET_M : 0, near);
+      extrude(target, wallRing, footAt, roofY, near ? PARAPET_M : 0, near, variant, tone, built);
       if (near) roofClutter(result.plain[belt], ring, roofY);
     } else {
       const eaveY = top - plan.heightM;
-      extrude(target, wallRing, footAt, eaveY, 0, near);
+      extrude(target, wallRing, footAt, eaveY, 0, near, variant, tone, built);
       buildRoof(result.plain[belt], plan, eaveY);
     }
     result.built++;
@@ -1745,6 +1763,24 @@ const CORNICE_M = 1.4;
 /** The most storeys a wall is split into; the height above is what one is. */
 const MAX_STOREYS = 12;
 /**
+ * A balcony, in the flesh.
+ *
+ * The tile paints one as a line under the windows, which is what it is from
+ * three streets away. Up close it is a slab you can see under, so the blocks
+ * the camera passes get theirs built: a plate, its edge, and the underside.
+ * Only there — every block in the city would be sixty thousand triangles of
+ * something nobody is close enough to see.
+ */
+const BALCONY_DEPTH_M = 0.9;
+const BALCONY_RAIL_M = 1;
+const BALCONY_SLAB_M = 0.18;
+/** How far the slab is let into the wall, the way a real one is anchored. */
+const BALCONY_ANCHOR_M = 0.3;
+/** Not on every bay of every floor: a wall with one of everything is a grid. */
+const BALCONY_SHARE = 0.55;
+/** Wide enough for a door and a chair, which is what sets the spacing. */
+const BALCONY_WIDTH_M = 2.6;
+/**
  * What each band multiplies the wall's own colour by.
  *
  * Wide steps on purpose: the occlusion pass has already put most of this city's
@@ -1754,6 +1790,19 @@ const MAX_STOREYS = 12;
  * 0.45, so a band cannot take more than a third of the wall's own colour.
  */
 const BAND_TONE = { ground: 0.65, body: 1, cornice: 0.8, floor: 0.86 };
+/**
+ * The darkest a wall's own paint may be.
+ *
+ * I11 floors vertex colour at 0.278 and the occlusion floor is 0.45, so the
+ * two multiplied leave this much room. The per-building jitter is what pushed
+ * a shop front under it — a tenth off 0.65 is not much until it lands on a
+ * wall the AO already had at the floor.
+ */
+const TONE_FLOOR = 0.62;
+
+function paint(tone: number): number {
+  return Math.max(TONE_FLOOR, Math.min(1, tone));
+}
 /** Under this a building is one storey and takes one tone. */
 const BANDED_MIN_M = 7;
 
@@ -1765,29 +1814,37 @@ function wallBands(
   baseB: number,
   top: number,
   banded: boolean,
+  /** Where this building starts reading the tile, and how it is painted. */
+  variant: number,
+  tone: number,
 ): void {
   const foot = Math.min(baseA, baseB);
   const shopTop = foot + GROUND_FLOOR_M;
   if (!banded) {
     // The far belt is silhouettes: no tile, and no coordinates to carry one.
-    target.plain.tone = BAND_TONE.body;
+    target.plain.tone = paint(tone);
     addFlatQuad(target.plain, a.x, baseA, a.z, b.x, baseB, b.z, b.x, top, b.z, a.x, top, a.z);
     return;
   }
 
   // How many bays fit along the wall and how many storeys up it — whole
-  // numbers, so a window is never cut in half at a corner or at the roof.
+  // numbers, so a window is never cut in half at a corner or at the roof. The
+  // tile holds two of each, so the coordinates are in tiles.
   const bays = Math.max(1, Math.round(Math.hypot(b.x - a.x, b.z - a.z) / BAY_M));
   const oneStorey = top - foot < BANDED_MIN_M;
   const shopY = oneStorey ? top : Math.min(shopTop, top);
+  // Where this building starts reading the tile. Without it every wall in the
+  // street begins on the same cell, and four cells read as one again.
+  const from = variant;
+  const to = from + bays / TILE_BAYS;
 
   // The ground floor follows the ground it stands on, and it is its own tile:
   // a shop front is not a storey repeated.
-  target.shop.tone = BAND_TONE.ground;
+  target.shop.tone = paint(tone * BAND_TONE.ground);
   addFlatQuad(
     target.shop,
     a.x, baseA, a.z, b.x, baseB, b.z, b.x, shopY, b.z, a.x, shopY, a.z,
-    [[0, 0], [bays, 0], [bays, 1], [0, 1]],
+    [[from, 0], [to, 0], [to, 1], [from, 1]],
   );
   if (oneStorey) return;
 
@@ -1797,11 +1854,12 @@ function wallBands(
   // to be. One quad rather than one per storey is what keeps this affordable —
   // per storey, the city belt paid for six vertices a floor a wall.
   const storeys = Math.max(1, Math.round((top - shopY) / FACADE_STOREY_M));
-  target.storey.tone = BAND_TONE.body;
+  const rows = storeys / TILE_STOREYS;
+  target.storey.tone = paint(tone);
   addFlatQuad(
     target.storey,
     a.x, shopY, a.z, b.x, shopY, b.z, b.x, top, b.z, a.x, top, a.z,
-    [[0, 0], [bays, 0], [bays, storeys], [0, storeys]],
+    [[from, 0], [to, 0], [to, rows], [from, rows]],
   );
 }
 
@@ -1890,6 +1948,81 @@ interface WallTargets {
   plain: Mesh;
 }
 
+/**
+ * Balconies along one wall, storey by storey.
+ *
+ * The outward direction comes from the ring's own winding: the contour is made
+ * counter-clockwise in (x, −z), so the outward normal of an edge is that turn
+ * taken back into scene axes. A balcony that grew inwards would be a shelf in
+ * somebody's living room.
+ */
+function balconies(
+  mesh: Mesh,
+  a: { x: number; z: number },
+  b: { x: number; z: number },
+  from: number,
+  top: number,
+  tone: number,
+  /** The middle of the building, for telling outwards from inwards. */
+  middle: { x: number; z: number },
+  /** Whether a balcony may reach this point: the road owns its own ground. */
+  mayReach: (x: number, z: number) => boolean,
+): void {
+  const runX = b.x - a.x;
+  const runZ = b.z - a.z;
+  const length = Math.hypot(runX, runZ);
+  if (length < BALCONY_WIDTH_M) return;
+  const outX = -runZ / length;
+  const outZ = runX / length;
+  const alongX = runX / length;
+  const alongZ = runZ / length;
+
+  const storeys = Math.min(MAX_STOREYS, Math.max(1, Math.round((top - from) / FACADE_STOREY_M)));
+  const bays = Math.max(1, Math.floor(length / BALCONY_WIDTH_M));
+  const width = length / bays;
+  mesh.tone = paint(tone * BAND_TONE.cornice);
+  for (let storey = 0; storey < storeys; storey++) {
+    const floor = from + ((top - from) * (storey + 1)) / storeys - BALCONY_SLAB_M;
+    if (floor + BALCONY_RAIL_M > top) continue;
+    for (let bay = 0; bay < bays; bay++) {
+      const centre = (bay + 0.5) * width;
+      if (hashAt(a.x + alongX * centre + storey * 7.3, a.z + alongZ * centre) > BALCONY_SHARE) {
+        continue;
+      }
+      const half = (width * 0.8) / 2;
+      // Anchored a little inside the wall rather than butted against it: a
+      // slab that only touches is its own piece to anything that welds by
+      // position, and `env:audit` read seven of them as floating.
+      const x0 = a.x + alongX * (centre - half) - outX * BALCONY_ANCHOR_M;
+      const z0 = a.z + alongZ * (centre - half) - outZ * BALCONY_ANCHOR_M;
+      const x1 = a.x + alongX * (centre + half) - outX * BALCONY_ANCHOR_M;
+      const z1 = a.z + alongZ * (centre + half) - outZ * BALCONY_ANCHOR_M;
+      const ox = outX * BALCONY_DEPTH_M;
+      const oz = outZ * BALCONY_DEPTH_M;
+      // A re-entrant corner can have its winding read the other way, and a
+      // balcony hanging into the flat it belongs to is worse than none. So is
+      // one over the racing surface.
+      const wallAway = Math.hypot(x0 - middle.x, z0 - middle.z);
+      const outAway = Math.hypot(x0 + ox - middle.x, z0 + oz - middle.z);
+      if (outAway < wallAway) continue;
+      if (!mayReach(x0 + ox, z0 + oz) || !mayReach(x1 + ox, z1 + oz)) continue;
+      const railTop = floor + BALCONY_RAIL_M;
+      // The plate, its front, and what you see of it from below.
+      addFlatQuad(mesh, x0, floor, z0, x1, floor, z1, x1 + ox, floor, z1 + oz, x0 + ox, floor, z0 + oz);
+      addFlatQuad(
+        mesh,
+        x0 + ox, floor, z0 + oz, x1 + ox, floor, z1 + oz,
+        x1 + ox, railTop, z1 + oz, x0 + ox, railTop, z0 + oz,
+      );
+      addFlatQuad(
+        mesh,
+        x0 + ox, floor - BALCONY_SLAB_M, z0 + oz, x1 + ox, floor - BALCONY_SLAB_M, z1 + oz,
+        x1, floor - BALCONY_SLAB_M, z1, x0, floor - BALCONY_SLAB_M, z0,
+      );
+    }
+  }
+}
+
 function extrude(
   target: WallTargets,
   ring: { x: number; z: number }[],
@@ -1902,8 +2035,14 @@ function extrude(
   baseAt: number[],
   top: number,
   parapetM = 0,
-  /** Whether the wall is painted in bands. The far belt is silhouettes. */
+  /** Whether the wall wears a facade tile. The far belt is silhouettes. */
   banded = false,
+  /** Which cell of the tile this building starts on, 0–1. */
+  variant = 0,
+  /** The building's own paint, a few per cent either side of the palette's. */
+  tone = BAND_TONE.body,
+  /** Where balconies are built rather than painted, and what they may not hit. */
+  built?: { centre: { x: number; z: number }; mayReach: (x: number, z: number) => boolean },
 ): void {
   const contour = ring.map((point) => new Vector2(point.x, -point.z));
   const clockwise = ShapeUtils.area(contour) < 0;
@@ -1917,10 +2056,22 @@ function extrude(
     const j = (i + 1) % ordered.length;
     const a = ordered[i];
     const b = ordered[j];
-    wallBands(target, a, b, orderedBase[i], orderedBase[j], wallTop, banded);
+    wallBands(target, a, b, orderedBase[i], orderedBase[j], wallTop, banded, variant, tone);
+    if (built) {
+      balconies(
+        target.plain,
+        a,
+        b,
+        Math.min(orderedBase[i], orderedBase[j]) + GROUND_FLOOR_M,
+        top,
+        tone,
+        built.centre,
+        built.mayReach,
+      );
+    }
     if (parapetM > 0) {
       // Inside face of the rim, seen from anywhere above the roof.
-      target.plain.tone = BAND_TONE.cornice;
+      target.plain.tone = paint(tone * BAND_TONE.cornice);
       addFlatQuad(target.plain, b.x, top, b.z, a.x, top, a.z, a.x, wallTop, a.z, b.x, wallTop, b.z);
     }
   }
@@ -1928,7 +2079,7 @@ function extrude(
   // `triangulateShape` works in the contour's own plane, which is (x, -z); read
   // back in scene axes that winding already faces the sky, so it is kept as it
   // comes. Reversing it here is what made every flat roof invisible from above.
-  target.plain.tone = BAND_TONE.body;
+  target.plain.tone = paint(tone);
   for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
     addFlatTriangle(
       target.plain,
@@ -3284,7 +3435,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     Math.round(BELT_BUDGET.city.triangles * KIT_BUDGET_SHARE),
   );
   const kitHousePaths = new Set(kitHouses.map((model) => model.path));
-  bakeBuildings(prepared, roofTags, buildings, kit.taken);
+  bakeBuildings(prepared, roofTags, corridor, buildings, kit.taken);
   // A terrace is masonry, not a facade: it takes the plain wall.
   const kitPlinths = bakeKitPlinths(
     kit,

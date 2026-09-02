@@ -42,9 +42,9 @@ core belt's budget and roughly triple what the city can afford.
 
 **Walls are textured now (D38)**: every building is read as a tower, a block, a house,
 a shop or a plain shed, and wears a tile of that kind — one bay across, one storey up,
-repeating both ways. Storey bands are gone with it. What is left to do there is
-balconies as geometry on the blocks nearest the track, and a second variant per kind so
-a street does not repeat itself.
+repeating both ways. Storey bands are gone with it. Variety and balconies followed
+(D39): four cells to a tile, a per-building offset and tone, and real balconies on the
+blocks in the core belt.
 
 **The kit is off (D37).** The models were somebody else's houses stretched onto
 Monaco's plots, and 173 of them against 4,572 extrusions did not stop the city reading

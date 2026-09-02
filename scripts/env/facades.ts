@@ -19,9 +19,18 @@ export type Facade = "tower" | "block" | "house" | "retail" | "plain";
 
 export const FACADES: Facade[] = ["tower", "block", "house", "retail", "plain"];
 
-/** One bay across and one storey up: the physical size of a tile. */
+/**
+ * One bay across and one storey up, and a tile holds two of each.
+ *
+ * Four cells rather than one, each with its openings a little different: a tile
+ * with one window in it repeats as a grid of identical windows, which is what a
+ * city of one building looks like. Repeated, four cells read as a facade that
+ * was built rather than printed.
+ */
 export const BAY_M = 2.7;
 export const FACADE_STOREY_M = 3.1;
+export const TILE_BAYS = 2;
+export const TILE_STOREYS = 2;
 
 /**
  * Which of a facade's two tiles a wall is asking for.
@@ -32,8 +41,9 @@ export const FACADE_STOREY_M = 3.1;
  */
 export type FacadeZone = "storey" | "shop";
 
-const WIDTH = 96;
-const HEIGHT = 96;
+const CELL = 96;
+const WIDTH = CELL * TILE_BAYS;
+const HEIGHT = CELL * TILE_STOREYS;
 
 /** Wall, frame, glass. Nothing goes near black: the AO pass multiplies over it. */
 const WALL = 1;
@@ -79,32 +89,58 @@ function fill(png: PNG, x0: number, y0: number, x1: number, y1: number, level: n
   }
 }
 
+/** Repeatable per cell, so the same tile comes out of every bake. */
+function jitter(cell: number, salt: number): number {
+  const value = Math.sin((cell + 1) * 12.9898 + salt * 78.233) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function storeyCell(png: PNG, plan: Plan, x0: number, y0: number, cell: number): void {
+  if (plan.balcony) {
+    // A slab across the bottom of the floor, which is what a balcony is from
+    // the street: a line under the windows rather than a box. Not on every
+    // cell — a block has a balcony where a room opens onto one.
+    if (jitter(cell, 5) > 0.3) fill(png, x0, y0 + CELL * 0.84, x0 + CELL, y0 + CELL, SLAB);
+  }
+  const widthScale = 0.85 + 0.3 * jitter(cell, 1);
+  const heightScale = 0.9 + 0.2 * jitter(cell, 2);
+  const shift = (jitter(cell, 3) - 0.5) * CELL * 0.08;
+  for (let light = 0; light < plan.lights; light++) {
+    const centre = x0 + ((light + 0.5) / plan.lights) * CELL + shift;
+    const halfWidth = (plan.windowWidth / plan.lights) * CELL * 0.5 * widthScale;
+    const height = CELL * plan.windowHeight * heightScale;
+    const top = y0 + CELL * 0.22;
+    fill(png, centre - halfWidth - 2, top - 2, centre + halfWidth + 2, top + height + 2, FRAME);
+    fill(png, centre - halfWidth, top, centre + halfWidth, top + height, GLASS);
+  }
+}
+
+function shopCell(png: PNG, plan: Plan, x0: number, y0: number, cell: number): void {
+  // Along a street the shops are not all the same width, and one unit in three
+  // is a doorway or a blank wall rather than a window.
+  const shut = jitter(cell, 7) > 0.72;
+  const glassHalf = ((shut ? 0.18 : plan.shopGlass) * CELL * (0.8 + 0.4 * jitter(cell, 4))) / 2;
+  const centre = x0 + CELL / 2;
+  fill(png, centre - glassHalf - 2, y0 + CELL * 0.16, centre + glassHalf + 2, y0 + CELL * 0.94, FRAME);
+  fill(png, centre - glassHalf, y0 + CELL * 0.22, centre + glassHalf, y0 + CELL * 0.88, GLASS);
+}
+
 /** One tile of one kind of building, as PNG bytes. */
 export function facadeTexture(facade: Facade, zone: FacadeZone): Buffer {
   const plan = PLAN[facade];
   const png = new PNG({ width: WIDTH, height: HEIGHT });
   fill(png, 0, 0, WIDTH, HEIGHT, WALL);
 
-  if (zone === "storey") {
-    if (plan.balcony) {
-      // A slab across the bottom of the floor, which is what a balcony is from
-      // the street: a line under the windows rather than a box.
-      fill(png, 0, HEIGHT * 0.84, WIDTH, HEIGHT, SLAB);
+  let cell = 0;
+  for (let row = 0; row < TILE_STOREYS; row++) {
+    for (let col = 0; col < TILE_BAYS; col++) {
+      const x0 = col * CELL;
+      const y0 = row * CELL;
+      if (zone === "storey") storeyCell(png, plan, x0, y0, cell);
+      else shopCell(png, plan, x0, y0, cell);
+      cell++;
     }
-    for (let light = 0; light < plan.lights; light++) {
-      const centre = ((light + 0.5) / plan.lights) * WIDTH;
-      const halfWidth = (plan.windowWidth / plan.lights) * WIDTH * 0.5;
-      const height = HEIGHT * plan.windowHeight;
-      const top = HEIGHT * 0.22;
-      fill(png, centre - halfWidth - 2, top - 2, centre + halfWidth + 2, top + height + 2, FRAME);
-      fill(png, centre - halfWidth, top, centre + halfWidth, top + height, GLASS);
-    }
-    return PNG.sync.write(png);
   }
-
-  const glassHalf = (plan.shopGlass * WIDTH) / 2;
-  fill(png, WIDTH / 2 - glassHalf - 2, HEIGHT * 0.16, WIDTH / 2 + glassHalf + 2, HEIGHT * 0.94, FRAME);
-  fill(png, WIDTH / 2 - glassHalf, HEIGHT * 0.22, WIDTH / 2 + glassHalf, HEIGHT * 0.88, GLASS);
   return PNG.sync.write(png);
 }
 
