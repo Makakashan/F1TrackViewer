@@ -181,6 +181,22 @@ under models, and doing it twice is doing it wrong.
 
 ---
 
+## 4.5 Shadows, once the look is settled
+
+Tried and rolled back, 2026-09-03. A single sun casting over a fixed 2.5 km box at
+2048 gave a blocky, floating mess: at 1.2 m to a texel the shadow of a parapet is a
+rectangle of noise on the roof below, and the acne bias needed to stop the self-shadow
+pushed every shadow off its own building. Measured at 1.32× the frame or worse, which
+is a lot for something that then has to be argued about.
+
+What it would take to do properly, when the buildings themselves are finished: a
+cascaded map or one fitted to the camera's own view rather than to the whole city, a
+tighter bias tied to the belt's cell size, and the far belt out of the caster set (that
+part was right). Until then the scene reads on ambient occlusion, which is baked and
+free.
+
+---
+
 ## 5. Low priority — the other circuits
 
 **P4.4 — migrate the remaining circuits**, then delete `environment-layer.tsx` and
