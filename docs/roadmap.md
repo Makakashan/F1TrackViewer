@@ -20,23 +20,17 @@ whose fix is invisible waits behind something that is not.
 
 ### 1.1 Kit houses, looked at
 
-Looked at, 2026-09-02. The direction holds — the silhouettes fit the plots — and the
-pass found three things. One is fixed (D32): the houses stood on their plot's lowest
-corner and 12 of 75 were buried past half their height, so they now stand on the
-middle of the ground with a walled terrace under them. Two are open and are the
-user's call:
+Looked at and acted on, 2026-09-02. The direction holds — the silhouettes fit the
+plots — and all three findings are closed: the houses stood on their plot's lowest
+corner and 12 of 75 were buried past half their height (D32, they now stand on the
+middle of the ground with a terrace under them); the kit painted itself green and
+charcoal in a white city, and a plot could be 3.6 m long (D33, the paint is remapped
+into the palette and the shape test has an 8 m floor).
 
-- **The kit paints itself.** Green roofs and charcoal walls in a city that is white.
-  From above they read as green and black patches rather than as houses. Bringing
-  them into the palette — walls the building colour, roofs one dark tone — is a style
-  decision, not a bug.
-- **Half of them are sheds.** The shape test has a ceiling (400 m²) and no floor:
-  31 of 75 plots are under 8 m long and the shortest is 3.6 m, which is a two-storey
-  house squashed to the size of a garage. A floor near 8 m would leave about 44.
-
-Coverage is thin on purpose and could be widened: of 1,975 footprints that fit the
-shape, 75 got a model. The budget is not the limit — 92,406 of 175,000 triangles —
-the neighbour rule (1,086 stood alone) and the proportion tolerance (369) are.
+48 houses now, 58,657 triangles, shortest plot 8.3 m. What is left to decide is
+coverage: 791 footprints fit the shape and the budget is not the limit (58,657 of
+175,000 triangles) — the neighbour rule and the proportion tolerance are, and both
+are calibrated rather than derived.
 
 ### 1.2 The light rig
 
