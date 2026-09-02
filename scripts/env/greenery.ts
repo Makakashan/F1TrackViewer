@@ -25,6 +25,17 @@ import type { ScenePlane } from "./plane";
  * the centroid — these are simple convex-ish rings and a fan holds them.
  */
 const SURFACE_LIFT_M = 0.35;
+/**
+ * Each kind on its own floor, most specific highest.
+ *
+ * A pitch is inside a park and a pool is inside a pitch, and once every lid sat
+ * on the ground's upper envelope they landed on the same height: measured, 23
+ * of 48 pitch points over a park were within 5 cm of it, and the park stood as
+ * much as 0.29 m above the pitch it contains — so the football field came out in
+ * shreds. Stacking them settles the argument once, in the geometry, rather than
+ * per pixel in the depth buffer.
+ */
+const LID_FLOOR_M: Record<string, number> = { park: 0, pitch: 0.25, pool: 0.4 };
 
 export interface GreeneryResult {
   /** Water surfaces at ground level: swimming pools and fountains. */
@@ -269,6 +280,7 @@ export function buildGreenery(
     // Every vertex takes the ground under it. A centroid fan on one height was
     // enough for a pool, which is flat and small; a park is neither, and on
     // Monaco's slopes a flat lid would bury its uphill half.
+    const lift = SURFACE_LIFT_M + (LID_FLOOR_M[way.kind] ?? 0);
     const heights = ring.map((point) => groundTop(groundAt, point.x, point.z));
     if (heights.some((height) => Number.isNaN(height))) continue;
 
@@ -287,11 +299,11 @@ export function buildGreenery(
       const step = way.kind === "pool" ? Infinity : LID_STEP_M;
       splitToGround(
         target,
-        { x: ring[a].x, z: ring[a].z, y: heights[a] + SURFACE_LIFT_M },
-        { x: ring[b].x, z: ring[b].z, y: heights[b] + SURFACE_LIFT_M },
-        { x: ring[c].x, z: ring[c].z, y: heights[c] + SURFACE_LIFT_M },
+        { x: ring[a].x, z: ring[a].z, y: heights[a] + lift },
+        { x: ring[b].x, z: ring[b].z, y: heights[b] + lift },
+        { x: ring[c].x, z: ring[c].z, y: heights[c] + lift },
         groundAt,
-        SURFACE_LIFT_M,
+        lift,
         step,
         0,
       );
