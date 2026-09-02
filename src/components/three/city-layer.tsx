@@ -52,6 +52,34 @@ function paintForTheme(group: THREE.Group, theme: "light" | "dark") {
   });
 }
 
+/** Meshes that lie *on* the ground rather than being it, and z-fight with it. */
+const DECAL_MESHES = new Set(["park", "pool", "pitch"]);
+
+/**
+ * Lifts the flat surfaces off the ground in the depth buffer.
+ *
+ * A park, a pool and a pitch are baked 0.12 m above the terrain, which is the
+ * depth buffer's whole precision at two kilometres — camera near is 2 m and far
+ * 20 km, so at that range a step of about 0.12 m is one unit of depth and the
+ * two surfaces flickered against each other across the city. Lifting the
+ * geometry instead would make a park float when the camera is on the street;
+ * `polygonOffset` biases the comparison rather than the model, which is what it
+ * is for.
+ */
+function liftDecals(group: THREE.Group) {
+  group.traverse((node) => {
+    if (!(node instanceof THREE.Mesh)) return;
+    if (!DECAL_MESHES.has(node.name)) return;
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      material.polygonOffset = true;
+      material.polygonOffsetFactor = -2;
+      material.polygonOffsetUnits = -4;
+      material.needsUpdate = true;
+    }
+  });
+}
+
 function disposeGroup(group: THREE.Group) {
   group.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
@@ -95,6 +123,7 @@ export default function CityLayer({
           }
           gltf.scene.name = `city-${belt}`;
           paintForTheme(gltf.scene, themeRef.current);
+          liftDecals(gltf.scene);
           root.add(gltf.scene);
           loaded.push(gltf.scene);
           onBeltLoaded?.(belt);
