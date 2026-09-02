@@ -24,7 +24,7 @@ import type { ScenePlane } from "./plane";
  * Drawn as a flat lid a hair above the terrain, triangulated by fanning from
  * the centroid — these are simple convex-ish rings and a fan holds them.
  */
-const SURFACE_LIFT_M = 0.12;
+const SURFACE_LIFT_M = 0.35;
 
 export interface GreeneryResult {
   /** Water surfaces at ground level: swimming pools and fountains. */
@@ -53,6 +53,73 @@ function paint(mesh: Mesh, from: number, shade: number): void {
   mesh.colors ??= [];
   const vertices = mesh.positions.length / 3;
   for (let i = from; i < vertices; i++) mesh.colors.push(shade, shade, shade);
+}
+
+/**
+ * Longest edge a lid may have before it is split.
+ *
+ * A surface drawn as one triangle over its whole polygon is a plane, and the
+ * ground under it is not: measured over Monaco's parks and pitches, the terrain
+ * stood *above* the lid at 44 % of the points sampled, by up to 12 m. No depth
+ * bias fixes that — the two shapes genuinely cross — so the lid is cut down to
+ * something that can follow the belt's own 8 m cell.
+ */
+const LID_STEP_M = 3;
+/** Cap on the splitting, so a park the size of a hillside cannot run away. */
+const LID_SPLIT_DEPTH = 7;
+
+interface LidPoint {
+  x: number;
+  z: number;
+  y: number;
+}
+
+/**
+ * A triangle of the lid, split until it follows the ground under it.
+ *
+ * The midpoint of a split edge takes the ground's own height there rather than
+ * the average of its ends, which is the whole point: the average is the plane
+ * that was crossing the hill in the first place.
+ */
+function splitToGround(
+  mesh: Mesh,
+  a: LidPoint,
+  b: LidPoint,
+  c: LidPoint,
+  groundAt: (x: number, z: number) => number,
+  lift: number,
+  step: number,
+  depth: number,
+): void {
+  const ab = Math.hypot(a.x - b.x, a.z - b.z);
+  const bc = Math.hypot(b.x - c.x, b.z - c.z);
+  const ca = Math.hypot(c.x - a.x, c.z - a.z);
+  const longest = Math.max(ab, bc, ca);
+  if (depth >= LID_SPLIT_DEPTH || longest <= step) {
+    addFlatTriangle(mesh, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    return;
+  }
+  const cut = (from: LidPoint, to: LidPoint): LidPoint => {
+    const x = (from.x + to.x) / 2;
+    const z = (from.z + to.z) / 2;
+    const ground = groundAt(x, z);
+    return { x, z, y: (Number.isNaN(ground) ? (from.y + to.y) / 2 - lift : ground) + lift };
+  };
+  if (longest === ab) {
+    const m = cut(a, b);
+    splitToGround(mesh, a, m, c, groundAt, lift, step, depth + 1);
+    splitToGround(mesh, m, b, c, groundAt, lift, step, depth + 1);
+    return;
+  }
+  if (longest === bc) {
+    const m = cut(b, c);
+    splitToGround(mesh, a, b, m, groundAt, lift, step, depth + 1);
+    splitToGround(mesh, a, m, c, groundAt, lift, step, depth + 1);
+    return;
+  }
+  const m = cut(c, a);
+  splitToGround(mesh, a, b, m, groundAt, lift, step, depth + 1);
+  splitToGround(mesh, m, b, c, groundAt, lift, step, depth + 1);
 }
 
 /** A repeatable ±14 % from a point, with no pattern the eye can find. */
@@ -195,11 +262,18 @@ export function buildGreenery(
     const contour = ring.map((point) => new Vector2(point.x, -point.z));
     for (const [a, b, c] of ShapeUtils.triangulateShape(contour, [])) {
       const from = target.positions.length / 3;
-      addFlatTriangle(
+      // A pool is a few metres of flat water and its edges are already shorter
+      // than the step; splitting it would spend triangles on nothing.
+      const step = way.kind === "pool" ? Infinity : LID_STEP_M;
+      splitToGround(
         target,
-        ring[a].x, heights[a] + SURFACE_LIFT_M, ring[a].z,
-        ring[b].x, heights[b] + SURFACE_LIFT_M, ring[b].z,
-        ring[c].x, heights[c] + SURFACE_LIFT_M, ring[c].z,
+        { x: ring[a].x, z: ring[a].z, y: heights[a] + SURFACE_LIFT_M },
+        { x: ring[b].x, z: ring[b].z, y: heights[b] + SURFACE_LIFT_M },
+        { x: ring[c].x, z: ring[c].z, y: heights[c] + SURFACE_LIFT_M },
+        groundAt,
+        SURFACE_LIFT_M,
+        step,
+        0,
       );
       // Per triangle, not per park: a hectare of one green is the paint the
       // ground tint was, and the triangulation's own patches are the shape the
