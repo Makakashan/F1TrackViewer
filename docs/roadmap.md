@@ -34,7 +34,7 @@ Buildings' assembled samples joined the library. **266 buildings are modelled**,
 city belt is at 336,464 triangles of its 350,000, and the fit is exact by construction
 where it used to be 10 % off the surveyed height at the median.
 
-What holds coverage down, in order: **502 plots ran out of triangles**, 206 have no
+What holds coverage down, in order: **468 plots ran out of triangles**, 87 have no
 model within the stretch cap, 0 stand where the road reaches in. The first has room to
 move — every model ships in the city belt's mesh, while the core belt sits at 134,950
 of its own 450,000. Splitting the models mesh per belt would put the near ones on the

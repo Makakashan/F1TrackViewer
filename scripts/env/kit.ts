@@ -57,9 +57,17 @@ const LOW_DETAIL_MAX_TRIS = 500;
  * surveyed height at the median and covered between half and three times the
  * plot's width; stretched, it is exactly the footprint that was surveyed and
  * exactly the height that was measured, at the price of a window that is not
- * square. Past this the window stops being a window.
+ * square.
+ *
+ * Tighter by the track than behind it, because what the price buys is a door
+ * you can see: at 1.7 a doorway is half again as wide as it was drawn, and on
+ * the front row that is the first thing the eye finds. In the core belt the
+ * cap is 1.2, where the distortion is at the edge of noticing; in the city belt
+ * 1.5, where a door is a few pixels. Coverage is what pays for it — measured
+ * on Monaco at a single cap: 1.7 gives 266 modelled buildings, 1.4 gives 231,
+ * 1.3 gives 173, 1.2 gives 131.
  */
-const MAX_STRETCH = 1.7;
+const MAX_STRETCH: Record<"core" | "city", number> = { core: 1.2, city: 1.5 };
 /** What models may take of the city belt's triangle budget. */
 const BUDGET_SHARE = 0.5;
 
@@ -431,10 +439,15 @@ export function chooseKitHouses(
   let spent = 0;
   for (const { shape, distanceM } of ordered) {
     const { footprint, rectangle } = shape;
+    const belt = beltOf(distanceM);
+    // The far belt is silhouettes at 600 m; a modelled eave is invisible there
+    // and would spend a third of its budget saying so.
+    if (!belt) continue;
+
     // The plot the model has to fill: its own rectangle and its own height.
     // A model is stretched to all three, so what decides whether one can be
     // used is not its proportion but how far from its proportion this is.
-    const candidates = models.filter((model) => stretchOf(model, shape) <= MAX_STRETCH);
+    const candidates = models.filter((model) => stretchOf(model, shape) <= MAX_STRETCH[belt]);
     if (!candidates.length) {
       result.stats.noModelFits++;
       continue;
@@ -448,11 +461,6 @@ export function chooseKitHouses(
       result.stats.onTheTrack++;
       continue;
     }
-
-    const belt = beltOf(distanceM);
-    // The far belt is silhouettes at 600 m; a modelled eave is invisible there
-    // and would spend a third of its budget saying so.
-    if (!belt) continue;
     // In the city belt the cheap tier goes first where it exists: at a hundred
     // metres and more a modelled cornice is a few pixels, and the same budget
     // buys ten times as many buildings that are modelled at all.
