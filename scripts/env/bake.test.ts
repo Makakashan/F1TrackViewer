@@ -38,8 +38,15 @@ import { buildBreaklines } from "./breaklines";
 import { loadFixture } from "./fixture";
 import { buildGround } from "./ground";
 
-/** The AO floor: `COLOR_0` below it is a hole, not a shadow (I11). */
-const SHADE_FLOOR = 0.278;
+/**
+ * The floor `COLOR_0` may not go under (I11).
+ *
+ * The channel carries the bake's own paint as well as its occlusion, and paint
+ * is allowed to be dark — a terracotta wall is 0.13 on blue. What the floor
+ * says now is that no channel is nothing: 0.05 of paint under the 0.45
+ * occlusion floor.
+ */
+const SHADE_FLOOR = 0.02;
 
 const inputs = await loadFixture("monaco-harbour");
 const outRoot = await mkdtemp(join(tmpdir(), "f1-fixture-"));

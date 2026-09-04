@@ -48,7 +48,7 @@ not of an intermediate — the audit that read `buildings.json` while the browse
 | **I8** | Land has ground under it. No hole in the terrain where the coastline scalar says land. | `env:audit` | passing |
 | **I9** | Nothing floats on the water either. Hulls sit on the datum; no prop hangs below the waterline. | `env:audit` | passing |
 | **I10** | Buried track spans are hidden. `cityManifest.track.buried` covers every span the tunnel bore swallows. | `env:audit` | passing |
-| **I11** | Vertex colour stays in range. Baked `COLOR_0` never leaves `[0.278, 1]` — the AO floor times the steepest slope shade. Below that is a hole, not a shadow. | `env:audit` | passing |
+| **I11** | Vertex colour stays in range. Baked `COLOR_0` never leaves `[0.02, 1]`. The channel carries the bake's own paint as well as its occlusion, and paint may be dark — a terracotta wall is 0.13 on blue — so the floor is the paint floor 0.05 under the occlusion floor 0.45, and it says only that no channel is nothing. | `env:audit` | passing |
 | **I12** | A bake is reproducible. The same caches in produce the same GLB out, byte for byte. | `bake.test.ts` over the committed fixture | **passing** — the fixture bakes to the same bytes twice |
 
 A failing invariant is the point of having one. I2 reported zero for as long as it
