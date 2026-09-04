@@ -111,6 +111,15 @@ function jitter(cell: number, salt: number): number {
   return value - Math.floor(value);
 }
 
+/**
+ * The pier between two bays.
+ *
+ * A wall of openings with nothing between them is a grid; what makes a facade
+ * is the solid it is cut out of. A strip of wall down one side of the cell,
+ * carried through the floor line, is the cheapest way to say so.
+ */
+const PIER_SHARE = 0.16;
+
 function storeyCell(
   png: PNG,
   plan: Plan,
@@ -128,9 +137,13 @@ function storeyCell(
   const widthScale = 0.85 + 0.3 * jitter(cell, 1);
   const heightScale = 0.9 + 0.2 * jitter(cell, 2);
   const shift = (jitter(cell, 3) - 0.5) * CELL * 0.08;
+  const pier = CELL * PIER_SHARE;
   for (let light = 0; light < plan.lights; light++) {
-    const centre = x0 + ((light + 0.5) / plan.lights) * CELL + shift;
-    const halfWidth = (plan.windowWidth / plan.lights) * CELL * 0.5 * widthScale;
+    // The openings share what the pier leaves, so a wide window still has a
+    // solid between it and its neighbour.
+    const room = CELL - pier;
+    const centre = x0 + pier + ((light + 0.5) / plan.lights) * room + shift;
+    const halfWidth = (plan.windowWidth / plan.lights) * room * 0.5 * widthScale;
     const height = CELL * plan.windowHeight * heightScale;
     const top = y0 + CELL * 0.22;
     fill(png, centre - halfWidth - 2, top - 2, centre + halfWidth + 2, top + height + 2, FRAME);
