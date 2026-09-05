@@ -85,6 +85,11 @@
             if (params.get("sides") === "double") node.material.side = THREE.DoubleSide;
             // ?shading=ao shows the baked vertex colour alone, with no light in
             // the way, which is the only way to tell an AO bug from a lighting one.
+            // ?shading=blockout — the geometry with nothing on it, which is
+            // what a shape review reads: paint and occlusion both hide a form.
+            if (params.get("shading") === "blockout") {
+              node.material = new THREE.MeshLambertMaterial({ color: 0xdedede });
+            }
             if (params.get("shading") === "ao") {
               node.material = new THREE.MeshBasicMaterial({
                 color: 0xffffff,
