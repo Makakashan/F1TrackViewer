@@ -18,6 +18,7 @@
     "env:bake:all": "bun scripts/env/bake-all.ts",
     "env:fixture": "bun scripts/env/fixture.ts",
     "env:field": "bun scripts/env/heightfield.ts",
+    "env:one": "bun scripts/env/one-building.ts",
     "env:preview": "bun scripts/env/preview.ts",
     "env:shots": "bun scripts/env/shots.ts",
     "env:raster": "bun scripts/env/raster.ts",
