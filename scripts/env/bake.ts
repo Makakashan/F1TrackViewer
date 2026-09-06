@@ -1138,7 +1138,7 @@ export function fromOverpass(ways: BuildingWay[]): BuildingsFile {
   };
 }
 
-interface BuildingResult {
+export interface BuildingResult {
   /**
    * Walls, split by belt and by facade because the facade is the material, and
    * again by which of its two tiles they take. A storey tile repeats up the
@@ -1173,7 +1173,7 @@ interface BuildingResult {
  * this settles where the building is, and `bakeBuildings` draws whatever the
  * kit did not take.
  */
-interface PreparedBuilding {
+export interface PreparedBuilding {
   id: string;
   ring: { x: number; z: number }[];
   /**
@@ -1381,7 +1381,7 @@ function prepareBuildings(
   return prepared;
 }
 
-function bakeBuildings(
+export function bakeBuildings(
   prepared: PreparedBuilding[],
   tags: Map<string, RoofTags>,
   corridor: Corridor,
@@ -1409,7 +1409,8 @@ function bakeBuildings(
     const variant = roll;
     // Its own colour and its own shade of it: the palette says which paint,
     // the second roll how much sun it has had.
-    const chosen = WALL_COLOURS[Math.floor(hashAt(building.centreZ, building.centreX) * WALL_COLOURS.length) % WALL_COLOURS.length];
+    const paints = WALL_PAINTS[facade];
+    const chosen = paints[Math.floor(hashAt(building.centreZ, building.centreX) * paints.length) % paints.length];
     const weather = 0.94 + 0.12 * hashAt(building.centreZ * 1.7, building.centreX * 1.3);
     const colour: [number, number, number] = [
       chosen[0] * weather,
@@ -1419,23 +1420,59 @@ function bakeBuildings(
 
     // The far belt is silhouettes: no parapet, no bands.
     const near = belt !== "far";
-    // Balconies are built where the camera goes and painted everywhere else.
-    const built =
-      belt === "core" && facade === "block"
-        ? {
-            centre: { x: building.centreX, z: building.centreZ },
-            mayReach: (x: number, z: number) => corridor.distance(x, z) >= TRACK_CLEARANCE_M,
-          }
-        : undefined;
+    // The core builds its facade: bands, piers and a recessed glass field, in
+    // place of the tile, and its own grid is what the built balconies stood for.
+    const framed = belt === "core";
+    // The one place the reference lets a building be loud, dealt per building.
+    const accent =
+      BASE_BAND_PAINTS[
+        Math.floor(hashAt(building.centreX * 2.3, building.centreZ * 1.9) * BASE_BAND_PAINTS.length) %
+          BASE_BAND_PAINTS.length
+      ];
+    const mayReach = (x: number, z: number) => corridor.distance(x, z) >= TRACK_CLEARANCE_M - 0.1;
     if (plan.kind === "flat") {
       // The rim is what makes a flat roof read as a roof rather than a lid, so
       // the walls run past the roof plane and turn back down inside it.
       const roofY = top - plan.heightM;
-      extrude(target, wallRing, footAt, roofY, near ? PARAPET_M : 0, near, variant, colour, built);
-      if (near) roofClutter(result.deck[belt], ring, roofY);
+      // A tower's top storeys step back from the wall below, which is what a
+      // tower does and what stops a skyline being a row of cut-off prisms.
+      const crown = facade === "tower" && near ? pulledIn(wallRing, CROWN_INSET_M) : null;
+      const shoulder = crown ? roofY - Math.min(CROWN_HEIGHT_M, heightM * 0.18) : roofY;
+      // Decided before anything is drawn, so the lid can leave it out.
+      const pool = framed && near ? planPool(crown ?? ring, roll) : null;
+      extrude(
+        target, wallRing, footAt, shoulder, crown ? 0 : near ? PARAPET_M : 0,
+        near, variant, colour, framed, accent, mayReach, crown ? null : pool,
+      );
+      if (crown) {
+        // The shoulder it stands on, then the crown itself.
+        capRing(result.deck[belt], wallRing, shoulder, paint(DECK_PAINT));
+        extrude(
+          target,
+          crown,
+          crown.map(() => shoulder),
+          roofY,
+          near ? PARAPET_M : 0,
+          near,
+          variant,
+          colour,
+          framed,
+          accent,
+          mayReach,
+          pool,
+        );
+      }
+      if (near) {
+        // A roof is a terrace or a plant deck, not both: the lift head and the
+        // vent stack belong to the one nobody swims on.
+        if (pool) roofPool(result.deck[belt], crown ?? ring, roofY, pool);
+        else roofClutter(result.deck[belt], crown ?? ring, roofY);
+      }
     } else {
       const eaveY = top - plan.heightM;
-      extrude(target, wallRing, footAt, eaveY, 0, near, variant, colour, built);
+      extrude(target, wallRing, footAt, eaveY, 0, near, variant, colour, framed, accent, mayReach);
+      // Tile, not wall: the pitch takes a roof paint of its own.
+      result.deck[belt].tone = paint(ROOF_PAINTS[Math.floor(roll * ROOF_PAINTS.length) % ROOF_PAINTS.length]);
       buildRoof(result.deck[belt], plan, eaveY);
     }
     result.built++;
@@ -1502,7 +1539,7 @@ function byBeltAndFacade(): Record<Belt, Record<Facade, Mesh>> {
   ) as Record<Belt, Record<Facade, Mesh>>;
 }
 
-function emptyBuildingResult(): BuildingResult {
+export function emptyBuildingResult(): BuildingResult {
   return {
     walls: byBeltAndFacade(),
     shops: byBeltAndFacade(),
@@ -1786,24 +1823,6 @@ const CORNICE_M = 1.4;
 /** The most storeys a wall is split into; the height above is what one is. */
 const MAX_STOREYS = 12;
 /**
- * A balcony, in the flesh.
- *
- * The tile paints one as a line under the windows, which is what it is from
- * three streets away. Up close it is a slab you can see under, so the blocks
- * the camera passes get theirs built: a plate, its edge, and the underside.
- * Only there — every block in the city would be sixty thousand triangles of
- * something nobody is close enough to see.
- */
-const BALCONY_DEPTH_M = 0.9;
-const BALCONY_RAIL_M = 1;
-const BALCONY_SLAB_M = 0.18;
-/** How far the slab is let into the wall, the way a real one is anchored. */
-const BALCONY_ANCHOR_M = 0.3;
-/** Not on every bay of every floor: a wall with one of everything is a grid. */
-const BALCONY_SHARE = 0.55;
-/** Wide enough for a door and a chair, which is what sets the spacing. */
-const BALCONY_WIDTH_M = 2.6;
-/**
  * What each band multiplies the wall's own colour by.
  *
  * Wide steps on purpose: the occlusion pass has already put most of this city's
@@ -1816,32 +1835,80 @@ const BAND_TONE = { ground: 0.65, body: 1, cornice: 0.8, floor: 0.86 };
 /**
  * The darkest a wall's own paint may be.
  *
- * I11 floors vertex colour at 0.278 and the occlusion floor is 0.45, so the
- * two multiplied leave this much room. The per-building jitter is what pushed
- * a shop front under it — a tenth off 0.65 is not much until it lands on a
- * wall the AO already had at the floor.
+ * Paint is not shade: a terracotta wall is 0.13 on blue because it is
+ * terracotta, and clamping that to a grey's floor is what kept every building
+ * pastel. The floor here only says a channel is never nothing, and I11 reads
+ * the product — 0.05 of paint under the 0.45 occlusion floor is 0.02.
  */
-const TONE_FLOOR = 0.62;
+const PAINT_FLOOR = 0.05;
 
 /**
- * The colours a building may be painted, as multipliers on the palette's own
- * building white.
+ * The paints a building may wear, as multipliers on the palette's building
+ * white, and which of them each kind of building may have.
  *
- * Monaco is not a grey city and the diorama was reading as one: every wall the
- * same white meant the only thing telling two blocks apart was the shadow
- * between them. These are the render's own restraint — cream, sand, a warm
- * rose, a cool stone, a pale blue — kept close enough together that the city
- * still looks like one model rather than a colour chart.
+ * A pastel wash is what "our city is grey" meant: every wall was above 0.86 on
+ * every channel, so the only thing telling two blocks apart was the shadow
+ * between them. These carry real chroma — a terracotta is 0.69 on red and 0.13
+ * on blue — and they are dealt by kind rather than at random: the warm sand and
+ * ochre of a Mediterranean street go on the blocks and houses, and the towers
+ * keep the cool pale end, because a tower's glass is the wall's own paint seen
+ * through the tile and only a pale wall lets it read as glass.
  */
-const WALL_COLOURS: [number, number, number][] = [
-  // Cream, sand, terracotta, rose, stone, and the pale blue of a glass tower.
-  [1, 0.98, 0.92],
-  [1, 0.93, 0.78],
-  [1, 0.84, 0.72],
-  [1, 0.89, 0.88],
-  [0.94, 0.95, 0.93],
-  [0.84, 0.9, 1],
+const WALL_PAINTS: Record<Facade, [number, number, number][]> = {
+  // Stone, cream, sky, mint: pale, so the window band stays a window band.
+  tower: [
+    [0.716, 0.723, 0.687],
+    [0.888, 0.823, 0.687],
+    [0.497, 0.638, 0.745],
+    [0.565, 0.694, 0.565],
+  ],
+  // Where the colour of the city lives: sand, ochre, terracotta, coral, rose.
+  block: [
+    [0.831, 0.651, 0.381],
+    [0.745, 0.434, 0.168],
+    [0.694, 0.254, 0.125],
+    [0.730, 0.195, 0.125],
+    [0.716, 0.397, 0.371],
+    [0.888, 0.823, 0.687],
+  ],
+  house: [
+    [0.888, 0.823, 0.687],
+    [0.831, 0.651, 0.381],
+    [0.716, 0.397, 0.371],
+    [0.716, 0.723, 0.687],
+    [0.745, 0.434, 0.168],
+  ],
+  retail: [
+    [0.716, 0.723, 0.687],
+    [0.888, 0.823, 0.687],
+    [0.497, 0.638, 0.745],
+    [0.238, 0.474, 0.515],
+  ],
+  plain: [
+    [0.716, 0.723, 0.687],
+    [0.888, 0.823, 0.687],
+    [0.565, 0.694, 0.565],
+  ],
+};
+
+/**
+ * The roof, which is not the wall seen from above.
+ *
+ * The roof material used to be dark because vertex colour could not go under
+ * 0.62 and a roof wants to; now that paint reaches 0.05 the material is light
+ * and these decide. A flat roof is gravel and plant, a pitch is tile — Monaco
+ * is a terracotta town — and one in three is the darker slate.
+ */
+const DECK_PAINT: [number, number, number] = [1, 0.996, 0.98];
+/** The cooler zone of the terrace, where the furniture stands. */
+const PATIO_PAINT: [number, number, number] = [0.701, 0.752, 0.781];
+const ROOF_PAINTS: [number, number, number][] = [
+  [0.57, 0.12, 0.05],
+  [0.57, 0.12, 0.05],
+  [0.35, 0.09, 0.05],
+  [0.19, 0.21, 0.24],
 ];
+
 
 /**
  * A building's own colour, dimmed by a band's tone.
@@ -1853,13 +1920,351 @@ const WALL_COLOURS: [number, number, number][] = [
 function paint(colour: [number, number, number], tone = 1): [number, number, number] {
   const level = Math.min(1, tone);
   return [
-    Math.max(TONE_FLOOR, colour[0] * level),
-    Math.max(TONE_FLOOR, colour[1] * level),
-    Math.max(TONE_FLOOR, colour[2] * level),
+    Math.max(PAINT_FLOOR, colour[0] * level),
+    Math.max(PAINT_FLOOR, colour[1] * level),
+    Math.max(PAINT_FLOOR, colour[2] * level),
   ];
 }
 /** Under this a building is one storey and takes one tone. */
 const BANDED_MIN_M = 7;
+
+/**
+ * A wall built the way the reference diorama builds one (D45).
+ *
+ * Measured off the low-poly Monaco reference: the glass is a recessed field,
+ * held in a grid of proud floor bands and solid corner piers, and the bands run
+ * on past the piers so the belt course wraps the corner. Its storey reads 70 %
+ * glass to 30 % band, the glass sits at 0.55 of the wall's own value and blue,
+ * and the cap over the top is 1.3 times the wall — lighter than what it stands
+ * on.
+ *
+ * None of that can be a tile. A tile multiplies the wall's paint, so a navy
+ * window on a terracotta wall is arithmetically out of reach and a band lighter
+ * than its wall doubly so. As geometry both carry their own paint per vertex,
+ * on the mesh that already exists, so the whole facade still costs no material.
+ */
+const FRAME_BAND_M = 0.95;
+/**
+ * How far the band stands out of the wall.
+ *
+ * The reference's bands throw a soffit shadow about a third of their own height
+ * deep, which is what stops the facade reading as a texture on a cube. At
+ * 0.16 m the shelf was there and cast nothing. At 0.42 m over a half-metre
+ * recess it went the other way: from above, nearly a metre of ledge per storey
+ * covered the glass and the facade read as pale shelves with a navy line under
+ * them. Projection and recess together are what the eye reads as depth, and
+ * half a metre of them is enough.
+ */
+const FRAME_BAND_OUT_M = 0.3;
+const FRAME_GLASS_IN_M = 0.2;
+/**
+ * The cap over the top, which is the roof from the street.
+ *
+ * Taller and prouder than a floor band: in the reference it is a white ring
+ * standing clear of every wall, and it is the single thing that says "roof"
+ * before any of the deck is in shot.
+ */
+const FRAME_CAP_M = 1.3;
+const FRAME_CAP_OUT_M = 0.45;
+/**
+ * The solid the openings are cut out of: no glass reaches a corner.
+ *
+ * A share of the wall rather than a fixed width, because that is what the
+ * reference measures — its piers hold about a sixth of the facade each, and a
+ * fixed 1.5 m turned a wide wall into a shop window with two posts.
+ */
+const FRAME_PIER_SHARE = 0.16;
+const FRAME_PIER_MIN_M = 1.4;
+/** One pane of the framed facade, measured off the reference's own rhythm. */
+const FRAME_BAY_M = 2.15;
+/**
+ * The mullion between two bays: what stops the recess reading as one strip.
+ *
+ * A fifth of the bay and dark, both measured — the reference's are near-black
+ * posts standing in front of the glass, not wall-coloured ribs flush with it.
+ * A fifth of 2.15 m, not of the 3.4 m the painted tile uses.
+ */
+const FRAME_MULLION_M = 0.4;
+/**
+ * #343A38, taken as the darkest facade pixels rather than from a quantiser.
+ *
+ * The eight-colour quantise reported #88766A for this surface and it is wrong by
+ * a factor of two in value: at 5 % of the facade the mullion never survives as
+ * its own cluster, so the quantiser returned a blend of post and band edge. The
+ * post is a neutral dark with a faint green cast.
+ */
+const MULLION_PAINT: [number, number, number] = [0.204, 0.227, 0.22];
+/** Under this the wall is all pier and there is nothing to recess. */
+const FRAME_MIN_M = 2 * FRAME_PIER_MIN_M + 2;
+/**
+ * The glass, as its own paint rather than a shade of the wall's.
+ *
+ * Measured, not judged: quantising the reference facade gives #21396D over 41 %
+ * of it — saturation 0.70 at value 0.43. The first pass guessed 0.55 and 0.31,
+ * darker and greyer, and that is most of why the wall read as cardboard. Glass
+ * is the largest surface on this building; its blue costs more than geometry.
+ */
+const GLASS_PAINT: [number, number, number] = [0.13, 0.22, 0.43];
+/**
+ * The band, in two tones, because the reference's is.
+ *
+ * Its face is warm cream (#F7E5D2) and the soffit under it reads cooler and
+ * paler (#E9E1D8) — the same slab lit two ways, and painting both one grey is
+ * what flattened the shelf into a stripe.
+ */
+const FRAME_BAND_PAINT: [number, number, number] = [0.969, 0.898, 0.824];
+const FRAME_SOFFIT_PAINT: [number, number, number] = [0.914, 0.882, 0.847];
+/** The coping over the top is the whitest thing on the building. */
+const FRAME_COPING_PAINT: [number, number, number] = [0.996, 0.988, 0.976];
+/**
+ * The band across the foot of the glazing.
+ *
+ * A ground-floor accent, and the one place the reference lets a building be
+ * loud: lime on the block that was measured, and the wider circuit view shows
+ * the same band in other colours on its neighbours. Dealt per building, so a
+ * street reads as shopfronts rather than as one paint.
+ */
+const BASE_BAND_M = 0.9;
+const BASE_BAND_OUT_M = 0.2;
+const BASE_BAND_PAINTS: [number, number, number][] = [
+  [0.867, 0.827, 0.271],
+  [0.694, 0.254, 0.125],
+  [0.238, 0.474, 0.515],
+  [0.914, 0.882, 0.847],
+];
+
+function frameWall(
+  mesh: Mesh,
+  a: { x: number; z: number },
+  b: { x: number; z: number },
+  baseA: number,
+  baseB: number,
+  top: number,
+  colour: [number, number, number],
+  /** The ground-floor accent this building was dealt. */
+  accent: [number, number, number],
+  /** Whether a member may stand here: the road owns its own ground. */
+  mayReach: (x: number, z: number) => boolean,
+  /** This edge's two corners on the mitred belt ring, and on the coping's. */
+  belt: [{ x: number; z: number }, { x: number; z: number }],
+  cap: [{ x: number; z: number }, { x: number; z: number }],
+): void {
+  const runX = b.x - a.x;
+  const runZ = b.z - a.z;
+  const length = Math.hypot(runX, runZ);
+  const foot = Math.min(baseA, baseB);
+  const height = top - foot;
+  if (length < FRAME_MIN_M || height < FRAME_BAND_M * 2) {
+    mesh.tone = paint(colour);
+    addFlatQuad(mesh, a.x, baseA, a.z, b.x, baseB, b.z, b.x, top, b.z, a.x, top, a.z);
+    return;
+  }
+  const alongX = runX / length;
+  const alongZ = runZ / length;
+  const outX = -alongZ;
+  const outZ = alongX;
+
+  // A wall is checked along its length, not at its corners.
+  //
+  // A relation's footprint arrives as one ring with its parts strung together,
+  // so two of its "edges" are chords across the building. Both ends of such a
+  // chord sit where the footprint was pushed to — clear of the track — and the
+  // middle of it can cross the racing line. The tiled wall drew that chord as a
+  // single quad with no vertex between its ends, so nothing measured it; the
+  // frame puts a pier and a mullion along it, and the audit found them at 1.35 m
+  // from the centreline. Skipping the edge is the honest answer here: the chord
+  // is not a wall of the building, it is an artefact of how the ring was joined.
+  const steps = Math.max(2, Math.ceil(length / 2));
+  for (let step = 0; step <= steps; step++) {
+    const t = step / steps;
+    if (!mayReach(a.x + runX * t, a.z + runZ * t)) return;
+  }
+  // A footprint is pushed to the corridor's edge and no further, so a wall can
+  // stand exactly on the line while the coping over it hangs half a metre past
+  // it. Where that happens the members go flush rather than the wall going
+  // away: the facade survives and the road keeps its ground.
+  let proud = true;
+  for (let step = 0; step <= steps && proud; step++) {
+    const t = step / steps;
+    proud = mayReach(
+      a.x + runX * t + outX * FRAME_CAP_OUT_M,
+      a.z + runZ * t + outZ * FRAME_CAP_OUT_M,
+    );
+  }
+  const bandOut = proud ? FRAME_BAND_OUT_M : 0;
+  const capOut = proud ? FRAME_CAP_OUT_M : 0;
+  const accentOut = proud ? BASE_BAND_OUT_M : 0;
+  // And the same for the recess: a relation's inner ring winds the other way,
+  // so "into the building" can be towards the road.
+  let recessed = true;
+  for (let step = 0; step <= steps && recessed; step++) {
+    const t = step / steps;
+    recessed = mayReach(
+      a.x + runX * t - outX * FRAME_GLASS_IN_M,
+      a.z + runZ * t - outZ * FRAME_GLASS_IN_M,
+    );
+  }
+  const glassIn = recessed ? FRAME_GLASS_IN_M : 0;
+  /** A point on the wall: `along` metres from a, `out` metres proud of it. */
+  const at = (along: number, out: number) => ({
+    x: a.x + alongX * along + outX * out,
+    z: a.z + alongZ * along + outZ * out,
+  });
+  /**
+   * The ground under a point of the wall.
+   *
+   * The frame's first pass stood every member on `foot`, the lowest corner of
+   * the wall, which on Monaco's slopes buried the uphill end — measured at nine
+   * metres of wall under the ground on the worst of them, and it put 554
+   * vertices into the track corridor that the audit is right to count. The
+   * storey lines stay horizontal, because a floor is a plane; only what meets
+   * the ground follows it.
+   */
+  const groundAt = (along: number) => baseA + ((baseB - baseA) * along) / length;
+
+  const storeys = Math.min(MAX_STOREYS, Math.max(1, Math.round(height / FACADE_STOREY_M)));
+  const storeyM = height / storeys;
+  const pier = Math.max(FRAME_PIER_MIN_M, length * FRAME_PIER_SHARE);
+
+  // The solid at each end, and the return face where the recess meets it.
+  mesh.tone = paint(colour);
+  for (const [from, to] of [
+    [0, pier],
+    [length - pier, length],
+  ]) {
+    const p = at(from, 0);
+    const q = at(to, 0);
+    addFlatQuad(mesh, p.x, groundAt(from), p.z, q.x, groundAt(to), q.z, q.x, top, q.z, p.x, top, p.z);
+  }
+  // The reveal where the recess meets a solid — the piers, and every mullion
+  // between two bays. The mullion stands at the wall plane and the band crosses
+  // in front of it, which is how the reference keeps its belt course unbroken.
+  const field = length - 2 * pier;
+  // The frame has its own bay, narrower than the tile's: counted off the
+  // reference, seven panes span a field of about fifteen metres, so the pitch
+  // is 2.1 m and not the 3.4 m a painted bay uses. Four wide panes to a wall
+  // was the other half of why the facade read as slabs.
+  const bays = Math.max(1, Math.round(field / FRAME_BAY_M));
+  // Each reveal takes the paint of the solid it belongs to: the pier's is wall,
+  // the mullion's is the post's own dark. Painting every reveal the wall colour
+  // put a pale rib down both sides of every post, and those ribs are wider on
+  // screen than the post between them — which is how a dark mullion came out
+  // reading as a light one.
+  const reveals: [number, number, [number, number, number]][] = [
+    [pier, 1, colour],
+    [length - pier, -1, colour],
+  ];
+  for (let bay = 1; bay < bays; bay++) {
+    const centre = pier + (field * bay) / bays;
+    const left = centre - FRAME_MULLION_M / 2;
+    const right = centre + FRAME_MULLION_M / 2;
+    const p = at(left, 0);
+    const q = at(right, 0);
+    mesh.tone = paint(MULLION_PAINT);
+    addFlatQuad(
+      mesh,
+      p.x, groundAt(left), p.z, q.x, groundAt(right), q.z,
+      q.x, top, q.z, p.x, top, p.z,
+    );
+    reveals.push([left, -1, MULLION_PAINT], [right, 1, MULLION_PAINT]);
+  }
+  for (const [edge, inward, tone] of reveals) {
+    const face = at(edge, 0);
+    const back = at(edge, -glassIn);
+    const sill = groundAt(edge);
+    mesh.tone = paint(tone);
+    // Wound to face the recess it walls, which is the side the light comes in.
+    // The two cases were the wrong way round: each reveal faced into the solid
+    // behind it and was culled, which on a straight wall the pier in front of
+    // it hid and on a curved one left a slot at every pier and every mullion —
+    // the vertical slits you could see the track through.
+    if (inward < 0) {
+      addFlatQuad(mesh, back.x, sill, back.z, face.x, sill, face.z, face.x, top, face.z, back.x, top, back.z);
+    } else {
+      addFlatQuad(mesh, face.x, sill, face.z, back.x, sill, back.z, back.x, top, back.z, face.x, top, face.z);
+    }
+  }
+
+  // The accent across the foot of the glazing: the width of the glazed field,
+  // not of the wall, because it stops where the solid pier starts.
+  const accentFrom = at(pier, accentOut);
+  const accentTo = at(length - pier, accentOut);
+  // Above the lowest band, not behind it: the band projects further, so an
+  // accent at the same height is a stripe nobody sees.
+  const accentFoot = foot + FRAME_BAND_M;
+  const accentTop = Math.min(accentFoot + BASE_BAND_M, top);
+  mesh.tone = paint(accent);
+  addFlatQuad(
+    mesh,
+    accentFrom.x, accentFoot, accentFrom.z, accentTo.x, accentFoot, accentTo.z,
+    accentTo.x, accentTop, accentTo.z, accentFrom.x, accentTop, accentFrom.z,
+  );
+
+  // The recessed field, one panel a storey, between the bands.
+  const glassFrom = at(pier, -glassIn);
+  const glassTo = at(length - pier, -glassIn);
+  mesh.tone = paint(GLASS_PAINT);
+  for (let storey = 0; storey < storeys; storey++) {
+    const head = foot + (storey + 1) * storeyM;
+    // The lowest panel runs down to the ground under it rather than stopping at
+    // the floor line: that is what holds the frame up on the downhill end, and
+    // a second quad over the same plane would only fight with the piers.
+    const sillFrom = storey === 0 ? groundAt(pier) : foot + storey * storeyM + FRAME_BAND_M;
+    const sillTo = storey === 0 ? groundAt(length - pier) : sillFrom;
+    if (head <= Math.max(sillFrom, sillTo)) continue;
+    addFlatQuad(
+      mesh,
+      glassFrom.x, sillFrom, glassFrom.z, glassTo.x, sillTo, glassTo.z,
+      glassTo.x, head, glassTo.z, glassFrom.x, head, glassFrom.z,
+    );
+  }
+
+  // The bands, one under each storey and one capping the wall: front face,
+  // the shelf on top of it and the soffit under it, so the recess is closed.
+  for (let band = 0; band <= storeys; band++) {
+    const isCap = band === storeys;
+    mesh.tone = paint(isCap ? FRAME_COPING_PAINT : FRAME_BAND_PAINT);
+    const low = isCap ? top - FRAME_CAP_M : foot + band * storeyM;
+    const high = isCap ? top : low + FRAME_BAND_M;
+    // The band runs corner to corner on the mitred ring, so the one coming the
+    // other way round meets it at the same point: one belt, not four slabs.
+    const proudHere = isCap ? capOut > 0 : bandOut > 0;
+    const f0 = proudHere ? (isCap ? cap[0] : belt[0]) : at(0, 0);
+    const f1 = proudHere ? (isCap ? cap[1] : belt[1]) : at(length, 0);
+    // The shelf and the soffit reach back to the glass, not to the wall plane:
+    // the recess is half a metre deep, and closing it only as far as the wall
+    // left a half-metre slot at every floor to see straight through the
+    // building — which is what read as the walls being transparent.
+    // A floor band closes the recess behind it; the coping has no recess to
+    // close — the roof deck starts at the ring — so reaching back past it left
+    // a slot all the way round the parapet.
+    const back = isCap ? 0 : -glassIn;
+    const b0 = at(0, back);
+    const b1 = at(length, back);
+    addFlatQuad(
+      mesh,
+      f0.x, low, f0.z, f1.x, low, f1.z,
+      f1.x, high, f1.z, f0.x, high, f0.z,
+    );
+    // The shelf faces the sky and the soffit faces the ground, and getting the
+    // two the wrong way round is invisible from a distance and a hole up close:
+    // both were culled, so the eye went in over the band and out through the
+    // far wall. Wound so each looks the way it is meant to.
+    addFlatQuad(
+      mesh,
+      f0.x, high, f0.z, f1.x, high, f1.z,
+      b1.x, high, b1.z, b0.x, high, b0.z,
+    );
+    // The underside is the other tone: the same slab, lit from the sky it
+    // faces away from.
+    if (!isCap) mesh.tone = paint(FRAME_SOFFIT_PAINT);
+    addFlatQuad(
+      mesh,
+      b0.x, low, b0.z, b1.x, low, b1.z,
+      f1.x, low, f1.z, f0.x, low, f0.z,
+    );
+  }
+}
 
 function wallBands(
   target: WallTargets,
@@ -1872,9 +2277,19 @@ function wallBands(
   /** Where this building starts reading the tile, and how it is painted. */
   variant: number,
   colour: [number, number, number],
+  /** The core builds its facade instead of printing it (D45). */
+  framed = false,
+  accent: [number, number, number] = BASE_BAND_PAINTS[0],
+  mayReach: (x: number, z: number) => boolean = () => true,
+  belt?: [{ x: number; z: number }, { x: number; z: number }],
+  cap?: [{ x: number; z: number }, { x: number; z: number }],
 ): void {
   const foot = Math.min(baseA, baseB);
   const shopTop = foot + GROUND_FLOOR_M;
+  if (framed && belt && cap) {
+    frameWall(target.plain, a, b, baseA, baseB, top, colour, accent, mayReach, belt, cap);
+    return;
+  }
   if (!banded) {
     // The far belt is silhouettes: no tile, and no coordinates to carry one.
     target.plain.tone = paint(colour);
@@ -1953,6 +2368,160 @@ function roofBox(
   addFlatQuad(mesh, x0, to, z1, x1, to, z1, x1, to, z0, x0, to, z0);
 }
 
+/**
+ * A pool sunk into a roof terrace.
+ *
+ * Monaco's own answer to a flat roof, and the reference's: the block the user
+ * picked out of it has a pool on top, and it is what makes the roof read as a
+ * place rather than a lid. A rectangle in the deck's own mesh, so it costs a
+ * quad and no material — the deck material is near-white and the paint says
+ * water.
+ */
+const ROOF_POOL_MIN_M2 = 210;
+const POOL_PAINT: [number, number, number] = [0.727, 0.851, 0.981];
+/** The far edge is the light one: the water is the object's only gradient. */
+const POOL_DEEP_PAINT: [number, number, number] = [0.437, 0.659, 0.91];
+/** The terrace around it: what the pool is cut out of. */
+const ROOF_POOL_MARGIN_M = 2.2;
+
+/**
+ * Where the water goes, decided before the roof is drawn.
+ *
+ * The pool used to be a quad laid two centimetres over the roof lid, and two
+ * centimetres is inside what the depth buffer can separate at city range — at
+ * 1.5 km it resolves about 3 cm — so the two surfaces fought and the roofs
+ * flickered. The lid now leaves a hole and the water fills it at exactly the
+ * same height: nothing overlaps, so there is nothing to fight over.
+ */
+function planPool(
+  ring: { x: number; z: number }[],
+  roll: number,
+): { x: number; z: number }[] | null {
+  if (ringAreaXZ(ring) < ROOF_POOL_MIN_M2 || roll < 0.45) return null;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const point of ring) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minZ = Math.min(minZ, point.z);
+    maxZ = Math.max(maxZ, point.z);
+  }
+  // Long and narrow, along whichever way the roof itself runs, and over on one
+  // side: a pool in the middle of the plate leaves nowhere to stand.
+  const alongX = maxX - minX >= maxZ - minZ;
+  const inset = ROOF_CLUTTER_INSET_M + ROOF_POOL_MARGIN_M;
+  const x0 = minX + inset;
+  const x1 = maxX - inset;
+  const z0 = minZ + inset;
+  const z1 = maxZ - inset;
+  if (x1 - x0 < 3 || z1 - z0 < 3) return null;
+  const px0 = alongX ? x0 : x0 + (x1 - x0) * 0.12;
+  const px1 = alongX ? x0 + (x1 - x0) * 0.62 : x1 - (x1 - x0) * 0.12;
+  const pz0 = alongX ? z0 + (z1 - z0) * 0.12 : z0;
+  const pz1 = alongX ? z1 - (z1 - z0) * 0.12 : z0 + (z1 - z0) * 0.62;
+  // Every corner over the roof, not only two of them.
+  const corners = [
+    { x: px0, z: pz0 },
+    { x: px1, z: pz0 },
+    { x: px1, z: pz1 },
+    { x: px0, z: pz1 },
+  ];
+  if (corners.some((corner) => !pointInRingXZ(ring, corner.x, corner.z))) return null;
+  return corners;
+}
+
+function roofPool(
+  mesh: Mesh,
+  ring: { x: number; z: number }[],
+  roofY: number,
+  pool: { x: number; z: number }[],
+): void {
+  const px0 = pool[0].x;
+  const pz0 = pool[0].z;
+  const px1 = pool[2].x;
+  const pz1 = pool[2].z;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  for (const point of ring) {
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minZ = Math.min(minZ, point.z);
+    maxZ = Math.max(maxZ, point.z);
+  }
+  const alongX = maxX - minX >= maxZ - minZ;
+  const inset = ROOF_CLUTTER_INSET_M + ROOF_POOL_MARGIN_M;
+  const x0 = minX + inset;
+  const x1 = maxX - inset;
+  const z0 = minZ + inset;
+  const z1 = maxZ - inset;
+  // Exactly the deck's own height: the lid leaves this rectangle out.
+  const water = roofY;
+  // The water is the only gradient on the reference — light at the far edge,
+  // deeper at the near one — so it is drawn in strips rather than as one quad.
+  const strips = 3;
+  for (let i = 0; i < strips; i++) {
+    const t0 = i / strips;
+    const t1 = (i + 1) / strips;
+    const mid = (t0 + t1) / 2;
+    mesh.tone = paint([
+      POOL_PAINT[0] + (POOL_DEEP_PAINT[0] - POOL_PAINT[0]) * mid,
+      POOL_PAINT[1] + (POOL_DEEP_PAINT[1] - POOL_PAINT[1]) * mid,
+      POOL_PAINT[2] + (POOL_DEEP_PAINT[2] - POOL_PAINT[2]) * mid,
+    ]);
+    const a0 = alongX ? px0 + (px1 - px0) * t0 : px0;
+    const a1 = alongX ? px0 + (px1 - px0) * t1 : px1;
+    const b0 = alongX ? pz0 : pz0 + (pz1 - pz0) * t0;
+    const b1 = alongX ? pz1 : pz0 + (pz1 - pz0) * t1;
+    addFlatQuad(mesh, a0, water, b1, a1, water, b1, a1, water, b0, a0, water, b0);
+  }
+
+  // What is left of the terrace, on the far side of the water from the pool:
+  // parasols and their tables. Four of them in the reference, and they are what
+  // makes the roof a place somebody stands rather than a plate with a hole.
+  const spare = alongX
+    ? { x0: px1 + 1.2, x1, z0, z1 }
+    : { x0, x1, z0: pz1 + 1.2, z1 };
+  parasols(mesh, ring, spare, roofY);
+}
+
+/** A parasol and the table under it: a post, a canopy, a drum to stand it in. */
+const PARASOL_SPACING_M = 3.4;
+const PARASOL_HALF_M = 1.1;
+const PARASOL_HEIGHT_M = 2.3;
+const CANOPY_PAINT: [number, number, number] = [0.549, 0.749, 0.816];
+const PARASOL_POST_PAINT: [number, number, number] = [0.243, 0.369, 0.408];
+
+function parasols(
+  mesh: Mesh,
+  ring: { x: number; z: number }[],
+  area: { x0: number; x1: number; z0: number; z1: number },
+  deckY: number,
+): void {
+  const across = Math.floor((area.x1 - area.x0) / PARASOL_SPACING_M);
+  const along = Math.floor((area.z1 - area.z0) / PARASOL_SPACING_M);
+  if (across < 1 || along < 1) return;
+  for (let i = 0; i < across; i++) {
+    for (let j = 0; j < along; j++) {
+      const x = area.x0 + (i + 0.5) * PARASOL_SPACING_M;
+      const z = area.z0 + (j + 0.5) * PARASOL_SPACING_M;
+      if (!pointInRingXZ(ring, x, z)) continue;
+      mesh.tone = paint(PARASOL_POST_PAINT);
+      roofBox(mesh, x, z, 0.16, 0.16, deckY, deckY + PARASOL_HEIGHT_M);
+      mesh.tone = paint(CANOPY_PAINT);
+      // The canopy: a square shade over the post, and the underside of it, so
+      // the thing reads from below the roof line as well as from above.
+      const top = deckY + PARASOL_HEIGHT_M;
+      const h = PARASOL_HALF_M;
+      addFlatQuad(mesh, x - h, top, z + h, x + h, top, z + h, x + h, top, z - h, x - h, top, z - h);
+      addFlatQuad(mesh, x - h, top, z - h, x + h, top, z - h, x + h, top, z + h, x - h, top, z + h);
+    }
+  }
+}
+
 function roofClutter(mesh: Mesh, ring: { x: number; z: number }[], roofY: number): void {
   const area = ringAreaXZ(ring);
   if (area < ROOF_CLUTTER_MIN_M2) return;
@@ -1990,6 +2559,91 @@ function roofClutter(mesh: Mesh, ring: { x: number; z: number }[], roofY: number
   }
 }
 
+/** How far a tower's crown steps back from the wall under it, and how tall. */
+const CROWN_INSET_M = 1.6;
+const CROWN_HEIGHT_M = 6;
+
+/**
+ * The ring pushed out by `byM`, mitred at every corner.
+ *
+ * A belt course is one band round the building, not four slabs stuck on four
+ * walls. Offsetting each wall on its own and trimming the ends by the
+ * projection only meets at a right angle; on Monaco's footprints it left the
+ * ends hanging past the corner with a gap behind them, which is what read as
+ * cardboard glued to a box. Mitring at the vertex — the corner of the two
+ * offset edges — makes the neighbours share a point exactly, so the band comes
+ * out continuous whatever the angle.
+ */
+function offsetRing(ring: { x: number; z: number }[], byM: number): { x: number; z: number }[] {
+  const n = ring.length;
+  return ring.map((point, i) => {
+    const prev = ring[(i - 1 + n) % n];
+    const next = ring[(i + 1) % n];
+    const inX = point.x - prev.x;
+    const inZ = point.z - prev.z;
+    const outX = next.x - point.x;
+    const outZ = next.z - point.z;
+    const inLen = Math.hypot(inX, inZ);
+    const outLen = Math.hypot(outX, outZ);
+    if (inLen < 1e-6 || outLen < 1e-6) return { x: point.x, z: point.z };
+    // Outward normal of each edge, from the ring's own winding.
+    const n1x = -inZ / inLen;
+    const n1z = inX / inLen;
+    const n2x = -outZ / outLen;
+    const n2z = outX / outLen;
+    const dot = n1x * n2x + n1z * n2z;
+    // A corner that doubles back has no mitre worth taking; the average does.
+    const scale = dot > -0.8 ? byM / (1 + dot) : byM;
+    return { x: point.x + (n1x + n2x) * scale, z: point.z + (n1z + n2z) * scale };
+  });
+}
+
+/**
+ * The ring pulled in towards its own middle by roughly a metre and a half.
+ *
+ * For a crown, which is the top storey or two of a tower stepped back from the
+ * wall below. Scaled towards the centroid rather than offset per edge: an
+ * offset needs the corners mitred and a re-entrant corner turns it inside out,
+ * and at this size the difference is centimetres.
+ */
+function pulledIn(ring: { x: number; z: number }[], byM: number): { x: number; z: number }[] | null {
+  let cx = 0;
+  let cz = 0;
+  for (const point of ring) {
+    cx += point.x / ring.length;
+    cz += point.z / ring.length;
+  }
+  let mean = 0;
+  for (const point of ring) mean += Math.hypot(point.x - cx, point.z - cz) / ring.length;
+  if (mean <= byM * 1.6) return null;
+  const scale = 1 - byM / mean;
+  return ring.map((point) => ({
+    x: cx + (point.x - cx) * scale,
+    z: cz + (point.z - cz) * scale,
+  }));
+}
+
+/** A flat lid over a ring, facing the sky: the shoulder a crown stands on. */
+function capRing(
+  mesh: Mesh,
+  ring: { x: number; z: number }[],
+  y: number,
+  tone: [number, number, number],
+): void {
+  const contour = ring.map((point) => new Vector2(point.x, -point.z));
+  const ordered = ShapeUtils.area(contour) < 0 ? [...ring].reverse() : ring;
+  const orderedContour = ordered.map((point) => new Vector2(point.x, -point.z));
+  mesh.tone = tone;
+  for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
+    addFlatTriangle(
+      mesh,
+      ordered[i].x, y, ordered[i].z,
+      ordered[j].x, y, ordered[j].z,
+      ordered[k].x, y, ordered[k].z,
+    );
+  }
+}
+
 /** Repeatable per place: the same roof carries the same boxes every bake. */
 function hashAt(x: number, z: number): number {
   const value = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
@@ -2002,98 +2656,6 @@ interface WallTargets {
   shop: Mesh;
   plain: Mesh;
   deck: Mesh;
-}
-
-/**
- * Balconies along one wall, storey by storey.
- *
- * The outward direction comes from the ring's own winding: the contour is made
- * counter-clockwise in (x, −z), so the outward normal of an edge is that turn
- * taken back into scene axes. A balcony that grew inwards would be a shelf in
- * somebody's living room.
- */
-function balconies(
-  mesh: Mesh,
-  a: { x: number; z: number },
-  b: { x: number; z: number },
-  from: number,
-  top: number,
-  colour: [number, number, number],
-  /** The middle of the building, for telling outwards from inwards. */
-  middle: { x: number; z: number },
-  /** Whether a balcony may reach this point: the road owns its own ground. */
-  mayReach: (x: number, z: number) => boolean,
-  /** One roll for the whole building, so its walls agree with each other. */
-  roll: number,
-): void {
-  const runX = b.x - a.x;
-  const runZ = b.z - a.z;
-  const length = Math.hypot(runX, runZ);
-  if (length < BALCONY_WIDTH_M) return;
-  const outX = -runZ / length;
-  const outZ = runX / length;
-  const alongX = runX / length;
-  const alongZ = runZ / length;
-
-  const storeys = Math.min(MAX_STOREYS, Math.max(1, Math.round((top - from) / FACADE_STOREY_M)));
-  const bays = Math.max(1, Math.floor(length / BALCONY_WIDTH_M));
-  const width = length / bays;
-  // A building runs its balconies one way or the other, not both: either a
-  // band across every floor, or stacks in the same bays all the way up. What
-  // it never does is scatter them, which is what a roll per balcony gave.
-  const banded = roll > 0.5;
-  mesh.tone = paint(colour, BAND_TONE.cornice);
-
-  for (let storey = 0; storey < storeys; storey++) {
-    const floor = from + ((top - from) * (storey + 1)) / storeys - BALCONY_SLAB_M;
-    if (floor + BALCONY_RAIL_M > top) continue;
-    for (let bay = 0; bay < bays; bay++) {
-      // A stack is the same bay on every floor: two bays in three, taken from
-      // the bay rather than from the balcony, so the column is continuous.
-      if (!banded && hashAt(bay * 3.7, roll * 100) > 0.62) continue;
-      const centre = (bay + 0.5) * width;
-      // A band runs the width of the wall; a stack is a balcony wide enough
-      // for a door and a chair.
-      const half = banded ? width / 2 : (Math.min(width, BALCONY_WIDTH_M) * 0.82) / 2;
-      const x0 = a.x + alongX * (centre - half) - outX * BALCONY_ANCHOR_M;
-      const z0 = a.z + alongZ * (centre - half) - outZ * BALCONY_ANCHOR_M;
-      const x1 = a.x + alongX * (centre + half) - outX * BALCONY_ANCHOR_M;
-      const z1 = a.z + alongZ * (centre + half) - outZ * BALCONY_ANCHOR_M;
-      const ox = outX * BALCONY_DEPTH_M;
-      const oz = outZ * BALCONY_DEPTH_M;
-      // A re-entrant corner can have its winding read the other way, and a
-      // balcony hanging into the flat it belongs to is worse than none. So is
-      // one over the racing surface.
-      const wallAway = Math.hypot(x0 - middle.x, z0 - middle.z);
-      const outAway = Math.hypot(x0 + ox - middle.x, z0 + oz - middle.z);
-      if (outAway < wallAway) continue;
-      if (!mayReach(x0 + ox, z0 + oz) || !mayReach(x1 + ox, z1 + oz)) continue;
-      const railTop = floor + BALCONY_RAIL_M;
-      // The plate, the rail across its front, the two ends of it, and what
-      // you see of the slab from the street below.
-      addFlatQuad(mesh, x0, floor, z0, x1, floor, z1, x1 + ox, floor, z1 + oz, x0 + ox, floor, z0 + oz);
-      addFlatQuad(
-        mesh,
-        x0 + ox, floor, z0 + oz, x1 + ox, floor, z1 + oz,
-        x1 + ox, railTop, z1 + oz, x0 + ox, railTop, z0 + oz,
-      );
-      addFlatQuad(
-        mesh,
-        x1, floor, z1, x1 + ox, floor, z1 + oz,
-        x1 + ox, railTop, z1 + oz, x1, railTop, z1,
-      );
-      addFlatQuad(
-        mesh,
-        x0 + ox, floor, z0 + oz, x0, floor, z0,
-        x0, railTop, z0, x0 + ox, railTop, z0 + oz,
-      );
-      addFlatQuad(
-        mesh,
-        x0 + ox, floor - BALCONY_SLAB_M, z0 + oz, x1 + ox, floor - BALCONY_SLAB_M, z1 + oz,
-        x1, floor - BALCONY_SLAB_M, z1, x0, floor - BALCONY_SLAB_M, z0,
-      );
-    }
-  }
 }
 
 function extrude(
@@ -2114,8 +2676,12 @@ function extrude(
   variant = 0,
   /** The building's own colour, a shade of the palette's building white. */
   colour: [number, number, number] = [1, 1, 1],
-  /** Where balconies are built rather than painted, and what they may not hit. */
-  built?: { centre: { x: number; z: number }; mayReach: (x: number, z: number) => boolean },
+  /** The core builds its facade instead of printing it (D45). */
+  framed = false,
+  accent: [number, number, number] = BASE_BAND_PAINTS[0],
+  mayReach: (x: number, z: number) => boolean = () => true,
+  /** A rectangle the roof lid leaves out, for water to fill. */
+  hole?: { x: number; z: number }[] | null,
 ): void {
   const contour = ring.map((point) => new Vector2(point.x, -point.z));
   const clockwise = ShapeUtils.area(contour) < 0;
@@ -2124,25 +2690,21 @@ function extrude(
   const orderedBase = clockwise ? [...order].reverse().map((i) => baseAt[i]) : baseAt;
   const orderedContour = clockwise ? [...contour].reverse() : contour;
 
+  // One belt round the building and one coping round it, mitred, so a band
+  // never ends in mid-air at a corner.
+  const beltRing = framed ? offsetRing(ordered, FRAME_BAND_OUT_M) : null;
+  const capRingPts = framed ? offsetRing(ordered, FRAME_CAP_OUT_M) : null;
+
   const wallTop = top + parapetM;
   for (let i = 0; i < ordered.length; i++) {
     const j = (i + 1) % ordered.length;
     const a = ordered[i];
     const b = ordered[j];
-    wallBands(target, a, b, orderedBase[i], orderedBase[j], wallTop, banded, variant, colour);
-    if (built) {
-      balconies(
-        target.plain,
-        a,
-        b,
-        Math.min(orderedBase[i], orderedBase[j]) + GROUND_FLOOR_M,
-        top,
-        colour,
-        built.centre,
-        built.mayReach,
-        variant,
-      );
-    }
+    wallBands(
+      target, a, b, orderedBase[i], orderedBase[j], wallTop, banded, variant, colour, framed, accent, mayReach,
+      beltRing ? [beltRing[i], beltRing[j]] : undefined,
+      capRingPts ? [capRingPts[i], capRingPts[j]] : undefined,
+    );
     if (parapetM > 0) {
       // Inside face of the rim, seen from anywhere above the roof.
       target.plain.tone = paint(colour, BAND_TONE.cornice);
@@ -2155,13 +2717,19 @@ function extrude(
   // comes. Reversing it here is what made every flat roof invisible from above.
   // The lid goes to the deck: it is the one face of a building the sky sees,
   // and it is not the colour of a wall.
-  target.deck.tone = paint(colour);
-  for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
+  target.deck.tone = paint(DECK_PAINT);
+  // The lid leaves the pool out rather than being covered by it: two surfaces a
+  // couple of centimetres apart are a coin toss for the depth buffer at any
+  // distance the city is seen from.
+  const points = hole ? [...ordered, ...hole] : ordered;
+  const holeContours = hole ? [hole.map((point) => new Vector2(point.x, -point.z))] : [];
+  if (holeContours.length && ShapeUtils.area(holeContours[0]) > 0) holeContours[0].reverse();
+  for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, holeContours)) {
     addFlatTriangle(
       target.deck,
-      ordered[i].x, top, ordered[i].z,
-      ordered[j].x, top, ordered[j].z,
-      ordered[k].x, top, ordered[k].z,
+      points[i].x, top, points[i].z,
+      points[j].x, top, points[j].z,
+      points[k].x, top, points[k].z,
     );
   }
 }
@@ -3137,7 +3705,7 @@ function paddedUV(mesh: Mesh): number[] {
   return out;
 }
 
-async function writeGlb(
+export async function writeGlb(
   path: string,
   parts: { kind: MeshKind; mesh: Mesh; facade?: Facade; zone?: FacadeZone }[],
   /** False where this belt builds its balconies rather than painting them. */
