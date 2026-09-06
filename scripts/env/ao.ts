@@ -24,6 +24,15 @@ const RANGES_M = [2, 3, 5, 8, 12, 18, 26, 38];
 /** Full shade never goes below this: an unlit crevice is a hole, not a shadow. */
 const FLOOR = 0.45;
 /**
+ * How far out of its own surface a sample starts.
+ *
+ * A whole cell, not half of one. The stamp rasterises each triangle with a
+ * ceiling on its upper cell, so a building's height reaches up to a cell past
+ * its own footprint; at half a cell the wall still read itself and the facade
+ * came out at 0.56 where it should be near open sky.
+ */
+const SELF_CLEAR_M = CELL_M;
+/**
  * Physical sky visibility is a gentle thing — a street with towers on two sides
  * still sees three quarters of the sky — and reads as no shading at all. The
  * curve keeps the open ground open and deepens the enclosed places, which is
@@ -114,23 +123,67 @@ export function applyAmbientOcclusion(mesh: Mesh, occluders: Occluders): void {
     const y = mesh.positions[i * 3 + 1];
     const z = mesh.positions[i * 3 + 2];
 
+    // A surface only sees the half of the sky it faces, and it is never
+    // occluded by the solid it is part of. Without both of those a wall reads
+    // its own building in every direction that points inwards: measured on a
+    // free-standing block on empty ground, every vertex below the top storey
+    // came out pinned at the floor, 0.450 — a facade with nothing near it
+    // shaded as though it stood at the bottom of a well. That, and not the
+    // palette, is what made the whole city read grey.
+    const nx = mesh.normals[i * 3];
+    const ny = mesh.normals[i * 3 + 1];
+    const nz = mesh.normals[i * 3 + 2];
+    const outward = Math.hypot(nx, nz);
+    // A roof or a piece of ground faces up: it sees every direction alike.
+    const facing = outward > 0.1;
+    let ox = 0;
+    let oz = 0;
+    if (facing) {
+      ox = (nx / outward) * SELF_CLEAR_M;
+      oz = (nz / outward) * SELF_CLEAR_M;
+    } else if (ny > 0) {
+      // A shelf, a coping, a roof: it faces up, so there is no outward normal
+      // to step along, and at the grid's four metres a band 0.42 m deep is not
+      // a shape the occluders can hold at all. What they can say is which way
+      // is open, so the sample walks down the height gradient. Without it every
+      // upward face on a facade sat at the floor — the band shelves, which the
+      // reference makes the brightest surfaces on the building.
+      const gx =
+        heightAt(occluders, x + occluders.cellM, z) - heightAt(occluders, x - occluders.cellM, z);
+      const gz =
+        heightAt(occluders, x, z + occluders.cellM) - heightAt(occluders, x, z - occluders.cellM);
+      const slope = Math.hypot(gx, gz);
+      if (slope > 0.5) {
+        ox = (-gx / slope) * SELF_CLEAR_M;
+        oz = (-gz / slope) * SELF_CLEAR_M;
+      }
+    }
+    // A downward face is left where it is: a soffit under a band really does
+    // face the ground, and that darkness is the line that makes the band read
+    // as a shelf rather than a stripe.
+
     let blocked = 0;
+    let weightSum = 0;
     for (let a = 0; a < AZIMUTHS; a++) {
       const angle = (2 * Math.PI * a) / AZIMUTHS;
       const dx = Math.cos(angle);
       const dz = Math.sin(angle);
+      // Cosine weight over the hemisphere the surface faces.
+      const weight = facing ? Math.max(0, (dx * nx + dz * nz) / outward) : 1;
+      if (weight <= 0) continue;
+      weightSum += weight;
       let highest = 0;
       for (const range of RANGES_M) {
-        const rise = heightAt(occluders, x + dx * range, z + dz * range) - y;
+        const rise = heightAt(occluders, x + ox + dx * range, z + oz + dz * range) - y;
         if (rise <= 0) continue;
         // Elevation angle of the horizon in this direction, as a sine.
         const sine = rise / Math.hypot(rise, range);
         if (sine > highest) highest = sine;
       }
-      blocked += highest;
+      blocked += highest * weight;
     }
 
-    const openness = 1 - blocked / AZIMUTHS;
+    const openness = weightSum > 0 ? 1 - blocked / weightSum : 1;
     const shade = FLOOR + (1 - FLOOR) * Math.max(0, Math.min(1, openness)) ** CONTRAST;
     colors[i * 3] = shade;
     colors[i * 3 + 1] = shade;
