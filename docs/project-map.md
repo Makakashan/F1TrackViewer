@@ -44,7 +44,6 @@ rest are single-purpose modules it calls.
 | `tunnels.ts` | Tunnel mask; bore + portals + buried-span fractions come out of `bake.ts`. |
 | `overpass.ts` | All OSM queries (buildings, coastline, structures, breaklines). |
 | `building-heights.ts` | MNH raster → per-building height. |
-| `roofs.ts` | Roof kind planning + geometry. Winding matters — flat caps face **up**. |
 | `belts.ts` | Detail belts: core 4 m ≤150 m, city 8 m ≤600 m, far 16 m. |
 | `ground.ts` | The one surface. Per-belt filtered nodes and triangle-exact height queries; everything that stands on the ground reads this, never the raw field. |
 | `breaklines.ts` | Surveyed cliffs, retaining walls, quays and breakwaters — the lines `ground.ts` may not average across (D18). |

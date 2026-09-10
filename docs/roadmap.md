@@ -18,36 +18,28 @@ whose fix is invisible waits behind something that is not.
 
 ## 1. What the eye catches now
 
-### 1.1 Kit houses, looked at
+### 1.1 Kit houses — closed, and the models switched off
 
-Looked at and acted on, 2026-09-02. The direction holds — the silhouettes fit the
-plots — and all three findings are closed: the houses stood on their plot's lowest
-corner and 12 of 75 were buried past half their height (D32, they now stand on the
-middle of the ground with a terrace under them); the kit painted itself green and
-charcoal in a white city, and a plot could be 3.6 m long (D33, the paint is remapped
-into the palette and the shape test has an 8 m floor).
+Closed 2026-09-11 (D37). The kit was worked on through early September — the houses
+stood on their plot's lowest corner and were buried (D32), painted themselves green
+and charcoal in a white city (D33), then modelled every plot a model fitted (D34) and
+fitted them properly, stretched to the surveyed rectangle and the measured height
+(D35). At its widest 266 buildings were modelled and the city belt sat at 336,464
+triangles of its 350,000.
 
-Then the ask changed: model every building where a model fits (D34), and then fit it
-properly (D35). Models are stretched to the surveyed rectangle and the measured
-height, chosen by how little they have to bend; the industrial pack and Modular
-Buildings' assembled samples joined the library. **266 buildings are modelled**, the
-city belt is at 336,464 triangles of its 350,000, and the fit is exact by construction
-where it used to be 10 % off the surveyed height at the median.
+It is switched off. A model is somebody else's house stretched onto a Monaco plot on
+all three axes, and among four and a half thousand extrusions it reads as a different,
+darker, pitched city dropped into this one. The pack list is the switch, so the loader,
+the fit test and the placement pass are untouched and turning the models back on is
+putting the sources back in that array.
 
-What holds coverage down, in order: **468 plots ran out of triangles**, 87 have no
-model within the stretch cap, 0 stand where the road reaches in. The first has room to
-move — every model ships in the city belt's mesh, while the core belt sits at 134,950
-of its own 450,000. Splitting the models mesh per belt would put the near ones on the
-core belt's budget and roughly triple what the city can afford.
+The open question that went with it — the same silhouette twice in a street, 39
+distinct models over 266 buildings — goes with it too. If the kit ever comes back, that
+is where it resumes: the pick is least-stretched-first with the hash breaking ties, and
+what it does not know is what its neighbours took.
 
-Since then the extrusions carry their own detail (D36) — a shop-front band on every
-building and a lift head on every flat roof — which is what the other four thousand
-needed; the kit's share of the budget paid for it, so 173 buildings are modelled.
-
-Still open, and the next thing a person would notice: **the same silhouette twice in a
-street.** 39 distinct models over 266 buildings, the most used one 41 times. The pick
-is already least-stretched-first with the hash breaking ties inside the top third; what
-it does not know is what its neighbours took.
+The roof clutter (D36) and the pitched roofs went at the same time, for the same
+reason: what a building is now is a plain extrusion, a flat roof and a rim.
 
 ### 1.2 The light rig
 
@@ -144,8 +136,10 @@ upwards is the right default, but a cliff foot is a place someone will want to s
   outside the bbox.
 - **P2.1 — roads carry `tunnel`, `bridge`, `layer`** from Overpass into `RoadLine`
   and the building schema.
-- **The city belt's triangle count.** 110,850 to 213,627 after the kit and the
-  ground-following walls; the budget is 350,000. Worth watching rather than acting on.
+- **The city belt's triangle count.** 200,701 of its 350,000, with the whole city at
+  6.34 MB of 15 since the kit, the roof clutter and the pitches came off (D37). There is
+  more headroom here than there has been at any point; worth watching rather than
+  acting on.
 
 ---
 
