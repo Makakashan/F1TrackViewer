@@ -1368,7 +1368,6 @@ function bakeBuildings(
       // the walls run past the roof plane and turn back down inside it.
       const roofY = top - plan.heightM;
       extrude(meshes[belt], wallRing, footAt, roofY, near ? PARAPET_M : 0, near);
-      if (near) roofClutter(meshes[belt], ring, roofY);
     } else {
       const eaveY = top - plan.heightM;
       extrude(meshes[belt], wallRing, footAt, eaveY, 0, near);
@@ -1742,72 +1741,7 @@ function wallBands(
   addFlatQuad(mesh, a.x, shopTop, a.z, b.x, shopTop, b.z, b.x, top, b.z, a.x, top, a.z);
 }
 
-/**
- * What stands on a flat roof: a lift head, a tank, a stair from the top floor.
- *
- * From above — the view a diorama is mostly seen from — a flat roof is a blank
- * plate, and this is the cheapest thing that says a building is used. Boxes,
- * not models: at this size a lift head is a box in life too, and it is ten
- * triangles rather than a thousand.
- */
-const ROOF_CLUTTER_MIN_M2 = 80;
-const ROOF_CLUTTER_SECOND_M2 = 260;
-/** Kept clear of the roof edge, so nothing overhangs the street. */
-const ROOF_CLUTTER_INSET_M = 2.5;
-
-function roofBox(
-  mesh: Mesh,
-  x: number,
-  z: number,
-  halfX: number,
-  halfZ: number,
-  from: number,
-  to: number,
-): void {
-  const x0 = x - halfX;
-  const x1 = x + halfX;
-  const z0 = z - halfZ;
-  const z1 = z + halfZ;
-  addFlatQuad(mesh, x0, from, z0, x1, from, z0, x1, to, z0, x0, to, z0);
-  addFlatQuad(mesh, x1, from, z1, x0, from, z1, x0, to, z1, x1, to, z1);
-  addFlatQuad(mesh, x1, from, z0, x1, from, z1, x1, to, z1, x1, to, z0);
-  addFlatQuad(mesh, x0, from, z1, x0, from, z0, x0, to, z0, x0, to, z1);
-  addFlatQuad(mesh, x0, to, z0, x1, to, z0, x1, to, z1, x0, to, z1);
-}
-
-function roofClutter(mesh: Mesh, ring: { x: number; z: number }[], roofY: number): void {
-  const area = ringAreaXZ(ring);
-  if (area < ROOF_CLUTTER_MIN_M2) return;
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minZ = Infinity;
-  let maxZ = -Infinity;
-  for (const point of ring) {
-    minX = Math.min(minX, point.x);
-    maxX = Math.max(maxX, point.x);
-    minZ = Math.min(minZ, point.z);
-    maxZ = Math.max(maxZ, point.z);
-  }
-  const spanX = maxX - minX - 2 * ROOF_CLUTTER_INSET_M;
-  const spanZ = maxZ - minZ - 2 * ROOF_CLUTTER_INSET_M;
-  if (spanX <= 1 || spanZ <= 1) return;
-  const wanted = area >= ROOF_CLUTTER_SECOND_M2 ? 2 : 1;
-  const alongX = spanX >= spanZ;
-  for (let i = 0; i < wanted; i++) {
-    // Along the roof's own length, spaced so two never touch, and repeatable.
-    const t = (i + 1) / (wanted + 1);
-    const x = alongX ? minX + ROOF_CLUTTER_INSET_M + spanX * t : (minX + maxX) / 2;
-    const z = alongX ? (minZ + maxZ) / 2 : minZ + ROOF_CLUTTER_INSET_M + spanZ * t;
-    if (!pointInRingXZ(ring, x, z)) continue;
-    mesh.tone = BAND_TONE.cornice;
-    const roll = hashAt(x, z);
-    const halfX = Math.min(2, spanX / 4) * (0.7 + 0.3 * roll);
-    const halfZ = Math.min(2, spanZ / 4) * (0.7 + 0.3 * (1 - roll));
-    roofBox(mesh, x, z, halfX, halfZ, roofY, roofY + 1.6 + 1.4 * roll);
-  }
-}
-
-/** Repeatable per place: the same roof carries the same boxes every bake. */
+/** Repeatable per place: the same footprint rolls the same numbers every bake. */
 function hashAt(x: number, z: number): number {
   const value = Math.sin(x * 12.9898 + z * 78.233) * 43758.5453;
   return value - Math.floor(value);
