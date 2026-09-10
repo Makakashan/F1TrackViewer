@@ -39,7 +39,6 @@ import {
 } from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
 import { applyAlbedo, applyAmbientOcclusion, buildOccluders, shadeBySlope } from "./ao";
-import { buildRoof, PARAPET_M, planRoof, type RoofKind, type RoofTags } from "./roofs";
 import {
   fetchBuildingWays,
   fetchGreenWays,
@@ -1124,7 +1123,6 @@ export function fromOverpass(ways: BuildingWay[]): BuildingsFile {
 
 interface BuildingResult {
   meshes: Record<Belt, Mesh>;
-  roofs: Record<RoofKind, number>;
   built: number;
   droppedOnTrack: number;
   droppedOverWater: number;
@@ -1348,7 +1346,6 @@ function prepareBuildings(
 
 function bakeBuildings(
   prepared: PreparedBuilding[],
-  tags: Map<string, RoofTags>,
   result: BuildingResult,
   /** Footprints a kit model has already taken; their roofs come with it. */
   taken: Set<string>,
@@ -1356,26 +1353,23 @@ function bakeBuildings(
   const meshes = result.meshes;
   for (const building of prepared) {
     if (taken.has(building.id)) continue;
-    const { ring, wallRing, footAt, base, heightM, belt } = building;
-    const top = base + heightM;
-    const plan = planRoof(ring, tags.get(building.id.split("#")[0]) ?? {}, heightM);
-    result.roofs[plan.kind]++;
-
-    // The far belt is silhouettes: no parapet, no bands.
+    const { wallRing, footAt, base, heightM, belt } = building;
+    // Every roof is flat. A pitch was built from the survey's `roof:shape` and
+    // from an oriented box round the footprint, and on a plan that is not a
+    // rectangle the box is not the building: the ridge sat across the wrong
+    // axis and the eaves hung over the street.
+    //
+    // The rim is what makes a flat roof read as a roof rather than a lid, so
+    // the walls run past the roof plane and turn back down inside it. The far
+    // belt is silhouettes and gets none.
     const near = belt !== "far";
-    if (plan.kind === "flat") {
-      // The rim is what makes a flat roof read as a roof rather than a lid, so
-      // the walls run past the roof plane and turn back down inside it.
-      const roofY = top - plan.heightM;
-      extrude(meshes[belt], wallRing, footAt, roofY, near ? PARAPET_M : 0, near);
-    } else {
-      const eaveY = top - plan.heightM;
-      extrude(meshes[belt], wallRing, footAt, eaveY, 0, near);
-      buildRoof(meshes[belt], plan, eaveY);
-    }
+    extrude(meshes[belt], wallRing, footAt, base + heightM, near ? PARAPET_M : 0, near);
     result.built++;
   }
 }
+
+/** The rim round a flat roof: what makes it read as a roof and not a lid. */
+const PARAPET_M = 0.9;
 
 /** Below this the plinth is a lid on the ground rather than a terrace. */
 const KIT_PLINTH_MIN_M = 0.2;
@@ -1427,7 +1421,6 @@ function bakeKitPlinths(
 function emptyBuildingResult(): BuildingResult {
   return {
     meshes: { core: createMesh(), city: createMesh(), far: createMesh() } as Record<Belt, Mesh>,
-    roofs: { flat: 0, gabled: 0, hipped: 0, pyramidal: 0, skillion: 0 },
     built: 0,
     droppedOnTrack: 0,
     droppedOverWater: 0,
@@ -3030,9 +3023,6 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   );
   const heightStats = { value: { measured: 0, fellBack: 0, medianDeltaM: 0, tallest: 0 } };
   const measured = measureBuildingHeights(buildingsFile.buildings, mnh, heightStats);
-  const roofTags = new Map<string, RoofTags>(
-    buildingWays.map((way) => [way.id, way.tags as RoofTags]),
-  );
   const buildings = emptyBuildingResult();
   // The one surface, and it is the drawn one. The mesher's own node table would
   // be a second derivation: the coast is cut inside a cell, a seam node is
@@ -3081,7 +3071,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     Math.round(BELT_BUDGET.city.triangles * KIT_BUDGET_SHARE),
   );
   const kitHousePaths = new Set(kitHouses.map((model) => model.path));
-  bakeBuildings(prepared, roofTags, buildings, kit.taken);
+  bakeBuildings(prepared, buildings, kit.taken);
   const kitPlinths = bakeKitPlinths(kit, buildings.meshes, standOn, corridor);
 
   // Berthed from the harbour survey, the kit's houses, then whatever the
@@ -3325,11 +3315,6 @@ async function main() {
   console.log(
     `  heights ${h.measured} measured from MNH, ${h.fellBack} on OSM tags, ` +
       `median move ${h.medianDeltaM.toFixed(1)} m, tallest ${h.tallest.toFixed(1)} m`,
-  );
-  const roofs = report.buildings.roofs;
-  console.log(
-    `  roofs ${roofs.flat} flat, ${roofs.gabled} gabled, ${roofs.hipped} hipped, ` +
-      `${roofs.pyramidal} pyramidal, ${roofs.skillion} skillion`,
   );
   console.log(`  portals ${report.portalTriangles} tris`);
   console.log(`  barriers ${report.barrierTriangles} tris`);
