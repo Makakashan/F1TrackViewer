@@ -2954,16 +2954,10 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
     breaklineWays: await fetchBreaklineWays(circuitId, bbox, refresh),
     overrides: await loadOverrides(circuitId),
     // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
-    kitHouses: await loadKitHouses(REPO_ROOT, [
-      { dir: "assets/models/kenney-city-suburban", prefixes: ["building-"] },
-      {
-        dir: "assets/models/kenney-city-commercial",
-        prefixes: ["building-", "low-detail-building-"],
-      },
-      { dir: "assets/models/kenney-city-industrial", prefixes: ["building-"] },
-      // Only the assembled samples: everything else in that pack is a wall.
-      { dir: "assets/models/kenney-modular-buildings", prefixes: ["building-sample-"] },
-    ]),
+    // Switched off: a modelled building is somebody else's house stretched onto
+    // a Monaco plot, and it reads as a different city dropped into this one.
+    // The list is the switch — the loader and the placement pass stay.
+    kitHouses: await loadKitHouses(REPO_ROOT, []),
     kitTrees: await loadKitPaths(REPO_ROOT, "assets/models/kenney-city-suburban", ["tree-"]),
     kitBoats: await loadKitPaths(REPO_ROOT, "assets/models/kenney-watercraft", [
       "boat-speed",
