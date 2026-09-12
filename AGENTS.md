@@ -73,6 +73,9 @@ thrown away later.
 - One commit per reason to change. Several small commits beat one wide one.
 - Subject: lowercase `feat|fix|refactor|docs|test:` followed by what the change makes
   true — `fix: roads lie on the terrain instead of hovering over it`.
+- **A commit message is its subject line and nothing else.** No body, no bullet list,
+  no trailer. Reasoning that does not fit the subject belongs in `docs/`, where it can
+  be read without `git log`.
 - No `Co-Authored-By` trailer and no AI attribution anywhere in a commit or PR.
 - **Branches.** `main` is what is deployed — nothing lands there except a release the
   user calls. `dev` is where work accumulates. A feature branches off `dev` and merges
