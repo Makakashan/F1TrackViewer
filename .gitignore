@@ -105,3 +105,6 @@ skills-lock.json
 
 # Downloaded by `bun run assets:fetch` from assets/assets.json.
 assets/models/
+
+# Commit message bodies, archived when dev's history was cut to subjects only.
+commit-bodies.md
