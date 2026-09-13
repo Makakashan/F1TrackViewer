@@ -29,6 +29,8 @@ export interface CityLayerProps {
   /** Weaker devices stop at the city belt and skip the core's detail. */
   lowDetail?: boolean;
   onBeltLoaded?: (belt: CityBelt) => void;
+  /** The look spike draws its own barrier along the track. */
+  hideBarrier?: boolean;
 }
 
 /**
@@ -80,6 +82,13 @@ function liftDecals(group: THREE.Group) {
   });
 }
 
+/** The look spike draws its own barrier along the track; the baked one would stand beside it. */
+function setBarrierVisible(group: THREE.Object3D, visible: boolean) {
+  group.traverse((node) => {
+    if (node instanceof THREE.Mesh && node.name === "barrier") node.visible = visible;
+  });
+}
+
 function disposeGroup(group: THREE.Group) {
   group.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
@@ -95,6 +104,7 @@ export default function CityLayer({
   resolvedTheme,
   lowDetail,
   onBeltLoaded,
+  hideBarrier = false,
 }: CityLayerProps) {
   const invalidate = useThree((state) => state.invalidate);
   const rootRef = useRef<THREE.Group>(null);
@@ -102,6 +112,7 @@ export default function CityLayer({
   // loader reads the theme through a ref rather than depending on it — a
   // dependency there would refetch every belt on a theme switch.
   const themeRef = useRef(resolvedTheme);
+  const hideBarrierRef = useRef(hideBarrier);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -124,6 +135,7 @@ export default function CityLayer({
           gltf.scene.name = `city-${belt}`;
           paintForTheme(gltf.scene, themeRef.current);
           liftDecals(gltf.scene);
+          setBarrierVisible(gltf.scene, !hideBarrierRef.current);
           root.add(gltf.scene);
           loaded.push(gltf.scene);
           onBeltLoaded?.(belt);
@@ -154,6 +166,14 @@ export default function CityLayer({
     paintForTheme(root, resolvedTheme);
     invalidate();
   }, [resolvedTheme, invalidate]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    hideBarrierRef.current = hideBarrier;
+    setBarrierVisible(root, !hideBarrier);
+    invalidate();
+  }, [hideBarrier, invalidate]);
 
   useEffect(() => {
     if (error) console.warn(`city layer: ${error}`);
