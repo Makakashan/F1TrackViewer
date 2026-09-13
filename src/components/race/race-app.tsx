@@ -25,6 +25,8 @@ import RaceSceneSettings from "@/components/race/race-scene-settings";
 import RaceStatusBar from "@/components/race/race-status-bar";
 import RaceResults from "@/components/race/race-results";
 import TimingTower from "@/components/race/timing-tower";
+import LookLabPanel from "@/components/race/look-lab-panel";
+import { useLookLab } from "@/lib/look-lab";
 
 const TrackViewer = dynamic(() => import("@/components/track/track-viewer"), {
   ssr: false,
@@ -79,6 +81,7 @@ export default function RaceApp() {
     setCameraFollow(true);
   }, []);
   const race = useRaceSimulation(qualityMode === "performance");
+  const lookCity = useLookLab((s) => s.city);
 
   const order = useMemo(
     () => (selectedId ? raceGridOrder(selectedId, gridNonce) : []),
@@ -303,7 +306,7 @@ export default function RaceApp() {
             viewMode="realistic"
             markers={markers}
             environmentBundle={terrainModeActive ? environmentBundle ?? null : null}
-            cityManifest={cityManifest ?? null}
+            cityManifest={lookCity ? (cityManifest ?? null) : null}
             environmentTerrain={environmentTerrain}
             widthProfile={widthProfile ?? null}
             realWidthEnabled={realWidthEnabled}
@@ -422,6 +425,10 @@ export default function RaceApp() {
             cameraFollow={cameraFollow}
             onToggleCamera={() => setCameraFollow((value) => !value)}
           />
+
+          {process.env.NODE_ENV === "development" && (
+            <LookLabPanel className="absolute right-4 top-16 hidden max-h-[calc(100%-6rem)] overflow-y-auto sm:block" />
+          )}
         </div>
 
         <RaceBetaNotice />
