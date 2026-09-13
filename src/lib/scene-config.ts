@@ -1,6 +1,9 @@
 /** Shared constants, helpers, and theme colors for the Three.js track scene. */
 
 export const TRACK_SURFACE_RAISE = 1.1;
+/** The viewer's lens; the race view's helicopter camera narrows it while it is on. */
+export const CAMERA_FOV_DEG = 50;
+export const DEFAULT_EXPOSURE = 1.05;
 export const TRACK_OVERLAY_RAISE = TRACK_SURFACE_RAISE + 0.18;
 /** Painted markings sit on the asphalt: just enough clearance to beat depth precision. */
 export const TRACK_PAINT_RAISE = TRACK_SURFACE_RAISE + 0.02;
