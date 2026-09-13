@@ -17,9 +17,16 @@ import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 import TrackMesh from "@/components/three/track-mesh";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useStartFinishCalibration } from "@/hooks/use-start-finish-calibration";
-import { canCreateWebGLContext, getSceneBackground } from "@/lib/scene-config";
+import {
+  CAMERA_FOV_DEG,
+  DEFAULT_EXPOSURE,
+  canCreateWebGLContext,
+  getSceneBackground,
+} from "@/lib/scene-config";
 import CalibrationPanel from "@/components/three/calibration-panel";
 import SceneDebugHandle from "@/components/three/scene-debug-handle";
+import LookSun from "@/components/three/look-sun";
+import { useLookLab } from "@/lib/look-lab";
 
 export type CameraPreset = "top" | "iso" | "side" | "reset";
 
@@ -91,6 +98,7 @@ export default function TrackViewer({
   onCameraDetach,
 }: TrackViewerProps) {
   const raceMode = viewMode === "realistic";
+  const newLook = useLookLab((s) => s.enabled) && raceMode;
   const [canvasEventSource, setCanvasEventSource] =
     useState<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
@@ -140,12 +148,13 @@ export default function TrackViewer({
         ) : canvasEventSource ? (
           <Canvas
             eventSource={canvasEventSource}
-            shadows={false}
+            // Only the look spike's sun casts; a shadow map with no caster is never drawn.
+            shadows={raceMode ? "percentage" : false}
             // Nothing in this scene animates on its own — no useFrame outside the globe's own canvas.
             frameloop={autoRotate || raceSim?.racing ? "always" : "demand"}
             dpr={[1, 1.5]}
             camera={{
-              fov: 50,
+              fov: CAMERA_FOV_DEG,
               // Race mode parks the camera a few meters from a car.
               near: raceMode ? 1 : isMobile ? 8 : 2,
               far: 20000,
@@ -160,34 +169,40 @@ export default function TrackViewer({
             }}
             onCreated={({ gl }) => {
               gl.toneMapping = THREE.ACESFilmicToneMapping;
-              gl.toneMappingExposure = 1.05;
+              gl.toneMappingExposure = DEFAULT_EXPOSURE;
               gl.outputColorSpace = THREE.SRGBColorSpace;
               gl.setClearColor(sceneBackgroundColor, 0);
             }}
             style={{ background: bgGradient, touchAction: "none" }}
           >
-            <ambientLight intensity={resolvedTheme === "dark" ? 0.42 : 0.55} />
-            <hemisphereLight
-              args={
-                resolvedTheme === "dark"
-                  ? ["#AFC2FF", "#07080C", 0.58]
-                  : ["#AAB4D8", "#16181D", 0.48]
-              }
-            />
-            <directionalLight
-              position={[500, 800, 400]}
-              intensity={resolvedTheme === "dark" ? 1.45 : 1.05}
-            />
-            <directionalLight
-              position={[-400, 300, -500]}
-              intensity={0.5}
-              color="#7D9BFF"
-            />
-            <directionalLight
-              position={[0, 260, -900]}
-              intensity={0.55}
-              color="#E10600"
-            />
+            {newLook ? (
+              <LookSun />
+            ) : (
+              <>
+                <ambientLight intensity={resolvedTheme === "dark" ? 0.42 : 0.55} />
+                <hemisphereLight
+                  args={
+                    resolvedTheme === "dark"
+                      ? ["#AFC2FF", "#07080C", 0.58]
+                      : ["#AAB4D8", "#16181D", 0.48]
+                  }
+                />
+                <directionalLight
+                  position={[500, 800, 400]}
+                  intensity={resolvedTheme === "dark" ? 1.45 : 1.05}
+                />
+                <directionalLight
+                  position={[-400, 300, -500]}
+                  intensity={0.5}
+                  color="#7D9BFF"
+                />
+                <directionalLight
+                  position={[0, 260, -900]}
+                  intensity={0.55}
+                  color="#E10600"
+                />
+              </>
+            )}
 
             {process.env.NODE_ENV === "development" && <SceneDebugHandle />}
 
