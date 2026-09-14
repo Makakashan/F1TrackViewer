@@ -1,9 +1,14 @@
 /** Where do the kerbs actually land? */
+import * as THREE from "three";
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { buildTrackCurve, computeBounds } from "../src/lib/geo-utils";
 import { sampleCurvature } from "../src/lib/track/track-curvature";
 import { sampleApronRoom, apronRoomAt } from "../src/lib/track/track-apron";
+import { barrierOffsetAt } from "../src/lib/track/track-barriers";
+import { limitHalfWidth, sampleReachLimit } from "../src/lib/track/track-reach-limit";
+import { halfWidthAt, type HalfWidth } from "../src/lib/track/track-geometry";
+import { sampleWidthAt, type TrackWidthProfile } from "../src/lib/track/track-width";
 
 const CACHE_DIR = ".cache/circuit-geojson";
 const RAW_BASE = "https://raw.githubusercontent.com/bacinger/f1-circuits/master";
@@ -16,8 +21,8 @@ const MIN_RUN_M = Number(process.env.MIN_RUN_M ?? 12);
 /** The renderer's kerb width, and the width below which a strip is a thread. */
 const KERB_WIDTH_M = 1.9;
 const KERB_MIN_VISIBLE_M = 0.4;
-/** Half width used for the audit — the viewer's default ribbon. */
-const HALF_WIDTH_M = 7.5;
+/** The viewer's default half width, for a circuit with no real-width profile. */
+const HALF_WIDTH_M = 7;
 
 async function fetchGeoJson(id: string) {
   const path = `${CACHE_DIR}/${id}.geojson`;
@@ -28,6 +33,54 @@ async function fetchGeoJson(id: string) {
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(path, JSON.stringify(json));
   return json;
+}
+
+/** The half width the race view draws: the real profile where one ships, the default otherwise. */
+async function halfWidthOf(id: string): Promise<HalfWidth> {
+  const path = `public/track-widths/${id}.json`;
+  if (!existsSync(path)) return HALF_WIDTH_M;
+  const profile = JSON.parse(await readFile(path, "utf8")) as TrackWidthProfile;
+  return (s: number) => sampleWidthAt(profile, s) / 2;
+}
+
+/** The race view's own sample count for a lap, so a fold is judged on the mesh it would build. */
+function rendererSamples(length: number): number {
+  return Math.max(400, Math.min(2000, Math.round(length / 4)));
+}
+
+/**
+ * Samples where a line offset from the centreline runs backwards: the edge has
+ * folded over itself, which is a fan of spokes on a ribbon and a wall across the
+ * road for a barrier.
+ */
+function foldedSamples(
+  curve: THREE.CatmullRomCurve3,
+  samples: number,
+  offsetAt: (s: number, sign: number) => number,
+): number {
+  const up = new THREE.Vector3(0, 1, 0);
+  const points: THREE.Vector3[] = [];
+  const tangents: THREE.Vector3[] = [];
+  const sides: THREE.Vector3[] = [];
+  for (let i = 0; i < samples; i++) {
+    const s = i / samples;
+    points.push(curve.getPointAt(s));
+    const t = curve.getTangentAt(s);
+    tangents.push(t);
+    sides.push(new THREE.Vector3().crossVectors(t, up).normalize());
+  }
+  let folded = 0;
+  for (const sign of [1, -1]) {
+    for (let i = 0; i < samples; i++) {
+      const j = (i + 1) % samples;
+      const a = offsetAt(i / samples, sign) * sign;
+      const b = offsetAt(j / samples, sign) * sign;
+      const dx = points[j].x + sides[j].x * b - (points[i].x + sides[i].x * a);
+      const dz = points[j].z + sides[j].z * b - (points[i].z + sides[i].z * a);
+      if (dx * tangents[i].x + dz * tangents[i].z <= 0) folded++;
+    }
+  }
+  return folded;
 }
 
 function runsOf(sides: number[]): Array<{ start: number; count: number; sign: number }> {
@@ -80,7 +133,7 @@ async function main() {
   );
 
   console.log(
-    "circuit          laps  corners  kerbed  kerbed%  tightest-R  bare  mean-kerb-m",
+    "circuit          laps  corners  kerbed  kerbed%  tightest-R  bare  mean-kerb-m  folds ribbon/apron/barrier",
   );
   for (const id of ids) {
     if (only && id !== only) continue;
@@ -104,7 +157,8 @@ async function main() {
     const kept = runs.filter((run) => run.count * ds >= MIN_RUN_M);
 
     // The tightest radius any kept run reaches, against the apron under it.
-    const room = sampleApronRoom(curve, HALF_WIDTH_M, SAMPLES, null);
+    const halfWidth = await halfWidthOf(id);
+    const room = sampleApronRoom(curve, halfWidth, SAMPLES, null);
 
     let tightest = Infinity;
     let bare = 0;
@@ -135,6 +189,25 @@ async function main() {
     }
 
     const kerbedMeters = kept.reduce((sum, run) => sum + run.count * ds, 0);
+
+    const drawn = rendererSamples(total);
+    const reach = sampleReachLimit(curve, drawn);
+    const drawnHalfWidth = limitHalfWidth(halfWidth, reach);
+    const drawnRoom = sampleApronRoom(curve, drawnHalfWidth, drawn, null);
+    const folds = [
+      foldedSamples(curve, drawn, (s) => halfWidthAt(drawnHalfWidth, s)),
+      foldedSamples(
+        curve,
+        drawn,
+        (s, sign) => halfWidthAt(drawnHalfWidth, s) + apronRoomAt(drawnRoom, s, sign),
+      ),
+      foldedSamples(
+        curve,
+        drawn,
+        (s, sign) => barrierOffsetAt(drawnHalfWidth, drawnRoom, s, sign, reach),
+      ),
+    ];
+
     console.log(
       `${id.padEnd(16)} ${Math.round(total).toString().padStart(5)}  ${runs.length
         .toString()
@@ -149,7 +222,7 @@ async function main() {
         widthSum / Math.max(widthCount, 1)
       )
         .toFixed(2)
-        .padStart(11)}`,
+        .padStart(11)}  ${folds.join("/").padStart(26)}`,
     );
   }
 }
