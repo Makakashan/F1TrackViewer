@@ -10,8 +10,10 @@ import { halfWidthAt, type HalfWidth } from "@/lib/track/track-geometry";
 
 /** Share of the local radius an edge may use; the rest keeps its line from turning back. */
 const RADIUS_SHARE = 0.85;
-/** A limit holds this far either side, so an edge eases into a pinch instead of kinking. */
+/** A limit holds this far either side, so the edge beside a pinch cannot fold either. */
 const HOLD_M = 10;
+/** How fast a pinch may close or open, in metres of reach per metre along the lap. */
+const MAX_SLOPE = 0.15;
 /** Kept between the ribbon's edge and the limit, so a kerb and a barrier still fit. */
 export const RIBBON_MARGIN_M = 1.2;
 /** The ribbon is never pinched narrower than this half width. */
@@ -22,6 +24,18 @@ export interface ReachLimit {
   /** Furthest reach on the +side at sample i, in metres; Infinity where nothing limits it. */
   plus: Float32Array;
   minus: Float32Array;
+}
+
+/** Caps how fast `values` may change from one sample to the next, round the closed lap. */
+function limitSlope(values: Float32Array, step: number): Float32Array {
+  const n = values.length;
+  const out = Float32Array.from(values);
+  // Twice each way: a closed lap has no first sample for one pass to start from.
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < n; i++) out[i] = Math.min(out[i], out[(i - 1 + n) % n] + step);
+    for (let i = n - 1; i >= 0; i--) out[i] = Math.min(out[i], out[(i + 1) % n] + step);
+  }
+  return out;
 }
 
 /** Tightest of `values` within `span` samples either side, round the closed lap. */
@@ -69,8 +83,14 @@ export function sampleReachLimit(
     minus[i] = Math.min(minus[i], legs.minus[i] / 2);
   }
 
+  // Held, then eased: a pinch that starts within one sample is a wedge in every edge built on it.
   const span = Math.max(1, Math.round(HOLD_M / ds));
-  return { samples: n, plus: holdMinimum(plus, span), minus: holdMinimum(minus, span) };
+  const step = MAX_SLOPE * ds;
+  return {
+    samples: n,
+    plus: limitSlope(holdMinimum(plus, span), step),
+    minus: limitSlope(holdMinimum(minus, span), step),
+  };
 }
 
 /** The limit at a normalized arc position, taking the tighter of the two samples around it. */
