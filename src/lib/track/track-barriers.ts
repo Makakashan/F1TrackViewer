@@ -2,11 +2,12 @@ import * as THREE from "three";
 import { apronRoomAt, type ApronRoom } from "@/lib/track/track-apron";
 import { halfWidthAt, type HalfWidth } from "@/lib/track/track-geometry";
 import { FENCE_TILE_M } from "@/lib/track/surface-textures";
+import { reachLimitAt, type ReachLimit } from "@/lib/track/track-reach-limit";
 
 /** The barrier and catch fence lining a street circuit, built along the centreline the way the kerbs are. */
 
 export const BARRIER_HEIGHT_M = 1.1;
-const BARRIER_THICKNESS_M = 0.3;
+export const BARRIER_THICKNESS_M = 0.3;
 /** Sunk a little, so the wall meets whatever surface is under it without a gap. */
 const BARRIER_FOOT_M = 0.4;
 /** Just past the paving's edge, so the wall stands on it rather than in it. */
@@ -101,9 +102,12 @@ export function barrierOffsetAt(
   room: ApronRoom | null,
   s: number,
   sign: number,
+  reach?: ReachLimit | null,
 ): number {
   const paving = room ? apronRoomAt(room, s, sign) : 0;
-  return halfWidthAt(halfWidth, s) + Math.max(paving, BARRIER_MIN_CLEARANCE_M) + BARRIER_SETBACK_M;
+  const offset = halfWidthAt(halfWidth, s) + Math.max(paving, BARRIER_MIN_CLEARANCE_M) + BARRIER_SETBACK_M;
+  // Inside a hairpin, or facing another leg, the wall stops short, outer face included.
+  return reach ? Math.min(offset, reachLimitAt(reach, s, sign) - BARRIER_THICKNESS_M) : offset;
 }
 
 export function buildBarrierGeometry(
@@ -115,6 +119,7 @@ export function buildBarrierGeometry(
   room: ApronRoom | null,
   /** Stretches the ribbon is not drawn on; see `buildExtrudedTrack`. */
   hiddenAt?: (s: number) => boolean,
+  reach?: ReachLimit | null,
 ): BarrierGeometry | null {
   const n = samples;
   if (n < 8) return null;
@@ -139,7 +144,7 @@ export function buildBarrierGeometry(
 
   for (const sign of [1, -1]) {
     const offsets: number[] = [];
-    for (let i = 0; i <= n; i++) offsets.push(barrierOffsetAt(halfWidth, room, i / n, sign));
+    for (let i = 0; i <= n; i++) offsets.push(barrierOffsetAt(halfWidth, room, i / n, sign, reach));
 
     for (let i = 0; i < n; i++) {
       if (hiddenAt?.((i + 0.5) / n)) continue;
@@ -214,7 +219,7 @@ export function buildBarrierGeometry(
       const p = curve.getPointAt(s);
       tangent.copy(curve.getTangentAt(s)).setY(0).normalize();
       v.crossVectors(tangent, up).normalize().multiplyScalar(sign);
-      const centre = barrierOffsetAt(halfWidth, room, s, sign) + BARRIER_THICKNESS_M / 2;
+      const centre = barrierOffsetAt(halfWidth, room, s, sign, reach) + BARRIER_THICKNESS_M / 2;
       const base = p.y + raise + BARRIER_HEIGHT_M;
       const top = base + FENCE_HEIGHT_M;
       const middle = at(p, v, centre, 0);
