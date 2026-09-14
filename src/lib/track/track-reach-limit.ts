@@ -2,9 +2,10 @@ import * as THREE from "three";
 import { halfWidthAt, type HalfWidth } from "@/lib/track/track-geometry";
 
 /**
- * How far from the centreline anything may reach on the inside of a bend before
- * its edge folds back over itself. The ribbon, the apron, the kerbs and the
- * barrier all read this one answer, so a hairpin pinches them together.
+ * How far from the centreline anything may reach on each side: on the inside of
+ * a bend, before its edge folds back over itself, and toward another leg of the
+ * lap, before it lands on that leg. The ribbon, the apron, the kerbs and the
+ * barrier all read this one answer.
  */
 
 /** Share of the local radius an edge may use; the rest keeps its line from turning back. */
@@ -61,6 +62,13 @@ export function sampleReachLimit(
     side[(i + 1) % n] = Math.min(side[(i + 1) % n], reach);
   }
 
+  // Facing another leg, each side gets half the gap.
+  const legs = sampleLegGaps(curve, n);
+  for (let i = 0; i < n; i++) {
+    plus[i] = Math.min(plus[i], legs.plus[i] / 2);
+    minus[i] = Math.min(minus[i], legs.minus[i] / 2);
+  }
+
   const span = Math.max(1, Math.round(HOLD_M / ds));
   return { samples: n, plus: holdMinimum(plus, span), minus: holdMinimum(minus, span) };
 }
@@ -74,7 +82,7 @@ export function reachLimitAt(limit: ReachLimit, s: number, sign: number): number
   return Math.min(values[i % n], values[(i + 1) % n]);
 }
 
-/** The half width a ribbon can have without folding: pinched through a hairpin, untouched elsewhere. */
+/** The half width a ribbon can have without folding or landing on another leg; untouched elsewhere. */
 export function limitHalfWidth(halfWidth: HalfWidth, limit: ReachLimit): HalfWidth {
   return (s: number) => {
     const requested = halfWidthAt(halfWidth, s);
