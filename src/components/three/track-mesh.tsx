@@ -53,6 +53,7 @@ import { buildSpeedProfile } from "@/lib/race/speed-profile";
 import { buildRacingLine } from "@/lib/track/racing-line";
 import { buildRubberGeometry } from "@/lib/track/track-rubber";
 import { buildBarrierGeometry } from "@/lib/track/track-barriers";
+import { limitHalfWidth, sampleReachLimit } from "@/lib/track/track-reach-limit";
 import { ASPHALT_TILE_M, surfaceTextures } from "@/lib/track/surface-textures";
 import { useLookLab } from "@/lib/look-lab";
 import { halfWidthAt } from "@/lib/track/track-geometry";
@@ -229,7 +230,7 @@ export default function TrackMesh({
   const newLook = raceView && lookEnabled;
 
   const realWidthActive = (raceView || !!realWidthEnabled) && !!widthProfile;
-  const halfWidth = useMemo<HalfWidth>(() => {
+  const requestedHalfWidth = useMemo<HalfWidth>(() => {
     if (realWidthActive && widthProfile) {
       return (s: number) => sampleWidthAt(widthProfile, s) / 2;
     }
@@ -360,6 +361,13 @@ export default function TrackMesh({
     const length = feature.properties.length;
     return Math.max(400, Math.min(2000, Math.round(length / 4)));
   }, [feature.properties.length]);
+
+  // Through a hairpin, or beside another leg, everything is pinched to fit, the ribbon first.
+  const reachLimit = useMemo(() => sampleReachLimit(curve, samples), [curve, samples]);
+  const halfWidth = useMemo(
+    () => limitHalfWidth(requestedHalfWidth, reachLimit),
+    [requestedHalfWidth, reachLimit],
+  );
 
   // The narrow/wide gradient is a diagnostic overlay, not part of the scene.
   const widthColorAt = useMemo(() => {
@@ -501,9 +509,20 @@ export default function TrackMesh({
             samples,
             apronRoom,
             hiddenAt,
+            reachLimit,
           )
         : null,
-    [newLook, lookBarriers, lookFences, curve, halfWidth, samples, apronRoom, hiddenAt],
+    [
+      newLook,
+      lookBarriers,
+      lookFences,
+      curve,
+      halfWidth,
+      samples,
+      apronRoom,
+      hiddenAt,
+      reachLimit,
+    ],
   );
 
   const rubberGeometry = useMemo(() => {
