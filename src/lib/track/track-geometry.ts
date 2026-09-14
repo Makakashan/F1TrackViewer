@@ -451,3 +451,18 @@ export function buildSectorSplitLineGeometry(
   geometry.computeVertexNormals();
   return geometry;
 }
+
+/** UVs from the ground plane in tiles of `tileMeters`, so a road texture has no seam along the lap. */
+export function addTopDownUv(
+  geometry: THREE.BufferGeometry,
+  tileMeters: number,
+): THREE.BufferGeometry {
+  const position = geometry.getAttribute("position");
+  const uv = new Float32Array(position.count * 2);
+  for (let i = 0; i < position.count; i++) {
+    uv[i * 2] = position.getX(i) / tileMeters;
+    uv[i * 2 + 1] = position.getZ(i) / tileMeters;
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+  return geometry;
+}

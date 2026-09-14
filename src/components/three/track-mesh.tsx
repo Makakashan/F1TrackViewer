@@ -16,6 +16,7 @@ import {
 } from "@/lib/geo-utils";
 import { smoothTerrainTrackProfile } from "@/lib/track/elevation";
 import {
+  addTopDownUv,
   buildExtrudedTrack,
   buildTrackOutline,
   buildSectorMesh,
@@ -50,6 +51,10 @@ import {
 import { buildStartLightsGeometry } from "@/lib/race/start-lights";
 import { buildSpeedProfile } from "@/lib/race/speed-profile";
 import { buildRacingLine } from "@/lib/track/racing-line";
+import { buildRubberGeometry } from "@/lib/track/track-rubber";
+import { buildBarrierGeometry } from "@/lib/track/track-barriers";
+import { ASPHALT_TILE_M, surfaceTextures } from "@/lib/track/surface-textures";
+import { useLookLab } from "@/lib/look-lab";
 import { halfWidthAt } from "@/lib/track/track-geometry";
 import type { RaceController } from "@/hooks/use-race-simulation";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
@@ -91,7 +96,49 @@ const LAMP_OFF_COLOR = "#4a1c20";
 /** Lit: brighter than any red in the scene, so it reads as a light source. */
 const LAMP_ON_COLOR = "#ff2318";
 
+/** Lit asphalt under the look spike's sun; the texture carries the variation. */
+const LOOK_ASPHALT_COLOR = "#5c5c60";
+/** Pale paving round a track with no city, so the spike is judged against ground rather than a void. */
+const LOOK_GROUND_COLOR = "#cbc5ba";
+
 const UP = new THREE.Vector3(0, 1, 0);
+
+/** Paint on the road: unlit as it always was, or lit so the look spike's shadows land on it. */
+function RoadMaterial({
+  lit,
+  color,
+  vertexColors,
+  map,
+}: {
+  lit: boolean;
+  color?: THREE.ColorRepresentation;
+  vertexColors?: boolean;
+  map?: THREE.Texture | null;
+}) {
+  return lit ? (
+    <meshStandardMaterial
+      key={map ? "lit-mapped" : "lit"}
+      color={color}
+      vertexColors={vertexColors}
+      map={map ?? null}
+      roughness={0.9}
+      metalness={0}
+      side={THREE.DoubleSide}
+      // The ribbon's baked normals point down under its winding; the surface's own slope faces the camera.
+      flatShading
+    />
+  ) : (
+    <meshBasicMaterial
+      key="unlit"
+      color={color}
+      vertexColors={vertexColors}
+      side={THREE.DoubleSide}
+      depthTest
+      depthWrite
+      toneMapped={false}
+    />
+  );
+}
 
 export interface TrackMeshProps {
   geojson: CircuitGeoJSON;
@@ -171,6 +218,15 @@ export default function TrackMesh({
 
   // Race view is the "what it actually looks like" mode.
   const raceView = viewMode === "realistic";
+
+  // The scene-look spike, switched from the look lab (docs/scene-look-plan.md).
+  const lookEnabled = useLookLab((s) => s.enabled);
+  const lookAsphalt = useLookLab((s) => s.asphalt);
+  const lookRubber = useLookLab((s) => s.rubber);
+  const lookBarriers = useLookLab((s) => s.barriers);
+  const lookFences = useLookLab((s) => s.fences);
+  const lookGround = useLookLab((s) => s.ground);
+  const newLook = raceView && lookEnabled;
 
   const realWidthActive = (raceView || !!realWidthEnabled) && !!widthProfile;
   const halfWidth = useMemo<HalfWidth>(() => {
@@ -333,20 +389,19 @@ export default function TrackMesh({
     return (s: number) => spans.some(([from, to]) => s >= from && s <= to);
   }, [cityManifest]);
 
-  const trackGeometry = useMemo(
-    () =>
-      buildExtrudedTrack(
-        curve,
-        halfWidth,
-        TRACK_SURFACE_RAISE,
-        groundY,
-        samples,
-        trackSkirtBottom,
-        widthColorAt,
-        hiddenAt,
-      ),
-    [curve, halfWidth, groundY, samples, trackSkirtBottom, widthColorAt, hiddenAt],
-  );
+  const trackGeometry = useMemo(() => {
+    const geometry = buildExtrudedTrack(
+      curve,
+      halfWidth,
+      TRACK_SURFACE_RAISE,
+      groundY,
+      samples,
+      trackSkirtBottom,
+      widthColorAt,
+      hiddenAt,
+    );
+    return addTopDownUv(geometry, ASPHALT_TILE_M);
+  }, [curve, halfWidth, groundY, samples, trackSkirtBottom, widthColorAt, hiddenAt]);
 
   const outlineGeometry = useMemo(
     () => buildTrackOutline(curve, halfWidth, TRACK_OVERLAY_RAISE, samples, hiddenAt),
@@ -390,18 +445,17 @@ export default function TrackMesh({
   );
 
   // Asphalt beyond the white line, so the kerb has something to lie on.
-  const apronGeometry = useMemo(
-    () =>
-      buildTrackApronGeometry(
-        curve,
-        halfWidth,
-        TRACK_SURFACE_RAISE - 0.02,
-        samples,
-        apronRoom,
-        hiddenAt,
-      ),
-    [curve, halfWidth, samples, apronRoom, hiddenAt],
-  );
+  const apronGeometry = useMemo(() => {
+    const geometry = buildTrackApronGeometry(
+      curve,
+      halfWidth,
+      TRACK_SURFACE_RAISE - 0.02,
+      samples,
+      apronRoom,
+      hiddenAt,
+    );
+    return geometry && addTopDownUv(geometry, ASPHALT_TILE_M);
+  }, [curve, halfWidth, samples, apronRoom, hiddenAt]);
 
   // Kerbs sit a couple of centimetres above the surface and are drawn after it.
   const kerbGeometry = useMemo(
@@ -429,6 +483,54 @@ export default function TrackMesh({
       ),
     [curve, halfWidth, samples, hiddenAt],
   );
+
+  // What the look spike adds along the track; nothing is built while it is off.
+  const gl = useThree((state) => state.gl);
+  const lookTextures = useMemo(
+    () => (newLook ? surfaceTextures(gl.capabilities.getMaxAnisotropy()) : null),
+    [newLook, gl],
+  );
+
+  const barrierGeometry = useMemo(
+    () =>
+      newLook && (lookBarriers || lookFences)
+        ? buildBarrierGeometry(
+            curve,
+            halfWidth,
+            TRACK_SURFACE_RAISE,
+            samples,
+            apronRoom,
+            hiddenAt,
+          )
+        : null,
+    [newLook, lookBarriers, lookFences, curve, halfWidth, samples, apronRoom, hiddenAt],
+  );
+
+  const rubberGeometry = useMemo(() => {
+    if (!newLook || !lookRubber) return null;
+    const line = buildRacingLine(curve, samples, halfWidth);
+    if (!line) return null;
+    return buildRubberGeometry(
+      curve,
+      samples,
+      line,
+      TRACK_SURFACE_RAISE + 0.01,
+      markers?.directionSign ?? 1,
+      hiddenAt,
+    );
+  }, [newLook, lookRubber, curve, samples, halfWidth, markers?.directionSign, hiddenAt]);
+
+  useEffect(() => {
+    return () => {
+      barrierGeometry?.wall.dispose();
+      barrierGeometry?.frame.dispose();
+      barrierGeometry?.wire.dispose();
+    };
+  }, [barrierGeometry]);
+
+  useEffect(() => {
+    return () => rubberGeometry?.dispose();
+  }, [rubberGeometry]);
 
   const startFinishPlacement = useMemo(
     () =>
@@ -730,6 +832,17 @@ export default function TrackMesh({
         />
       )}
 
+      {newLook && lookGround && !hasEnvironment && peakY < 0.5 && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, TRACK_SURFACE_RAISE - 0.06, 0]}
+          receiveShadow
+        >
+          <planeGeometry args={[radius * 6, radius * 6]} />
+          <meshStandardMaterial color={LOOK_GROUND_COLOR} roughness={1} />
+        </mesh>
+      )}
+
       {cityActive && (
         <>
           <CityLayer
@@ -737,6 +850,7 @@ export default function TrackMesh({
             resolvedTheme={resolvedTheme}
             lowDetail={lowDetail}
             onBeltLoaded={onBeltLoaded}
+            hideBarrier={newLook && lookBarriers}
           />
           <CameraGroundClamp version={beltsLoaded} />
         </>
@@ -801,34 +915,42 @@ export default function TrackMesh({
             geometry={trackGeometry}
             renderOrder={TRACK_RENDER_ORDER}
             onPointerDown={calibrateOnPointerDown}
+            receiveShadow={newLook}
           >
-            <meshBasicMaterial
-              key={widthColorAt ? "real-width-colors" : "solid-track"}
-              vertexColors
-              color={
-                widthColorAt
-                  ? "#ffffff"
-                  : raceView
-                    ? ASPHALT_COLOR
-                    : colors.trackColor
-              }
-              side={THREE.DoubleSide}
-              depthTest
-              depthWrite
-              toneMapped={false}
-            />
+            {newLook ? (
+              <RoadMaterial
+                lit
+                vertexColors
+                color={LOOK_ASPHALT_COLOR}
+                map={lookAsphalt ? lookTextures?.asphalt : null}
+              />
+            ) : (
+              <meshBasicMaterial
+                key={widthColorAt ? "real-width-colors" : "solid-track"}
+                vertexColors
+                color={
+                  widthColorAt
+                    ? "#ffffff"
+                    : raceView
+                      ? ASPHALT_COLOR
+                      : colors.trackColor
+                }
+                side={THREE.DoubleSide}
+                depthTest
+                depthWrite
+                toneMapped={false}
+              />
+            )}
           </mesh>
         </>
       )}
 
-      <mesh geometry={edgeLineGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
-        <meshBasicMaterial
-          color="#f2f4f7"
-          side={THREE.DoubleSide}
-          depthTest
-          depthWrite
-          toneMapped={false}
-        />
+      <mesh
+        geometry={edgeLineGeometry}
+        renderOrder={TRACK_OVERLAY_RENDER_ORDER}
+        receiveShadow={newLook}
+      >
+        <RoadMaterial lit={newLook} color="#f2f4f7" />
       </mesh>
 
       {/* Paved verge and kerbs belong to the race view. The map view is a
@@ -836,27 +958,83 @@ export default function TrackMesh({
           strip traced around it in the sector colour reads as an outline
           somebody forgot to turn off. */}
       {raceView && apronGeometry && (
-        <mesh geometry={apronGeometry} renderOrder={TRACK_APRON_RENDER_ORDER}>
-          <meshBasicMaterial
-            color={ASPHALT_COLOR}
-            side={THREE.DoubleSide}
-            depthTest
-            depthWrite
-            toneMapped={false}
+        <mesh
+          geometry={apronGeometry}
+          renderOrder={TRACK_APRON_RENDER_ORDER}
+          receiveShadow={newLook}
+        >
+          <RoadMaterial
+            lit={newLook}
+            color={newLook ? LOOK_ASPHALT_COLOR : ASPHALT_COLOR}
+            map={newLook && lookAsphalt ? lookTextures?.asphalt : null}
           />
         </mesh>
       )}
 
       {raceView && kerbGeometry && (
-        <mesh geometry={kerbGeometry} renderOrder={TRACK_OVERLAY_RENDER_ORDER}>
+        <mesh
+          geometry={kerbGeometry}
+          renderOrder={TRACK_OVERLAY_RENDER_ORDER}
+          receiveShadow={newLook}
+        >
+          <RoadMaterial lit={newLook} vertexColors />
+        </mesh>
+      )}
+
+      {rubberGeometry && (
+        <mesh geometry={rubberGeometry} renderOrder={TRACK_RENDER_ORDER}>
           <meshBasicMaterial
             vertexColors
-            side={THREE.DoubleSide}
-            depthTest
-            depthWrite
+            transparent
+            depthWrite={false}
+            polygonOffset
+            polygonOffsetFactor={-1}
+            polygonOffsetUnits={-2}
             toneMapped={false}
           />
         </mesh>
+      )}
+
+      {barrierGeometry && lookBarriers && (
+        <mesh
+          geometry={barrierGeometry.wall}
+          renderOrder={TRACK_PROP_RENDER_ORDER}
+          castShadow
+          receiveShadow
+        >
+          <meshStandardMaterial
+            vertexColors
+            roughness={0.7}
+            metalness={0.05}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+
+      {barrierGeometry && lookFences && (
+        <>
+          <mesh
+            geometry={barrierGeometry.frame}
+            renderOrder={TRACK_PROP_RENDER_ORDER}
+            castShadow
+          >
+            <meshStandardMaterial
+              color="#3a3e44"
+              roughness={0.6}
+              metalness={0.3}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+          <mesh geometry={barrierGeometry.wire} renderOrder={TRACK_PROP_RENDER_ORDER}>
+            <meshStandardMaterial
+              map={lookTextures?.fence ?? null}
+              transparent
+              depthWrite={false}
+              roughness={0.6}
+              side={THREE.DoubleSide}
+            />
+          </mesh>
+        </>
       )}
 
       {/* A schematic outline of the map. On asphalt with kerbs it reads as a
@@ -954,6 +1132,7 @@ export default function TrackMesh({
       <mesh
         geometry={startFinishGantryGeometry.posts}
         renderOrder={TRACK_PROP_RENDER_ORDER}
+        castShadow
       >
         <meshStandardMaterial
           color="#050507"
@@ -966,6 +1145,7 @@ export default function TrackMesh({
       <mesh
         geometry={startFinishGantryGeometry.beam}
         renderOrder={TRACK_PROP_RENDER_ORDER}
+        castShadow
       >
         <meshStandardMaterial
           vertexColors

@@ -7,6 +7,8 @@ import type { GridSlot } from "@/lib/race/start-grid";
 import type { PoseAt } from "@/components/three/start-grid-cars";
 import type { RaceController } from "@/hooks/use-race-simulation";
 import { interpolateCarPose } from "@/lib/race/race-sim";
+import { useLookLab } from "@/lib/look-lab";
+import { CAMERA_FOV_DEG } from "@/lib/scene-config";
 
 export interface RaceCameraRigProps {
   slots: GridSlot[];
@@ -94,6 +96,12 @@ export default function RaceCameraRig({
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls) as OrbitLike | null;
   const invalidate = useThree((state) => state.invalidate);
+  // The look spike's helicopter camera replaces the chase shot while it is on.
+  const heli = useLookLab((s) => s.enabled);
+  const heliHeight = useLookLab((s) => s.heliHeightM);
+  const heliBack = useLookLab((s) => s.heliBackM);
+  const heliLateral = useLookLab((s) => s.heliLateralM);
+  const heliFov = useLookLab((s) => s.heliFovDeg);
   const lastKey = useRef<string | null>(null);
   const pressed = useRef<Set<string>>(new Set());
   // Set when the rig owes the camera a framing.
@@ -124,9 +132,9 @@ export default function RaceCameraRig({
     out: THREE.Vector3,
   ) {
     const offset = localOffset.current;
-    const ox = offset ? offset.x : LATERAL_M;
-    const oy = offset ? offset.y : HEIGHT_M;
-    const oz = offset ? offset.z : DISTANCE_M;
+    const ox = offset ? offset.x : heli ? heliLateral : LATERAL_M;
+    const oy = offset ? offset.y : heli ? heliHeight : HEIGHT_M;
+    const oz = offset ? offset.z : heli ? -heliBack : DISTANCE_M;
     out
       .copy(origin)
       .addScaledVector(across, ox)
@@ -183,6 +191,27 @@ export default function RaceCameraRig({
     if (follow) needsFraming.current = true;
   }, [follow, focusIndex, racing]);
 
+  // New knobs drop whatever the user had orbited to, so the frame shows what they set.
+  useEffect(() => {
+    localOffset.current = null;
+    lastKey.current = null;
+    needsFraming.current = true;
+    invalidate();
+  }, [heli, heliHeight, heliBack, heliLateral, invalidate]);
+
+  const getState = useThree((state) => state.get);
+  useEffect(() => {
+    const lens = getState().camera;
+    if (!(lens instanceof THREE.PerspectiveCamera)) return;
+    lens.fov = heli ? heliFov : CAMERA_FOV_DEG;
+    lens.updateProjectionMatrix();
+    invalidate();
+    return () => {
+      lens.fov = CAMERA_FOV_DEG;
+      lens.updateProjectionMatrix();
+    };
+  }, [getState, heli, heliFov, invalidate]);
+
   // Parked framing on the grid.
   useEffect(() => {
     const slot = slots[focusIndex];
@@ -209,7 +238,19 @@ export default function RaceCameraRig({
     controls.target.copy(target);
     controls.update();
     invalidate();
-  }, [slots, focusIndex, camera, controls, invalidate, racing, follow]);
+  }, [
+    slots,
+    focusIndex,
+    camera,
+    controls,
+    invalidate,
+    racing,
+    follow,
+    heli,
+    heliHeight,
+    heliBack,
+    heliLateral,
+  ]);
 
   useFrame((_, delta) => {
     if (!controls) return;
