@@ -5,8 +5,8 @@ import { existsSync } from "node:fs";
 import { buildTrackCurve, computeBounds } from "../src/lib/geo-utils";
 import { sampleCurvature } from "../src/lib/track/track-curvature";
 import { sampleApronRoom, apronRoomAt } from "../src/lib/track/track-apron";
-import { barrierOffsetAt } from "../src/lib/track/track-barriers";
-import { limitHalfWidth, sampleReachLimit } from "../src/lib/track/track-reach-limit";
+import { BARRIER_THICKNESS_M, barrierOffsetAt } from "../src/lib/track/track-barriers";
+import { limitHalfWidth, sampleLegGaps, sampleReachLimit } from "../src/lib/track/track-reach-limit";
 import { halfWidthAt, type HalfWidth } from "../src/lib/track/track-geometry";
 import { sampleWidthAt, type TrackWidthProfile } from "../src/lib/track/track-width";
 
@@ -133,7 +133,7 @@ async function main() {
   );
 
   console.log(
-    "circuit          laps  corners  kerbed  kerbed%  tightest-R  bare  mean-kerb-m  folds ribbon/apron/barrier",
+    "circuit          laps  corners  kerbed  kerbed%  tightest-R  bare  mean-kerb-m  folds ribbon/apron/barrier  legs",
   );
   for (const id of ids) {
     if (only && id !== only) continue;
@@ -208,6 +208,17 @@ async function main() {
       ),
     ];
 
+    // A barrier past the middle of the gap to another leg stands on that leg's road.
+    const legs = sampleLegGaps(curve, drawn);
+    let crowded = 0;
+    for (const sign of [1, -1]) {
+      const gaps = sign > 0 ? legs.plus : legs.minus;
+      for (let i = 0; i < drawn; i++) {
+        if (!Number.isFinite(gaps[i])) continue;
+        const outer = barrierOffsetAt(drawnHalfWidth, drawnRoom, i / drawn, sign, reach) + BARRIER_THICKNESS_M;
+        if (outer > gaps[i] / 2) crowded++;
+      }
+    }
     console.log(
       `${id.padEnd(16)} ${Math.round(total).toString().padStart(5)}  ${runs.length
         .toString()
@@ -222,7 +233,7 @@ async function main() {
         widthSum / Math.max(widthCount, 1)
       )
         .toFixed(2)
-        .padStart(11)}  ${folds.join("/").padStart(26)}`,
+        .padStart(11)}  ${folds.join("/").padStart(26)}  ${String(crowded).padStart(4)}`,
     );
   }
 }
