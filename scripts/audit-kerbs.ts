@@ -133,7 +133,7 @@ async function main() {
   );
 
   console.log(
-    "circuit          laps  corners  kerbed  kerbed%  tightest-R  bare  mean-kerb-m  folds ribbon/apron/barrier  legs",
+    "circuit          laps  corners  kerbed  kerbed%  tightest-R  bare  mean-kerb-m  folds ribbon/apron/barrier  legs  steepest ribbon/apron",
   );
   for (const id of ids) {
     if (only && id !== only) continue;
@@ -208,6 +208,24 @@ async function main() {
       ),
     ];
 
+    // Steepest change of an edge's offset, in metres per metre along the lap: a wedge, not a taper.
+    const step = total / drawn;
+    const steepest = (offsetAt: (s: number) => number) => {
+      let worst = 0;
+      for (let i = 0; i < drawn; i++) {
+        const change = Math.abs(offsetAt(((i + 1) % drawn) / drawn) - offsetAt(i / drawn));
+        worst = Math.max(worst, change / step);
+      }
+      return worst;
+    };
+    const slopes = [
+      steepest((s) => halfWidthAt(drawnHalfWidth, s)),
+      Math.max(
+        steepest((s) => halfWidthAt(drawnHalfWidth, s) + apronRoomAt(drawnRoom, s, 1)),
+        steepest((s) => halfWidthAt(drawnHalfWidth, s) + apronRoomAt(drawnRoom, s, -1)),
+      ),
+    ];
+
     // A barrier past the middle of the gap to another leg stands on that leg's road.
     const legs = sampleLegGaps(curve, drawn);
     let crowded = 0;
@@ -233,7 +251,7 @@ async function main() {
         widthSum / Math.max(widthCount, 1)
       )
         .toFixed(2)
-        .padStart(11)}  ${folds.join("/").padStart(26)}  ${String(crowded).padStart(4)}`,
+        .padStart(11)}  ${folds.join("/").padStart(26)}  ${String(crowded).padStart(4)}  ${slopes.map((v) => v.toFixed(2)).join("/").padStart(20)}`,
     );
   }
 }
