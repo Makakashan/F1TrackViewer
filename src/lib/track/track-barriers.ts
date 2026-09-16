@@ -11,7 +11,7 @@ export const BARRIER_THICKNESS_M = 0.3;
 /** Sunk a little, so the wall meets whatever surface is under it without a gap. */
 const BARRIER_FOOT_M = 0.4;
 /** Just past the paving's edge, so the wall stands on it rather than in it. */
-const BARRIER_SETBACK_M = 0.15;
+export const BARRIER_SETBACK_M = 0.15;
 /** Where a straight has barely a verge, the wall still stands clear of the white line. */
 export const BARRIER_MIN_CLEARANCE_M = 0.8;
 /** One hoarding's length. */
