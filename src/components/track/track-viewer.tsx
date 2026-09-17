@@ -13,6 +13,7 @@ import type { EnvironmentBundle } from "@/lib/env/environment-types";
 import type { QualityMode } from "@/lib/url-state";
 import type { GridEntry } from "@/lib/race/f1-teams";
 import type { RaceController } from "@/hooks/use-race-simulation";
+import type { TrackOverrides } from "@/lib/track/track-overrides";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 import TrackMesh from "@/components/three/track-mesh";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -60,6 +61,9 @@ export interface TrackViewerProps {
   raceLaps?: number;
   cameraFollow?: boolean;
   onCameraDetach?: () => void;
+  overrides?: TrackOverrides | null;
+  onTrackPick?: (s: number, lapLengthM: number) => void;
+  editing?: boolean;
 }
 
 function SceneSpinner() {
@@ -96,6 +100,9 @@ export default function TrackViewer({
   raceLaps,
   cameraFollow,
   onCameraDetach,
+  overrides,
+  onTrackPick,
+  editing,
 }: TrackViewerProps) {
   const raceMode = viewMode === "realistic";
   const newLook = useLookLab((s) => s.enabled) && raceMode;
@@ -234,6 +241,9 @@ export default function TrackViewer({
                 raceLaps={raceLaps}
                 cameraFollow={cameraFollow}
                 onCameraDetach={onCameraDetach}
+                overrides={overrides}
+                onTrackPick={onTrackPick}
+                editing={editing}
               />
             </Suspense>
 

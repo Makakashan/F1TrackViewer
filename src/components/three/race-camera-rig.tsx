@@ -20,6 +20,8 @@ export interface RaceCameraRigProps {
   follow?: boolean;
   /** The user took the camera — a drag, or a movement key. */
   onDetach?: () => void;
+  /** Which circuit these slots belong to; a rebuilt centreline is not a new one. */
+  circuitId?: string;
 }
 
 /** How far ahead of the car the camera sits on the grid, and how high. */
@@ -92,6 +94,7 @@ export default function RaceCameraRig({
   poseAt,
   follow = true,
   onDetach,
+  circuitId,
 }: RaceCameraRigProps) {
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls) as OrbitLike | null;
@@ -108,7 +111,7 @@ export default function RaceCameraRig({
   const needsFraming = useRef(true);
   // Where the camera sits in the followed car's own frame — across, up, ahead.
   const localOffset = useRef<THREE.Vector3 | null>(null);
-  const knownSlots = useRef<GridSlot[] | null>(null);
+  const knownCircuit = useRef<string | undefined>(undefined);
   const scratch = useRef({
     position: new THREE.Vector3(),
     quaternion: new THREE.Quaternion(),
@@ -217,14 +220,16 @@ export default function RaceCameraRig({
     const slot = slots[focusIndex];
     if (!slot || !controls || racing || !follow) return;
 
-    // Re-framing on every render would undo the user's own orbit.
-    const key = `${focusIndex}:${slot.position.toArray().join(",")}`;
+    // Re-framing on every render would undo the user's own orbit, and the editor
+    // rebuilds the grid with every drag of a slider.
+    const key = `${circuitId}:${focusIndex}`;
     if (lastKey.current === key) return;
     lastKey.current = key;
 
     // A different circuit is a different scene; the old framing means nothing in it.
-    if (knownSlots.current !== slots) {
-      knownSlots.current = slots;
+    // The editor rebuilds the centreline as it is dragged, and that is the same circuit.
+    if (knownCircuit.current !== circuitId) {
+      knownCircuit.current = circuitId;
       localOffset.current = null;
     }
 
@@ -240,6 +245,7 @@ export default function RaceCameraRig({
     invalidate();
   }, [
     slots,
+    circuitId,
     focusIndex,
     camera,
     controls,

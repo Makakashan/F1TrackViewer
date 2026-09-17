@@ -58,6 +58,7 @@ function readUrlParams() {
     terrain: p.get("terrain"),
     realwidth: p.get("realwidth"),
     quality: p.get("quality"),
+    edit: p.get("edit"),
   };
 }
 
@@ -73,6 +74,8 @@ interface UrlState {
   environmentTerrain: boolean;
   realWidthEnabled: boolean;
   qualityMode: QualityMode;
+  /** The track editor, a local tool: `?edit=1`, honoured only under `next dev`. */
+  editMode: boolean;
   hydrated: boolean;
 
   setTrack: (id: string) => void;
@@ -104,6 +107,7 @@ export const useUrlState = create<UrlState>((set, get) => ({
   environmentTerrain: true,
   realWidthEnabled: false,
   qualityMode: "auto",
+  editMode: false,
   hydrated: false,
 
   setTrack: (id) => set({ track: id }),
@@ -203,6 +207,10 @@ export const useUrlState = create<UrlState>((set, get) => ({
       patch.qualityMode = url.quality;
     }
 
+    if (url.edit === "1") {
+      patch.editMode = true;
+    }
+
     set(patch);
   },
 
@@ -245,6 +253,12 @@ export const useUrlState = create<UrlState>((set, get) => ({
       params.set("realwidth", s.realWidthEnabled ? "1" : "0");
     } else {
       params.delete("realwidth");
+    }
+
+    if (s.editMode) {
+      params.set("edit", "1");
+    } else {
+      params.delete("edit");
     }
 
     if (s.qualityMode !== "auto") {

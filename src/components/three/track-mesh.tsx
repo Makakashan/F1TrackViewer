@@ -56,6 +56,14 @@ import { buildBarrierGeometry } from "@/lib/track/track-barriers";
 import { limitHalfWidth, sampleReachLimit } from "@/lib/track/track-reach-limit";
 import { ASPHALT_TILE_M, surfaceTextures } from "@/lib/track/surface-textures";
 import { useLookLab } from "@/lib/look-lab";
+import {
+  kerbOverrides,
+  withBarrierOverrides,
+  withCentrelineOverrides,
+  withWidthOverrides,
+  type TrackOverrides,
+} from "@/lib/track/track-overrides";
+import TrackEditorMarkers from "@/components/three/track-editor-markers";
 import { halfWidthAt } from "@/lib/track/track-geometry";
 import type { RaceController } from "@/hooks/use-race-simulation";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
@@ -178,6 +186,12 @@ export interface TrackMeshProps {
   cameraFollow?: boolean;
   /** Race view only: the user took the camera. */
   onCameraDetach?: () => void;
+  /** Hand corrections from the track editor, laid over the automatic track. */
+  overrides?: TrackOverrides | null;
+  /** Track editor only: a click on the road, as an arc position and the lap it sits on. */
+  onTrackPick?: (s: number, lapLengthM: number) => void;
+  /** Track editor only: draw its markers. */
+  editing?: boolean;
 }
 
 export default function TrackMesh({
@@ -207,6 +221,9 @@ export default function TrackMesh({
   raceLaps = 1,
   cameraFollow,
   onCameraDetach,
+  overrides,
+  onTrackPick,
+  editing,
 }: TrackMeshProps) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -268,7 +285,7 @@ export default function TrackMesh({
     };
   }, [terrainSampler, bounds]);
 
-  const { curve, peakY, minY } = useMemo(() => {
+  const { curve: surveyed, peakY, minY } = useMemo(() => {
     // The bake burned the track into the ground it shipped, so its own profile
     // is the only Y that lands on it. No offset: the field is the road surface.
     if (cityManifest?.track?.elevations?.length) {
@@ -345,6 +362,12 @@ export default function TrackMesh({
     terrainSampler,
   ]);
 
+  // The editor's smoothing works on the line every edge is built from.
+  const curve = useMemo(
+    () => withCentrelineOverrides(surveyed, overrides),
+    [surveyed, overrides],
+  );
+
   const groundY = useMemo(
     () => (hasEnvironment ? minY - 1 : -peakY - trackWidth * 2 - 1),
     [hasEnvironment, minY, peakY, trackWidth],
@@ -365,8 +388,12 @@ export default function TrackMesh({
   // Through a hairpin, or beside another leg, everything is pinched to fit, the ribbon first.
   const reachLimit = useMemo(() => sampleReachLimit(curve, samples), [curve, samples]);
   const halfWidth = useMemo(
-    () => limitHalfWidth(requestedHalfWidth, reachLimit),
-    [requestedHalfWidth, reachLimit],
+    () =>
+      limitHalfWidth(
+        withWidthOverrides(requestedHalfWidth, overrides, curve.getLength()),
+        reachLimit,
+      ),
+    [requestedHalfWidth, overrides, curve, reachLimit],
   );
 
   // The narrow/wide gradient is a diagnostic overlay, not part of the scene.
@@ -446,10 +473,17 @@ export default function TrackMesh({
     };
   }, [bounds, environmentBundle, terrainSampler]);
 
-  // Always sampled, even with nothing to bump into.
+  // Always sampled, even with nothing to bump into. The editor's barriers move its edge.
   const apronRoom = useMemo(
-    () => sampleApronRoom(curve, halfWidth, samples, apronClearance),
-    [apronClearance, curve, halfWidth, samples],
+    () =>
+      withBarrierOverrides(
+        sampleApronRoom(curve, halfWidth, samples, apronClearance),
+        overrides,
+        curve.getLength(),
+        halfWidth,
+        reachLimit,
+      ),
+    [apronClearance, curve, halfWidth, samples, overrides, reachLimit],
   );
 
   // Asphalt beyond the white line, so the kerb has something to lie on.
@@ -473,10 +507,10 @@ export default function TrackMesh({
         halfWidth,
         TRACK_SURFACE_RAISE + 0.02,
         samples,
-        { room: apronRoom },
+        { room: apronRoom, override: kerbOverrides(overrides, curve.getLength()) },
         hiddenAt,
       ),
-    [curve, halfWidth, samples, apronRoom, hiddenAt],
+    [curve, halfWidth, samples, apronRoom, overrides, hiddenAt],
   );
 
   const edgeLineGeometry = useMemo(
@@ -779,6 +813,22 @@ export default function TrackMesh({
     };
   }, [calibrationEnabled, curve, samples, onCalibrateStartFinish]);
 
+  // A click, not a drag: orbiting the camera must not drop points on the road.
+  const pickOnClick = useMemo(() => {
+    if (!onTrackPick) return undefined;
+    return (event: { stopPropagation: () => void; point: THREE.Vector3; delta: number }) => {
+      if (event.delta > 4) return;
+      event.stopPropagation();
+      onTrackPick(findNearestCurveS(curve, event.point, samples), curve.getLength());
+    };
+  }, [onTrackPick, curve, samples]);
+
+  // An edit in the panel changes the scene outside a frame; on demand, nothing would draw it.
+  const invalidate = useThree((state) => state.invalidate);
+  useEffect(() => {
+    invalidate();
+  }, [overrides, editing, invalidate]);
+
   const isDark = resolvedTheme === "dark";
   const colors = getSceneColors(isDark);
   const { camera, controls } = useThree();
@@ -934,6 +984,7 @@ export default function TrackMesh({
             geometry={trackGeometry}
             renderOrder={TRACK_RENDER_ORDER}
             onPointerDown={calibrateOnPointerDown}
+            onClick={pickOnClick}
             receiveShadow={newLook}
           >
             {newLook ? (
@@ -981,6 +1032,7 @@ export default function TrackMesh({
           geometry={apronGeometry}
           renderOrder={TRACK_APRON_RENDER_ORDER}
           receiveShadow={newLook}
+          onClick={pickOnClick}
         >
           <RoadMaterial
             lit={newLook}
@@ -998,6 +1050,15 @@ export default function TrackMesh({
         >
           <RoadMaterial lit={newLook} vertexColors />
         </mesh>
+      )}
+
+      {editing && overrides && (
+        <TrackEditorMarkers
+          curve={curve}
+          halfWidth={halfWidth}
+          raise={TRACK_OVERLAY_RAISE}
+          points={overrides.points}
+        />
       )}
 
       {rubberGeometry && (
@@ -1109,6 +1170,7 @@ export default function TrackMesh({
             poseAt={poseAt}
           />
           <RaceCameraRig
+            circuitId={String(feature.properties.id ?? "")}
             slots={gridSlots}
             focusIndex={focusIndex}
             raceSim={raceSim ?? null}

@@ -9,6 +9,7 @@ import {
   CORNER_MIN_RUN_M,
   resolveCornerSides,
 } from "@/lib/track/track-corners";
+import { blendOverride, type OverrideWeight } from "@/lib/track/track-overrides";
 
 /** Kerbs — the red/white striped strips lining the inside of every corner. */
 
@@ -36,6 +37,8 @@ export interface KerbOptions {
   exitRadiusMeters?: number;
   /** Height of the strip's outer lip above its inner edge — kerbs are ramped. */
   liftMeters?: number;
+  /** The track editor's width at a point on one side, blended over the automatic one. */
+  override?: (s: number, sign: number) => OverrideWeight | null;
 }
 
 const DEFAULTS = {
@@ -49,7 +52,7 @@ const DEFAULTS = {
   minRunMeters: CORNER_MIN_RUN_M,
   exitRadiusMeters: CORNER_EXIT_RADIUS_M,
   liftMeters: 0.07,
-} satisfies Required<Omit<KerbOptions, "room">>;
+} satisfies Required<Omit<KerbOptions, "room" | "override">>;
 
 function halfWidthAt(halfWidth: HalfWidth, s: number): number {
   return typeof halfWidth === "function" ? halfWidth(s) : halfWidth;
@@ -80,6 +83,7 @@ export function buildKerbGeometry(
     liftMeters,
     outerWidthShare,
     room,
+    override,
   } = { ...DEFAULTS, ...options };
 
   const n = samples;
@@ -102,6 +106,8 @@ export function buildKerbGeometry(
 
   const padSamples = Math.round(runPaddingMeters / ds);
   const minRunSamples = Math.max(2, Math.round(minRunMeters / ds));
+  const stripeCount = Math.max(1, Math.ceil(totalLength / stripeMeters));
+  const slot = (stripe: number) => ((stripe % stripeCount) + stripeCount) % stripeCount;
 
   const positions: number[] = [];
   const normals: number[] = [];
@@ -128,6 +134,20 @@ export function buildKerbGeometry(
     normals.push(0, 1, 0);
     colors.push(color.r, color.g, color.b);
   }
+
+  /** One block on one side: where it runs, and the width and taper corner detection gave it. */
+  interface Stripe {
+    stripe: number;
+    d0: number;
+    d1: number;
+    width: number;
+    taper0: number;
+    taper1: number;
+  }
+  const bySide = new Map<1 | -1, Map<number, Stripe>>([
+    [1, new Map()],
+    [-1, new Map()],
+  ]);
 
   for (const { start, count, sign: innerSign } of circularRuns(cornerSide)) {
     if (count < minRunSamples) continue;
@@ -160,48 +180,77 @@ export function buildKerbGeometry(
         const d0 = Math.max(stripe * stripeMeters, runStart);
         const d1 = Math.min((stripe + 1) * stripeMeters, runEnd);
         if (d1 - d0 < 1e-3) continue;
-        if (hiddenAt?.((((d0 + d1) / 2) / totalLength) % 1)) continue;
-
         const taper0 = taperAt(d0);
         const taper1 = taperAt(d1);
         if (taper0 <= 0 && taper1 <= 0) continue;
-
-        color.copy(stripe % 2 === 0 ? KERB_RED : KERB_WHITE);
-
-        // Bolted to the outside of the road, not carved out of it.
-        const s0 = wrap01(d0 / totalLength);
-        const s1 = wrap01(d1 / totalLength);
-        const edge0 = halfWidthAt(halfWidth, s0) * side;
-        const edge1 = halfWidthAt(halfWidth, s1) * side;
-        const room0 = room ? apronRoomAt(room, s0, side) : sideWidth;
-        const room1 = room ? apronRoomAt(room, s1, side) : sideWidth;
-        const reach0 = Math.min(sideWidth, room0) * taper0;
-        const reach1 = Math.min(sideWidth, room1) * taper1;
-        // Nothing to lay this stretch on: the kerb ends where the paving does.
-        if (reach0 < 0.05 && reach1 < 0.05) continue;
-        const outer0 = edge0 + reach0 * side;
-        const outer1 = edge1 + reach1 * side;
-
-        // Kerbs ramp upward away from the racing line.
-        const lift0 = liftMeters * (reach0 / Math.max(sideWidth, 1e-6));
-        const lift1 = liftMeters * (reach1 / Math.max(sideWidth, 1e-6));
-
-        // Wound so the strip faces up on either edge.
-        if (side > 0) {
-          pushVertex(d0, edge0, 0);
-          pushVertex(d1, edge1, 0);
-          pushVertex(d0, outer0, lift0);
-          pushVertex(d0, outer0, lift0);
-          pushVertex(d1, edge1, 0);
-          pushVertex(d1, outer1, lift1);
-        } else {
-          pushVertex(d0, edge0, 0);
-          pushVertex(d0, outer0, lift0);
-          pushVertex(d1, edge1, 0);
-          pushVertex(d0, outer0, lift0);
-          pushVertex(d1, outer1, lift1);
-          pushVertex(d1, edge1, 0);
+        // Neighbouring runs can claim one stripe; the wider claim is the one that shows.
+        const stripes = bySide.get(side as 1 | -1)!;
+        const claimed = stripes.get(slot(stripe));
+        const next = { stripe, d0, d1, width: sideWidth, taper0, taper1 };
+        if (!claimed || sideWidth * Math.max(taper0, taper1) > claimed.width * Math.max(claimed.taper0, claimed.taper1)) {
+          stripes.set(slot(stripe), next);
         }
+      }
+    }
+  }
+
+  // The editor reaches stripes no corner claimed, and can take a corner's kerb away.
+  if (override) {
+    for (const [side, stripes] of bySide) {
+      for (let k = 0; k < stripeCount; k++) {
+        if (stripes.has(k)) continue;
+        const d0 = k * stripeMeters;
+        const d1 = Math.min((k + 1) * stripeMeters, totalLength);
+        if (override(wrap01(d0 / totalLength), side) || override(wrap01(d1 / totalLength), side)) {
+          stripes.set(k, { stripe: k, d0, d1, width: 0, taper0: 0, taper1: 0 });
+        }
+      }
+    }
+  }
+
+  for (const [side, stripes] of bySide) {
+    for (const { stripe, d0, d1, width, taper0, taper1 } of stripes.values()) {
+      if (hiddenAt?.((((d0 + d1) / 2) / totalLength) % 1)) continue;
+
+      color.copy(stripe % 2 === 0 ? KERB_RED : KERB_WHITE);
+
+      // Bolted to the outside of the road, not carved out of it.
+      const s0 = wrap01(d0 / totalLength);
+      const s1 = wrap01(d1 / totalLength);
+      const edge0 = halfWidthAt(halfWidth, s0) * side;
+      const edge1 = halfWidthAt(halfWidth, s1) * side;
+      const reachAt = (s: number, taper: number) => {
+        const available = room ? apronRoomAt(room, s, side) : Infinity;
+        const edit = override?.(s, side) ?? null;
+        if (!edit) return Math.min(width, available) * taper;
+        return Math.min(Math.max(0, blendOverride(width * taper, edit)), available);
+      };
+      const reach0 = reachAt(s0, taper0);
+      const reach1 = reachAt(s1, taper1);
+      // Nothing to lay this stretch on: the kerb ends where the paving does.
+      if (reach0 < 0.05 && reach1 < 0.05) continue;
+      const outer0 = edge0 + reach0 * side;
+      const outer1 = edge1 + reach1 * side;
+
+      // Kerbs ramp upward away from the racing line.
+      const lift0 = liftMeters * (reach0 / Math.max(widthMeters, 1e-6));
+      const lift1 = liftMeters * (reach1 / Math.max(widthMeters, 1e-6));
+
+      // Wound so the strip faces up on either edge.
+      if (side > 0) {
+        pushVertex(d0, edge0, 0);
+        pushVertex(d1, edge1, 0);
+        pushVertex(d0, outer0, lift0);
+        pushVertex(d0, outer0, lift0);
+        pushVertex(d1, edge1, 0);
+        pushVertex(d1, outer1, lift1);
+      } else {
+        pushVertex(d0, edge0, 0);
+        pushVertex(d0, outer0, lift0);
+        pushVertex(d1, edge1, 0);
+        pushVertex(d0, outer0, lift0);
+        pushVertex(d1, outer1, lift1);
+        pushVertex(d1, edge1, 0);
       }
     }
   }
