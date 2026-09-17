@@ -44,6 +44,24 @@ Everything downstream of the centerline reads one curvature profile
   backward so it eases out and back instead of snapping.
 - **`lib/race/speed-profile`** turns radius into a speed limit, then brakes into every
   corner and accelerates out of it.
+- **`lib/track/track-reach-limit`** says how far anything may reach from the centreline
+  on each side: inside a bend before its edge folds back, and toward another leg of the
+  lap before it lands on that leg. The ribbon, apron, kerbs and barrier all stay inside
+  it, and it eases in rather than stepping. `bun run race:kerbs` counts folds, barriers
+  on another leg, and the steepest step of an edge.
+
+## Hand corrections
+
+`src/data/track-overrides/<circuitId>.json` holds corrections placed along the lap:
+road width, barrier distance from the road edge, and kerb width, per side. A point holds
+its values over a stretch and fades back to the automatic ones over 15 m
+(`lib/track/track-overrides`). They ship in every build.
+
+They are made with the track editor, a local tool: `/admin` → Track editor under
+`bun run dev`, which opens race view with `edit=1`. Save writes the JSON and its
+`index.ts` through `src/app/api/track-overrides/[id]/route.dev.ts`; `next.config`
+only lists `dev.ts` as a page extension for the dev server, so no deployed build has an
+endpoint that writes files.
 
 ## Terrain
 
