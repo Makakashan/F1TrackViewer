@@ -1,13 +1,14 @@
 "use client";
 
-import { Car, Flag, LogOut, ShieldCheck, Users } from "lucide-react";
+import { Car, Flag, LogOut, PencilRuler, ShieldCheck, Users } from "lucide-react";
 import { useState } from "react";
 import F1TrackApp from "@/components/track/f1-track-app";
 import CarModelLab from "@/components/admin/car-model-lab";
 import FleetLab from "@/components/admin/fleet-lab";
+import TrackEditorLauncher from "@/components/admin/track-editor-launcher";
 import { cn } from "@/lib/utils";
 
-export type AdminSection = "models" | "fleet" | "calibration";
+export type AdminSection = "models" | "fleet" | "calibration" | "editor";
 
 const SECTIONS: {
   id: AdminSection;
@@ -33,6 +34,17 @@ const SECTIONS: {
     hint: "Start/finish marker editor",
     icon: <Flag className="h-3.5 w-3.5" />,
   },
+  // A local tool: saving writes into the source tree, which only `next dev` can do.
+  ...(process.env.NODE_ENV === "development"
+    ? [
+        {
+          id: "editor" as const,
+          label: "Track editor",
+          hint: "Local corrections to width, barriers and kerbs",
+          icon: <PencilRuler className="h-3.5 w-3.5" />,
+        },
+      ]
+    : []),
 ];
 
 export default function AdminShell({ onSignOut }: { onSignOut: () => void }) {
@@ -91,6 +103,10 @@ export default function AdminShell({ onSignOut }: { onSignOut: () => void }) {
       ) : section === "fleet" ? (
         <div className="min-h-0 flex-1">
           <FleetLab />
+        </div>
+      ) : section === "editor" ? (
+        <div className="min-h-0 flex-1">
+          <TrackEditorLauncher />
         </div>
       ) : (
         // F1TrackApp sizes itself to the viewport, so the admin page gives it a fixed box.
