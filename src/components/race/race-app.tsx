@@ -27,6 +27,9 @@ import RaceResults from "@/components/race/race-results";
 import TimingTower from "@/components/race/timing-tower";
 import LookLabPanel from "@/components/race/look-lab-panel";
 import { useLookLab } from "@/lib/look-lab";
+import TrackEditorPanel from "@/components/race/track-editor-panel";
+import { useTrackEditor } from "@/lib/track/track-editor-store";
+import { TRACK_OVERRIDES } from "@/data/track-overrides";
 
 const TrackViewer = dynamic(() => import("@/components/track/track-viewer"), {
   ssr: false,
@@ -53,6 +56,7 @@ export default function RaceApp() {
     environmentTerrain,
     realWidthEnabled,
     qualityMode,
+    editMode,
     hydrated,
     setEnvironmentEnabled: setUrlEnvironmentEnabled,
     setEnvironmentTerrain: setUrlEnvironmentTerrain,
@@ -82,6 +86,21 @@ export default function RaceApp() {
   }, []);
   const race = useRaceSimulation(qualityMode === "performance");
   const lookCity = useLookLab((s) => s.city);
+
+  // The track editor is a local tool: `?edit=1` does nothing outside `next dev`.
+  const editing = process.env.NODE_ENV === "development" && editMode;
+  const editorOverrides = useTrackEditor((s) => s.overrides);
+  const openEditor = useTrackEditor((s) => s.open);
+  const addEditorPoint = useTrackEditor((s) => s.addPoint);
+  const setEditorStartS = useTrackEditor((s) => s.setStartS);
+  useEffect(() => {
+    if (editing && selectedId) openEditor(selectedId);
+  }, [editing, selectedId, openEditor]);
+  const overrides = !selectedId
+    ? null
+    : editing && editorOverrides?.circuitId === selectedId
+      ? editorOverrides
+      : (TRACK_OVERRIDES[selectedId] ?? null);
 
   const order = useMemo(
     () => (selectedId ? raceGridOrder(selectedId, gridNonce) : []),
@@ -141,6 +160,7 @@ export default function RaceApp() {
     environmentTerrain,
     realWidthEnabled,
     qualityMode,
+    editMode,
     environmentAvailable,
     widthProfile,
     syncUrl,
@@ -307,6 +327,10 @@ export default function RaceApp() {
             markers={markers}
             environmentBundle={terrainModeActive ? environmentBundle ?? null : null}
             cityManifest={lookCity ? (cityManifest ?? null) : null}
+            overrides={overrides}
+            onStartFinishPlacement={editing ? (placement) => setEditorStartS(placement.s) : undefined}
+            onTrackPick={editing ? addEditorPoint : undefined}
+            editing={editing}
             environmentTerrain={environmentTerrain}
             widthProfile={widthProfile ?? null}
             realWidthEnabled={realWidthEnabled}
@@ -426,8 +450,12 @@ export default function RaceApp() {
             onToggleCamera={() => setCameraFollow((value) => !value)}
           />
 
+          {/* One column for the development panels, so the editor's Save is never under the look lab. */}
           {process.env.NODE_ENV === "development" && (
-            <LookLabPanel className="absolute right-4 top-16 hidden max-h-[calc(100%-6rem)] overflow-y-auto sm:block" />
+            <div className="absolute bottom-24 right-4 top-16 hidden w-72 flex-col gap-2 sm:flex">
+              <LookLabPanel className="min-h-0 w-full shrink overflow-y-auto" />
+              {editing && <TrackEditorPanel className="min-h-0 w-full shrink-0 overflow-y-auto" />}
+            </div>
           )}
         </div>
 
