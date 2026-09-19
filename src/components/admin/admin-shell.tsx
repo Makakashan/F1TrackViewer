@@ -1,6 +1,6 @@
 "use client";
 
-import { Car, Flag, LogOut, PencilRuler, ShieldCheck, Users } from "lucide-react";
+import { Car, Flag, LogOut, Mountain, PencilRuler, ShieldCheck, Users } from "lucide-react";
 import { useState } from "react";
 import F1TrackApp from "@/components/track/f1-track-app";
 import CarModelLab from "@/components/admin/car-model-lab";
@@ -8,7 +8,7 @@ import FleetLab from "@/components/admin/fleet-lab";
 import TrackEditorLauncher from "@/components/admin/track-editor-launcher";
 import { cn } from "@/lib/utils";
 
-export type AdminSection = "models" | "fleet" | "calibration" | "editor";
+export type AdminSection = "models" | "fleet" | "calibration" | "terrain" | "editor";
 
 const SECTIONS: {
   id: AdminSection;
@@ -33,6 +33,12 @@ const SECTIONS: {
     label: "Calibration",
     hint: "Start/finish marker editor",
     icon: <Flag className="h-3.5 w-3.5" />,
+  },
+  {
+    id: "terrain",
+    label: "Terrain",
+    hint: "The baked ground, with nothing standing on it",
+    icon: <Mountain className="h-3.5 w-3.5" />,
   },
   // A local tool: saving writes into the source tree, which only `next dev` can do.
   ...(process.env.NODE_ENV === "development"
@@ -103,6 +109,10 @@ export default function AdminShell({ onSignOut }: { onSignOut: () => void }) {
       ) : section === "fleet" ? (
         <div className="min-h-0 flex-1">
           <FleetLab />
+        </div>
+      ) : section === "terrain" ? (
+        <div className="min-h-0 flex-1 overflow-hidden [&>div]:h-full! [&>div]:w-full!">
+          <F1TrackApp terrainOnly />
         </div>
       ) : section === "editor" ? (
         <div className="min-h-0 flex-1">

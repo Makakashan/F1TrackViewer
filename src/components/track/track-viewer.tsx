@@ -39,6 +39,8 @@ export interface TrackViewerProps {
   resolvedTheme?: "light" | "dark";
   cameraPreset?: CameraPreset | null;
   startFinishCalibration?: boolean;
+  /** Admin only: the baked ground with nothing standing on it. */
+  terrainOnly?: boolean;
   onStartFinishPlacement?: (placement: StartFinishPlacement) => void;
   viewMode?: TrackViewMode;
   markers?: TrackMarkers | null;
@@ -83,6 +85,7 @@ export default function TrackViewer({
   resolvedTheme = "dark",
   cameraPreset = null,
   startFinishCalibration = false,
+  terrainOnly = false,
   onStartFinishPlacement,
   viewMode = "normal",
   markers,
@@ -244,6 +247,7 @@ export default function TrackViewer({
                 overrides={overrides}
                 onTrackPick={onTrackPick}
                 editing={editing}
+                terrainOnly={terrainOnly}
               />
             </Suspense>
 

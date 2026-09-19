@@ -31,6 +31,8 @@ export interface CityLayerProps {
   onBeltLoaded?: (belt: CityBelt) => void;
   /** The look spike draws its own barrier along the track. */
   hideBarrier?: boolean;
+  /** Admin only: draw the ground and nothing else, so its shading is its own. */
+  terrainOnly?: boolean;
 }
 
 /**
@@ -89,6 +91,13 @@ function setBarrierVisible(group: THREE.Object3D, visible: boolean) {
   });
 }
 
+/** Everything but the ground off, so a shadow on the terrain is the terrain's own. */
+function setTerrainOnly(group: THREE.Object3D, only: boolean) {
+  group.traverse((node) => {
+    if (node instanceof THREE.Mesh && node.name !== "terrain") node.visible = !only;
+  });
+}
+
 function disposeGroup(group: THREE.Group) {
   group.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
@@ -105,6 +114,7 @@ export default function CityLayer({
   lowDetail,
   onBeltLoaded,
   hideBarrier = false,
+  terrainOnly = false,
 }: CityLayerProps) {
   const invalidate = useThree((state) => state.invalidate);
   const rootRef = useRef<THREE.Group>(null);
@@ -113,6 +123,7 @@ export default function CityLayer({
   // dependency there would refetch every belt on a theme switch.
   const themeRef = useRef(resolvedTheme);
   const hideBarrierRef = useRef(hideBarrier);
+  const terrainOnlyRef = useRef(terrainOnly);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -136,6 +147,7 @@ export default function CityLayer({
           paintForTheme(gltf.scene, themeRef.current);
           liftDecals(gltf.scene);
           setBarrierVisible(gltf.scene, !hideBarrierRef.current);
+          setTerrainOnly(gltf.scene, terrainOnlyRef.current);
           root.add(gltf.scene);
           loaded.push(gltf.scene);
           onBeltLoaded?.(belt);
@@ -174,6 +186,15 @@ export default function CityLayer({
     setBarrierVisible(root, !hideBarrier);
     invalidate();
   }, [hideBarrier, invalidate]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    terrainOnlyRef.current = terrainOnly;
+    setTerrainOnly(root, terrainOnly);
+    if (!terrainOnly) setBarrierVisible(root, !hideBarrierRef.current);
+    invalidate();
+  }, [terrainOnly, invalidate]);
 
   useEffect(() => {
     if (error) console.warn(`city layer: ${error}`);
