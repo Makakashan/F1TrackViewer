@@ -38,15 +38,17 @@ import {
   type Mesh,
 } from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
-import { applyAlbedo, applyAmbientOcclusion, buildOccluders, shadeBySlope } from "./ao";
+import { applyAlbedo, applyAmbientOcclusion, buildOccluders, shadeBySlope, softenShade } from "./ao";
 import {
   fetchBuildingWays,
+  fetchStreetWays,
   fetchGreenWays,
   fetchBreaklineWays,
   fetchShoreWays,
   fetchStructureWays,
   type BreaklineWay,
   type BuildingWay,
+  type StreetWay,
   type GreenWay,
   type ShoreWay,
   type StructureWay,
@@ -55,6 +57,7 @@ import { buildGreenery, plantTrees, type GreeneryResult } from "./greenery";
 import { buildSurfaceIndex } from "./baked-scene";
 import { buildBreaklines } from "./breaklines";
 import { buildGround, type Ground } from "./ground";
+import { buildStreetGround } from "./streets";
 import {
   chooseKitHouses,
   repaintKitHouse,
@@ -168,6 +171,20 @@ const RASTER_CONFIDENT_M = 8;
 const DECK_CLEARED_SCALAR_M = 2;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
+
+/**
+ * Above this slope the coast is a cliff rather than a shore.
+ *
+ * Where the land meets the water at a beach or a quay, the cut belongs just
+ * above the datum — `SHORE_EDGE_MAX_M` — or the terrain ramps down into the sea.
+ * Where it meets it at the foot of a rock face, holding the cut to three metres
+ * hangs the whole face off one row of cells: the Rocher drops forty-four metres
+ * across the last four, and each cell cut at its own place along its edge, which
+ * is what drew the coastline as a row of teeth. There the cut keeps the height
+ * the face has and the skirt below it runs down to the sea floor, so the rock
+ * reads as a wall.
+ */
+const CLIFF_COAST_DEG = 35;
 
 /** The band a terrain surface vertex is allowed to live in: clear of the sea plane, below the cliff cap. */
 function clampToSurface(y: number): number {
@@ -353,10 +370,31 @@ export function buildBeltBlocks(
       if (straddlesWater(field, plane, x, z, blockM)) straddles[row * blockCols + col] = 1;
     }
   }
+  // A rock face is the other place a coarse cell cannot hold the ground. At
+  // sixty degrees a 16 m cell drops fourteen metres in one step, and a row of
+  // them along a headland reads as sawteeth rather than a cliff; measured on
+  // the shipped bake, 1,000 of far's 5,465 terrain triangles fell that steeply.
+  // So a steep block is meshed at the fine cell too, grown by a ring like the
+  // coast so the face and its brow are one piece.
+  const steep = new Uint8Array(blockRows * blockCols);
+  for (let row = 0; row < blockRows; row++) {
+    for (let col = 0; col < blockCols; col++) {
+      const x = minX + (col + 0.5) * blockM;
+      const z = minZ + (row + 0.5) * blockM;
+      const east = field.heightAt(plane.lon(x + blockM / 2), plane.lat(z));
+      const west = field.heightAt(plane.lon(x - blockM / 2), plane.lat(z));
+      const south = field.heightAt(plane.lon(x), plane.lat(z + blockM / 2));
+      const north = field.heightAt(plane.lon(x), plane.lat(z - blockM / 2));
+      if ([east, west, south, north].some(Number.isNaN)) continue;
+      const run = Math.hypot((east - west) / blockM, (south - north) / blockM);
+      if ((Math.atan(run) * 180) / Math.PI > FACE_DEG) steep[row * blockCols + col] = 1;
+    }
+  }
+
   const coastal = new Uint8Array(blockRows * blockCols);
   for (let row = 0; row < blockRows; row++) {
     for (let col = 0; col < blockCols; col++) {
-      if (!straddles[row * blockCols + col]) continue;
+      if (!straddles[row * blockCols + col] && !steep[row * blockCols + col]) continue;
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           const r = row + dr;
@@ -424,6 +462,9 @@ export function buildBeltBlocks(
   return { blockM, blockRows, blockCols, blockBelt, beltOfCell, conformsAt };
 }
 
+/** Above this the ground is a face, not a slope, and a coarse cell aliases it. */
+const FACE_DEG = 35;
+
 /** Does this block have both land and water in it? */
 function straddlesWater(
   field: HeightField,
@@ -481,6 +522,18 @@ function bakeTerrain(
   // others — the edge still has to come from somewhere smoother than a boolean
   // flag, or the cut falls back on the grid it exists to escape.
   const rasterShore = buildShoreDistance(field);
+
+  /** How steep the bare ground is at a point, over one core cell. */
+  const coastSlopeDegAt = (x: number, z: number): number => {
+    const step = BELT_CELL_M.core;
+    const east = field.heightAt(plane.lon(x + step), plane.lat(z));
+    const west = field.heightAt(plane.lon(x - step), plane.lat(z));
+    const south = field.heightAt(plane.lon(x), plane.lat(z + step));
+    const north = field.heightAt(plane.lon(x), plane.lat(z - step));
+    if ([east, west, south, north].some(Number.isNaN)) return 0;
+    const run = Math.hypot((east - west) / (2 * step), (south - north) / (2 * step));
+    return (Math.atan(run) * 180) / Math.PI;
+  };
 
   /**
    * How much land there is at a point: metres from the surveyed shoreline where
@@ -716,7 +769,8 @@ function bakeTerrain(
       else if (!Number.isNaN(hA)) y = hA;
       else if (!Number.isNaN(hB)) y = hB;
       else y = solidHeightAt(rowA, colA);
-      return grid.vertex(key, x, clampToSurface(y), z);
+      const onCliff = coastSlopeDegAt(x, z) > CLIFF_COAST_DEG;
+      return grid.vertex(key, x, onCliff ? Math.max(WATER_CLEARANCE_M, y) : clampToSurface(y), z);
     };
 
     // Land–water crossings, as vertex pairs, so the coast can drop a skirt once
@@ -2846,6 +2900,8 @@ export interface BakeInputs {
   buildingWays: BuildingWay[];
   greenWays: GreenWay[];
   breaklineWays: BreaklineWay[];
+  /** The street network: what the town's ground is built to. */
+  streetWays: StreetWay[];
   overrides: CityOverrides | null;
   kitHouses: KitModel[];
   /** Boat model paths, as the props pass wants them. */
@@ -2879,6 +2935,7 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
     buildingWays: await fetchBuildingWays(circuitId, bbox, refresh),
     greenWays: await fetchGreenWays(circuitId, bbox, refresh),
     breaklineWays: await fetchBreaklineWays(circuitId, bbox, refresh),
+    streetWays: await fetchStreetWays(circuitId, bbox, refresh),
     overrides: await loadOverrides(circuitId),
     // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
     // Switched off: a modelled building is somebody else's house stretched onto
@@ -2994,7 +3051,7 @@ export interface BakeOptions {
 
 /** The pipeline itself, over inputs somebody else read. */
 export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): Promise<BakeReport> {
-  const { circuitId, buildingWays, greenWays, breaklineWays, mnh, kitHouses, kitBoats, kitTrees } =
+  const { circuitId, buildingWays, greenWays, breaklineWays, streetWays, mnh, kitHouses, kitBoats, kitTrees } =
     inputs;
   const { coords, plane, field, hill, corridor, tunnels, vaults, overrides, overrideStats } =
     buildCircuitGround(inputs);
@@ -3011,7 +3068,23 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // The surveyed lines the belts' filter may not average across: cliffs and
   // retaining walls from their own query, quays and breakwaters from the shore.
   const breaklines = buildBreaklines(field, breaklineWays, shoreWays);
-  const ground = buildGround(field, plane, breaklines);
+  // Where there is land at all: a walkway along a pontoon is not ground whose
+  // level the town sets, and laying one serrated the quays.
+  const shoreDistance = buildShoreDistance(field);
+  const landAt = (x: number, z: number): number => {
+    const surveyed = coast.signedDistance(x, z);
+    return Number.isNaN(surveyed) ? shoreDistance.at(plane.lon(x), plane.lat(z)) : surveyed;
+  };
+  // The town's own levels, from the street network the audit reads too.
+  const streets = buildStreetGround(
+    streetWays,
+    coords,
+    field,
+    plane,
+    breaklines,
+    landAt,
+  );
+  const ground = buildGround(field, plane, breaklines, streets);
   const hollow = portalVoids(vaults, hill, plane);
   const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, hollow);
   const water = bakeWater(field, plane);
@@ -3138,9 +3211,28 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // After the occlusion pass, which owns the same array: an open hillside sees
   // the whole sky, so AO says nothing about it and slope is what is left to
   // read the relief by.
+  // One reading of how steep the ground is, for every belt alike: the field
+  // over a stride of eight metres, which is wider than its own ripple and
+  // narrower than a hillside.
+  const SLOPE_STRIDE_M = 8;
+  const slopeDegAt = (x: number, z: number): number => {
+    const east = field.heightAt(plane.lon(x + SLOPE_STRIDE_M), plane.lat(z));
+    const west = field.heightAt(plane.lon(x - SLOPE_STRIDE_M), plane.lat(z));
+    const south = field.heightAt(plane.lon(x), plane.lat(z + SLOPE_STRIDE_M));
+    const north = field.heightAt(plane.lon(x), plane.lat(z - SLOPE_STRIDE_M));
+    if ([east, west, south, north].some(Number.isNaN)) return 0;
+    const run = Math.hypot(
+      (east - west) / (2 * SLOPE_STRIDE_M),
+      (south - north) / (2 * SLOPE_STRIDE_M),
+    );
+    return (Math.atan(run) * 180) / Math.PI;
+  };
   let slopeShaded = 0;
   for (const belt of BELT_ORDER) {
-    slopeShaded += shadeBySlope(terrain.meshes[belt]);
+    slopeShaded += shadeBySlope(terrain.meshes[belt], slopeDegAt);
+    // Both passes read something per vertex; on ground this fine that comes out
+    // speckled, so the shade is spread over the surface before it ships.
+    softenShade(terrain.meshes[belt]);
   }
 
   const outDir = options.outDir ?? join(OUTPUT_ROOT, circuitId);

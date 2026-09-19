@@ -11,7 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { BELT_ORDER, type Belt } from "./belts";
 import { buildSurfaceIndex, type SurfaceMesh } from "./baked-scene";
-import type { BeltGrid, Ground } from "./ground";
+import { SMOOTH_PASSES, type BeltGrid, type Ground } from "./ground";
 import { breaklinesOf, cliffThrough, syntheticGround } from "./synthetic";
 
 const MM = 1e-3;
@@ -112,8 +112,9 @@ describe("a 30° slope", () => {
       const grid = ground.gridFor(belt);
       for (const { row, col, x } of nodes(ground, belt)) {
         // The window clamps at the field's edge, where a symmetric mean is no
-        // longer symmetric; the interior is what the invariant is about.
-        const margin = grid.radius * cellM + grid.cell;
+        // longer symmetric, and the smoothing that follows it reaches a cell
+        // further per pass; the interior is what the invariant is about.
+        const margin = grid.radius * cellM + grid.cell * (SMOOTH_PASSES + 1);
         if (x < grid.minX + margin || x > -grid.minX - margin) continue;
         expect(ground.nodeAt(belt, row, col)).toBeCloseTo(heightAtX(x), 3);
       }
@@ -122,8 +123,11 @@ describe("a 30° slope", () => {
 
   test("and the drawn surface keeps the same gradient", () => {
     for (const belt of BELT_ORDER) {
-      const rise = ground.at(40, 0, belt) - ground.at(-40, 0, belt);
-      expect(rise / 80).toBeCloseTo(slope, 6);
+      // Read well inside the field: the smoothing that follows the filter
+      // reaches a cell per pass, and at the edge it has neighbours on one side
+      // only, which tips the nodes there off the ramp by a millionth.
+      const rise = ground.at(32, 0, belt) - ground.at(-32, 0, belt);
+      expect(rise / 64).toBeCloseTo(slope, 5);
     }
   });
 });
@@ -185,7 +189,10 @@ describe("a terrace", () => {
       const grid = ground.gridFor(belt);
       for (const { row, col, x } of nodes(ground, belt)) {
         const fieldCol = Math.round((x - grid.minX) / cellM);
-        expect(ground.nodeAt(belt, row, col)).toBeCloseTo(levelOf(fieldCol), 6);
+        // To the millimetre, which is the invariant: the smoothing that follows
+        // the filter is one-sided at the field's own border and moves a node
+        // there by a micron.
+        expect(ground.nodeAt(belt, row, col)).toBeCloseTo(levelOf(fieldCol), 3);
       }
     }
   });

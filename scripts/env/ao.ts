@@ -18,18 +18,25 @@ import type { ScenePlane } from "./plane";
 /** Resolution of the occluder height map. Fine enough for a street, coarse
  *  enough to sweep in a second. */
 const CELL_M = 4;
-/** Directions sampled around each vertex, and how far out along each. */
-const AZIMUTHS = 8;
+/**
+ * Directions sampled around each vertex, and how far out along each.
+ *
+ * Sixteen rather than eight, and off the axes by half a step: with eight, four
+ * of them ran along the occluder grid's own rows and columns, and a building's
+ * shade came out as a square with its corners on the compass points.
+ */
+const AZIMUTHS = 16;
+const AZIMUTH_OFFSET = Math.PI / AZIMUTHS;
 const RANGES_M = [2, 3, 5, 8, 12, 18, 26, 38];
 /** Full shade never goes below this: an unlit crevice is a hole, not a shadow. */
-const FLOOR = 0.45;
+const FLOOR = 0.62;
 /**
  * Physical sky visibility is a gentle thing — a street with towers on two sides
  * still sees three quarters of the sky — and reads as no shading at all. The
  * curve keeps the open ground open and deepens the enclosed places, which is
  * what the effect is for.
  */
-const CONTRAST = 2.6;
+const CONTRAST = 1.7;
 
 export interface Occluders {
   heights: Float32Array;
@@ -93,11 +100,29 @@ export function buildOccluders(
   return { heights, width, height, minX, minZ, cellM: CELL_M };
 }
 
+/**
+ * The skyline between the cells, not the cell the point lands in.
+ *
+ * Read cell by cell, the horizon a vertex sees changes in four metre jumps and
+ * the shade under a building steps along the grid — square shadows on ground
+ * that has none.
+ */
 function heightAt(occluders: Occluders, x: number, z: number): number {
-  const col = Math.floor((x - occluders.minX) / occluders.cellM);
-  const row = Math.floor((z - occluders.minZ) / occluders.cellM);
-  if (col < 0 || row < 0 || col >= occluders.width || row >= occluders.height) return 0;
-  return occluders.heights[row * occluders.width + col];
+  const { heights, width, height, minX, minZ, cellM } = occluders;
+  const fx = (x - minX) / cellM - 0.5;
+  const fz = (z - minZ) / cellM - 0.5;
+  const col = Math.floor(fx);
+  const row = Math.floor(fz);
+  if (col < -1 || row < -1 || col >= width || row >= height) return 0;
+  const u = fx - col;
+  const v = fz - row;
+  const at = (r: number, c: number): number => {
+    if (r < 0 || c < 0 || r >= height || c >= width) return 0;
+    return heights[r * width + c];
+  };
+  const top = at(row, col) * (1 - u) + at(row, col + 1) * u;
+  const bottom = at(row + 1, col) * (1 - u) + at(row + 1, col + 1) * u;
+  return top * (1 - v) + bottom * v;
 }
 
 /**
@@ -116,7 +141,7 @@ export function applyAmbientOcclusion(mesh: Mesh, occluders: Occluders): void {
 
     let blocked = 0;
     for (let a = 0; a < AZIMUTHS; a++) {
-      const angle = (2 * Math.PI * a) / AZIMUTHS;
+      const angle = (2 * Math.PI * a) / AZIMUTHS + AZIMUTH_OFFSET;
       const dx = Math.cos(angle);
       const dz = Math.sin(angle);
       let highest = 0;
@@ -158,19 +183,24 @@ const FLAT_DEG = 12;
 /** At and beyond this it is as dark as ground gets. */
 const STEEP_DEG = 55;
 /** What the steepest ground keeps of its own colour. */
-const STEEP_SHADE = 0.62;
+const STEEP_SHADE = 0.78;
 /** The steepest ground's warmth, as a multiplier per channel. */
 const ROCK_TINT: [number, number, number] = [1, 0.985, 0.96];
 
-export function shadeBySlope(mesh: Mesh): number {
+export function shadeBySlope(mesh: Mesh, slopeDegAt: (x: number, z: number) => number): number {
   if (!mesh.colors) return 0;
   const flat = Math.cos((FLAT_DEG * Math.PI) / 180);
   const steep = Math.cos((STEEP_DEG * Math.PI) / 180);
   let shaded = 0;
   const count = mesh.positions.length / 3;
   for (let i = 0; i < count; i++) {
-    // The normal points up on ground; a vertical wall of a cut reads as 0.
-    const up = Math.abs(mesh.normals[i * 3 + 1]);
+    // How steep the ground is here, read off the field over a stride of its
+    // own rather than off this vertex's normal. A normal belongs to one
+    // triangle of one belt: on a rock face meshed at four metres it flickers
+    // from vertex to vertex, and it changes outright where the cell size does,
+    // which drew the belt boundary across the hillside as a line of its own.
+    const slope = slopeDegAt(mesh.positions[i * 3], mesh.positions[i * 3 + 2]);
+    const up = Math.cos((Math.min(89, slope) * Math.PI) / 180);
     if (up >= flat) continue;
     const t = Math.max(0, Math.min(1, (flat - up) / (flat - steep)));
     // Smoothstep, or the first degree past flat shows as a band.
@@ -190,6 +220,80 @@ export function shadeBySlope(mesh: Mesh): number {
   }
   return shaded;
 }
+
+/**
+ * Softens what the two shading passes wrote, across the surface itself.
+ *
+ * Both read something per vertex — the horizon a point sees, the tilt of its
+ * own normal — and both change abruptly between neighbours on ground that is
+ * itself a little rough. On the fine cells a rock face is meshed at now, that
+ * reads as a smear of soot with a serrated edge rather than as shade. The
+ * colours are averaged over the vertices each one shares a triangle with, which
+ * is the same blur a wider sampling would have given and costs a pass over the
+ * indices rather than eight times the ray casts.
+ *
+ * Vertices that were split for a crease are separate here, so an edge the
+ * mesher kept sharp stays sharp.
+ */
+export function softenShade(mesh: Mesh, passes = SHADE_BLUR_PASSES): void {
+  if (!mesh.colors || !mesh.indices.length) return;
+  const count = mesh.positions.length / 3;
+  // Neighbours by position, not by index: a vertex split for a crease is a
+  // second copy at the same place, and on a rock face nearly every vertex is
+  // split — blurred by index alone, each copy only ever saw itself.
+  const atPosition = new Map<string, number[]>();
+  for (let v = 0; v < count; v++) {
+    const key = `${Math.round(mesh.positions[v * 3] * 20)},${Math.round(mesh.positions[v * 3 + 2] * 20)}`;
+    const group = atPosition.get(key);
+    if (group) group.push(v);
+    else atPosition.set(key, [v]);
+  }
+  const neighbours: number[][] = Array.from({ length: count }, () => []);
+  const join = (a: number, b: number) => {
+    for (const other of atPosition.get(
+      `${Math.round(mesh.positions[b * 3] * 20)},${Math.round(mesh.positions[b * 3 + 2] * 20)}`,
+    ) ?? [b]) {
+      neighbours[a].push(other);
+    }
+  };
+  for (let i = 0; i < mesh.indices.length; i += 3) {
+    const a = mesh.indices[i];
+    const b = mesh.indices[i + 1];
+    const c = mesh.indices[i + 2];
+    join(a, b);
+    join(a, c);
+    join(b, a);
+    join(b, c);
+    join(c, a);
+    join(c, b);
+  }
+
+  let colors = mesh.colors;
+  for (let pass = 0; pass < passes; pass++) {
+    const next = colors.slice();
+    for (let v = 0; v < count; v++) {
+      const ring = neighbours[v];
+      if (!ring.length) continue;
+      let sum = colors[v * 3];
+      for (const other of ring) sum += colors[other * 3];
+      const mean = sum / (ring.length + 1);
+      const shade = colors[v * 3] + (mean - colors[v * 3]) * SHADE_BLUR_STRENGTH;
+      // Grey in, grey out: the three channels carry one number, and a tint the
+      // albedo pass adds later multiplies into it.
+      const tintG = colors[v * 3] > 0 ? colors[v * 3 + 1] / colors[v * 3] : 1;
+      const tintB = colors[v * 3] > 0 ? colors[v * 3 + 2] / colors[v * 3] : 1;
+      next[v * 3] = shade;
+      next[v * 3 + 1] = shade * tintG;
+      next[v * 3 + 2] = shade * tintB;
+    }
+    colors = next;
+  }
+  mesh.colors = colors;
+}
+
+/** How far the shade is spread over the surface, and how hard. */
+const SHADE_BLUR_PASSES = 3;
+const SHADE_BLUR_STRENGTH = 0.7;
 
 /**
  * Multiplies a merged model's own colour into the shade AO wrote.

@@ -42,6 +42,7 @@ interface FixtureFile {
   buildingWays: BakeInputs["buildingWays"];
   greenWays: BakeInputs["greenWays"];
   breaklineWays: BakeInputs["breaklineWays"];
+  streetWays: BakeInputs["streetWays"];
   overrides: BakeInputs["overrides"];
 }
 
@@ -168,6 +169,7 @@ export async function writeFixture(spec: FixtureSpec): Promise<{ dir: string; wi
     buildingWays: within(inputs.buildingWays, window),
     greenWays: within(inputs.greenWays, window),
     breaklineWays: within(inputs.breaklineWays, window),
+    streetWays: within(inputs.streetWays, window),
     overrides: inputs.overrides,
   };
   // One line per file rather than an indented tree: this is data for a test to
@@ -197,6 +199,7 @@ export async function loadFixture(name: string): Promise<BakeInputs> {
     buildingWays: file.buildingWays,
     greenWays: file.greenWays,
     breaklineWays: file.breaklineWays,
+    streetWays: file.streetWays ?? [],
     overrides: file.overrides,
     kitHouses: [],
     kitBoats: [],
