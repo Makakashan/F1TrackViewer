@@ -173,22 +173,20 @@ const DECK_CLEARED_SCALAR_M = 2;
 const MIN_BUILDING_HEIGHT_M = 2;
 
 /**
- * Above this slope the coast is a cliff rather than a shore.
- *
- * Where the land meets the water at a beach or a quay, the cut belongs just
- * above the datum — `SHORE_EDGE_MAX_M` — or the terrain ramps down into the sea.
- * Where it meets it at the foot of a rock face, holding the cut to three metres
- * hangs the whole face off one row of cells: the Rocher drops forty-four metres
- * across the last four, and each cell cut at its own place along its edge, which
- * is what drew the coastline as a row of teeth. There the cut keeps the height
- * the face has and the skirt below it runs down to the sea floor, so the rock
- * reads as a wall.
+ * How far the cut may sit below the land behind it. Capping a cliff at
+ * `SHORE_EDGE_MAX_M` hung its whole face on one row of triangles, which drew
+ * the coast as a fan of slabs; the drop belongs to the skirt instead.
  */
-const CLIFF_COAST_DEG = 35;
+const MAX_COAST_DROP_M = 6;
 
 /** The band a terrain surface vertex is allowed to live in: clear of the sea plane, below the cliff cap. */
 function clampToSurface(y: number): number {
   return Math.max(WATER_CLEARANCE_M, Math.min(y, SHORE_EDGE_MAX_M));
+}
+
+/** Where the waterline is drawn under ground standing at `y` one cell inland. */
+function cutHeight(y: number): number {
+  return Math.max(clampToSurface(y), y - MAX_COAST_DROP_M);
 }
 
 /**
@@ -523,18 +521,6 @@ function bakeTerrain(
   // flag, or the cut falls back on the grid it exists to escape.
   const rasterShore = buildShoreDistance(field);
 
-  /** How steep the bare ground is at a point, over one core cell. */
-  const coastSlopeDegAt = (x: number, z: number): number => {
-    const step = BELT_CELL_M.core;
-    const east = field.heightAt(plane.lon(x + step), plane.lat(z));
-    const west = field.heightAt(plane.lon(x - step), plane.lat(z));
-    const south = field.heightAt(plane.lon(x), plane.lat(z + step));
-    const north = field.heightAt(plane.lon(x), plane.lat(z - step));
-    if ([east, west, south, north].some(Number.isNaN)) return 0;
-    const run = Math.hypot((east - west) / (2 * step), (south - north) / (2 * step));
-    return (Math.atan(run) * 180) / Math.PI;
-  };
-
   /**
    * How much land there is at a point: metres from the surveyed shoreline where
    * there is one, and otherwise the smoothed raster distance. The terrain is
@@ -769,8 +755,7 @@ function bakeTerrain(
       else if (!Number.isNaN(hA)) y = hA;
       else if (!Number.isNaN(hB)) y = hB;
       else y = solidHeightAt(rowA, colA);
-      const onCliff = coastSlopeDegAt(x, z) > CLIFF_COAST_DEG;
-      return grid.vertex(key, x, onCliff ? Math.max(WATER_CLEARANCE_M, y) : clampToSurface(y), z);
+      return grid.vertex(key, x, cutHeight(y), z);
     };
 
     // Land–water crossings, as vertex pairs, so the coast can drop a skirt once

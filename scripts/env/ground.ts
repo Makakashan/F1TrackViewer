@@ -87,7 +87,7 @@ const WALL_FADE_CELLS = 2;
 /** Stand-in for "no wall anywhere near", in cells. */
 const FAR_FROM_WALL = 1e6;
 /** Four neighbours, not eight: a diagonal is a cell and a half away. */
-const NEIGHBOURS: [number, number][] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+const NEIGHBOURS = 4;
 
 /**
  * Summed-area tables over the field, one for the values and one for the count
@@ -282,15 +282,36 @@ export function buildGround(
       for (let col = -1; col <= grid.cols + 1; col++) {
         const x = minX + col * grid.cell;
         const z = minZ + row * grid.cell;
+        const inside = (px: number, pz: number): boolean => {
+          const lon = plane.lon(px);
+          const lat = plane.lat(pz);
+          return (
+            lon >= field.bbox.minLon && lon <= field.bbox.maxLon
+            && lat >= field.bbox.minLat && lat <= field.bbox.maxLat
+          );
+        };
+        const here = field.heightAt(plane.lon(x), plane.lat(z));
         const east = field.heightAt(plane.lon(x + grid.cell), plane.lat(z));
         const west = field.heightAt(plane.lon(x - grid.cell), plane.lat(z));
         const south = field.heightAt(plane.lon(x), plane.lat(z + grid.cell));
         const north = field.heightAt(plane.lon(x), plane.lat(z - grid.cell));
+        // At the water the slope is read from the side that has ground, or the
+        // last row of land before a cliff reads flat. Past the bbox there is no
+        // ground either side, so that node keeps the flat pull it had.
+        const gradient = (ahead: number, behind: number, aheadIn: boolean, behindIn: boolean): number => {
+          if (!Number.isNaN(ahead) && !Number.isNaN(behind)) return (ahead - behind) / (2 * grid.cell);
+          if (Number.isNaN(here) || !aheadIn || !behindIn) return Number.NaN;
+          if (!Number.isNaN(ahead)) return (ahead - here) / grid.cell;
+          if (!Number.isNaN(behind)) return (here - behind) / grid.cell;
+          return Number.NaN;
+        };
+        const alongX = gradient(east, west, inside(x + grid.cell, z), inside(x - grid.cell, z));
+        const alongZ = gradient(south, north, inside(x, z + grid.cell), inside(x, z - grid.cell));
         let face = 0;
-        if (![east, west, south, north].some(Number.isNaN)) {
+        if (!Number.isNaN(alongX) || !Number.isNaN(alongZ)) {
           const run = Math.hypot(
-            (east - west) / (2 * grid.cell),
-            (south - north) / (2 * grid.cell),
+            Number.isNaN(alongX) ? 0 : alongX,
+            Number.isNaN(alongZ) ? 0 : alongZ,
           );
           const slope = (Math.atan(run) * 180) / Math.PI;
           face = Math.max(0, Math.min(1, (slope - FACE_FROM_DEG) / (FACE_FULL_DEG - FACE_FROM_DEG)));
@@ -310,43 +331,47 @@ export function buildGround(
           const here = before[index];
           if (Number.isNaN(here)) continue;
           const away = wallAway[index];
-          let sum = 0;
-          let count = 0;
-          let complete = true;
           const lon = plane.lon(minX + col * grid.cell);
           const lat = plane.lat(minZ + row * grid.cell);
-          for (const [dr, dc] of NEIGHBOURS) {
+          /** NaN is water, undefined is off the table. */
+          const neighbour = (dr: number, dc: number): number | undefined => {
             const r = row + dr;
             const c = col + dc;
-            const value =
-              r < -1 || c < -1 || r > grid.rows + 1 || c > grid.cols + 1
-                ? Number.NaN
-                : before[(r + 1) * width + c + 1];
-            // Neither the sea nor a built wall is averaged across, and a node
-            // that cannot see all four of its neighbours is left alone: a
-            // one-sided mean tips it off the slope it belongs on. A natural
-            // cliff is different — on a face the line marks the rock, not a
-            // step between two flats — so it is crossed where the ground is
-            // steep and held to where it is not.
-            const neighbourLon = plane.lon(minX + c * grid.cell);
-            const neighbourLat = plane.lat(minZ + r * grid.cell);
-            if (
-              Number.isNaN(value)
-              || (breaklines?.count
-                && (breaklines.crossesWallLonLat(lon, lat, neighbourLon, neighbourLat)
-                  || (faceShare[index] < 0.5
-                    && breaklines.crossesLonLat(lon, lat, neighbourLon, neighbourLat))))
-            ) {
-              complete = false;
-              break;
-            }
-            sum += value;
-            count++;
+            if (r < -1 || c < -1 || r > grid.rows + 1 || c > grid.cols + 1) return undefined;
+            return before[(r + 1) * width + c + 1];
+          };
+          // A built wall is not averaged across, and a node beside one is left
+          // alone. A natural cliff is the rock itself, not a step between two
+          // flats, so it is crossed where the ground is steep.
+          const walled = (dr: number, dc: number): boolean => {
+            if (!breaklines?.count) return false;
+            const neighbourLon = plane.lon(minX + (col + dc) * grid.cell);
+            const neighbourLat = plane.lat(minZ + (row + dr) * grid.cell);
+            return (
+              breaklines.crossesWallLonLat(lon, lat, neighbourLon, neighbourLat)
+              || (faceShare[index] < 0.5
+                && breaklines.crossesLonLat(lon, lat, neighbourLon, neighbourLat))
+            );
+          };
+          // One axis at a time, with the sea mirrored rather than read, so the
+          // axis along the shore still averages. Dropping the node instead left
+          // the brow the coast's wall hangs from unsmoothed: 31 m to 39 m
+          // between neighbours on Le Rocher.
+          let sum = 0;
+          let blocked = false;
+          for (const [dr, dc] of [[-1, 0], [0, -1]] as const) {
+            if (walled(dr, dc) || walled(-dr, -dc)) { blocked = true; break; }
+            const back = neighbour(dr, dc);
+            const forth = neighbour(-dr, -dc);
+            // Past the bbox there is nothing to reflect: leave the node be.
+            if (back === undefined || forth === undefined) { blocked = true; break; }
+            // The mirror is `2 * here - dry`, so a wet axis averages to `here`.
+            sum += Number.isNaN(back) || Number.isNaN(forth) ? 2 * here : back + forth;
           }
-          if (!complete || count !== NEIGHBOURS.length) continue;
+          if (blocked) continue;
           const clear = Math.min(1, away / WALL_FADE_CELLS);
           const strength = pull[index] * (clear + (1 - clear) * faceShare[index]);
-          settled[index] = here + (sum / count - here) * strength;
+          settled[index] = here + (sum / NEIGHBOURS - here) * strength;
         }
       }
     }

@@ -16,24 +16,24 @@
   "belts": {
     "core": {
       "file": "core.glb",
-      "bytes": 1515436,
-      "triangles": 143103,
+      "bytes": 2420900,
+      "triangles": 307207,
       "drawCalls": 10,
       "radiusM": 150,
       "cellM": 4
     },
     "city": {
       "file": "city.glb",
-      "bytes": 3476224,
-      "triangles": 200701,
+      "bytes": 3285888,
+      "triangles": 185746,
       "drawCalls": 8,
       "radiusM": 600,
       "cellM": 8
     },
     "far": {
       "file": "far.glb",
-      "bytes": 1344064,
-      "triangles": 77754,
+      "bytes": 1348708,
+      "triangles": 74469,
       "drawCalls": 4,
       "radiusM": null,
       "cellM": 16
@@ -41,7 +41,7 @@
   },
   "counts": {
     "buildings": 4812,
-    "triangles": 421558,
+    "triangles": 567422,
     "drawCalls": 22
   },
   "track": {
@@ -220,5 +220,5 @@
     "centreline": "bacinger/f1-circuits"
   },
   "attribution": "© OpenStreetMap contributors",
-  "generatedAt": "2026-09-10"
+  "generatedAt": "2026-09-19"
 }
