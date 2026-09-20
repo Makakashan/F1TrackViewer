@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { GridMesh } from "./mesh";
+import { GridMesh, smoothGentleNormals } from "./mesh";
 
 /** A square of `size` cells, with the height at each node from `heightAt`. */
 function sheet(size: number, heightAt: (col: number, row: number) => number): GridMesh {
@@ -79,6 +79,42 @@ describe("a fold", () => {
     }
     for (let v = 0; v < creased.positions.length / 3; v++) {
       expect(there.has(creased.positions.slice(v * 3, v * 3 + 3).join(","))).toBe(true);
+    }
+  });
+});
+
+describe("gentle ground", () => {
+  // A checkerboard of ±2.5 m on 10 m cells: faces tip by up to 27°, well past
+  // the crease, on ground whose mean is dead flat.
+  const ripple = (col: number, row: number) => ((col + row) % 2 ? 2.5 : -2.5);
+  const options = { radius: 20, slopeRadius: 40, gentleDeg: 25, keep: () => false };
+  const interior = (mesh: { positions: number[] }, v: number) =>
+    mesh.positions[v * 3] >= 40 && mesh.positions[v * 3] <= 80
+    && mesh.positions[v * 3 + 2] >= 40 && mesh.positions[v * 3 + 2] <= 80;
+  const tilt = (n: number[]) => (Math.acos(n[1]) * 180) / Math.PI;
+
+  test("shades as one surface where the ripple would have drawn creases", () => {
+    const mesh = sheet(12, ripple).finish(15);
+    smoothGentleNormals(mesh, options);
+    for (let v = 0; v < mesh.positions.length / 3; v++) {
+      if (interior(mesh, v)) expect(tilt(normalAt(mesh, v))).toBeLessThan(5);
+    }
+  });
+
+  test("leaves a steep slope's normals as the crease pass made them", () => {
+    const steep = (col: number, row: number) => col * 10 + ripple(col, row);
+    const mesh = sheet(12, steep).finish(15);
+    const before = [...mesh.normals];
+    expect(smoothGentleNormals(mesh, options)).toBe(0);
+    expect(mesh.normals).toEqual(before);
+  });
+
+  test("leaves a kept corner alone", () => {
+    const mesh = sheet(12, ripple).finish(15);
+    const before = [...mesh.normals];
+    smoothGentleNormals(mesh, { ...options, keep: (x) => x < 30 });
+    for (let v = 0; v < mesh.positions.length / 3; v++) {
+      if (mesh.positions[v * 3] < 30) expect(normalAt(mesh, v)).toEqual(normalAt({ normals: before }, v));
     }
   });
 });

@@ -34,6 +34,7 @@ import {
   createMesh,
   GridMesh,
   isEmpty,
+  smoothGentleNormals,
   triangleCount,
   type Mesh,
 } from "./mesh";
@@ -55,7 +56,7 @@ import {
 } from "./overpass";
 import { buildGreenery, plantTrees, type GreeneryResult } from "./greenery";
 import { buildSurfaceIndex } from "./baked-scene";
-import { buildBreaklines } from "./breaklines";
+import { buildBreaklines, type Breaklines } from "./breaklines";
 import { buildGround, type Ground } from "./ground";
 import { buildStreetGround } from "./streets";
 import {
@@ -506,6 +507,29 @@ function straddlesWater(
  * smooth at 15° — that was the other half of the check.
  */
 const TERRAIN_CREASE_DEG = 15;
+/**
+ * Ground gentler than this, read over `GENTLE_WINDOW_M`, shades as one surface:
+ * the crease above is for a cliff's edge, and on flat ground it drew the DTM's
+ * ripple as a sawtooth along the streets.
+ */
+export const GENTLE_GROUND_DEG = 25;
+export const GENTLE_WINDOW_M = 20;
+
+/** Within a cell of a surveyed line the crease stays: that edge is real. */
+export function atSurveyedWall(
+  breaklines: Breaklines,
+  plane: ScenePlane,
+  x: number,
+  z: number,
+  cell: number,
+): boolean {
+  const lon = plane.lon(x);
+  const lat = plane.lat(z);
+  return (
+    breaklines.crossesLonLat(plane.lon(x - cell), lat, plane.lon(x + cell), lat)
+    || breaklines.crossesLonLat(lon, plane.lat(z - cell), lon, plane.lat(z + cell))
+  );
+}
 
 function bakeTerrain(
   field: HeightField,
@@ -515,6 +539,7 @@ function bakeTerrain(
   coast: Coastline,
   piers: PierResult,
   hollow: PortalHollow,
+  breaklines: Breaklines,
 ): TerrainResult {
   // Where no surveyed line reaches — a third of a kilometre of Larvotto, among
   // others — the edge still has to come from somewhere smoother than a boolean
@@ -822,6 +847,12 @@ function bakeTerrain(
     }
 
     const mesh = grid.finish(TERRAIN_CREASE_DEG);
+    smoothGentleNormals(mesh, {
+      radius: 2 * cell,
+      slopeRadius: Math.max(GENTLE_WINDOW_M, 2 * cell),
+      gentleDeg: GENTLE_GROUND_DEG,
+      keep: (x, z) => atSurveyedWall(breaklines, plane, x, z, cell),
+    });
     addVoidWalls(mesh, voidCells, built, hollow, surfaceHeightAt, minX, minZ, cell, cols);
     addTerrainSkirts(mesh, scalarAt, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
     addShoreSkirts(mesh, shoreEdges);
@@ -3071,7 +3102,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   );
   const ground = buildGround(field, plane, breaklines, streets);
   const hollow = portalVoids(vaults, hill, plane);
-  const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, hollow);
+  const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, hollow, breaklines);
   const water = bakeWater(field, plane);
 
   const buildingsFile = applyBuildingOverrides(
