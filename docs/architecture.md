@@ -75,6 +75,15 @@ from the sampler, and everything draped on the terrain — roads, buildings, the
 ribbon — samples through it, so nothing has to guess a clearance that keeps it above a
 surface it cannot see.
 
+The baked ground has two rules for its light. A corner whose faces disagree by more
+than 15° is split, so a cliff edge or a quay top stays an edge (`TERRAIN_CREASE_DEG`).
+On gentle ground — under 25° over a 20 m window — every vertex instead takes the
+normal averaged over two cells of its belt (`smoothGentleNormals`), because there a
+15° disagreement is the DTM's own ripple: half of Monaco's core nodes step 1.5 m to a
+neighbour, and the crease drew that as a sawtooth along the streets. Within a cell of a
+surveyed line the crease stays. `env:audit` holds each belt to 1% of gentle-ground
+edges where the light still breaks.
+
 ## The race
 
 `lib/race/race-sim` is pure and deterministic: a fixed `dt`, a seed per circuit, no
