@@ -19,6 +19,9 @@ import {
   buildCircuitGround,
   loadBakeInputs,
   fromOverpass,
+  atSurveyedWall,
+  GENTLE_GROUND_DEG,
+  GENTLE_WINDOW_M,
   SHORE_EDGE_MAX_M,
   WATER_CLEARANCE_M,
   type BeltBlocks,
@@ -37,7 +40,7 @@ import { buildGround, type Ground } from "./env/ground";
 import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
 import { fetchBreaklineWays, fetchBuildingWays, fetchShoreWays, fetchStreetWays } from "./env/overpass";
 import { buildStreetGround, type StreetGround } from "./env/streets";
-import { BELT_BUDGET, BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
+import { BELT_BUDGET, BELT_CELL_M, BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
 import type { HeightField } from "./env/heightfield";
 import type { ScenePlane } from "./env/plane";
 
@@ -136,6 +139,123 @@ function slopeDeg(dEast: number, dSouth: number, cellM: number): number {
 
 function check(name: string, measured: string, limit: string, ok: boolean, fatal = true): Check {
   return { name, measured, limit, ok, fatal };
+}
+
+/** How far the light may turn between neighbouring ground vertices before the eye reads an edge. */
+const LIGHT_BEND_DEG = 15;
+/** The share of gentle-ground edges allowed past it, on each belt. */
+const LIGHT_BEND_SHARE = 0.01;
+
+/**
+ * Where the light breaks across the shipped ground: edges between two ground
+ * faces whose normals disagree past `LIGHT_BEND_DEG`, split at either end or
+ * turning along it. Asked of gentle ground, where the bake evens the light out;
+ * steep ground keeps its creases on purpose and is reported beside it.
+ */
+function checkLight(
+  meshes: BakedMesh[],
+  cell: number,
+  /** A wall's foot, where the bake keeps the crease on purpose. */
+  atWall: (x: number, z: number, cell: number) => boolean,
+): { gentle: number; wall: number; steep: number; edges: number } {
+  const cosBend = Math.cos((LIGHT_BEND_DEG * Math.PI) / 180);
+  const cosGentle = Math.cos((GENTLE_GROUND_DEG * Math.PI) / 180);
+  const window = Math.max(GENTLE_WINDOW_M, 2 * cell);
+  let gentleEdges = 0, gentleBent = 0, wallEdges = 0, wallBent = 0, steepEdges = 0, steepBent = 0;
+
+  for (const { name, positions, indices, normals } of meshes) {
+    if (name !== "terrain" || !normals) continue;
+    const faces = indices.length / 3;
+    const faceNormal = new Float64Array(faces * 3);
+    const ground = new Uint8Array(faces);
+    const buckets = new Map<string, number[]>();
+    for (let f = 0; f < faces; f++) {
+      const [a, b, c] = [0, 1, 2].map((k) => indices[f * 3 + k] * 3);
+      const ux = positions[b] - positions[a], uy = positions[b + 1] - positions[a + 1], uz = positions[b + 2] - positions[a + 2];
+      const vx = positions[c] - positions[a], vy = positions[c + 1] - positions[a + 1], vz = positions[c + 2] - positions[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      faceNormal.set([nx, ny, nz], f * 3);
+      // A skirt or a wall is not ground.
+      if (ny < 0.3 * Math.hypot(nx, ny, nz)) continue;
+      ground[f] = 1;
+      const cx = (positions[a] + positions[b] + positions[c]) / 3;
+      const cz = (positions[a + 2] + positions[b + 2] + positions[c + 2]) / 3;
+      const key = `${Math.floor(cx / window)},${Math.floor(cz / window)}`;
+      const list = buckets.get(key);
+      if (list) list.push(f);
+      else buckets.set(key, [f]);
+    }
+
+    // Gentle, the way the bake reads it: the faces within the window, averaged.
+    const gentle = (v: number): boolean => {
+      const x = positions[v * 3], z = positions[v * 3 + 2];
+      const bx = Math.floor(x / window), bz = Math.floor(z / window);
+      let sx = 0, sy = 0, sz = 0;
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          for (const f of buckets.get(`${bx + dx},${bz + dz}`) ?? []) {
+            const [a, b, c] = [0, 1, 2].map((k) => indices[f * 3 + k] * 3);
+            const cx = (positions[a] + positions[b] + positions[c]) / 3;
+            const cz = (positions[a + 2] + positions[b + 2] + positions[c + 2]) / 3;
+            if (Math.hypot(cx - x, cz - z) > window) continue;
+            sx += faceNormal[f * 3];
+            sy += faceNormal[f * 3 + 1];
+            sz += faceNormal[f * 3 + 2];
+          }
+        }
+      }
+      const length = Math.hypot(sx, sy, sz);
+      return length > 0 && sy / length >= cosGentle;
+    };
+
+    // Edges by position: the crease pass gives a corner several vertices.
+    const at = (v: number) =>
+      `${Math.round(positions[v * 3] * 100)},${Math.round(positions[v * 3 + 1] * 100)},${Math.round(positions[v * 3 + 2] * 100)}`;
+    const edges = new Map<string, [number, number, number][]>();
+    for (let f = 0; f < faces; f++) {
+      if (!ground[f]) continue;
+      for (let k = 0; k < 3; k++) {
+        const a = indices[f * 3 + k], b = indices[f * 3 + ((k + 1) % 3)];
+        const [ka, kb] = [at(a), at(b)];
+        const [key, first, second] = ka < kb ? [`${ka}|${kb}`, a, b] : [`${kb}|${ka}`, b, a];
+        const list = edges.get(key);
+        if (list) list.push([f, first, second]);
+        else edges.set(key, [[f, first, second]]);
+      }
+    }
+    const agree = (p: number, q: number) =>
+      normals[p * 3] * normals[q * 3] + normals[p * 3 + 1] * normals[q * 3 + 1] + normals[p * 3 + 2] * normals[q * 3 + 2]
+      >= cosBend;
+    const isGentle = new Map<number, boolean>();
+    const gentleAt = (v: number) => {
+      let known = isGentle.get(v);
+      if (known === undefined) isGentle.set(v, (known = gentle(v)));
+      return known;
+    };
+    for (const list of edges.values()) {
+      if (list.length !== 2) continue;
+      const [[, a0, b0], [, a1, b1]] = list;
+      const bent = !agree(a0, a1) || !agree(b0, b1) || !agree(a0, b0);
+      const x = (positions[a0 * 3] + positions[b0 * 3]) / 2;
+      const z = (positions[a0 * 3 + 2] + positions[b0 * 3 + 2]) / 2;
+      if (!gentleAt(a0) || !gentleAt(b0)) {
+        steepEdges++;
+        if (bent) steepBent++;
+      } else if (atWall(x, z, cell)) {
+        wallEdges++;
+        if (bent) wallBent++;
+      } else {
+        gentleEdges++;
+        if (bent) gentleBent++;
+      }
+    }
+  }
+  return {
+    gentle: gentleBent / Math.max(1, gentleEdges),
+    wall: wallBent / Math.max(1, wallEdges),
+    steep: steepBent / Math.max(1, steepEdges),
+    edges: gentleEdges,
+  };
 }
 
 /** Does the shipped terrain still sit where the field says the ground is? */
@@ -699,6 +819,7 @@ async function audit(circuitId: string): Promise<Check[]> {
     onLand,
   );
   const surface = buildGround(field, plane, breaklines, streets);
+  const atWall = (x: number, z: number, cell: number) => atSurveyedWall(breaklines, plane, x, z, cell);
 
   for (const { belt, bytes, meshes } of baked) {
     const triangles = meshes.reduce((sum, mesh) => sum + mesh.triangles, 0);
@@ -721,6 +842,16 @@ async function audit(circuitId: string): Promise<Check[]> {
         triangles.toLocaleString(),
         budget.triangles.toLocaleString(),
         triangles <= budget.triangles,
+      ),
+    );
+    const light = checkLight(meshes, BELT_CELL_M[belt], atWall);
+    checks.push(
+      check(
+        `${belt}: light breaks on gentle ground`,
+        `${(light.gentle * 100).toFixed(2)}% of ${light.edges.toLocaleString()} edges`
+          + ` (at a wall's foot ${(light.wall * 100).toFixed(2)}%, steep ground ${(light.steep * 100).toFixed(2)}%)`,
+        `${LIGHT_BEND_SHARE * 100}%`,
+        light.gentle <= LIGHT_BEND_SHARE,
       ),
     );
 
