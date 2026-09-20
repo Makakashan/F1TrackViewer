@@ -125,6 +125,16 @@ export const SHOTS: Record<string, Shot[]> = {
       distanceM: 3900,
     },
     {
+      name: "street-canyon",
+      watch: "light on the ground between buildings: one surface, not a sawtooth",
+      // The worst of the ripple the crease drew as teeth, looking down the
+      // street that runs NW–SE through it.
+      target: { x: 160, z: -1113, y: 30 },
+      azimuthDeg: 135,
+      elevationDeg: 55,
+      distanceM: 320,
+    },
+    {
       name: "seam-city-far",
       watch: "the same, where 8 m meets 16 m at 600 m",
       target: { x: -850, z: 660, y: 40 },
