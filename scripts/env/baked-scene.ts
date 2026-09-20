@@ -28,6 +28,8 @@ export interface BakedMesh {
   positions: Float32Array;
   indices: Uint32Array;
   colors: Float32Array | null;
+  /** Unit length; the node's scale is uniform, so it bends none of them. */
+  normals: Float32Array | null;
   triangles: number;
 }
 
@@ -91,11 +93,26 @@ export async function readBakedBelt(
         }
       }
 
+      const normalAttribute = primitive.getAttribute("NORMAL");
+      let normals: Float32Array | null = null;
+      if (normalAttribute) {
+        normals = new Float32Array(count * 3);
+        const n = [0, 0, 0];
+        for (let i = 0; i < count; i++) {
+          normalAttribute.getElement(i, n);
+          const length = Math.hypot(n[0], n[1], n[2]) || 1;
+          normals[i * 3] = n[0] / length;
+          normals[i * 3 + 1] = n[1] / length;
+          normals[i * 3 + 2] = n[2] / length;
+        }
+      }
+
       meshes.push({
         name: mesh.getName(),
         positions,
         indices,
         colors,
+        normals,
         triangles: indices.length / 3,
       });
     }
