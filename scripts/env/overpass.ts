@@ -24,6 +24,13 @@ const ENDPOINTS = [
   "https://overpass.osm.ch/api/interpreter",
 ];
 const USER_AGENT = "F1TrackViewer/0.1 (https://github.com/Makakashan/F1TrackViewer)";
+/**
+ * How long one endpoint may keep a query. The longest server-side limit asked
+ * for is 180 s; past that and a margin the endpoint is not coming back. Without
+ * it a mirror that accepts the connection and never answers held a bake forever,
+ * before the retry schedule ever started.
+ */
+const REQUEST_TIMEOUT_MS = 210_000;
 
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 const CACHE_DIR = join(REPO_ROOT, "data", "cache", "overpass-structures");
@@ -284,6 +291,7 @@ async function runOnce(body: string, waitMs: number): Promise<OverpassResponse |
         method: "POST",
         headers: { "Content-Type": "text/plain", "User-Agent": USER_AGENT },
         body,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!res.ok) {
         await new Promise((resolve) => setTimeout(resolve, waitMs));
