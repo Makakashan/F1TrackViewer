@@ -20,8 +20,8 @@ import {
   loadBakeInputs,
   fromOverpass,
   atSurveyedWall,
-  GENTLE_GROUND_DEG,
-  GENTLE_WINDOW_M,
+  MAX_COAST_DROP_M,
+  onRoad,
   SHORE_EDGE_MAX_M,
   WATER_CLEARANCE_M,
   type BeltBlocks,
@@ -145,6 +145,12 @@ function check(name: string, measured: string, limit: string, ok: boolean, fatal
 const LIGHT_BEND_DEG = 15;
 /** The share of gentle-ground edges allowed past it, on each belt. */
 const LIGHT_BEND_SHARE = 0.01;
+/**
+ * Gentle: under this slope over `GENTLE_WINDOW_M`. There a 15° turn per cell can
+ * only be ripple; on steeper ground it can be the relief itself.
+ */
+const GENTLE_GROUND_DEG = 25;
+const GENTLE_WINDOW_M = 20;
 
 /**
  * Where the light breaks across the shipped ground: edges between two ground
@@ -155,8 +161,8 @@ const LIGHT_BEND_SHARE = 0.01;
 function checkLight(
   meshes: BakedMesh[],
   cell: number,
-  /** A wall's foot, where the bake keeps the crease on purpose. */
-  atWall: (x: number, z: number, cell: number) => boolean,
+  /** A vertex the bake kept creased at a surveyed line's foot. */
+  kept: (x: number, z: number) => boolean,
 ): { gentle: number; wall: number; steep: number; edges: number } {
   const cosBend = Math.cos((LIGHT_BEND_DEG * Math.PI) / 180);
   const cosGentle = Math.cos((GENTLE_GROUND_DEG * Math.PI) / 180);
@@ -236,12 +242,13 @@ function checkLight(
       if (list.length !== 2) continue;
       const [[, a0, b0], [, a1, b1]] = list;
       const bent = !agree(a0, a1) || !agree(b0, b1) || !agree(a0, b0);
-      const x = (positions[a0 * 3] + positions[b0 * 3]) / 2;
-      const z = (positions[a0 * 3 + 2] + positions[b0 * 3 + 2]) / 2;
+      // By vertex, as the bake decides it: an edge with a kept end turns the
+      // light on purpose, whichever side of the band its middle falls.
+      const atFoot = (v: number) => kept(positions[v * 3], positions[v * 3 + 2]);
       if (!gentleAt(a0) || !gentleAt(b0)) {
         steepEdges++;
         if (bent) steepBent++;
-      } else if (atWall(x, z, cell)) {
+      } else if (atFoot(a0) || atFoot(b0)) {
         wallEdges++;
         if (bent) wallBent++;
       } else {
@@ -345,10 +352,11 @@ function checkTerrain(
       // The surface is held clear of the sea plane, so that is the height it is
       // meant to have where the raster reads at or below the datum.
       const delta = Math.abs(y - Math.max(ground, WATER_CLEARANCE_M));
-      // Sitting on the cap the waterline is held to, with ground above it, is
-      // the signature of `SHORE_EDGE_MAX_M` and of nothing else: this is a cut
-      // vertex at the foot of a rise, however far the line has drifted from it.
-      const capped = y <= SHORE_EDGE_MAX_M + 0.1 && ground > y + 0.1;
+      // A cut vertex below the ground behind it sits either on the cap or a
+      // full `MAX_COAST_DROP_M` under the brow: the signature of the cut and of
+      // nothing else, however far the line has drifted from it.
+      const capped = ground > y + 0.1
+        && (y <= SHORE_EDGE_MAX_M + 0.1 || ground - y >= MAX_COAST_DROP_M - 0.5);
       if (onCut(x, z) || capped) {
         shore++;
         if (delta > worstShore) worstShore = delta;
@@ -818,8 +826,9 @@ async function audit(circuitId: string): Promise<Check[]> {
     breaklines,
     onLand,
   );
-  const surface = buildGround(field, plane, breaklines, streets);
-  const atWall = (x: number, z: number, cell: number) => atSurveyedWall(breaklines, plane, x, z, cell);
+  const surface = buildGround(field, plane, breaklines, streets, onRoad(corridor, field, plane));
+  // The band the bake keeps creased: the core's cell, on every belt.
+  const kept = (x: number, z: number) => atSurveyedWall(breaklines, plane, x, z, BELT_CELL_M.core);
 
   for (const { belt, bytes, meshes } of baked) {
     const triangles = meshes.reduce((sum, mesh) => sum + mesh.triangles, 0);
@@ -844,7 +853,7 @@ async function audit(circuitId: string): Promise<Check[]> {
         triangles <= budget.triangles,
       ),
     );
-    const light = checkLight(meshes, BELT_CELL_M[belt], atWall);
+    const light = checkLight(meshes, BELT_CELL_M[belt], kept);
     checks.push(
       check(
         `${belt}: light breaks on gentle ground`,
