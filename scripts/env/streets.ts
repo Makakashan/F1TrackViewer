@@ -77,6 +77,14 @@ const WEIGHT_BLUR_PASSES = 3;
 const MIN_SAY = 0.05;
 /** Where the circuit's own level is laid, measured from its centreline. */
 const TRACK_OFFSETS_M = [-7, -3.5, 0, 3.5, 7];
+/**
+ * The track's own ground: the field is burned to its profile out to here
+ * (`heightfield.ts`, half width and verge), and the town lets go of it over
+ * `TRACK_FADE_M` beyond. Read off an eight-metre raster, a street beside the
+ * road lifted the racing surface by up to a metre along the harbour.
+ */
+const TRACK_OWN_M = 8;
+const TRACK_FADE_M = 8;
 /** The classes that are ground a car or a crowd stands on. */
 const GROUND_KINDS = new Set([
   "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link",
@@ -118,8 +126,8 @@ export function buildStreetGround(
   const trackHits = new Int32Array(rows * cols);
   let laid = 0;
 
-  const lay = (x: number, z: number, onTrack = false) => {
-    const height = field.heightAt(plane.lon(x), plane.lat(z));
+  const lay = (x: number, z: number, onTrack = false, at = field.heightAt(plane.lon(x), plane.lat(z))) => {
+    const height = at;
     if (Number.isNaN(height)) return;
     if (!onTrack && landAt && landAt(x, z) <= 0) return;
     const col = Math.round((x - minX) / CELL_M);
@@ -153,7 +161,10 @@ export function buildStreetGround(
   }
 
   // Across the road, not along its middle: the corridor is fourteen metres and a
-  // street one cell off it would otherwise own the ground the cars drive on.
+  // street one cell off it would otherwise own the ground the cars drive on. At
+  // the centreline's height all the way across — a road is level from kerb to
+  // kerb, and seven metres out the field is the slope beside it, which lifted
+  // the racing surface by a metre along the harbour.
   for (let i = 1; i < track.length; i++) {
     const ax = plane.x(track[i - 1][0]);
     const az = plane.z(track[i - 1][1]);
@@ -168,7 +179,8 @@ export function buildStreetGround(
       const t = step / steps;
       const x = ax + (bx - ax) * t;
       const z = az + (bz - az) * t;
-      for (const off of TRACK_OFFSETS_M) lay(x + nx * off, z + nz * off, true);
+      const centre = field.heightAt(plane.lon(x), plane.lat(z));
+      for (const off of TRACK_OFFSETS_M) lay(x + nx * off, z + nz * off, true, centre);
     }
   }
 
@@ -424,10 +436,46 @@ export function buildStreetGround(
     return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
   };
 
+  // Distance to the centreline, from segments bucketed on the same raster.
+  const segments: number[][] = [];
+  const buckets = new Map<number, number[]>();
+  const reach = TRACK_OWN_M + TRACK_FADE_M;
+  for (let i = 1; i < track.length; i++) {
+    const seg = [plane.x(track[i - 1][0]), plane.z(track[i - 1][1]), plane.x(track[i][0]), plane.z(track[i][1])];
+    const id = segments.push(seg) - 1;
+    const c0 = Math.floor((Math.min(seg[0], seg[2]) - reach - minX) / CELL_M);
+    const c1 = Math.floor((Math.max(seg[0], seg[2]) + reach - minX) / CELL_M);
+    const r0 = Math.floor((Math.min(seg[1], seg[3]) - reach - minZ) / CELL_M);
+    const r1 = Math.floor((Math.max(seg[1], seg[3]) + reach - minZ) / CELL_M);
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const key = r * 100_003 + c;
+        const list = buckets.get(key);
+        if (list) list.push(id);
+        else buckets.set(key, [id]);
+      }
+    }
+  }
+  const fromTrack = (x: number, z: number): number => {
+    const key = Math.floor((z - minZ) / CELL_M) * 100_003 + Math.floor((x - minX) / CELL_M);
+    let best = Infinity;
+    for (const id of buckets.get(key) ?? []) {
+      const [ax, az, bx, bz] = segments[id];
+      const dx = bx - ax;
+      const dz = bz - az;
+      const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+      best = Math.min(best, Math.hypot(x - ax - dx * t, z - az - dz * t));
+    }
+    return best;
+  };
+
   return {
     count: laid,
     at(x, z) {
-      const share = sample(weight, x, z);
+      const away = fromTrack(x, z);
+      if (away <= TRACK_OWN_M) return null;
+      const t = Math.min(1, (away - TRACK_OWN_M) / TRACK_FADE_M);
+      const share = sample(weight, x, z) * t * t * (3 - 2 * t);
       if (!(share > MIN_SAY)) return null;
       const height = sample(level, x, z);
       if (Number.isNaN(height)) return null;
