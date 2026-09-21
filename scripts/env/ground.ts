@@ -47,6 +47,12 @@ export interface Ground {
   nodeAt(belt: Belt, row: number, col: number): number;
   /** Height of the surface the belt meshes, at a scene point. NaN is water. */
   at(x: number, z: number, belt: Belt): number;
+  /**
+   * Which way the ground faces at a scene point, the same for every belt: read
+   * off the finest surface over `stride` metres each way. Null only where too
+   * little of that is land to say.
+   */
+  normalAt(x: number, z: number, stride: number): [number, number, number] | null;
 }
 
 /**
@@ -117,6 +123,12 @@ export function buildGround(
   breaklines?: Breaklines,
   /** The level the town is built to, where there is a town; see `streets.ts`. */
   streets?: StreetGround,
+  /**
+   * The road: ground the field was burned to the track's profile, which a node
+   * there keeps as it is. Averaged with the hillside beside it, the racing
+   * surface came out two metres under the ground along the harbour.
+   */
+  onRoad?: (x: number, z: number) => boolean,
 ): Ground {
   const { sums, counts } = summedArea(field);
   const stride = field.width + 1;
@@ -204,6 +216,7 @@ export function buildGround(
     const width = grid.cols + 3;
     const height = grid.rows + 3;
     const table = new Float32Array(width * height);
+    const held = new Uint8Array(width * height);
     for (let row = -1; row <= grid.rows + 1; row++) {
       for (let col = -1; col <= grid.cols + 1; col++) {
         const x = minX + col * grid.cell;
@@ -211,7 +224,10 @@ export function buildGround(
         const lon = plane.lon(x);
         const lat = plane.lat(z);
         let value: number;
-        if (grid.radius === 0) {
+        if (onRoad?.(x, z)) {
+          held[(row + 1) * width + col + 1] = 1;
+          value = field.heightAt(lon, lat);
+        } else if (grid.radius === 0) {
           value = field.heightAt(lon, lat);
         } else {
           // The window is centred on the field node nearest the belt node, so
@@ -329,7 +345,7 @@ export function buildGround(
         for (let col = -1; col <= grid.cols + 1; col++) {
           const index = (row + 1) * width + col + 1;
           const here = before[index];
-          if (Number.isNaN(here)) continue;
+          if (Number.isNaN(here) || held[index]) continue;
           const away = wallAway[index];
           const lon = plane.lon(minX + col * grid.cell);
           const lat = plane.lat(minZ + row * grid.cell);
@@ -424,5 +440,41 @@ export function buildGround(
     return h00 + (h10 - h00) * u + (h11 - h10) * v;
   };
 
-  return { gridFor, nodeAt, at };
+  const fitNormal = (x: number, z: number, stride: number): [number, number, number] | null => {
+    // A plane fitted to a 3×3 of samples weighted 1-2-1 each way: on full ground
+    // that is exactly a Sobel, and at the water it reads the land side instead
+    // of giving up — which left a fifth of Monaco's core with the crease's facets.
+    let sw = 0, sx = 0, sz = 0, sh = 0, sxx = 0, szz = 0, sxz = 0, sxh = 0, szh = 0;
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const h = at(x + dx * stride, z + dz * stride, "core");
+        if (Number.isNaN(h)) continue;
+        const w = (2 - Math.abs(dx)) * (2 - Math.abs(dz));
+        sw += w; sx += w * dx; sz += w * dz; sh += w * h;
+        sxx += w * dx * dx; szz += w * dz * dz; sxz += w * dx * dz;
+        sxh += w * dx * h; szh += w * dz * h;
+      }
+    }
+    if (sw === 0) return null;
+    // Centred, the normal equations for the two slopes are 2×2.
+    const cxx = sxx - (sx * sx) / sw;
+    const czz = szz - (sz * sz) / sw;
+    const cxz = sxz - (sx * sz) / sw;
+    const cxh = sxh - (sx * sh) / sw;
+    const czh = szh - (sz * sh) / sw;
+    const det = cxx * czz - cxz * cxz;
+    // Fewer than three land samples, or all of them in a line: no plane to read.
+    if (det < 1e-9) return null;
+    const nx = -((czz * cxh - cxz * czh) / det) / stride;
+    const nz = -((cxx * czh - cxz * cxh) / det) / stride;
+    const length = Math.hypot(nx, 1, nz);
+    return [nx / length, 1 / length, nz / length];
+  };
+
+  // At the waterline only one row of the wide stride may be land, and one row
+  // says nothing across it; a core cell's stride still has two.
+  const normalAt = (x: number, z: number, stride: number): [number, number, number] | null =>
+    fitNormal(x, z, stride) ?? (stride > BELT_CELL_M.core ? fitNormal(x, z, BELT_CELL_M.core) : null);
+
+  return { gridFor, nodeAt, at, normalAt };
 }

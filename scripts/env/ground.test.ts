@@ -378,3 +378,35 @@ describe("belt grids", () => {
     expect(ground.gridFor("far").radius).toBe(2);
   });
 });
+
+describe("the ground's normal", () => {
+  const cellM = 4;
+  const tilt = (n: [number, number, number] | null) => (Math.acos(n![1]) * 180) / Math.PI;
+
+  test("leans with a 30° ramp", () => {
+    const slope = Math.tan((30 * Math.PI) / 180);
+    const { ground } = syntheticGround({ cols: 65, rows: 65, cellM, at: (col) => col * cellM * slope });
+    const normal = ground.normalAt(0, 0, 8);
+    expect(tilt(normal)).toBeCloseTo(30, 1);
+    expect(normal![2]).toBeCloseTo(0, 6);
+  });
+
+  test("faces the sky over a ripple finer than its stride", () => {
+    // ±1.5 m from node to node: every face tips, the ground as a whole does not.
+    const { ground } = syntheticGround({ cols: 65, rows: 65, cellM, at: (col, row) => ((col + row) % 2 ? 1.5 : -1.5) });
+    expect(tilt(ground.normalAt(0, 0, 8))).toBeLessThan(2);
+  });
+
+  test("reads the land side where the stride reaches water", () => {
+    const slope = Math.tan((20 * Math.PI) / 180);
+    const { ground } = syntheticGround({
+      cols: 65, rows: 65, cellM, at: (col) => (col > 34 ? Number.NaN : col * cellM * slope),
+    });
+    expect(tilt(ground.normalAt(2, 0, 8))).toBeCloseTo(20, 1);
+  });
+
+  test("gives up where hardly any of it is land", () => {
+    const { ground } = syntheticGround({ cols: 65, rows: 65, cellM, at: (col) => (col > 32 ? Number.NaN : 0) });
+    expect(ground.normalAt(40, 0, 8)).toBeNull();
+  });
+});
