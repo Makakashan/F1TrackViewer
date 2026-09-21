@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useMemo } from "react";
+import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -25,6 +25,8 @@ import {
   getSceneBackground,
 } from "@/lib/scene-config";
 import CalibrationPanel from "@/components/three/calibration-panel";
+import CameraTargetReadout from "@/components/three/camera-target-readout";
+import { useAppPref } from "@/components/app-pref-provider";
 import SceneDebugHandle from "@/components/three/scene-debug-handle";
 import LookSun from "@/components/three/look-sun";
 import { useLookLab } from "@/lib/look-lab";
@@ -119,6 +121,16 @@ export default function TrackViewer({
   );
   const circuitId = geojson.features[0]?.properties.id;
   const calibrationEnabled = startFinishCalibration;
+  const { t } = useAppPref();
+  const targetLabel = useRef<HTMLSpanElement>(null);
+  const writeTarget = useCallback(
+    ({ x, y, z }: THREE.Vector3) => {
+      if (targetLabel.current) {
+        targetLabel.current.textContent = `${t.cameraTarget} x ${x.toFixed(0)} · y ${y.toFixed(0)} · z ${z.toFixed(0)}`;
+      }
+    },
+    [t.cameraTarget],
+  );
 
   const [resolvedStartFinishS, setResolvedStartFinishS] = useState<
     number | null
@@ -131,6 +143,12 @@ export default function TrackViewer({
   return (
     <PointerCaptureBoundary>
       <div ref={setCanvasEventSource} className="relative h-full w-full">
+        {terrainOnly && (
+          <span
+            ref={targetLabel}
+            className="pointer-events-none absolute left-4 top-4 z-20 rounded-md border border-border/80 bg-background/90 px-2 py-1 font-mono text-[11px] text-muted-foreground"
+          />
+        )}
         {calibrationEnabled && circuitId && (
           <CalibrationPanel
             circuitId={circuitId}
@@ -261,6 +279,7 @@ export default function TrackViewer({
                 the ground. Stopping just short of the horizon keeps the camera
                 above the surface it is looking at, and `CameraGroundClamp`
                 keeps it out of the surface itself. */}
+            {terrainOnly && <CameraTargetReadout onChange={writeTarget} />}
             <OrbitControls
               makeDefault
               enableDamping
