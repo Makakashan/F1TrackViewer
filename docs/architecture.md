@@ -75,14 +75,34 @@ from the sampler, and everything draped on the terrain — roads, buildings, the
 ribbon — samples through it, so nothing has to guess a clearance that keeps it above a
 surface it cannot see.
 
-The baked ground has two rules for its light. A corner whose faces disagree by more
-than 15° is split, so a cliff edge or a quay top stays an edge (`TERRAIN_CREASE_DEG`).
-On gentle ground — under 25° over a 20 m window — every vertex instead takes the
-normal averaged over two cells of its belt (`smoothGentleNormals`), because there a
-15° disagreement is the DTM's own ripple: half of Monaco's core nodes step 1.5 m to a
-neighbour, and the crease drew that as a sawtooth along the streets. Within a cell of a
-surveyed line the crease stays. `env:audit` holds each belt to 1% of gentle-ground
-edges where the light still breaks.
+The baked ground's light is one function of place, whichever belt draws it. Its
+normal comes from `Ground.normalAt` — a Sobel over the finest surface, three cells of
+the coarsest block the point touches — and its shade from one lattice (`buildGroundShade`:
+sky, slope, blur in metres) that every belt reads by position. Worked out per belt, a
+coarse block came out a different grey from its fine neighbour and every seam showed as
+a patch; lit face by face, the DTM's ripple — half of Monaco's core nodes step 1.5 m to
+a neighbour — drew a sawtooth along the streets. At the waterline, where too little land
+surrounds a vertex for that fit, it takes its land-side neighbours' normal. Within a cell
+of a retaining wall the 15° crease stays (`TERRAIN_CREASE_DEG`), which keeps a built step
+sharp; a cliff is the ground itself and shades as it does, and a quay's edge is the
+cut's. Water with land within two core cells on both sides is filled as land: narrower
+than the grid can draw, it came out as a slot the height of the cliff around it.
+`env:audit` holds each belt to 1% of gentle-ground edges — under 25° over 20 m — where
+the light still breaks; on steeper ground a turn that sharp can be the relief.
+
+Two belts meet at a hairline, and the skirt that hides the gap is lit as the ground it
+hangs from; lit as a wall, it drew every seam as a line. A coast raised to the core puts
+a ring of city between itself and the far belt, so the cell never jumps more than twice.
+
+The road is burned into the field before anything is meshed: flat to its half width
+and a verge of one terrain cell (`DEFAULT_VERGE_M`, 4 m), then eased back to the ground.
+The verge stops at a surveyed line — a retaining wall beside the road keeps its step —
+and where two legs of the lap run within reach of each other the lower road keeps the
+verge between them, so the step is a wall past its kerb rather than a slope across it.
+The ground keeps the burned road as it is (`onRoad`): neither the belts' filter nor the
+town's street levels (`streets.ts`, silent within 8 m of the centreline) move it. Where
+a wall stands within a cell of the ribbon's edge the 4 m mesh still ramps over it; that
+needs the wall drawn as a face, which the terrain does not do yet.
 
 ## The race
 
