@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { CameraPreset } from "@/components/track/track-viewer";
 import type { TrackViewMode } from "@/lib/track/track-markers";
 import { readPref, writePref } from "@/lib/local-pref";
+import { DEFAULT_HALF_WIDTH_M } from "@/lib/track/track-geometry";
 
 export type QualityMode = "auto" | "performance" | "quality";
 
@@ -98,7 +99,7 @@ interface UrlState {
 
 export const useUrlState = create<UrlState>((set, get) => ({
   track: null,
-  trackWidth: 7,
+  trackWidth: DEFAULT_HALF_WIDTH_M,
   elevationEnabled: true,
   cameraPreset: null,
   viewMode: "sectors",
