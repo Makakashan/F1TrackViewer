@@ -56,6 +56,8 @@ import {
 import { buildGreenery, plantTrees, type GreeneryResult } from "./greenery";
 import { buildSurfaceIndex } from "./baked-scene";
 import { buildBreaklines, type Breaklines } from "./breaklines";
+import cdt2d from "cdt2d";
+import { buildRibbon, clipToCell, type Ribbon } from "./ribbon";
 import { buildGround, type Ground } from "./ground";
 import { buildStreetGround } from "./streets";
 import {
@@ -91,7 +93,7 @@ import {
   type OverrideStats,
 } from "./overrides";
 import { buildTunnelMask, type TunnelMask } from "./tunnels";
-import { circuitBBox, loadCircuitCoords } from "./circuit";
+import { circuitBBox, circuitLengthM, loadCircuitCoords } from "./circuit";
 
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 const OUTPUT_ROOT = join(REPO_ROOT, "public", "environments");
@@ -662,6 +664,9 @@ function fillFromNeighbours(mesh: Mesh, settled: Uint8Array, open: number[]): vo
   }
 }
 
+/** Keys for the vertices the road adds, clear of every grid node's own. */
+const ROAD_VERTEX_KEY = 1e12;
+
 function bakeTerrain(
   field: HeightField,
   ground: Ground,
@@ -671,6 +676,8 @@ function bakeTerrain(
   piers: PierResult,
   hollow: PortalHollow,
   breaklines: Breaklines,
+  /** Where the viewer draws the road; its edges are edges of the core belt's mesh. */
+  ribbon: Ribbon | null,
 ): TerrainResult {
   // Where no surveyed line reaches — a third of a kilometre of Larvotto, among
   // others — the edge still has to come from somewhere smoother than a boolean
@@ -867,6 +874,109 @@ function bakeTerrain(
         minZ + row * cell,
       );
 
+    // The ribbon's edges, clipped to the core cells they cross. A cell a 4 m
+    // grid splits on its diagonal cannot hold an edge that runs through it, and
+    // the hillside beside the road ramped onto the tarmac within one cell.
+    const roadInCell = new Map<number, number[][]>();
+    if (ribbon && belt === "core") {
+      for (const edge of ribbon.edges) {
+        for (let i = 1; i < edge.length; i++) {
+          const a = edge[i - 1];
+          const b = edge[i];
+          const c0 = Math.floor((Math.min(a.x, b.x) - minX) / cell);
+          const c1 = Math.floor((Math.max(a.x, b.x) - minX) / cell);
+          const r0 = Math.floor((Math.min(a.z, b.z) - minZ) / cell);
+          const r1 = Math.floor((Math.max(a.z, b.z) - minZ) / cell);
+          for (let r = r0; r <= r1; r++) {
+            for (let c = c0; c <= c1; c++) {
+              const piece = clipToCell(a, b, minX + c * cell, minZ + r * cell, cell);
+              if (!piece) continue;
+              const key = r * (cols + 2) + c;
+              const list = roadInCell.get(key);
+              if (list) list.push(piece);
+              else roadInCell.set(key, [piece]);
+            }
+          }
+        }
+      }
+    }
+    // Shared by position, so two cells that meet on an edge meet at its points.
+    const roadVertices = new Map<string, number>();
+    const roadVertex = (x: number, y: number, z: number): number => {
+      const key = `${x.toFixed(3)},${z.toFixed(3)}`;
+      let id = roadVertices.get(key);
+      if (id === undefined) {
+        id = grid.vertex(ROAD_VERTEX_KEY + roadVertices.size, x, y, z);
+        roadVertices.set(key, id);
+      }
+      return id;
+    };
+    const splitByRoad = (row: number, col: number, pieces: number[][]): boolean => {
+      const x0 = minX + col * cell;
+      const z0 = minZ + row * cell;
+      const x1 = x0 + cell;
+      const z1 = z0 + cell;
+      const corners: [number, number, number][] = [
+        [x0, z0, vertexAt(row, col)],
+        [x0, z1, vertexAt(row + 1, col)],
+        [x1, z1, vertexAt(row + 1, col + 1)],
+        [x1, z0, vertexAt(row, col + 1)],
+      ];
+      const points: [number, number][] = [];
+      const ids: number[] = [];
+      const local = (x: number, y: number, z: number): number => {
+        // A point on a corner is the corner: two vertices there would crack.
+        for (const [cx, cz, id] of corners) {
+          if (Math.abs(cx - x) < 0.05 && Math.abs(cz - z) < 0.05) return addLocal(cx, cz, id);
+        }
+        return addLocal(x, z, roadVertex(x, y, z));
+      };
+      const addLocal = (x: number, z: number, id: number): number => {
+        const found = ids.indexOf(id);
+        if (found >= 0) return found;
+        points.push([x, z]);
+        ids.push(id);
+        return points.length - 1;
+      };
+      for (const [x, z, id] of corners) addLocal(x, z, id);
+      const constraints: [number, number][] = [];
+      for (const [ax, ay, az, bx, by, bz] of pieces) {
+        const a = local(ax, ay, az);
+        const b = local(bx, by, bz);
+        if (a !== b) constraints.push([a, b]);
+      }
+      // The cell's own rim, through every point that landed on it, so the
+      // neighbour across each side sees the same points.
+      const sides: [(p: [number, number]) => boolean, (p: [number, number]) => number][] = [
+        [(p) => Math.abs(p[0] - x0) < 1e-3, (p) => p[1]],
+        [(p) => Math.abs(p[1] - z1) < 1e-3, (p) => p[0]],
+        [(p) => Math.abs(p[0] - x1) < 1e-3, (p) => p[1]],
+        [(p) => Math.abs(p[1] - z0) < 1e-3, (p) => p[0]],
+      ];
+      for (const [on, along] of sides) {
+        const rim = points.map((p, i) => i).filter((i) => on(points[i]));
+        rim.sort((i, j) => along(points[i]) - along(points[j]));
+        for (let i = 1; i < rim.length; i++) constraints.push([rim[i - 1], rim[i]]);
+      }
+      let triangles: [number, number, number][];
+      try {
+        triangles = cdt2d(points, constraints);
+      } catch {
+        return false;
+      }
+      if (!triangles.length) return false;
+      for (const [a, b, c] of triangles) {
+        const area =
+          (points[b][0] - points[a][0]) * (points[c][1] - points[a][1])
+          - (points[b][1] - points[a][1]) * (points[c][0] - points[a][0]);
+        if (Math.abs(area) < 1e-9) continue;
+        // The grid's own winding, (x0,z0) → (x0,z1) → (x1,z1), is negative here.
+        if (area < 0) grid.triangle(ids[a], ids[b], ids[c]);
+        else grid.triangle(ids[a], ids[c], ids[b]);
+      }
+      return true;
+    };
+
     // How much land there is at a node: metres from the surveyed shoreline
     // where there is one, and otherwise a flag standing in for "well inside"
     // the raster's own land or water. The terrain is the region where this is
@@ -938,8 +1048,14 @@ function bakeTerrain(
         if (scalars.every((value) => value <= 0)) continue;
 
         if (scalars.every((value) => value > 0)) {
-          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col), vertexAt(row + 1, col + 1));
-          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col + 1), vertexAt(row, col + 1));
+          const pieces = roadInCell.get(row * (cols + 2) + col);
+          // A cell on a seam is drawn on the coarse belt's chord; splitting it
+          // would put points on that chord the coarse side does not have.
+          const onSeam = pieces && walk.some(([dr, dc]) => blocks.conformsAt(minX + (col + dc) * cell, minZ + (row + dr) * cell));
+          if (!pieces || onSeam || !splitByRoad(row, col, pieces)) {
+            grid.triangle(vertexAt(row, col), vertexAt(row + 1, col), vertexAt(row + 1, col + 1));
+            grid.triangle(vertexAt(row, col), vertexAt(row + 1, col + 1), vertexAt(row, col + 1));
+          }
           cellsByBelt[belt]++;
           continue;
         }
@@ -3293,7 +3409,13 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   );
   const ground = buildGround(field, plane, breaklines, streets, onRoad(corridor, field, plane));
   const hollow = portalVoids(vaults, hill, plane);
-  const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, hollow, breaklines);
+  // The road as the viewer draws it, so the ground meets the ribbon at its edge.
+  const lapLengthM = (await circuitLengthM(circuitId))
+    ?? coords.slice(1).reduce((sum, [lon, lat], i) =>
+      sum + Math.hypot(plane.x(lon) - plane.x(coords[i][0]), plane.z(lat) - plane.z(coords[i][1])), 0);
+  const ribbon = buildRibbon(coords, elevations, plane, lapLengthM, (x, z) =>
+    tunnels.buried(plane.lon(x), plane.lat(z)));
+  const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, hollow, breaklines, ribbon);
   const water = bakeWater(field, plane);
 
   const buildingsFile = applyBuildingOverrides(
