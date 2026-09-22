@@ -40,6 +40,9 @@ import { buildGround, type Ground } from "./env/ground";
 import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
 import { fetchBreaklineWays, fetchBuildingWays, fetchShoreWays, fetchStreetWays } from "./env/overpass";
 import { buildStreetGround, type StreetGround } from "./env/streets";
+import { buildRibbon } from "./env/ribbon";
+import { circuitLengthM } from "./env/circuit";
+import { TRACK_SURFACE_RAISE } from "@/lib/scene-config";
 import { BELT_BUDGET, BELT_CELL_M, BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
 import type { HeightField } from "./env/heightfield";
 import type { ScenePlane } from "./env/plane";
@@ -265,6 +268,46 @@ function checkLight(
   };
 }
 
+/** Ground this far over the ribbon's top shows through it. */
+const OVER_RIBBON_M = 0.3;
+/** The share of samples across the ribbon allowed to show ground. */
+const OVER_RIBBON_SHARE = 0.005;
+
+/**
+ * Does the drawn ground stay under the ribbon the viewer draws? Sampled across
+ * its width, the ribbon built by the bake's own helper, so the two cannot
+ * disagree about where the road is.
+ */
+function checkRibbon(
+  ribbon: ReturnType<typeof buildRibbon>,
+  ground: GroundIndex,
+  hidden: (x: number, z: number) => boolean,
+): { samples: number; over: number; worstM: number } {
+  let samples = 0;
+  let over = 0;
+  let worstM = 0;
+  const steps = ribbon.samples * 4;
+  for (let k = 0; k < steps; k++) {
+    const u = k / steps;
+    const p = ribbon.curve.getPointAt(u);
+    if (hidden(p.x, p.z)) continue;
+    const t = ribbon.curve.getTangentAt(u);
+    const length = Math.hypot(t.x, t.z) || 1;
+    const hw = ribbon.halfWidthAt(u);
+    for (const f of [-0.98, -0.9, -0.5, 0, 0.5, 0.9, 0.98]) {
+      const g = ground.at(p.x - (t.z / length) * hw * f, p.z + (t.x / length) * hw * f);
+      if (Number.isNaN(g)) continue;
+      samples++;
+      const up = g - (p.y + TRACK_SURFACE_RAISE);
+      if (up > OVER_RIBBON_M) {
+        over++;
+        if (up > worstM) worstM = up;
+      }
+    }
+  }
+  return { samples, over, worstM };
+}
+
 /** Does the shipped terrain still sit where the field says the ground is? */
 /**
  * How close to the cut a vertex has to be before it is measured as coast rather
@@ -285,9 +328,16 @@ function checkTerrain(
   coast: Coastline,
   rasterShore: ShoreDistance,
   blocks: BeltBlocks,
-): { worst: number; sampled: number; shore: number; worstShore: number; seam: number; worstSeam: number } {
+  /** A vertex the ribbon's edge put there: it stands at the road, not on the surface. */
+  onRibbonEdge: (x: number, z: number) => boolean,
+): {
+  worst: number; sampled: number; shore: number; worstShore: number; seam: number; worstSeam: number;
+  road: number; worstRoad: number;
+} {
   let worst = 0;
   let sampled = 0;
+  let road = 0;
+  let worstRoad = 0;
   let shore = 0;
   let worstShore = 0;
   let seam = 0;
@@ -370,11 +420,16 @@ function checkTerrain(
         if (delta > worstSeam) worstSeam = delta;
         continue;
       }
+      if (onRibbonEdge(x, z)) {
+        road++;
+        if (delta > worstRoad) worstRoad = delta;
+        continue;
+      }
       sampled++;
       if (delta > worst) worst = delta;
     }
   }
-  return { worst, sampled, shore, worstShore, seam, worstSeam };
+  return { worst, sampled, shore, worstShore, seam, worstSeam, road, worstRoad };
 }
 
 export interface Seam {
@@ -787,6 +842,8 @@ async function audit(circuitId: string): Promise<Check[]> {
   let worstShore = 0;
   let seamSamples = 0;
   let worstSeam = 0;
+  let roadSamples = 0;
+  let worstRoad = 0;
   let waterOffDatum = 0;
   let buildingVerticesOnTrack = 0;
   let worstIntrusionM = 0;
@@ -829,6 +886,42 @@ async function audit(circuitId: string): Promise<Check[]> {
   const surface = buildGround(field, plane, breaklines, streets, onRoad(corridor, field, plane));
   // The band the bake keeps creased: the core's cell, on every belt.
   const kept = (x: number, z: number) => atSurveyedWall(breaklines, plane, x, z, BELT_CELL_M.core);
+
+  // The ribbon the viewer draws, and the edge the core belt was meshed to.
+  const hidden = (x: number, z: number) => tunnels.buried(plane.lon(x), plane.lat(z));
+  const ribbon = buildRibbon(
+    coords,
+    manifest.track.elevations,
+    plane,
+    (await circuitLengthM(circuitId)) ?? corridor.samples.length * 10,
+    hidden,
+  );
+  const edgeBuckets = new Map<string, [number, number, number, number][]>();
+  for (const edge of ribbon.edges) {
+    for (let i = 1; i < edge.length; i++) {
+      const seg: [number, number, number, number] = [edge[i - 1].x, edge[i - 1].z, edge[i].x, edge[i].z];
+      for (const p of [edge[i - 1], edge[i]]) {
+        const key = `${Math.floor(p.x / 8)},${Math.floor(p.z / 8)}`;
+        const list = edgeBuckets.get(key);
+        if (list) list.push(seg);
+        else edgeBuckets.set(key, [seg]);
+      }
+    }
+  }
+  const onRibbonEdge = (x: number, z: number): boolean => {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        for (const [ax, az, bx, bz] of edgeBuckets.get(`${Math.floor(x / 8) + dx},${Math.floor(z / 8) + dz}`) ?? []) {
+          const vx = bx - ax;
+          const vz = bz - az;
+          const t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz || 1)));
+          // A few quantisation steps of the shipped mesh; a grid node is metres off.
+          if (Math.hypot(x - ax - vx * t, z - az - vz * t) < 0.25) return true;
+        }
+      }
+    }
+    return false;
+  };
 
   for (const { belt, bytes, meshes } of baked) {
     const triangles = meshes.reduce((sum, mesh) => sum + mesh.triangles, 0);
@@ -902,13 +995,15 @@ async function audit(circuitId: string): Promise<Check[]> {
     // than one per face.
     checkStanding(meshes, ["building", "model"], ground, standing);
 
-    const terrain = checkTerrain(meshes, belt, surface, plane, cutLine, rasterShore, blocks);
+    const terrain = checkTerrain(meshes, belt, surface, plane, cutLine, rasterShore, blocks, onRibbonEdge);
     if (terrain.worst > worstTerrain) worstTerrain = terrain.worst;
     terrainSamples += terrain.sampled;
     shoreSamples += terrain.shore;
     if (terrain.worstShore > worstShore) worstShore = terrain.worstShore;
     seamSamples += terrain.seam;
     if (terrain.worstSeam > worstSeam) worstSeam = terrain.worstSeam;
+    roadSamples += terrain.road;
+    if (terrain.worstRoad > worstRoad) worstRoad = terrain.worstRoad;
 
     for (const mesh of meshes) {
       if (mesh.name !== "water") continue;
@@ -929,7 +1024,8 @@ async function audit(circuitId: string): Promise<Check[]> {
       "terrain follows the surface it meshes",
       `worst ${worstTerrain.toFixed(2)} m over ${terrainSamples.toLocaleString()} vertices`
         + ` (${shoreSamples.toLocaleString()} at the cut coast, worst ${worstShore.toFixed(2)} m;`
-        + ` ${seamSamples.toLocaleString()} at a belt seam, worst ${worstSeam.toFixed(2)} m)`,
+        + ` ${seamSamples.toLocaleString()} at a belt seam, worst ${worstSeam.toFixed(2)} m;`
+        + ` ${roadSamples.toLocaleString()} on the ribbon's edge, worst ${worstRoad.toFixed(2)} m)`,
       `${TERRAIN_TOLERANCE_M} m`,
       worstTerrain <= TERRAIN_TOLERANCE_M,
     ),
@@ -951,6 +1047,15 @@ async function audit(circuitId: string): Promise<Check[]> {
 
   // I7, on the city belt: the first one the filter touches, and the one the
   // eye is closest to.
+  const underRibbon = checkRibbon(ribbon, ground, hidden);
+  checks.push(
+    check(
+      "ground stays under the ribbon",
+      `${underRibbon.over} of ${underRibbon.samples.toLocaleString()} samples over it by ${OVER_RIBBON_M} m, worst ${underRibbon.worstM.toFixed(2)} m`,
+      `${OVER_RIBBON_SHARE * 100}%`,
+      underRibbon.over <= underRibbon.samples * OVER_RIBBON_SHARE,
+    ),
+  );
   const relief = checkRelief(surface, field, plane, breaklines, "city", streets);
   checks.push(
     check(
