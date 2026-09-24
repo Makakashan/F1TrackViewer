@@ -63,6 +63,11 @@ They are made with the track editor, a local tool: `/admin` → Track editor und
 only lists `dev.ts` as a page extension for the dev server, so no deployed build has an
 endpoint that writes files.
 
+The race ribbon's paving reaches at most ~1.6 m past the viewed edge on Monaco and its
+one centreline smoothing moves decimetres; the bake burns 4 m of flat verge past its
+own edge from the unsmoothed centreline, so the race paving still lands on flat ground
+and the bake carries no overrides.
+
 ## Terrain
 
 Where a city is baked, the ground is the bake's: the belts carry it as geometry and
@@ -93,6 +98,9 @@ the light still breaks; on steeper ground a turn that sharp can be the relief.
 Two belts meet at a hairline, and the skirt that hides the gap is lit as the ground it
 hangs from; lit as a wall, it drew every seam as a line. A coast raised to the core puts
 a ring of city between itself and the far belt, so the cell never jumps more than twice.
+A wall's level band stops 10 m short of the surveyed shoreline: behind a quay the
+leveled brow stands metres over the cut vertex the cliff cap holds at the water, and
+quays have their own walls (`shore.ts`) anyway.
 
 The road is burned into the field before anything is meshed: flat to its half width
 and a verge of one terrain cell (`DEFAULT_VERGE_M`, 4 m), then eased back to the ground.
@@ -103,6 +111,25 @@ The ground keeps the burned road as it is (`onRoad`): neither the belts' filter 
 town's street levels (`streets.ts`, silent within 8 m of the centreline) move it. Where
 a wall stands within a cell of the ribbon's edge the 4 m mesh still ramps over it; that
 needs the wall drawn as a face, which the terrain does not do yet.
+
+The core belt is a grid, but not where the ribbon runs through it. The ribbon's edges,
+built by the same code the viewer draws with (`ribbon.ts`), are edges of the mesh: the
+cells they cross are triangulated together with them as constraints (`cdt2d`), and a
+grid node within 1.2 m of an edge is left out. `env:audit` holds the ground under the
+ribbon.
+
+## Buildings
+
+A footprint extruded whole on Monaco's slopes is a blind plinth downhill and a burial
+uphill, so a piece still spanning 4 m of ground is split along its fall line (up to
+sixteen terraces), and each terrace stands on its own middle with its walls run down to
+the ground under each vertex. A wall runs along a contour, so the same cut puts a
+wall-crossing footprint's halves on their own sides of it. Heights are measured off the
+MNH surface model where one exists — the Odeon bakes at 169 m against 170 real, the
+Millefiori at 111 against 111, the Mirabeau at 81 against 81 — and the OSM tags are the
+fallback. A footprint with no ground under it at all is dropped, unless its centre sits
+on a pontoon deck, whose height is its ground. `env:audit` holds every piece off the
+air and counts footprints crossing a retaining wall.
 
 ## The race
 
