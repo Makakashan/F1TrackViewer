@@ -77,7 +77,7 @@ import {
   type RasterBBox,
 } from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
-import { buildPiers, type PierResult } from "./piers";
+import { buildPiers, type PierDeck, type PierResult } from "./piers";
 import { berthYachts, buildProps, type PropResult } from "./props";
 import { bakeShoreWalls, type ShoreResult } from "./shore";
 import { buildCoastline, type Coastline, type CoastlineStats } from "./coastline";
@@ -1727,8 +1727,25 @@ function prepareBuildings(
   road: RoadIndex,
   measured: Map<string, { measured: number }>,
   result: BuildingResult,
+  /** Pontoon decks: a harbour building's ground is its deck, water to the terrain. */
+  decks: PierDeck[] = [],
 ): PreparedBuilding[] {
   const prepared: PreparedBuilding[] = [];
+  const deckAt = (x: number, z: number): number | null => {
+    for (const deck of decks) {
+      let inside = false;
+      const ring = deck.ring;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i].x;
+        const zi = ring[i].z;
+        const xj = ring[j].x;
+        const zj = ring[j].z;
+        if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+      }
+      if (inside) return deck.deckY;
+    }
+    return null;
+  };
 
   for (const building of buildings.buildings) {
     // The measurement wins where there is one; the tag is the fallback (D8).
@@ -1778,15 +1795,26 @@ function prepareBuildings(
 
       // Fontvieille stands on reclaimed land and Monaco's quays are built to the
       // water, so a footprint with a corner over a water cell is normal. Only a
-      // footprint with no ground under it at all is not a building we can place.
+      // footprint with no ground under it at all is not a building we can place —
+      // unless it stands on a pontoon deck, which is water to the terrain.
       const grounds: number[] = [];
       for (const point of shape) {
         const h = groundAt(point.x, point.z);
         if (!Number.isNaN(h)) grounds.push(h);
       }
       if (!grounds.length) {
-        result.droppedOverWater++;
-        continue;
+        let cx = 0;
+        let cz = 0;
+        for (const point of shape) {
+          cx += point.x / shape.length;
+          cz += point.z / shape.length;
+        }
+        const deck = deckAt(cx, cz);
+        if (deck === null) {
+          result.droppedOverWater++;
+          continue;
+        }
+        grounds.push(deck);
       }
       grounds.sort((a, b) => a - b);
       // The floor sits at the middle of the ground it covers and the walls run
@@ -3572,7 +3600,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const greeneryStats = { ...greenery.stats };
 
   const prepared = prepareBuildings(
-    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings,
+    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings, piers.decks,
   );
 
   // The kit runs before the props are merged, because its houses are props: it
