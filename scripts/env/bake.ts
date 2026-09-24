@@ -1501,6 +1501,8 @@ interface BuildingResult {
   droppedOverWater: number;
   droppedTooLow: number;
   pushedOffTrack: number;
+  /** Extra pieces a footprint was split into along its fall line. */
+  terraced: number;
 }
 
 /**
@@ -1600,6 +1602,122 @@ function splitEdge(
   splitEdge(out, mid, heightMid, b, heightB, groundAt, mayAdd, depth + 1);
 }
 
+/** A piece still spanning more than this is split along its fall line. */
+const TERRACE_STEP_M = 4;
+/** ...as long as it is this wide along the fall, or the halves are slivers. */
+const TERRACE_MIN_M = 4;
+/** Two rounds is four terraces, four rounds sixteen: a 46 m cliffside plot still steps at 4 m. */
+const TERRACE_ROUNDS = 4;
+/** Below this a half is a sliver, not a terrace. */
+const TERRACE_MIN_M2 = 4;
+
+function ringAreaM2(ring: { x: number; z: number }[]): number {
+  let twice = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    twice += a.x * b.z - b.x * a.z;
+  }
+  return Math.abs(twice) / 2;
+}
+
+/** The footprint clipped to one side of a line: both halves keep the cut edge. */
+function clipHalf(
+  ring: { x: number; z: number }[],
+  at: (point: { x: number; z: number }) => number,
+  keep: (signed: number) => boolean,
+): { x: number; z: number }[] {
+  const out: { x: number; z: number }[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const sa = at(a);
+    const sb = at(b);
+    if (keep(sa)) out.push(a);
+    if (keep(sa) !== keep(sb)) {
+      const t = sa === sb ? 0 : sa / (sa - sb);
+      out.push({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+    }
+  }
+  return out;
+}
+
+/**
+ * One footprint, one floor: on Monaco's slopes that is a tall blind plinth
+ * downhill and a block dug to its neck uphill. Split along the fall line, each
+ * terrace stands on its own middle and the block steps down the slope as the
+ * real ones do. A retaining wall runs along a contour, so the same cut puts a
+ * wall-crossing footprint's halves on their own sides of it.
+ */
+export function splitTerraces(
+  ring: { x: number; z: number }[],
+  groundAt: (x: number, z: number) => number,
+  /** A vertex may only be added where this allows one. */
+  mayAdd: (x: number, z: number) => boolean,
+): { x: number; z: number }[][] {
+  let out = [ring];
+  for (let round = 0; round < TERRACE_ROUNDS; round++) {
+    let split = false;
+    const next: { x: number; z: number }[][] = [];
+    for (const shape of out) {
+      const halves = splitOnce(shape, groundAt, mayAdd);
+      split ||= halves.length > 1;
+      next.push(...halves);
+    }
+    out = next;
+    if (!split) break;
+  }
+  return out;
+}
+
+function splitOnce(
+  shape: { x: number; z: number }[],
+  groundAt: (x: number, z: number) => number,
+  mayAdd: (x: number, z: number) => boolean,
+): { x: number; z: number }[][] {
+  const known = shape
+    .map((point) => ({ point, h: groundAt(point.x, point.z) }))
+    .filter((known) => !Number.isNaN(known.h));
+  if (known.length < 3) return [shape];
+  const ordered = known.slice().sort((a, b) => a.h - b.h);
+  const half = Math.max(1, Math.floor(ordered.length / 2));
+  const centroid = (list: typeof ordered): { x: number; z: number } => {
+    let x = 0;
+    let z = 0;
+    for (const { point } of list) {
+      x += point.x / list.length;
+      z += point.z / list.length;
+    }
+    return { x, z };
+  };
+  const low = centroid(ordered.slice(0, half));
+  const high = centroid(ordered.slice(ordered.length - half));
+  const dx = high.x - low.x;
+  const dz = high.z - low.z;
+  const length = Math.hypot(dx, dz);
+  if (length < 1) return [shape];
+  const along = (point: { x: number; z: number }): number =>
+    ((point.x - low.x) * dx + (point.z - low.z) * dz) / length;
+  const spans = shape.map(along);
+  const width = Math.max(...spans) - Math.min(...spans);
+  if (width < TERRACE_MIN_M) return [shape];
+  const heights = known.map((known) => known.h);
+  if (Math.max(...heights) - Math.min(...heights) <= TERRACE_STEP_M) return [shape];
+  const orderedSpans = [...spans].sort((a, b) => a - b);
+  const cut = (orderedSpans[(orderedSpans.length - 1) >> 1] + orderedSpans[orderedSpans.length >> 1]) / 2;
+  const downhill = clipHalf(shape, (point) => along(point) - cut, (signed) => signed <= 1e-9);
+  const uphill = clipHalf(shape, (point) => along(point) - cut, (signed) => signed >= -1e-9);
+  if (downhill.length < 3 || uphill.length < 3) return [shape];
+  if (ringAreaM2(downhill) < TERRACE_MIN_M2 || ringAreaM2(uphill) < TERRACE_MIN_M2) return [shape];
+  // The cut adds vertices the push never saw: a chord across a corridor corner
+  // cuts inside it, and a half over water is a building the bake then drops.
+  for (const half of [downhill, uphill]) {
+    if (!half.every((point) => mayAdd(point.x, point.z))) return [shape];
+    if (!half.some((point) => !Number.isNaN(groundAt(point.x, point.z)))) return [shape];
+  }
+  return [downhill, uphill];
+}
+
 function prepareBuildings(
   buildings: BuildingsFile,
   groundAt: (x: number, z: number) => number,
@@ -1648,9 +1766,15 @@ function prepareBuildings(
     if (pushed.moved || carved.carved || carvedOffRoad) result.pushedOffTrack++;
 
     // One entry per piece: a carved footprint is two or three buildings now,
-    // and each stands on its own ground.
-    for (let piece = 0; piece < pieces.length; piece++) {
-      const shape = pieces[piece];
+    // and each stands on its own ground. A piece still spanning a slope is
+    // terraced first, so each terrace stands on its own middle.
+    let emitted = 0;
+    for (const carvedShape of pieces) {
+      const terraces = splitTerraces(carvedShape, groundAt, (x, z) =>
+        corridor.distance(x, z) >= TRACK_CLEARANCE_M);
+      if (terraces.length > 1) result.terraced += terraces.length - 1;
+      for (const shape of terraces) {
+        const piece = emitted++;
 
       // Fontvieille stands on reclaimed land and Monaco's quays are built to the
       // water, so a footprint with a corner over a water cell is normal. Only a
@@ -1711,6 +1835,7 @@ function prepareBuildings(
         centreZ,
         belt: beltAtDistance(corridor.distance(centreX, centreZ)),
       });
+      }
     }
   }
 
@@ -1799,6 +1924,7 @@ function emptyBuildingResult(): BuildingResult {
     droppedOverWater: 0,
     droppedTooLow: 0,
     pushedOffTrack: 0,
+    terraced: 0,
   };
 }
 
@@ -3733,7 +3859,8 @@ async function main() {
   console.log(
     `  buildings ${b.built} built, ${b.pushedOffTrack} pushed off the track, ` +
       `dropped: ${b.droppedOnTrack} on track, ${b.droppedOverWater} over water, ` +
-      `${b.droppedTooLow} too low`,
+      `${b.droppedTooLow} too low`
+      + (b.terraced ? `, ${b.terraced} terraces split along the fall line` : ""),
   );
   console.log(`  track profile ${report.trackVertices} vertices`);
   const h = report.heights;
