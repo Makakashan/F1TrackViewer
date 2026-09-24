@@ -282,10 +282,11 @@ function checkRibbon(
   ribbon: ReturnType<typeof buildRibbon>,
   ground: GroundIndex,
   hidden: (x: number, z: number) => boolean,
-): { samples: number; over: number; worstM: number } {
+): { samples: number; over: number; worstM: number; worstAt: { x: number; z: number } | null } {
   let samples = 0;
   let over = 0;
   let worstM = 0;
+  let worstAt: { x: number; z: number } | null = null;
   const steps = ribbon.samples * 4;
   for (let k = 0; k < steps; k++) {
     const u = k / steps;
@@ -301,11 +302,14 @@ function checkRibbon(
       const up = g - (p.y + TRACK_SURFACE_RAISE);
       if (up > OVER_RIBBON_M) {
         over++;
-        if (up > worstM) worstM = up;
+        if (up > worstM) {
+          worstM = up;
+          worstAt = { x: p.x - (t.z / length) * hw * f, z: p.z + (t.x / length) * hw * f };
+        }
       }
     }
   }
-  return { samples, over, worstM };
+  return { samples, over, worstM, worstAt };
 }
 
 /** Does the shipped terrain still sit where the field says the ground is? */
@@ -331,7 +335,8 @@ function checkTerrain(
   /** A vertex the ribbon's edge put there: it stands at the road, not on the surface. */
   onRibbonEdge: (x: number, z: number) => boolean,
 ): {
-  worst: number; sampled: number; shore: number; worstShore: number; seam: number; worstSeam: number;
+  worst: number; sampled: number; shore: number; worstShore: number; worstShoreAt: { x: number; z: number } | null;
+  seam: number; worstSeam: number;
   road: number; worstRoad: number;
 } {
   let worst = 0;
@@ -340,6 +345,7 @@ function checkTerrain(
   let worstRoad = 0;
   let shore = 0;
   let worstShore = 0;
+  let worstShoreAt: { x: number; z: number } | null = null;
   let seam = 0;
   let worstSeam = 0;
 
@@ -409,7 +415,10 @@ function checkTerrain(
         && (y <= SHORE_EDGE_MAX_M + 0.1 || ground - y >= MAX_COAST_DROP_M - 0.5);
       if (onCut(x, z) || capped) {
         shore++;
-        if (delta > worstShore) worstShore = delta;
+        if (delta > worstShore) {
+          worstShore = delta;
+          worstShoreAt = { x, z };
+        }
         continue;
       }
       // A node the fine belt gave up to the coarse one is on the coarse chord
@@ -429,7 +438,7 @@ function checkTerrain(
       if (delta > worst) worst = delta;
     }
   }
-  return { worst, sampled, shore, worstShore, seam, worstSeam, road, worstRoad };
+  return { worst, sampled, shore, worstShore, worstShoreAt, seam, worstSeam, road, worstRoad };
 }
 
 export interface Seam {
@@ -437,6 +446,7 @@ export interface Seam {
   worstM: number;
   meanM: number;
   overToleranceM: number;
+  worstAt: { x: number; z: number } | null;
 }
 
 /**
@@ -459,7 +469,7 @@ export function checkSeams(
     index.set(belt, buildSurfaceIndex([ground]));
   }
 
-  const seam: Seam = { points: 0, worstM: 0, meanM: 0, overToleranceM: 0 };
+  const seam: Seam = { points: 0, worstM: 0, meanM: 0, overToleranceM: 0, worstAt: null };
   let sum = 0;
   for (let i = 1; i < BELT_ORDER.length; i++) {
     const fine = BELT_ORDER[i - 1];
@@ -484,7 +494,10 @@ export function checkSeams(
         seam.points++;
         sum += apart;
         if (apart > tolerance) seam.overToleranceM++;
-        if (apart > seam.worstM) seam.worstM = apart;
+        if (apart > seam.worstM) {
+          seam.worstM = apart;
+          seam.worstAt = { x, z };
+        }
       }
     }
   }
@@ -620,6 +633,9 @@ interface BuildingFit {
   worstBuriedM: number;
   inCorridor: number;
   total: number;
+  /** Footprints a surveyed retaining wall runs through: the bake terraces them. */
+  crossingWall: number;
+  worstCrossingM: number;
 }
 
 /**
@@ -632,18 +648,23 @@ function checkBuildings(
   field: HeightField,
   plane: ScenePlane,
   corridor: ReturnType<typeof buildCorridor>,
+  breaklines: Breaklines,
 ): BuildingFit {
   const fit: BuildingFit = {
     buriedOverLimit: 0,
     worstBuriedM: 0,
     inCorridor: 0,
     total: 0,
+    crossingWall: 0,
+    worstCrossingM: 0,
   };
 
   for (const building of buildings.buildings) {
     const heights: number[] = [];
     let inCorridor = false;
-    for (const [lon, lat] of building.footprint) {
+    const ring = building.footprint;
+    for (let i = 0; i < ring.length; i++) {
+      const [lon, lat] = ring[i];
       const h = field.heightAt(lon, lat);
       if (!Number.isNaN(h)) heights.push(h);
       const distance = corridor.distance(plane.x(lon), plane.z(lat));
@@ -656,6 +677,16 @@ function checkBuildings(
     const buried = Math.max(...heights) - Math.min(...heights);
     if (buried > fit.worstBuriedM) fit.worstBuriedM = buried;
     if (buried > BURIED_LIMIT_M) fit.buriedOverLimit++;
+
+    for (let i = 0; i < ring.length; i++) {
+      const [lon0, lat0] = ring[i];
+      const [lon1, lat1] = ring[(i + 1) % ring.length];
+      if (breaklines.crossesRetainingLonLat(lon0, lat0, lon1, lat1)) {
+        fit.crossingWall++;
+        if (buried > fit.worstCrossingM) fit.worstCrossingM = buried;
+        break;
+      }
+    }
   }
 
   return fit;
@@ -840,6 +871,7 @@ async function audit(circuitId: string): Promise<Check[]> {
   let terrainSamples = 0;
   let shoreSamples = 0;
   let worstShore = 0;
+  let worstShoreAt: { x: number; z: number } | null = null;
   let seamSamples = 0;
   let worstSeam = 0;
   let roadSamples = 0;
@@ -999,7 +1031,10 @@ async function audit(circuitId: string): Promise<Check[]> {
     if (terrain.worst > worstTerrain) worstTerrain = terrain.worst;
     terrainSamples += terrain.sampled;
     shoreSamples += terrain.shore;
-    if (terrain.worstShore > worstShore) worstShore = terrain.worstShore;
+    if (terrain.worstShore > worstShore) {
+      worstShore = terrain.worstShore;
+      worstShoreAt = terrain.worstShoreAt;
+    }
     seamSamples += terrain.seam;
     if (terrain.worstSeam > worstSeam) worstSeam = terrain.worstSeam;
     roadSamples += terrain.road;
@@ -1023,7 +1058,9 @@ async function audit(circuitId: string): Promise<Check[]> {
     check(
       "terrain follows the surface it meshes",
       `worst ${worstTerrain.toFixed(2)} m over ${terrainSamples.toLocaleString()} vertices`
-        + ` (${shoreSamples.toLocaleString()} at the cut coast, worst ${worstShore.toFixed(2)} m;`
+        + ` (${shoreSamples.toLocaleString()} at the cut coast, worst ${worstShore.toFixed(2)} m`
+        + (worstShoreAt ? ` at (${worstShoreAt.x.toFixed(0)}, ${worstShoreAt.z.toFixed(0)})` : ``)
+        + `;`
         + ` ${seamSamples.toLocaleString()} at a belt seam, worst ${worstSeam.toFixed(2)} m;`
         + ` ${roadSamples.toLocaleString()} on the ribbon's edge, worst ${worstRoad.toFixed(2)} m)`,
       `${TERRAIN_TOLERANCE_M} m`,
@@ -1035,7 +1072,8 @@ async function audit(circuitId: string): Promise<Check[]> {
     check(
       "belts agree where they meet",
       `${seam.overToleranceM} of ${seam.points.toLocaleString()} shared points apart,`
-        + ` mean ${seam.meanM.toFixed(2)} m, worst ${seam.worstM.toFixed(2)} m`,
+        + ` mean ${seam.meanM.toFixed(2)} m, worst ${seam.worstM.toFixed(2)} m`
+        + (seam.worstAt ? ` at (${seam.worstAt.x.toFixed(0)}, ${seam.worstAt.z.toFixed(0)})` : ``),
       `${SEAM_TOLERANCE_M} m`,
       seam.overToleranceM === 0,
       // Reported, not fatal. What is left is 28 points under half a metre on a
@@ -1051,7 +1089,8 @@ async function audit(circuitId: string): Promise<Check[]> {
   checks.push(
     check(
       "ground stays under the ribbon",
-      `${underRibbon.over} of ${underRibbon.samples.toLocaleString()} samples over it by ${OVER_RIBBON_M} m, worst ${underRibbon.worstM.toFixed(2)} m`,
+      `${underRibbon.over} of ${underRibbon.samples.toLocaleString()} samples over it by ${OVER_RIBBON_M} m, worst ${underRibbon.worstM.toFixed(2)} m`
+        + (underRibbon.worstAt ? ` at (${underRibbon.worstAt.x.toFixed(0)}, ${underRibbon.worstAt.z.toFixed(0)})` : ``),
       `${OVER_RIBBON_SHARE * 100}%`,
       underRibbon.over <= underRibbon.samples * OVER_RIBBON_SHARE,
     ),
@@ -1160,7 +1199,7 @@ async function audit(circuitId: string): Promise<Check[]> {
     ),
   );
 
-  const fit = checkBuildings(buildings, field, plane, corridor);
+  const fit = checkBuildings(buildings, field, plane, corridor, breaklines);
   // Measured on the shipped mesh: the bake pushes footprints out of the
   // corridor, so checking the source data would only re-read its input.
   checks.push(
@@ -1185,6 +1224,15 @@ async function audit(circuitId: string): Promise<Check[]> {
       "ground range under a footprint",
       `${fit.buriedOverLimit} of ${fit.total}, worst ${fit.worstBuriedM.toFixed(1)} m`,
       `over ${BURIED_LIMIT_M} m: reported`,
+      true,
+      false,
+    ),
+  );
+  checks.push(
+    check(
+      "footprints crossing a retaining wall",
+      `${fit.crossingWall} of ${fit.total}, worst ${fit.worstCrossingM.toFixed(1)} m over one`,
+      "reported",
       true,
       false,
     ),

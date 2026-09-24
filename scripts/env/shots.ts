@@ -28,6 +28,8 @@ export interface Shot {
   distanceM: number;
   /** Belts to load. All three unless a shot is about one of them. */
   belts?: string[];
+  /** Mesh kinds to keep. A ground defect is shot without the buildings on it. */
+  only?: string;
   /** `ao` shows the baked vertex colour with no light in the way. */
   shading?: "ao";
 }
@@ -103,6 +105,7 @@ export const SHOTS: Record<string, Shot[]> = {
       azimuthDeg: 315,
       elevationDeg: 6,
       distanceM: 600,
+      only: "terrain,water",
     },
     {
       name: "seam-core-city",
@@ -142,6 +145,56 @@ export const SHOTS: Record<string, Shot[]> = {
       elevationDeg: 35,
       distanceM: 800,
     },
+    {
+      name: "beau-rivage",
+      watch: "the two legs 13 m apart, 10 m apart in height, and the wall between them",
+      // Square on to the step: the upper leg runs past (268, -454) at 25 m and
+      // the lower past (283, -444) at 15 m; the camera looks along the wall.
+      target: { x: 278, z: -448, y: 20 },
+      azimuthDeg: 160,
+      elevationDeg: 14,
+      distanceM: 260,
+      only: "terrain,water",
+    },
+    {
+      name: "larvotto",
+      watch: "beach, breakwaters, the shoreline the line and the raster place 45 m apart",
+      // From the sea, low: the waterline has to meet the sand, not hang over it.
+      target: { x: 560, z: -650, y: 3 },
+      azimuthDeg: 180,
+      elevationDeg: 12,
+      distanceM: 520,
+      only: "terrain,water",
+    },
+    {
+      name: "shore-cliff",
+      watch: "the 14 m cut-coast deviation: quay cap against the cliff the wall band raised",
+      // From the sea at Fontvieille: the cut sits at the cap while the brow
+      // stands 14 m over it.
+      target: { x: -467, z: 679, y: 25 },
+      azimuthDeg: 190,
+      elevationDeg: 10,
+      distanceM: 520,
+      only: "terrain,water",
+    },
+    {
+      name: "wall-end",
+      watch: "a retaining wall's tapered end on the hillside, without small facets",
+      target: { x: -470, z: -104, y: 58 },
+      azimuthDeg: 120,
+      elevationDeg: 25,
+      distanceM: 300,
+      only: "terrain,water",
+    },
+    {
+      name: "terraces",
+      watch: "blocks stepping down the slope above the track, not plinths",
+      // The Moneghetti hillside, where the deepest walls used to dig 45 m.
+      target: { x: -400, z: -160, y: 55 },
+      azimuthDeg: 130,
+      elevationDeg: 18,
+      distanceM: 420,
+    },
   ],
 };
 
@@ -160,6 +213,7 @@ function urlFor(circuitId: string, shot: Shot): string {
     shot: `${circuitId}-${shot.name}`,
   });
   if (shot.belts) params.set("belts", shot.belts.join(","));
+  if (shot.only) params.set("only", shot.only);
   if (shot.shading) params.set("shading", shot.shading);
   return `http://localhost:${PORT}/?${params}`;
 }
