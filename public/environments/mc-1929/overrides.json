@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "circuitId": "mc-1929",
+  "note": "L'Exotique (Plein Sud), 83 bd du Jardin Exotique: the IGN DTM predates the finished building and holds its 300 000 m3 excavation pit (R+8 over underground levels, inaugurated 2022-06-30). The fill settles the pit to its rim; the added building stands the finished 27 m residence on it.",
+  "terrain": {
+    "fill": [
+      {
+        "note": "L'Exotique main excavation pit",
+        "polygon": [
+          [7.4193, 43.7385],
+          [7.4203, 43.73855],
+          [7.421, 43.7385],
+          [7.4211, 43.7382],
+          [7.4211, 43.7379],
+          [7.42095, 43.7378],
+          [7.4207, 43.7376],
+          [7.4206, 43.73755],
+          [7.42045, 43.73746],
+          [7.4203, 43.7374],
+          [7.4201, 43.73742],
+          [7.4199, 43.73748],
+          [7.4197, 43.7376],
+          [7.41945, 43.73775],
+          [7.41935, 43.738],
+          [7.4193, 43.7383]
+        ]
+      },
+      {
+        "note": "L'Exotique eastern shaft and head of the covered access tunnel",
+        "polygon": [
+          [7.4206, 43.7377],
+          [7.4211, 43.7377],
+          [7.42135, 43.7374],
+          [7.42145, 43.737],
+          [7.4213, 43.7366],
+          [7.4209, 43.7364],
+          [7.4206, 43.7366],
+          [7.42055, 43.7371]
+        ]
+      },
+      {
+        "note": "L'Exotique southern cuttings down to the hospital terraces",
+        "polygon": [
+          [7.41945, 43.73775],
+          [7.4199, 43.7376],
+          [7.4203, 43.7375],
+          [7.4206, 43.73755],
+          [7.4206, 43.7371],
+          [7.4203, 43.7369],
+          [7.4199, 43.7369],
+          [7.41945, 43.7371]
+        ]
+      }
+    ]
+  },
+  "buildings": {
+    "add": [
+      {
+        "id": "override/lexotique-plein-sud",
+        "kind": "building",
+        "height": 27,
+        "footprint": [
+          [7.41945, 43.73845],
+          [7.4209, 43.73845],
+          [7.42095, 43.738],
+          [7.4207, 43.73775],
+          [7.42, 43.73772],
+          [7.41945, 43.73785]
+        ]
+      }
+    ]
+  }
+}
