@@ -777,9 +777,9 @@ export function checkStanding(
       const y = mesh.positions[i * 3 + 1];
       const z = mesh.positions[i * 3 + 2];
       const terrain = ground.at(x, z);
-      // No ground under it at all is water: a hull floats on the datum, and a
-      // quay's own edge hangs over the basin on purpose.
-      if (Number.isNaN(terrain)) continue;
+      // Ground under the sea plane is the seabed: a hull floats on the datum,
+      // and a quay's own edge hangs over the basin on purpose.
+      if (Number.isNaN(terrain) || terrain < 0) continue;
       // A model rests on the ground or on what was built on it, whichever is
       // higher under the vertex; a building's own walls only ever mean ground.
       const under = mesh.name === "building" ? terrain : Math.max(terrain, builtAt(built, x, z));
