@@ -98,9 +98,11 @@ Two belts meet at a hairline, and the skirt that hides the gap is lit as the gro
 hangs from; lit as a wall, it drew every seam as a line. A coast raised to the core puts
 a ring of city between itself and the far belt, so the cell never jumps more than twice.
 
-The ground does not end at the sea: past the shoreline it carries on as a seabed that
-shelves off by its distance from the shore (`SEABED_*` in `bake.ts`), and the coast is
-where the sea plane crosses the relief. Cut at the shoreline instead, the ground had an
+The ground does not end at the sea: past the shoreline it carries on as a seabed, and
+the coast is where the sea plane crosses the relief. Within reach of the shore both
+sides follow one slope off the shore's distance (`SHORE_SLOPE`, 4 m per metre), so the
+waterline is that distance's zero line; a shallow seabed against a tall cliff put the
+crossing on the wet node and drew the coast as the grid's staircase. Cut at the shoreline instead, the ground had an
 edge, and every skirt that hung from it missed a jog somewhere — the sea showed through
 slits under the cliffs, and a capped cliff stood as a row of shards over its own hem.
 Seabed that lies wholly two metres under the plane is not drawn: the sea is opaque.
