@@ -58,7 +58,7 @@ import { buildSurfaceIndex } from "./baked-scene";
 import { buildBreaklines, type Breaklines } from "./breaklines";
 import cdt2d from "cdt2d";
 import { buildRibbon, clipToCell, type Ribbon } from "./ribbon";
-import { buildGround, type Ground } from "./ground";
+import { buildGround, MAX_SLOPE_DEG, type Ground } from "./ground";
 import { buildStreetGround } from "./streets";
 import {
   chooseKitHouses,
@@ -124,7 +124,7 @@ const SKIRT_M = 3;
  * 455 m, so a 60 m block is under a seventh of it.
  */
 const PLINTH_FLOOR_M = -60;
-/** Where a pontoon deck's walls end, under the sea plane. */
+/** Where the step at the shoreline and a pontoon deck's walls end, under the sea plane. */
 const SHORE_FOOT_M = -3;
 /**
  * Highest the land is allowed to be at the water's edge itself.
@@ -165,15 +165,14 @@ const SURVEYED_HOLE_M = 2.5;
 const RASTER_CONFIDENT_M = 8;
 /** How wet a node cleared for a deck reads. Any negative would do; this keeps the cut's interpolation sane. */
 const DECK_CLEARED_SCALAR_M = 2;
-/**
- * Metres of height per metre from the shoreline, on both sides of it. One slope
- * across the line puts the waterline where the shore's distance crosses zero; a
- * shallow seabed against a tall cliff put it on the wet node, which drew the
- * coast as the grid's staircase.
- */
-const SHORE_SLOPE = 4;
-/** Where the seabed stops going down. */
+/** How the seabed falls away from the shoreline, metres per metre, and where it stops. */
+const SEABED_SLOPE = 4;
 const SEABED_FLOOR_M = -15;
+/** Highest the ground stands where it meets the water: a quay's lip, not a cliff's brow. */
+const SHORE_LIP_MAX_M = 3;
+const SHORE_RISE = Math.tan((MAX_SLOPE_DEG * Math.PI) / 180);
+/** Keys for the vertices the shoreline adds, clear of the grid's and the road's. */
+const SHORE_VERTEX_KEY = 2e12;
 /** Ground this far under the sea plane is not drawn. */
 const SEABED_HIDDEN_M = -2;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
@@ -745,18 +744,32 @@ function bakeTerrain(
     return 0;
   };
 
-  /**
-   * The ground carries on under the water instead of ending at it, so the coast
-   * is where the sea plane crosses the relief and there is no edge to fall
-   * through. Near the shore both sides follow the distance from it.
-   */
-  const surfaceHeightOn = (belt: Belt, row: number, col: number): number => {
+  /** Metres from the shoreline at a belt's node: positive on land. */
+  const landCache = {} as Record<Belt, Map<number, number>>;
+  const landOn = (belt: Belt, row: number, col: number): number => {
+    const cache = (landCache[belt] ??= new Map());
+    const key = row * 1e6 + col;
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached;
     const cell = BELT_CELL_M[belt];
     const x = minX + col * cell;
     const z = minZ + row * cell;
-    const land = ponds.has(x, z) ? POND_FILLED_SCALAR_M : rawScalarAt(x, z);
-    if (land <= 0) return Math.max(SEABED_FLOOR_M, land * SHORE_SLOPE);
-    return Math.max(Math.min(solidHeightOn(belt, row, col), land * SHORE_SLOPE), WATER_CLEARANCE_M);
+    const value = ponds.has(x, z) ? POND_FILLED_SCALAR_M : rawScalarAt(x, z);
+    cache.set(key, value);
+    return value;
+  };
+
+  /**
+   * The ground carries on under the water instead of ending at it, so there is
+   * no edge to fall through: past the shoreline it is a seabed falling away.
+   */
+  const surfaceHeightOn = (belt: Belt, row: number, col: number): number => {
+    const land = landOn(belt, row, col);
+    if (land <= 0) return Math.max(SEABED_FLOOR_M, land * SEABED_SLOPE);
+    // Off the shoreline the ground rises no steeper than anywhere else: a cliff
+    // standing a metre from the water drew a sliver from its brow to the lip.
+    const rise = SHORE_LIP_MAX_M + land * SHORE_RISE;
+    return Math.max(Math.min(solidHeightOn(belt, row, col), rise), WATER_CLEARANCE_M);
   };
 
   /** The coarsest cell of the blocks meeting at a node's own position. */
@@ -964,6 +977,87 @@ function bakeTerrain(
       return true;
     };
 
+    /**
+     * Where the shoreline crosses a cell edge: the ground's lip, and the foot of
+     * the step under it. Both cells either side share them, so the step cannot part.
+     */
+    const shoreVertices = (rowA: number, colA: number, sA: number, rowB: number, colB: number, sB: number): [number, number] => {
+      const key =
+        SHORE_VERTEX_KEY
+        + 4 * (Math.min(rowA, rowB) * (cols + 2) + Math.min(colA, colB))
+        + (rowA === rowB ? 0 : 2);
+      const t = sA / (sA - sB);
+      const x = minX + (colA + (colB - colA) * t) * cell;
+      const z = minZ + (rowA + (rowB - rowA) * t) * cell;
+      const dry = sA > 0 ? surfaceHeightAt(rowA, colA) : surfaceHeightAt(rowB, colB);
+      return [
+        grid.vertex(key, x, Math.min(dry, SHORE_LIP_MAX_M), z),
+        grid.vertex(key + 1, x, SHORE_FOOT_M, z),
+      ];
+    };
+
+    /**
+     * A cell the shoreline crosses, drawn as its land side, a step down at the
+     * line and its seabed side, so the waterline is the shore's own line rather
+     * than wherever a slope across the cell met the sea plane. A saddle — land on
+     * two opposite corners — is two corners of land with the sea between them:
+     * drawn whole, it was a face from the clifftop to the seabed across the water.
+     */
+    const splitByShore = (row: number, col: number, lands: number[]): void => {
+      const dryAt = (i: number) => lands[i % 4] > 0;
+      const shore = walk.map(([dr, dc], i) => {
+        if (dryAt(i) === dryAt(i + 1)) return null;
+        const [nr, nc] = walk[(i + 1) % 4];
+        return shoreVertices(row + dr, col + dc, lands[i], row + nr, col + nc, lands[(i + 1) % 4]);
+      });
+
+      const wet: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        if (!dryAt(i)) wet.push(vertexAt(row + walk[i][0], col + walk[i][1]));
+        const pair = shore[i];
+        if (pair) wet.push(pair[1]);
+      }
+      for (let i = 1; i < wet.length - 1; i++) grid.triangle(wet[0], wet[i], wet[i + 1]);
+
+      // Each run of dry corners is its own piece of land, from the line it
+      // comes in across to the line it goes out across.
+      for (let start = 0; start < 4; start++) {
+        if (!dryAt(start) || dryAt(start + 3)) continue;
+        const [inTop, inFoot] = shore[(start + 3) % 4]!;
+        const dry = [inTop];
+        let end = start;
+        while (dryAt(end)) {
+          dry.push(vertexAt(row + walk[end % 4][0], col + walk[end % 4][1]));
+          end++;
+        }
+        const [outTop, outFoot] = shore[(end - 1) % 4]!;
+        dry.push(outTop);
+        for (let i = 1; i < dry.length - 1; i++) grid.triangle(dry[0], dry[i], dry[i + 1]);
+        addStep(inTop, inFoot, outTop, outFoot, row + walk[start][0], col + walk[start][1]);
+      }
+    };
+
+    /** The step under the shoreline, wound to face away from the land at (`landRow`, `landCol`). */
+    const addStep = (
+      topA: number, footA: number, topB: number, footB: number,
+      landRow: number, landCol: number,
+    ): void => {
+      const p = grid.mesh.positions;
+      const ax = p[topA * 3], az = p[topA * 3 + 2];
+      const alongX = p[topB * 3] - ax;
+      const alongZ = p[topB * 3 + 2] - az;
+      const landX = minX + landCol * cell - ax;
+      const landZ = minZ + landRow * cell - az;
+      // The face (top A, foot A, foot B) faces (-alongZ, alongX).
+      if (alongX * landZ - alongZ * landX < 0) {
+        grid.triangle(topA, footA, footB);
+        grid.triangle(topA, footB, topB);
+      } else {
+        grid.triangle(topB, footB, footA);
+        grid.triangle(topB, footA, topA);
+      }
+    };
+
     // The cells a portal took out, and the ones that were built, so the pit can
     // be walled along its own rim rather than along a guessed rectangle.
     const voidCells: number[] = [];
@@ -984,9 +1078,16 @@ function bakeTerrain(
         // Seabed wholly under the opaque sea plane is never seen.
         if (heights.every((h) => h < SEABED_HIDDEN_M)) continue;
 
+        const lands = walk.map(([dr, dc]) => landOn(belt, row + dr, col + dc));
+        if (lands.some((s) => s > 0) && lands.some((s) => s <= 0)) {
+          splitByShore(row, col, lands);
+          cellsByBelt[belt]++;
+          continue;
+        }
+
         // The road is land's: a ribbon edge over the sea is a chord the
         // centreline closes across a window, not a road.
-        const pieces = heights.every((h) => h > 0) ? roadInCell.get(row * (cols + 2) + col) : undefined;
+        const pieces = lands.every((s) => s > 0) ? roadInCell.get(row * (cols + 2) + col) : undefined;
         // A cell on a seam is drawn on the coarse belt's chord; splitting it
         // would put points on that chord the coarse side does not have.
         const onSeam = pieces && walk.some(([dr, dc]) => blocks.conformsAt(minX + (col + dc) * cell, minZ + (row + dr) * cell));
