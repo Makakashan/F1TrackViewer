@@ -166,9 +166,14 @@ const SURVEYED_HOLE_M = 2.5;
 const RASTER_CONFIDENT_M = 8;
 /** How wet a node cleared for a deck reads. Any negative would do; this keeps the cut's interpolation sane. */
 const DECK_CLEARED_SCALAR_M = 2;
-/** The seabed: how far under the plane it starts at the shore, how it shelves, where it stops. */
-const SEABED_LIP_M = -0.5;
-const SEABED_SLOPE = 0.5;
+/**
+ * Metres of height per metre from the shoreline, on both sides of it. One slope
+ * across the line puts the waterline where the shore's distance crosses zero; a
+ * shallow seabed against a tall cliff put it on the wet node, which drew the
+ * coast as the grid's staircase.
+ */
+const SHORE_SLOPE = 4;
+/** Where the seabed stops going down. */
 const SEABED_FLOOR_M = -15;
 /** Ground this far under the sea plane is not drawn. */
 const SEABED_HIDDEN_M = -2;
@@ -744,15 +749,15 @@ function bakeTerrain(
   /**
    * The ground carries on under the water instead of ending at it, so the coast
    * is where the sea plane crosses the relief and there is no edge to fall
-   * through. The seabed shelves off the shore by its distance from it.
+   * through. Near the shore both sides follow the distance from it.
    */
   const surfaceHeightOn = (belt: Belt, row: number, col: number): number => {
     const cell = BELT_CELL_M[belt];
     const x = minX + col * cell;
     const z = minZ + row * cell;
     const land = ponds.has(x, z) ? POND_FILLED_SCALAR_M : rawScalarAt(x, z);
-    if (land <= 0) return Math.max(SEABED_FLOOR_M, SEABED_LIP_M + land * SEABED_SLOPE);
-    return Math.max(solidHeightOn(belt, row, col), WATER_CLEARANCE_M);
+    if (land <= 0) return Math.max(SEABED_FLOOR_M, land * SHORE_SLOPE);
+    return Math.max(Math.min(solidHeightOn(belt, row, col), land * SHORE_SLOPE), WATER_CLEARANCE_M);
   };
 
   /** The coarsest cell of the blocks meeting at a node's own position. */
