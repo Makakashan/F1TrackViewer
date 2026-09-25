@@ -92,6 +92,9 @@ const FACE_FULL_DEG = 45;
 const WALL_FADE_CELLS = 2;
 /** Stand-in for "no wall anywhere near", in cells. */
 const FAR_FROM_WALL = 1e6;
+/** Steepest face the ground keeps between two neighbouring nodes, and how many passes it gets to settle. */
+export const MAX_SLOPE_DEG = 70;
+const SLOPE_PASSES = 64;
 /** Four neighbours, not eight: a diagonal is a cell and a half away. */
 const NEIGHBOURS = 4;
 
@@ -390,6 +393,38 @@ export function buildGround(
           settled[index] = here + (sum / NEIGHBOURS - here) * strength;
         }
       }
+    }
+
+    // No face steeper than the limit between two nodes. The DTM drops a cliff
+    // in one cell where it can, and a face that sheer, a cell wide, drew as a
+    // shard however it was lit. The excess is shared between the two nodes and
+    // spreads over a few cells; the road holds. A built wall is let through: one
+    // taller than the limit allows in a cell is a cliff's brow, not a street's.
+    const maxRise = grid.cell * Math.tan((MAX_SLOPE_DEG * Math.PI) / 180);
+    const limit = (a: number, b: number): boolean => {
+      const ha = settled[a];
+      const hb = settled[b];
+      if (Number.isNaN(ha) || Number.isNaN(hb)) return false;
+      const excess = Math.abs(ha - hb) - maxRise;
+      if (excess <= 1e-3) return false;
+      const sign = ha > hb ? 1 : -1;
+      if (held[a] && held[b]) return false;
+      if (held[a]) settled[b] += sign * excess;
+      else if (held[b]) settled[a] -= sign * excess;
+      else {
+        settled[a] -= (sign * excess) / 2;
+        settled[b] += (sign * excess) / 2;
+      }
+      return true;
+    };
+    for (let pass = 0; pass < SLOPE_PASSES; pass++) {
+      let moved = false;
+      for (let index = 0; index < width * height; index++) {
+        const col = index % width;
+        if (col < width - 1 && limit(index, index + 1)) moved = true;
+        if (index + width < width * height && limit(index, index + width)) moved = true;
+      }
+      if (!moved) break;
     }
 
     // The town's levels go on after the smoothing, not through it: the road is
