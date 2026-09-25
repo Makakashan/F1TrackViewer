@@ -89,8 +89,7 @@ a patch; lit face by face, the DTM's ripple — half of Monaco's core nodes step
 a neighbour — drew a sawtooth along the streets. At the waterline, where too little land
 surrounds a vertex for that fit, it takes its land-side neighbours' normal. Within a cell
 of a retaining wall the 15° crease stays (`TERRAIN_CREASE_DEG`), which keeps a built step
-sharp; a cliff is the ground itself and shades as it does, and a quay's edge is the
-cut's. Water with land within two core cells on both sides is filled as land: narrower
+sharp; a cliff is the ground itself and shades as it does. Water with land within two core cells on both sides is filled as land: narrower
 than the grid can draw, it came out as a slot the height of the cliff around it.
 `env:audit` holds each belt to 1% of gentle-ground edges — under 25° over 20 m — where
 the light still breaks; on steeper ground a turn that sharp can be the relief.
@@ -98,9 +97,13 @@ the light still breaks; on steeper ground a turn that sharp can be the relief.
 Two belts meet at a hairline, and the skirt that hides the gap is lit as the ground it
 hangs from; lit as a wall, it drew every seam as a line. A coast raised to the core puts
 a ring of city between itself and the far belt, so the cell never jumps more than twice.
-A wall's level band stops 10 m short of the surveyed shoreline: behind a quay the
-leveled brow stands metres over the cut vertex the cliff cap holds at the water, and
-quays have their own walls (`shore.ts`) anyway.
+
+The ground does not end at the sea: past the shoreline it carries on as a seabed that
+shelves off by its distance from the shore (`SEABED_*` in `bake.ts`), and the coast is
+where the sea plane crosses the relief. Cut at the shoreline instead, the ground had an
+edge, and every skirt that hung from it missed a jog somewhere — the sea showed through
+slits under the cliffs, and a capped cliff stood as a row of shards over its own hem.
+Seabed that lies wholly two metres under the plane is not drawn: the sea is opaque.
 
 The road is burned into the field before anything is meshed: flat to its half width
 and a verge of one terrain cell (`DEFAULT_VERGE_M`, 4 m), then eased back to the ground.
