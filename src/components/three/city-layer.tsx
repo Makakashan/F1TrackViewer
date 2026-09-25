@@ -92,9 +92,24 @@ function setBarrierVisible(group: THREE.Object3D, visible: boolean) {
 }
 
 /** Everything but the ground off, so a shadow on the terrain is the terrain's own. */
+const TERRAIN_TAB_KEEPS = new Set([
+  "terrain",
+  "water",
+  "shore",
+  "pier",
+  "portal",
+  "tunnel",
+  "boreRoad",
+  "plinth",
+]);
 function setTerrainOnly(group: THREE.Object3D, only: boolean) {
   group.traverse((node) => {
-    if (node instanceof THREE.Mesh && node.name !== "terrain") node.visible = !only;
+    // Water, quays, decks and the portal's sleeve are ground: hidden, the tab
+    // shows pits the app never has. The loader numbers same-named meshes.
+    if (node instanceof THREE.Mesh) {
+      const kind = node.name.replace(/_\d+$/, "");
+      node.visible = !only || TERRAIN_TAB_KEEPS.has(kind);
+    }
   });
 }
 
