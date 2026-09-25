@@ -125,12 +125,7 @@ const SKIRT_M = 3;
  * 455 m, so a 60 m block is under a seventh of it.
  */
 const PLINTH_FLOOR_M = -60;
-/**
- * Where the coast's skirt ends. A fixed drop is wrong at the water: a cliff
- * standing 30 m up gets a 3 m hem and the rest is open air, so from the sea the
- * headland reads as a shelf hanging over nothing. Going to a fixed depth below
- * the datum instead costs the same two triangles and closes the wall.
- */
+/** Where a pontoon deck's walls end, under the sea plane. */
 const SHORE_FOOT_M = -3;
 /**
  * Highest the land is allowed to be at the water's edge itself.
@@ -171,6 +166,12 @@ const SURVEYED_HOLE_M = 2.5;
 const RASTER_CONFIDENT_M = 8;
 /** How wet a node cleared for a deck reads. Any negative would do; this keeps the cut's interpolation sane. */
 const DECK_CLEARED_SCALAR_M = 2;
+/** The seabed: how far under the plane it starts at the shore, how it shelves, where it stops. */
+const SEABED_LIP_M = -0.5;
+const SEABED_SLOPE = 0.5;
+const SEABED_FLOOR_M = -15;
+/** Ground this far under the sea plane is not drawn. */
+const SEABED_HIDDEN_M = -2;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
 
@@ -180,16 +181,6 @@ const MIN_BUILDING_HEIGHT_M = 2;
  * the coast as a fan of slabs; the drop belongs to the skirt instead.
  */
 export const MAX_COAST_DROP_M = 6;
-
-/** The band a terrain surface vertex is allowed to live in: clear of the sea plane, below the cliff cap. */
-function clampToSurface(y: number): number {
-  return Math.max(WATER_CLEARANCE_M, Math.min(y, SHORE_EDGE_MAX_M));
-}
-
-/** Where the waterline is drawn under ground standing at `y` one cell inland. */
-function cutHeight(y: number): number {
-  return Math.max(clampToSurface(y), y - MAX_COAST_DROP_M);
-}
 
 /**
  * The hue a merged model's colour is pulled toward: the palette's building
@@ -564,16 +555,6 @@ function straddlesWater(
 }
 
 /**
- * One grid per belt, each at its own cell size, each covering only the cells
- * whose centre falls in that belt. Where a cell has no neighbour — the coast,
- * or the step to a coarser belt — the edge drops a skirt, which is cheaper than
- * stitching two resolutions and hides the same seam.
- *
- * The water edge is the exception: it is cut against the surveyed shoreline
- * rather than the grid (P4.0), because a grid edge is a staircase and no cell
- * size makes it not one.
- */
-/**
  * How far two terrain faces may disagree before their corner splits. The ground
  * then takes `Ground.normalAt`, so the split survives only at a surveyed line's
  * foot — which is where a cliff or a quay keeps its edge.
@@ -680,8 +661,7 @@ function bakeTerrain(
   ribbon: Ribbon | null,
 ): TerrainResult {
   // Where no surveyed line reaches — a third of a kilometre of Larvotto, among
-  // others — the edge still has to come from somewhere smoother than a boolean
-  // flag, or the cut falls back on the grid it exists to escape.
+  // others — the shore still has to come from somewhere smoother than a flag.
   const rasterShore = buildShoreDistance(field);
 
   /**
@@ -761,8 +741,19 @@ function bakeTerrain(
     return 0;
   };
 
-  const surfaceHeightOn = (belt: Belt, row: number, col: number): number =>
-    Math.max(solidHeightOn(belt, row, col), WATER_CLEARANCE_M);
+  /**
+   * The ground carries on under the water instead of ending at it, so the coast
+   * is where the sea plane crosses the relief and there is no edge to fall
+   * through. The seabed shelves off the shore by its distance from it.
+   */
+  const surfaceHeightOn = (belt: Belt, row: number, col: number): number => {
+    const cell = BELT_CELL_M[belt];
+    const x = minX + col * cell;
+    const z = minZ + row * cell;
+    const land = ponds.has(x, z) ? POND_FILLED_SCALAR_M : rawScalarAt(x, z);
+    if (land <= 0) return Math.max(SEABED_FLOOR_M, SEABED_LIP_M + land * SEABED_SLOPE);
+    return Math.max(solidHeightOn(belt, row, col), WATER_CLEARANCE_M);
+  };
 
   /** The coarsest cell of the blocks meeting at a node's own position. */
   const coarsestAt = (offsetX: number, offsetZ: number): number => {
@@ -838,14 +829,6 @@ function bakeTerrain(
     const cols = Math.floor((maxX - minX) / cell);
     const rows = Math.floor((maxZ - minZ) / cell);
     const grid = new GridMesh();
-
-    const nodes = (rows + 2) * (cols + 2);
-
-    // This belt's own view of the one surface: it averages the field over its
-    // own cell rather than sampling it — see `ground.ts`.
-    const heightAt = (row: number, col: number): number => ground.nodeAt(belt, row, col);
-
-    const solidHeightAt = (row: number, col: number): number => solidHeightOn(belt, row, col);
 
     const ownHeightAt = (row: number, col: number): number => surfaceHeightOn(belt, row, col);
 
@@ -977,57 +960,6 @@ function bakeTerrain(
       return true;
     };
 
-    // How much land there is at a node: metres from the surveyed shoreline
-    // where there is one, and otherwise a flag standing in for "well inside"
-    // the raster's own land or water. The terrain is the region where this is
-    // positive, so the coast lands wherever it crosses zero rather than on the
-    // nearest grid line.
-    const scalarCache = new Map<number, number>();
-    const scalarAt = (row: number, col: number): number => {
-      const key = row * (cols + 2) + col;
-      const cached = scalarCache.get(key);
-      if (cached !== undefined) return cached;
-      const x = minX + col * cell;
-      const z = minZ + row * cell;
-      const value = ponds.has(x, z) ? POND_FILLED_SCALAR_M : rawScalarAt(x, z);
-      scalarCache.set(key, value);
-      return value;
-    };
-
-    /**
-     * The point on a cell edge where the land runs out, as a shared vertex: the
-     * two cells either side of the edge compute it from the same two nodes, so
-     * the cut cannot open a seam.
-     */
-    const crossingAt = (
-      rowA: number, colA: number, sA: number,
-      rowB: number, colB: number, sB: number,
-    ): number => {
-      const horizontal = rowA === rowB;
-      const key =
-        nodes * (horizontal ? 1 : 2) +
-        Math.min(rowA, rowB) * (cols + 2) +
-        Math.min(colA, colB);
-      const t = Math.max(0, Math.min(1, sA / (sA - sB)));
-      const xA = minX + colA * cell;
-      const zA = minZ + rowA * cell;
-      const x = xA + (minX + colB * cell - xA) * t;
-      const z = zA + (minZ + rowB * cell - zA) * t;
-      // Height comes from the dry end. The wet end has none, and reading the
-      // datum there would ramp the quay down into the sea like a beach.
-      const hA = heightAt(rowA, colA);
-      const hB = heightAt(rowB, colB);
-      let y: number;
-      if (!Number.isNaN(hA) && !Number.isNaN(hB)) y = hA + (hB - hA) * t;
-      else if (!Number.isNaN(hA)) y = hA;
-      else if (!Number.isNaN(hB)) y = hB;
-      else y = solidHeightAt(rowA, colA);
-      return grid.vertex(key, x, cutHeight(y), z);
-    };
-
-    // Land–water crossings, as vertex pairs, so the coast can drop a skirt once
-    // the grid is finished and its positions are settled.
-    const shoreEdges: [number, number][] = [];
     // The cells a portal took out, and the ones that were built, so the pit can
     // be walled along its own rim rather than along a guessed rectangle.
     const voidCells: number[] = [];
@@ -1044,51 +976,19 @@ function bakeTerrain(
         }
         built.add(row * (cols + 2) + col);
 
-        const scalars = walk.map(([dr, dc]) => scalarAt(row + dr, col + dc));
-        if (scalars.every((value) => value <= 0)) continue;
+        const heights = walk.map(([dr, dc]) => surfaceHeightAt(row + dr, col + dc));
+        // Seabed wholly under the opaque sea plane is never seen.
+        if (heights.every((h) => h < SEABED_HIDDEN_M)) continue;
 
-        if (scalars.every((value) => value > 0)) {
-          const pieces = roadInCell.get(row * (cols + 2) + col);
-          // A cell on a seam is drawn on the coarse belt's chord; splitting it
-          // would put points on that chord the coarse side does not have.
-          const onSeam = pieces && walk.some(([dr, dc]) => blocks.conformsAt(minX + (col + dc) * cell, minZ + (row + dr) * cell));
-          if (!pieces || onSeam || !splitByRoad(row, col, pieces)) {
-            grid.triangle(vertexAt(row, col), vertexAt(row + 1, col), vertexAt(row + 1, col + 1));
-            grid.triangle(vertexAt(row, col), vertexAt(row + 1, col + 1), vertexAt(row, col + 1));
-          }
-          cellsByBelt[belt]++;
-          continue;
-        }
-
-        // A cut cell: walk its rim, keeping the dry corners and adding a vertex
-        // wherever the rim crosses the water's edge, then fan the result.
-        const ring: number[] = [];
-        const cut: boolean[] = [];
-        for (let i = 0; i < 4; i++) {
-          const [dr, dc] = walk[i];
-          const [nr, nc] = walk[(i + 1) % 4];
-          if (scalars[i] > 0) {
-            ring.push(vertexAt(row + dr, col + dc));
-            cut.push(false);
-          }
-          if (scalars[i] > 0 !== scalars[(i + 1) % 4] > 0) {
-            ring.push(
-              crossingAt(
-                row + dr, col + dc, scalars[i],
-                row + nr, col + nc, scalars[(i + 1) % 4],
-              ),
-            );
-            cut.push(true);
-          }
-        }
-        if (ring.length < 3) continue;
-
-        for (let i = 1; i < ring.length - 1; i++) {
-          grid.triangle(ring[0], ring[i], ring[i + 1]);
-        }
-        for (let i = 0; i < ring.length; i++) {
-          const next = (i + 1) % ring.length;
-          if (cut[i] && cut[next]) shoreEdges.push([ring[i], ring[next]]);
+        // The road is land's: a ribbon edge over the sea is a chord the
+        // centreline closes across a window, not a road.
+        const pieces = heights.every((h) => h > 0) ? roadInCell.get(row * (cols + 2) + col) : undefined;
+        // A cell on a seam is drawn on the coarse belt's chord; splitting it
+        // would put points on that chord the coarse side does not have.
+        const onSeam = pieces && walk.some(([dr, dc]) => blocks.conformsAt(minX + (col + dc) * cell, minZ + (row + dr) * cell));
+        if (!pieces || onSeam || !splitByRoad(row, col, pieces)) {
+          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col), vertexAt(row + 1, col + 1));
+          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col + 1), vertexAt(row, col + 1));
         }
         cellsByBelt[belt]++;
       }
@@ -1116,12 +1016,11 @@ function bakeTerrain(
     }
     fillFromNeighbours(mesh, settled, open);
     addVoidWalls(mesh, voidCells, built, hollow, surfaceHeightAt, minX, minZ, cell, cols);
-    addTerrainSkirts(mesh, scalarAt, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
-    addShoreSkirts(mesh, shoreEdges);
+    addTerrainSkirts(mesh, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
     // The bbox rim is the far belt's: the finer belts sit inside the track's
     // radius and never reach it.
     if (belt === "far") {
-      addPlinth(plinth, scalarAt, surfaceHeightAt, minX, minZ, cell, rows, cols);
+      addPlinth(plinth, surfaceHeightAt, minX, minZ, cell, rows, cols);
     }
     meshes[belt] = mesh;
   }
@@ -1224,7 +1123,6 @@ function addVoidWalls(
  */
 function addPlinth(
   mesh: Mesh,
-  scalarAt: (row: number, col: number) => number,
   surfaceHeightAt: (row: number, col: number) => number,
   minX: number,
   minZ: number,
@@ -1232,8 +1130,7 @@ function addPlinth(
   rows: number,
   cols: number,
 ): void {
-  const top = (row: number, col: number): number =>
-    scalarAt(row, col) > 0 ? Math.max(surfaceHeightAt(row, col), 0) : 0;
+  const top = (row: number, col: number): number => Math.max(surfaceHeightAt(row, col), 0);
   const xAt = (col: number): number => minX + col * cell;
   const zAt = (row: number): number => minZ + row * cell;
 
@@ -1274,23 +1171,10 @@ function addPlinth(
   );
 }
 
-/**
- * A vertical drop on every edge whose neighbour cell was not built — the belt
- * boundary and the edge of the bbox. The water's edge is not one of these: it
- * is cut inside the cell and gets its skirt from `addShoreSkirts`.
- */
+/** A vertical drop on every edge whose neighbour belongs to another belt or lies past the bbox. */
 function addTerrainSkirts(
   mesh: Mesh,
-  scalarAt: (row: number, col: number) => number,
-  /**
-   * The height the *surface* was built at, not the raster's own reading.
-   *
-   * The two differ wherever the raster has no value for a node the cut calls
-   * land, and there the skirt used to be skipped for want of a height while the
-   * surface above it was drawn anyway — an open crack down the belt boundary,
-   * on half of every boundary in Monaco. A skirt has to answer the same
-   * question the emitter did, from the same source.
-   */
+  /** The height the surface was built at, or the skirt hangs from where the ground is not. */
   surfaceHeightAt: (row: number, col: number) => number,
   beltOfCell: (row: number, col: number, cell: number) => Belt,
   belt: Belt,
@@ -1309,48 +1193,8 @@ function addTerrainSkirts(
     row < 0 || col < 0 || row >= rows || col >= cols;
   const outside = (row: number, col: number): boolean => rimIsPlinth && offGrid(row, col);
 
-  // Built by the same test the emitter used, or a cell would drop a skirt
-  // against a neighbour that is standing right there.
-  const built = (row: number, col: number): boolean => {
-    if (offGrid(row, col)) return false;
-    if (beltOfCell(row, col, cell) !== belt) return false;
-    return (
-      scalarAt(row, col) > 0 ||
-      scalarAt(row, col + 1) > 0 ||
-      scalarAt(row + 1, col) > 0 ||
-      scalarAt(row + 1, col + 1) > 0
-    );
-  };
-
-  // Only a rim of dry ground gets a grid-aligned skirt: the water's edge is cut
-  // inside the cell and gets its own from `addShoreSkirts`. Dry is decided by
-  // the same scalar the emitter used and by nothing else.
-  const dry = (rowA: number, colA: number, rowB: number, colB: number): boolean =>
-    scalarAt(rowA, colA) > 0 && scalarAt(rowB, colB) > 0;
-
-  // Where the shore crosses the seam, each belt cuts its own cell at its own
-  // place and a sliver of the seam between the two is land on neither side —
-  // a slit of sky in the coast's wall. The seam edge is skirted from its dry
-  // end to where the land runs out, and down to the sea floor like the coast.
-  const partials: Parameters<typeof partial>[] = [];
-  const partial = (
-    rowA: number, colA: number, rowB: number, colB: number,
-    xA: number, zA: number, xB: number, zB: number,
-    hA: number, hB: number,
-  ): void => {
-    const sA = scalarAt(rowA, colA);
-    const sB = scalarAt(rowB, colB);
-    if (sA > 0 === sB > 0) return;
-    const t = Math.max(0, Math.min(1, sA / (sA - sB)));
-    const x = xA + (xB - xA) * t;
-    const z = zA + (zB - zA) * t;
-    const [dx, dz, dh] = sA > 0 ? [xA, zA, hA] : [xB, zB, hB];
-    const y = cutHeight(dh);
-    const foot = Math.min(SHORE_FOOT_M, Math.min(dh, y) - 0.5);
-    // Both windings: which side faces the sea depends on the seam.
-    addFlatQuad(mesh, dx, dh, dz, x, y, z, x, foot, z, dx, foot, dz);
-    addFlatQuad(mesh, x, y, z, dx, dh, dz, dx, foot, dz, x, foot, z);
-  };
+  const built = (row: number, col: number): boolean =>
+    !offGrid(row, col) && beltOfCell(row, col, cell) === belt;
 
   const first = mesh.normals.length;
   for (let row = 0; row < rows; row++) {
@@ -1367,21 +1211,17 @@ function addTerrainSkirts(
       const h01 = surfaceHeightAt(row + 1, col);
       const h11 = surfaceHeightAt(row + 1, col + 1);
 
-      if (!built(row - 1, col) && !outside(row - 1, col)) partials.push([row, col, row, col + 1, x0, z0, x1, z0, h00, h10]);
-      if (!built(row + 1, col) && !outside(row + 1, col)) partials.push([row + 1, col, row + 1, col + 1, x0, z1, x1, z1, h01, h11]);
-      if (!built(row, col - 1) && !outside(row, col - 1)) partials.push([row, col, row + 1, col, x0, z0, x0, z1, h00, h01]);
-      if (!built(row, col + 1) && !outside(row, col + 1)) partials.push([row, col + 1, row + 1, col + 1, x1, z0, x1, z1, h10, h11]);
 
-      if (!built(row - 1, col) && !outside(row - 1, col) && dry(row, col, row, col + 1)) {
+      if (!built(row - 1, col) && !outside(row - 1, col)) {
         addFlatQuad(mesh, x0, h00, z0, x1, h10, z0, x1, h10 - SKIRT_M, z0, x0, h00 - SKIRT_M, z0);
       }
-      if (!built(row + 1, col) && !outside(row + 1, col) && dry(row + 1, col, row + 1, col + 1)) {
+      if (!built(row + 1, col) && !outside(row + 1, col)) {
         addFlatQuad(mesh, x1, h11, z1, x0, h01, z1, x0, h01 - SKIRT_M, z1, x1, h11 - SKIRT_M, z1);
       }
-      if (!built(row, col - 1) && !outside(row, col - 1) && dry(row, col, row + 1, col)) {
+      if (!built(row, col - 1) && !outside(row, col - 1)) {
         addFlatQuad(mesh, x0, h01, z1, x0, h00, z0, x0, h00 - SKIRT_M, z0, x0, h01 - SKIRT_M, z1);
       }
-      if (!built(row, col + 1) && !outside(row, col + 1) && dry(row, col + 1, row + 1, col + 1)) {
+      if (!built(row, col + 1) && !outside(row, col + 1)) {
         addFlatQuad(mesh, x1, h10, z0, x1, h11, z1, x1, h11 - SKIRT_M, z1, x1, h10 - SKIRT_M, z0);
       }
     }
@@ -1392,37 +1232,6 @@ function addTerrainSkirts(
     mesh.normals[i] = 0;
     mesh.normals[i + 1] = 1;
     mesh.normals[i + 2] = 0;
-  }
-  // After the seam's light: these face the sea, and are lit as the coast is.
-  for (const args of partials) partial(...args);
-}
-
-/**
- * The coast's own drop. The cut leaves the ground ending at the quay's height
- * in mid-air; this closes it down past the datum so the sea plane meets a wall
- * rather than a torn edge.
- *
- * Each edge runs the way the land's rim does — counter-clockwise seen from
- * above — so reversing it puts the face outward, at the water.
- */
-function addShoreSkirts(mesh: Mesh, edges: [number, number][]): void {
-  const { positions } = mesh;
-  for (const [a, b] of edges) {
-    const ax = positions[a * 3];
-    const ay = positions[a * 3 + 1];
-    const az = positions[a * 3 + 2];
-    const bx = positions[b * 3];
-    const by = positions[b * 3 + 1];
-    const bz = positions[b * 3 + 2];
-    // Down to the sea floor, not down by a fixed hem: see SHORE_FOOT_M.
-    const foot = Math.min(SHORE_FOOT_M, Math.min(ay, by) - 0.5);
-    addFlatQuad(
-      mesh,
-      bx, by, bz,
-      ax, ay, az,
-      ax, foot, az,
-      bx, foot, bz,
-    );
   }
 }
 
