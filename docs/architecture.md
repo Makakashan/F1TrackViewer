@@ -98,13 +98,28 @@ Two belts meet at a hairline, and the skirt that hides the gap is lit as the gro
 hangs from; lit as a wall, it drew every seam as a line. A coast raised to the core puts
 a ring of city between itself and the far belt, so the cell never jumps more than twice.
 
-The ground does not end at the sea: past the shoreline it carries on as a seabed, and
-the coast is where the sea plane crosses the relief. Within reach of the shore both
-sides follow one slope off the shore's distance (`SHORE_SLOPE`, 4 m per metre), so the
-waterline is that distance's zero line; a shallow seabed against a tall cliff put the
-crossing on the wet node and drew the coast as the grid's staircase. Cut at the shoreline instead, the ground had an
-edge, and every skirt that hung from it missed a jog somewhere — the sea showed through
-slits under the cliffs, and a capped cliff stood as a row of shards over its own hem.
+The ground does not end at the sea: past the shoreline it carries on as a seabed falling
+away by its distance from the shore, so there is no edge to fall through. Cut at the
+shoreline instead, the ground had an edge, and every skirt that hung from it missed a jog
+somewhere — the sea showed through slits under the cliffs, and a capped cliff stood as a
+row of shards over its own hem. A cell the shoreline crosses is drawn as its land side,
+a step down at the line — from at most a quay's lip (3 m) to under the plane — and its
+seabed side, at vertices both neighbours share, so the waterline is the shore's line
+rather than the grid's. Without the step the sea met a slope across the cell wherever it
+happened to, half a metre to two off every quay wall. The step is the quay's wall too:
+the separate walls `shore.ts` stood along OSM's line came out as slabs a few metres off
+the ground's own edge, and are gone. Off the line the ground rises no steeper than
+`MAX_SLOPE_DEG` (70°) from the lip, or a cliff a metre from the water drew a sliver from
+its brow down to it.
+
+`Ground` holds every pair of neighbouring nodes to the same 70°, after its smoothing:
+the excess is shared between the two and spreads over a few cells, and only the road
+holds. The DTM drops a cliff in one cell where it can, and a face that sheer and a cell
+wide drew as a shard however it was lit. A built wall is let through — one taller than
+11 m in a 4 m cell is a cliff's brow, not a street's.
+Left to the grid, the crossing followed whichever node stood taller: a staircase along
+every cliff, and a saw along every quay when a single slope was tried instead. Ground
+under the sea plane is the seabed to `env:audit`, as the missing ground was before.
 Seabed that lies wholly two metres under the plane is not drawn: the sea is opaque.
 
 The road is burned into the field before anything is meshed: flat to its half width
