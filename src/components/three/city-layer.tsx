@@ -95,7 +95,6 @@ function setBarrierVisible(group: THREE.Object3D, visible: boolean) {
 const TERRAIN_TAB_KEEPS = new Set([
   "terrain",
   "water",
-  "shore",
   "pier",
   "portal",
   "tunnel",

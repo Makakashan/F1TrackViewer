@@ -39,7 +39,6 @@ rest are single-purpose modules it calls.
 | `heightfield.ts` | The height field — single source of truth. MSL datum, NaN = water. |
 | `coastline.ts` | Surveyed shoreline as a **signed distance field** from OSM ways. Land-on-left, raster corroboration. |
 | `shore-distance.ts` | Smooth chamfer-distance fallback where no surveyed line reaches. |
-| `shore.ts` | Quay/seawall geometry. |
 | `piers.ts` | Piers, breakwaters, groynes. |
 | `tunnels.ts` | Tunnel mask; bore + portals + buried-span fractions come out of `bake.ts`. |
 | `overpass.ts` | All OSM queries (buildings, coastline, structures, breaklines). |

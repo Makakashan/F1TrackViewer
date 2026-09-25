@@ -79,7 +79,6 @@ import {
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
 import { buildPiers, type PierDeck, type PierResult } from "./piers";
 import { berthYachts, buildProps, type PropResult } from "./props";
-import { bakeShoreWalls, type ShoreResult } from "./shore";
 import { buildCoastline, type Coastline, type CoastlineStats } from "./coastline";
 import { buildShoreDistance } from "./shore-distance";
 import {
@@ -3155,7 +3154,6 @@ export interface BakeReport {
   trackVertices: number;
   portalTriangles: number;
   barrierTriangles: number;
-  shore: ShoreResult;
   piers: PierResult;
   coast: CoastlineStats;
   heights: HeightStats;
@@ -3348,7 +3346,6 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     buildCircuitGround(inputs);
   const shoreWays = overrideShoreWays(inputs.shoreWays, overrides, overrideStats);
   const coast = buildCoastline(shoreWays, field, plane);
-  const shore = bakeShoreWalls(shoreWays, field, plane, coast);
   const piers = buildPiers(shoreWays, field, plane);
   const pierDecks = bakePierDecks(piers);
 
@@ -3486,7 +3483,6 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const occluders = buildOccluders(field, plane, standing);
   for (const mesh of [
     ...standing,
-    shore.walls,
     pierDecks,
     props.dark,
     props.light,
@@ -3558,11 +3554,8 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     city: [
       { kind: "terrain", mesh: terrain.meshes.city },
       { kind: "building", mesh: buildings.meshes.city },
-      // The waterfront is one thing wherever it runs, so it ships whole rather
-      // than split across belts by distance.
-      { kind: "shore", mesh: shore.walls },
-      // Decks go with the waterfront for the same reason: the harbour is one
-      // thing, and splitting it by distance would cut a pontoon in half.
+      // The harbour is one thing, so its decks ship whole rather than split
+      // across belts by distance, which would cut a pontoon in half.
       { kind: "pier", mesh: pierDecks },
       // The boats belong to the harbour they are tied to, so they ship with it.
       { kind: "propDark", mesh: props.dark },
@@ -3604,7 +3597,6 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     trackVertices: elevations.length,
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
     barrierTriangles: triangleCount(barriers),
-    shore,
     piers,
     coast: coast.stats,
     heights: heightStats.value,
@@ -3716,13 +3708,6 @@ async function main() {
     `  coast ${report.coast.oriented} of ${report.coast.ways} ways cut the terrain ` +
       `(${report.coast.segments} segments), ${report.coast.unoriented} without a land side, ` +
       `${report.coast.segmentsDropped} segments the raster does not confirm`,
-  );
-  console.log(
-    `  shore ${report.shore.built} wall segments, ` +
-      `${report.shore.skippedDisagreement} skipped where OSM and the raster disagree, ` +
-      `${report.shore.skippedKind} piers skipped, ` +
-      `${report.shore.skippedCliff} against cliffs, ` +
-      `${report.shore.skippedOffCut} off the cut edge`,
   );
   console.log(
     `  belt seams ${report.conform.nodes} nodes conformed to the coarser chord, ` +

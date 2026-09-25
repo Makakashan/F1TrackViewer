@@ -57,8 +57,7 @@ describe("the slice bakes", () => {
     expect(named.get("core")).toContain("terrain");
     expect(named.get("core")).toContain("building");
     expect(named.get("city")).toContain("terrain");
-    // The harbour is in frame, so the shore wall and the water are too.
-    expect(named.get("city")).toContain("shore");
+    // The harbour is in frame, so the water is too.
     expect(named.get("far")).toContain("water");
   });
 
