@@ -417,7 +417,7 @@ export function buildGround(
     }
 
     const settled = new Float32Array(table);
-    for (let pass = 0; pass < SMOOTH_PASSES; pass++) {
+    const smoothPass = (): void => {
       const before = new Float32Array(settled);
       for (let row = -1; row <= grid.rows + 1; row++) {
         for (let col = -1; col <= grid.cols + 1; col++) {
@@ -468,7 +468,8 @@ export function buildGround(
           settled[index] = here + (sum / NEIGHBOURS - here) * strength;
         }
       }
-    }
+    };
+    for (let pass = 0; pass < SMOOTH_PASSES; pass++) smoothPass();
 
     // No face steeper than the limit between two nodes. The DTM drops a cliff
     // in one cell where it can, and a face that sheer, a cell wide, drew as a
@@ -492,14 +493,27 @@ export function buildGround(
       }
       return true;
     };
-    for (let pass = 0; pass < SLOPE_PASSES; pass++) {
-      let moved = false;
-      for (let index = 0; index < width * height; index++) {
-        const col = index % width;
-        if (col < width - 1 && limit(index, index + 1)) moved = true;
-        if (index + width < width * height && limit(index, index + width)) moved = true;
+    const limitAll = (): void => {
+      for (let pass = 0; pass < SLOPE_PASSES; pass++) {
+        let moved = false;
+        for (let index = 0; index < width * height; index++) {
+          const col = index % width;
+          if (col < width - 1 && limit(index, index + 1)) moved = true;
+          if (index + width < width * height && limit(index, index + width)) moved = true;
+        }
+        if (!moved) break;
       }
-      if (!moved) break;
+    };
+    // The limit works one pair of nodes at a time along the axes, and what it
+    // leaves on a face is a crumple of its own: smoothed again and limited
+    // again, the face settles into one slope.
+    limitAll();
+    for (let round = 0; round < SETTLE_ROUNDS; round++) {
+      smoothPass();
+      for (let index = 0; index < width * height; index++) {
+        if (settled[index] > shoreCap[index]) settled[index] = shoreCap[index];
+      }
+      limitAll();
     }
 
     // The town's levels go on after the smoothing, not through it: the road is

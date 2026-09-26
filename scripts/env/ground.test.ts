@@ -106,8 +106,9 @@ describe("a 30° slope", () => {
   const cellM = 4;
   // Height depends on x alone, so the analytic answer at any scene point is a
   // line — which a symmetric box filter reproduces exactly away from the edge.
-  const { ground } = syntheticGround({ cols: 65, rows: 65, cellM, at: (col) => col * cellM * slope });
-  const heightAtX = (x: number) => (x + (64 * cellM) / 2) * slope;
+  // Wide enough that the smoothing's reach from the edge stops short of the middle.
+  const { ground } = syntheticGround({ cols: 129, rows: 65, cellM, at: (col) => col * cellM * slope });
+  const heightAtX = (x: number) => (x + (128 * cellM) / 2) * slope;
 
   test("the filter does not flatten it — nodes sit on the ramp to the millimetre", () => {
     for (const belt of BELT_ORDER) {
@@ -116,7 +117,7 @@ describe("a 30° slope", () => {
         // The window clamps at the field's edge, where a symmetric mean is no
         // longer symmetric, and the smoothing that follows it reaches a cell
         // further per pass; the interior is what the invariant is about.
-        const margin = grid.radius * cellM + grid.cell * (SMOOTH_PASSES + 1);
+        const margin = grid.radius * cellM + grid.cell * (SMOOTH_PASSES + SETTLE_ROUNDS + 1);
         if (x < grid.minX + margin || x > -grid.minX - margin) continue;
         expect(ground.nodeAt(belt, row, col)).toBeCloseTo(heightAtX(x), 3);
       }
