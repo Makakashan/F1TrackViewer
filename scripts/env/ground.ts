@@ -258,6 +258,7 @@ export function buildGround(
 
   const grids = {} as Record<Belt, BeltGrid>;
   const nodes = {} as Record<Belt, Float32Array>;
+  const ceilings = {} as Record<Belt, Float32Array>;
 
   const gridFor = (belt: Belt): BeltGrid => {
     const existing = grids[belt];
@@ -473,6 +474,26 @@ export function buildGround(
     // spreads over a few cells; the road holds. A built wall is let through: one
     // taller than the limit allows in a cell is a cliff's brow, not a street's.
     const maxRise = grid.cell * Math.tan((MAX_SLOPE_DEG * Math.PI) / 180);
+    // Off the shoreline too (`shoreCeiling`), measured to where the mesh puts
+    // the line: between two nodes either side of it. The scalar alone jumps where
+    // the surveyed line hands over to the raster, and a node it put 11 m inland
+    // stood 2 m from the lip, a 16 m wall over it.
+    const shoreCap = new Float32Array(width * height).fill(Infinity);
+    if (landAt) {
+      const land = new Float32Array(width * height);
+      for (let row = -1; row <= grid.rows + 1; row++) {
+        for (let col = -1; col <= grid.cols + 1; col++) {
+          land[(row + 1) * width + col + 1] = landAt(minX + col * grid.cell, minZ + row * grid.cell);
+        }
+      }
+      const away = distanceToShore(land, width, height, grid.cell);
+      for (let index = 0; index < width * height; index++) {
+        if (!held[index]) shoreCap[index] = shoreCeiling(Math.min(land[index], away[index]));
+      }
+    }
+    for (let index = 0; index < width * height; index++) {
+      if (settled[index] > shoreCap[index]) settled[index] = shoreCap[index];
+    }
     const limit = (a: number, b: number): boolean => {
       const ha = settled[a];
       const hb = settled[b];
@@ -521,11 +542,14 @@ export function buildGround(
         if (Number.isNaN(value)) continue;
         if (!streets?.count) continue;
         const town = streets.at(minX + col * grid.cell, minZ + row * grid.cell);
-        if (town) settled[index] = value + (town.height - value) * town.weight;
+        // Still off the shoreline: a street the survey puts on a seawall half
+        // a metre from the line is a wall straight into the sea.
+        if (town) settled[index] = Math.min(value + (town.height - value) * town.weight, shoreCap[index]);
       }
     }
 
     nodes[belt] = settled;
+    ceilings[belt] = shoreCap;
     return settled;
   };
 
