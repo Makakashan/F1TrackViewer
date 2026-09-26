@@ -93,8 +93,83 @@ const WALL_FADE_CELLS = 2;
 /** Stand-in for "no wall anywhere near", in cells. */
 const FAR_FROM_WALL = 1e6;
 /** Steepest face the ground keeps between two neighbouring nodes, and how many passes it gets to settle. */
-export const MAX_SLOPE_DEG = 70;
+export const MAX_SLOPE_DEG = 55;
+/** Highest the ground stands where it meets the water: a quay's lip, not a cliff's brow. */
+export const SHORE_LIP_M = 3;
+
+/**
+ * Highest the ground may stand `land` metres in from the shoreline: the lip,
+ * then no steeper than the limit. A cliff a metre from the water drew a sliver
+ * from its brow down to it.
+ */
+export function shoreCeiling(land: number): number {
+  return land > 0 ? SHORE_LIP_M + land * Math.tan((MAX_SLOPE_DEG * Math.PI) / 180) : Infinity;
+}
+
+/**
+ * Metres from each node of a grid to the nearest point where `land` changes
+ * sign along a grid edge, interpolated the way the mesher cuts the shore. Each
+ * node carries its nearest crossing forward and back over the grid, a sweep
+ * each way, twice.
+ */
+export function distanceToShore(land: Float32Array, width: number, height: number, cell: number): Float32Array {
+  const crossX: number[] = [];
+  const crossZ: number[] = [];
+  const nearest = new Int32Array(width * height).fill(-1);
+  const away = new Float32Array(width * height).fill(Infinity);
+  const offer = (index: number, crossing: number): void => {
+    const dx = crossX[crossing] - (index % width);
+    const dz = crossZ[crossing] - Math.floor(index / width);
+    const distance = Math.hypot(dx, dz) * cell;
+    if (distance < away[index]) {
+      away[index] = distance;
+      nearest[index] = crossing;
+    }
+  };
+  for (let index = 0; index < width * height; index++) {
+    const col = index % width;
+    for (const next of [col < width - 1 ? index + 1 : -1, index + width < width * height ? index + width : -1]) {
+      if (next < 0 || land[index] > 0 === land[next] > 0) continue;
+      const t = land[index] / (land[index] - land[next]);
+      crossX.push(col + (next === index + 1 ? t : 0));
+      crossZ.push(Math.floor(index / width) + (next === index + 1 ? 0 : t));
+      offer(index, crossX.length - 1);
+      offer(next, crossX.length - 1);
+    }
+  }
+  const sweep = (from: number, to: number, step: number, neighbours: [number, number][]): void => {
+    for (let index = from; index !== to; index += step) {
+      const row = Math.floor(index / width);
+      const col = index % width;
+      for (const [dr, dc] of neighbours) {
+        const r = row + dr;
+        const c = col + dc;
+        if (r < 0 || c < 0 || r >= height || c >= width) continue;
+        const crossing = nearest[r * width + c];
+        if (crossing >= 0) offer(index, crossing);
+      }
+    }
+  };
+  for (let round = 0; round < 2; round++) {
+    sweep(0, width * height, 1, [[-1, -1], [-1, 0], [-1, 1], [0, -1]]);
+    sweep(width * height - 1, -1, -1, [[1, 1], [1, 0], [1, -1], [0, 1]]);
+  }
+  return away;
+}
+
 const SLOPE_PASSES = 64;
+/** Rounds of smoothing and limiting again after the first limit. */
+export const SETTLE_ROUNDS = 12;
+
+/**
+ * Whether a cell splits across its main diagonal, (row, col) to (row + 1,
+ * col + 1), given its corners in walk order. The diagonal runs along the ground
+ * rather than across it: a ridge at forty-five degrees to the grid, split the
+ * other way, is drawn as a saw. A corner with no height keeps the main one.
+ */
+export function splitsOnMain(h00: number, h01: number, h11: number, h10: number): boolean {
+  return !(Math.abs(h01 - h10) < Math.abs(h00 - h11));
+}
 /** Four neighbours, not eight: a diagonal is a cell and a half away. */
 const NEIGHBOURS = 4;
 

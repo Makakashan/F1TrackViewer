@@ -168,9 +168,6 @@ const DECK_CLEARED_SCALAR_M = 2;
 /** How the seabed falls away from the shoreline, metres per metre, and where it stops. */
 const SEABED_SLOPE = 4;
 const SEABED_FLOOR_M = -15;
-/** Highest the ground stands where it meets the water: a quay's lip, not a cliff's brow. */
-const SHORE_LIP_MAX_M = 3;
-const SHORE_RISE = Math.tan((MAX_SLOPE_DEG * Math.PI) / 180);
 /** Keys for the vertices the shoreline adds, clear of the grid's and the road's. */
 const SHORE_VERTEX_KEY = 2e12;
 /** Ground this far under the sea plane is not drawn. */
@@ -651,29 +648,20 @@ function fillFromNeighbours(mesh: Mesh, settled: Uint8Array, open: number[]): vo
 /** Keys for the vertices the road adds, clear of every grid node's own. */
 const ROAD_VERTEX_KEY = 1e12;
 
-function bakeTerrain(
+/**
+ * How much land there is at a point: metres from the surveyed shoreline where
+ * there is one, and otherwise the smoothed raster distance — where no surveyed
+ * line reaches, a third of a kilometre of Larvotto among others. The ground and
+ * its mesh both read this, so they agree on where the sea starts.
+ */
+export function buildLandAt(
   field: HeightField,
-  ground: Ground,
   plane: ScenePlane,
-  corridor: Corridor,
   coast: Coastline,
   piers: PierResult,
-  hollow: PortalHollow,
-  breaklines: Breaklines,
-  /** Where the viewer draws the road; its edges are edges of the core belt's mesh. */
-  ribbon: Ribbon | null,
-): TerrainResult {
-  // Where no surveyed line reaches — a third of a kilometre of Larvotto, among
-  // others — the shore still has to come from somewhere smoother than a flag.
+): (x: number, z: number) => number {
   const rasterShore = buildShoreDistance(field);
-
-  /**
-   * How much land there is at a point: metres from the surveyed shoreline where
-   * there is one, and otherwise the smoothed raster distance. The terrain is
-   * where this is positive, so the coast lands wherever it crosses zero rather
-   * than on the nearest grid line.
-   */
-  const rawScalarAt = (x: number, z: number): number => {
+  return (x, z) => {
     // The raster's own copy of a deck is not land: the LiDAR saw the pontoon and
     // the boats tied to it, a few metres off where the ring is mapped, so the
     // deck and a torn strip of terrain were drawn side by side. The deck is the
@@ -687,6 +675,21 @@ function bakeTerrain(
     }
     return value;
   };
+}
+
+function bakeTerrain(
+  field: HeightField,
+  ground: Ground,
+  plane: ScenePlane,
+  corridor: Corridor,
+  rawScalarAt: (x: number, z: number) => number,
+  /** Sharp turns of the surveyed line: the lip routes through these. */
+  corners: { x: number; z: number }[],
+  hollow: PortalHollow,
+  breaklines: Breaklines,
+  /** Where the viewer draws the road; its edges are edges of the core belt's mesh. */
+  ribbon: Ribbon | null,
+): TerrainResult {
   let conformed = 0;
   let worstConform = 0;
   let conformSum = 0;
@@ -766,10 +769,11 @@ function bakeTerrain(
   const surfaceHeightOn = (belt: Belt, row: number, col: number): number => {
     const land = landOn(belt, row, col);
     if (land <= 0) return Math.max(SEABED_FLOOR_M, land * SEABED_SLOPE);
-    // Off the shoreline the ground rises no steeper than anywhere else: a cliff
-    // standing a metre from the water drew a sliver from its brow to the lip.
-    const rise = SHORE_LIP_MAX_M + land * SHORE_RISE;
-    return Math.max(Math.min(solidHeightOn(belt, row, col), rise), WATER_CLEARANCE_M);
+    // A node the line calls land and the raster sea borrows its neighbours'
+    // height, which can be a clifftop's: it is held off the shore as the ground is.
+    const solid = solidHeightOn(belt, row, col);
+    const borrowed = Number.isNaN(ground.nodeAt(belt, row, col));
+    return Math.max(borrowed ? Math.min(solid, ground.ceilingAt(belt, row, col)) : solid, WATER_CLEARANCE_M);
   };
 
   /** The coarsest cell of the blocks meeting at a node's own position. */
@@ -991,7 +995,7 @@ function bakeTerrain(
       const z = minZ + (rowA + (rowB - rowA) * t) * cell;
       const dry = sA > 0 ? surfaceHeightAt(rowA, colA) : surfaceHeightAt(rowB, colB);
       return [
-        grid.vertex(key, x, Math.min(dry, SHORE_LIP_MAX_M), z),
+        grid.vertex(key, x, Math.min(dry, SHORE_LIP_M), z),
         grid.vertex(key + 1, x, SHORE_FOOT_M, z),
       ];
     };
