@@ -56,6 +56,8 @@ export function buildOccluders(
   field: HeightField,
   plane: ScenePlane,
   standing: Mesh[],
+  /** The ground as it is drawn: the raw field's ripple and spikes cast shade the mesh has not got. */
+  groundAt: (x: number, z: number) => number,
 ): Occluders {
   const minX = plane.x(field.bbox.minLon);
   const maxX = plane.x(field.bbox.maxLon);
@@ -67,10 +69,7 @@ export function buildOccluders(
 
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
-      const ground = field.heightAt(
-        plane.lon(minX + (col + 0.5) * CELL_M),
-        plane.lat(minZ + (row + 0.5) * CELL_M),
-      );
+      const ground = groundAt(minX + (col + 0.5) * CELL_M, minZ + (row + 0.5) * CELL_M);
       heights[row * width + col] = Number.isNaN(ground) ? 0 : ground;
     }
   }

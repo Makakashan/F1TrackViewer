@@ -3608,7 +3608,11 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // surface band — all after the nodes were read. A wall asking where the
   // ground is gets the triangle it will stand on.
   const drawnGround = buildSurfaceIndex(BELT_ORDER.map((belt) => [terrain.meshes[belt]]));
-  const standOn = (x: number, z: number): number => drawnGround.at(x, z);
+  // The seabed is drawn but is no ground: nothing is built or planted on it.
+  const standOn = (x: number, z: number): number => {
+    const y = drawnGround.at(x, z);
+    return y < 0 ? Number.NaN : y;
+  };
   // Only where the road is actually drawn: a building over a tunnel is a
   // building over a tunnel, and cutting a slot through it would open the hill.
   const roadIndex = buildRoadIndex(
@@ -3691,7 +3695,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   ];
   // Barriers occlude nothing worth the trouble and, being thin and at ground
   // level in a street canyon, they come back from the AO pass nearly black.
-  const occluders = buildOccluders(field, plane, standing);
+  const occluders = buildOccluders(field, plane, standing, (x, z) => ground.at(x, z, "core"));
   for (const mesh of [
     ...standing,
     pierDecks,
