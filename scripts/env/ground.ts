@@ -198,11 +198,13 @@ export function buildGround(
   /** The level the town is built to, where there is a town; see `streets.ts`. */
   streets?: StreetGround,
   /**
-   * The road: ground the field was burned to the track's profile, which a node
-   * there keeps as it is. Averaged with the hillside beside it, the racing
-   * surface came out two metres under the ground along the harbour.
+   * The road's level at a node, NaN off it; a node on it is held there.
+   * Averaged with the hillside beside it, the racing surface came out two
+   * metres under the ground along the harbour.
    */
-  onRoad?: (x: number, z: number) => boolean,
+  roadAt?: (x: number, z: number) => number,
+  /** Metres from the shoreline, positive on land. */
+  landAt?: (x: number, z: number) => number,
 ): Ground {
   const { sums, counts } = summedArea(field);
   const stride = field.width + 1;
@@ -299,9 +301,10 @@ export function buildGround(
         const lon = plane.lon(x);
         const lat = plane.lat(z);
         let value: number;
-        if (onRoad?.(x, z)) {
+        const road = roadAt?.(x, z) ?? Number.NaN;
+        if (!Number.isNaN(road)) {
           held[(row + 1) * width + col + 1] = 1;
-          value = field.heightAt(lon, lat);
+          value = road;
         } else if (grid.radius === 0) {
           value = field.heightAt(lon, lat);
         } else {

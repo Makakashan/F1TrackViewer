@@ -17,6 +17,7 @@ import { ShapeUtils, Vector2 } from "three";
 
 import { BAKED_MESH_COLORS, DIORAMA_COLORS, type BakedMeshKind } from "../../src/lib/env/diorama-palette";
 import { ENVIRONMENT_ATTRIBUTION, type BuildingsFile } from "../../src/lib/env/environment-types";
+import { DEFAULT_HALF_WIDTH_M as RIBBON_HALF_WIDTH_M } from "../../src/lib/track/track-geometry";
 import {
   BELT_BUDGET,
   BELT_CELL_M,
@@ -598,13 +599,24 @@ const TERRAIN_CREASE_DEG = 15;
  * level with it across — which a tunnel's hill is not, so the vault is left out.
  */
 const ROAD_HELD_M = DEFAULT_TRACK_HALF_WIDTH_M + DEFAULT_VERGE_M;
-export function onRoad(corridor: Corridor, field: HeightField, plane: ScenePlane): (x: number, z: number) => boolean {
+/**
+ * The level a node on the road is held at, or NaN off it. Under the ribbon the
+ * level is the road's whether or not the field was burned that wide: a cutting's
+ * bank left there came up through the tarmac as shards by the tunnel's mouth.
+ */
+export function roadLevel(
+  corridor: Corridor,
+  field: HeightField,
+  plane: ScenePlane,
+  buried: (x: number, z: number) => boolean,
+): (x: number, z: number) => number {
   return (x, z) => {
     const { distanceM, footX, footZ } = corridor.measure(x, z);
-    if (distanceM > ROAD_HELD_M) return false;
+    if (distanceM > ROAD_HELD_M) return Number.NaN;
     const here = field.heightAt(plane.lon(x), plane.lat(z));
     const road = field.heightAt(plane.lon(footX), plane.lat(footZ));
-    return Math.abs(here - road) < 0.5;
+    if (distanceM <= RIBBON_HALF_WIDTH_M && !buried(x, z)) return road;
+    return Math.abs(here - road) < 0.5 ? here : Number.NaN;
   };
 }
 
@@ -3666,7 +3678,12 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     breaklines,
     landAt,
   );
-  const ground = buildGround(field, plane, breaklines, streets, onRoad(corridor, field, plane));
+  const terrainLand = buildLandAt(field, plane, coast, piers);
+  const ground = buildGround(
+    field, plane, breaklines, streets,
+    roadLevel(corridor, field, plane, (x, z) => tunnels.buried(plane.lon(x), plane.lat(z))),
+    terrainLand,
+  );
   const hollow = portalVoids(vaults, hill, plane);
   // The road as the viewer draws it, so the ground meets the ribbon at its edge.
   const lapLengthM = (await circuitLengthM(circuitId))
