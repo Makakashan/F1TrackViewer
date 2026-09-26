@@ -16,6 +16,7 @@ import { join } from "node:path";
 import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types";
 import {
   buildBeltBlocks,
+  buildLandAt,
   buildCircuitGround,
   loadBakeInputs,
   fromOverpass,
@@ -36,6 +37,7 @@ import {
 } from "./env/baked-scene";
 import { buildBreaklines, type Breaklines } from "./env/breaklines";
 import { buildCoastline, type Coastline } from "./env/coastline";
+import { buildPiers } from "./env/piers";
 import { buildGround, type Ground } from "./env/ground";
 import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
 import { fetchBreaklineWays, fetchBuildingWays, fetchShoreWays, fetchStreetWays } from "./env/overpass";
@@ -410,9 +412,10 @@ function checkTerrain(
       const delta = Math.abs(y - Math.max(ground, WATER_CLEARANCE_M));
       // A cut vertex below the ground behind it sits either on the cap or a
       // full `MAX_COAST_DROP_M` under the brow: the signature of the cut and of
-      // nothing else, however far the line has drifted from it.
+      // nothing else, however far the line has drifted from it. The cap itself
+      // is read after quantisation, which moves a vertex a tenth either way.
       const capped = ground > y + 0.1
-        && (y <= SHORE_EDGE_MAX_M + 0.1 || ground - y >= MAX_COAST_DROP_M - 0.5);
+        && (y <= SHORE_EDGE_MAX_M + 0.2 || ground - y >= MAX_COAST_DROP_M - 0.5);
       if (onCut(x, z) || capped) {
         shore++;
         if (delta > worstShore) {
@@ -914,7 +917,14 @@ async function audit(circuitId: string): Promise<Check[]> {
     breaklines,
     onLand,
   );
-  const surface = buildGround(field, plane, breaklines, streets, onRoad(corridor, field, plane));
+  // The ground's own land test: the line, the raster where it is sure, the decks.
+  const terrainLand = buildLandAt(field, plane, cutLine, buildPiers(shoreWays, field, plane));
+  const surface = buildGround(
+    field, plane, breaklines, streets,
+    roadLevel(corridor, field, plane, (x, z) => tunnels.buried(plane.lon(x), plane.lat(z))),
+    terrainLand,
+  );
+  const blocks = buildBeltBlocks(field, plane, corridor, terrainLand);
   // The band the bake keeps creased: the core's cell, on every belt.
   const kept = (x: number, z: number) => atSurveyedWall(breaklines, plane, x, z, BELT_CELL_M.core);
 
