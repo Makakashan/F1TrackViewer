@@ -210,6 +210,8 @@ interface TerrainResult {
   holesFilled: number;
   /** Cells of water too narrow to draw, filled as land. */
   inletsFilled: number;
+  /** Cells of land too small and too far out to be anything but noise, drawn as sea. */
+  isletsDrowned: number;
   /** How much the fine belts gave up to meet the coarse ones — see `surfaceHeightAt`. */
   conform: { nodes: number; worstM: number; meanM: number; over1M: number; over2M: number };
 }
@@ -255,7 +257,13 @@ function findEnclosedWater(
   maxX: number,
   minZ: number,
   maxZ: number,
-): { cells: number; pinched: number; has(x: number, z: number): boolean } {
+): {
+  cells: number;
+  pinched: number;
+  islets: number;
+  /** Land drawn where the scalar says water, or water where it says land; zero where it is left alone. */
+  overrideAt(x: number, z: number): number;
+} {
   const cols = Math.floor((maxX - minX) / POND_CELL_M) + 1;
   const rows = Math.floor((maxZ - minZ) / POND_CELL_M) + 1;
   const wet = new Uint8Array(rows * cols);
@@ -268,41 +276,51 @@ function findEnclosedWater(
   }
 
   const filled = new Uint8Array(rows * cols);
-  const seen = new Uint8Array(rows * cols);
+  const drowned = new Uint8Array(rows * cols);
   const maxCells = Math.round(MIN_POND_M2 / (POND_CELL_M * POND_CELL_M));
-  const component: number[] = [];
-  const queue: number[] = [];
-  let cells = 0;
+  /** Every patch of nodes `wet` marks as `kind` that is small and never reaches the bbox's edge. */
+  const enclosed = (kind: number, into: Uint8Array): number => {
+    const seen = new Uint8Array(rows * cols);
+    const component: number[] = [];
+    const queue: number[] = [];
+    let cells = 0;
+    for (let start = 0; start < wet.length; start++) {
+      if (seen[start] || wet[start] !== kind) continue;
+      component.length = 0;
+      queue.length = 0;
+      queue.push(start);
+      seen[start] = 1;
+      let reachesTheEdge = false;
 
-  for (let start = 0; start < wet.length; start++) {
-    if (seen[start] || !wet[start]) continue;
-    component.length = 0;
-    queue.length = 0;
-    queue.push(start);
-    seen[start] = 1;
-    let reachesTheSea = false;
-
-    while (queue.length) {
-      const index = queue.pop() as number;
-      component.push(index);
-      const row = Math.floor(index / cols);
-      const col = index - row * cols;
-      if (row === 0 || col === 0 || row === rows - 1 || col === cols - 1) reachesTheSea = true;
-      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
-        const nr = row + dr;
-        const nc = col + dc;
-        if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
-        const next = nr * cols + nc;
-        if (seen[next] || !wet[next]) continue;
-        seen[next] = 1;
-        queue.push(next);
+      while (queue.length) {
+        const index = queue.pop() as number;
+        component.push(index);
+        const row = Math.floor(index / cols);
+        const col = index - row * cols;
+        if (row === 0 || col === 0 || row === rows - 1 || col === cols - 1) reachesTheEdge = true;
+        for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+          const nr = row + dr;
+          const nc = col + dc;
+          if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
+          const next = nr * cols + nc;
+          if (seen[next] || wet[next] !== kind) continue;
+          seen[next] = 1;
+          queue.push(next);
+        }
       }
-    }
 
-    if (reachesTheSea || component.length > maxCells) continue;
-    for (const index of component) filled[index] = 1;
-    cells += component.length;
-  }
+      if (reachesTheEdge || component.length > maxCells) continue;
+      for (const index of component) into[index] = 1;
+      cells += component.length;
+    }
+    return cells;
+  };
+  const cells = enclosed(1, filled);
+  // The same holds the other way round: a scrap of land the sea rings, smaller
+  // than a hole would be, is the line and the raster disagreeing off a quay.
+  for (let i = 0; i < wet.length; i++) if (filled[i]) wet[i] = 1 - wet[i];
+  const islets = enclosed(0, drowned);
+  for (let i = 0; i < wet.length; i++) if (filled[i]) wet[i] = 1 - wet[i];
 
   // Land close on both sides along any axis, straight or diagonal.
   const dryWithin = (row: number, col: number, dr: number, dc: number): boolean => {
@@ -331,11 +349,13 @@ function findEnclosedWater(
   return {
     cells,
     pinched,
-    has(x: number, z: number): boolean {
+    islets,
+    overrideAt(x: number, z: number): number {
       const col = Math.round((x - minX) / POND_CELL_M);
       const row = Math.round((z - minZ) / POND_CELL_M);
-      if (row < 0 || col < 0 || row >= rows || col >= cols) return false;
-      return filled[row * cols + col] === 1;
+      if (row < 0 || col < 0 || row >= rows || col >= cols) return 0;
+      const index = row * cols + col;
+      return filled[index] ? POND_FILLED_SCALAR_M : drowned[index] ? -POND_FILLED_SCALAR_M : 0;
     },
   };
 }
@@ -793,7 +813,7 @@ function bakeTerrain(
     const cell = BELT_CELL_M[belt];
     const x = minX + col * cell;
     const z = minZ + row * cell;
-    const value = ponds.has(x, z) ? POND_FILLED_SCALAR_M : rawScalarAt(x, z);
+    const value = ponds.overrideAt(x, z) || rawScalarAt(x, z);
     cache.set(key, value);
     return value;
   };
@@ -1247,6 +1267,7 @@ function bakeTerrain(
     cellsByBelt,
     holesFilled,
     inletsFilled,
+    isletsDrowned,
     conform: {
       nodes: conformed,
       worstM: worstConform,
@@ -3423,6 +3444,7 @@ export interface BakeReport {
   conform: TerrainResult["conform"];
   holesFilled: number;
   inletsFilled: number;
+  isletsDrowned: number;
   trackVertices: number;
   portalTriangles: number;
   barrierTriangles: number;
@@ -3871,6 +3893,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     conform: terrain.conform,
     holesFilled: terrain.holesFilled,
     inletsFilled: terrain.inletsFilled,
+    isletsDrowned: terrain.isletsDrowned,
     trackVertices: elevations.length,
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
     barrierTriangles: triangleCount(barriers),
@@ -3992,7 +4015,7 @@ async function main() {
       `${report.conform.over1M} over 1 m, ${report.conform.over2M} over 2 m`,
   );
   console.log(
-    `  enclosed water ${report.holesFilled} cells filled as holes, ${report.inletsFilled} in inlets too narrow to draw`,
+    `  enclosed water ${report.holesFilled} cells filled as holes, ${report.inletsFilled} in inlets too narrow to draw, ${report.isletsDrowned} of islets drowned`,
   );
   console.log(
     `  piers ${report.piers.decks.length} decks, ` +
