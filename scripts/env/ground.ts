@@ -21,8 +21,8 @@
  *    at a surveyed cliff, wall or quay (`breaklines.ts`), which is what keeps the
  *    averaging from turning one into a ramp.
  * 2. **`at()` interpolates the way the mesh triangulates.** Not bilinear — the
- *    terrain splits each cell across its main diagonal, so a query has to pick
- *    the same triangle or it answers about a surface nobody drew.
+ *    terrain splits each cell across one diagonal (`splitsOnMain`), so a query
+ *    has to pick the same triangle or it answers about a surface nobody drew.
  */
 
 import type { Breaklines } from "./breaklines";
@@ -535,56 +535,33 @@ export function buildGround(
     const v = fz - row;
 
     const h00 = nodeAt(belt, row, col);
+    const h01 = nodeAt(belt, row + 1, col);
     const h11 = nodeAt(belt, row + 1, col + 1);
-    // The mesher splits a cell across the main diagonal: (row, col) to
-    // (row + 1, col + 1). Below it the third corner is (row + 1, col); above
-    // it, (row, col + 1). Reading the other one answers about a surface that
-    // was never drawn.
-    if (v >= u) {
-      const h01 = nodeAt(belt, row + 1, col);
-      if (Number.isNaN(h00) || Number.isNaN(h01) || Number.isNaN(h11)) return Number.NaN;
-      return h00 + (h11 - h01) * u + (h01 - h00) * v;
-    }
     const h10 = nodeAt(belt, row, col + 1);
-    if (Number.isNaN(h00) || Number.isNaN(h10) || Number.isNaN(h11)) return Number.NaN;
-    return h00 + (h10 - h00) * u + (h11 - h10) * v;
-  };
-
-  const fitNormal = (x: number, z: number, stride: number): [number, number, number] | null => {
-    // A plane fitted to a 3×3 of samples weighted 1-2-1 each way: on full ground
-    // that is exactly a Sobel, and at the water it reads the land side instead
-    // of giving up — which left a fifth of Monaco's core with the crease's facets.
-    let sw = 0, sx = 0, sz = 0, sh = 0, sxx = 0, szz = 0, sxz = 0, sxh = 0, szh = 0;
-    for (let dz = -1; dz <= 1; dz++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const h = at(x + dx * stride, z + dz * stride, "core");
-        if (Number.isNaN(h)) continue;
-        const w = (2 - Math.abs(dx)) * (2 - Math.abs(dz));
-        sw += w; sx += w * dx; sz += w * dz; sh += w * h;
-        sxx += w * dx * dx; szz += w * dz * dz; sxz += w * dx * dz;
-        sxh += w * dx * h; szh += w * dz * h;
+    // The same diagonal the mesher drew (`splitsOnMain`): reading the other
+    // one answers about a surface that was never drawn.
+    if (splitsOnMain(h00, h01, h11, h10)) {
+      if (v >= u) {
+        if (Number.isNaN(h00) || Number.isNaN(h01) || Number.isNaN(h11)) return Number.NaN;
+        return h00 + (h11 - h01) * u + (h01 - h00) * v;
       }
+      if (Number.isNaN(h00) || Number.isNaN(h10) || Number.isNaN(h11)) return Number.NaN;
+      return h00 + (h10 - h00) * u + (h11 - h10) * v;
     }
-    if (sw === 0) return null;
-    // Centred, the normal equations for the two slopes are 2×2.
-    const cxx = sxx - (sx * sx) / sw;
-    const czz = szz - (sz * sz) / sw;
-    const cxz = sxz - (sx * sz) / sw;
-    const cxh = sxh - (sx * sh) / sw;
-    const czh = szh - (sz * sh) / sw;
-    const det = cxx * czz - cxz * cxz;
-    // Fewer than three land samples, or all of them in a line: no plane to read.
-    if (det < 1e-9) return null;
-    const nx = -((czz * cxh - cxz * czh) / det) / stride;
-    const nz = -((cxx * czh - cxz * cxh) / det) / stride;
-    const length = Math.hypot(nx, 1, nz);
-    return [nx / length, 1 / length, nz / length];
+    if (u + v <= 1) {
+      if (Number.isNaN(h00) || Number.isNaN(h01) || Number.isNaN(h10)) return Number.NaN;
+      return h00 + (h10 - h00) * u + (h01 - h00) * v;
+    }
+    if (Number.isNaN(h11) || Number.isNaN(h01) || Number.isNaN(h10)) return Number.NaN;
+    return h11 + (h01 - h11) * (1 - u) + (h10 - h11) * (1 - v);
   };
 
-  // At the waterline only one row of the wide stride may be land, and one row
-  // says nothing across it; a core cell's stride still has two.
-  const normalAt = (x: number, z: number, stride: number): [number, number, number] | null =>
-    fitNormal(x, z, stride) ?? (stride > BELT_CELL_M.core ? fitNormal(x, z, BELT_CELL_M.core) : null);
+  const ceilingAt = (belt: Belt, row: number, col: number): number => {
+    const grid = gridFor(belt);
+    if (row < -1 || col < -1 || row > grid.rows + 1 || col > grid.cols + 1) return Infinity;
+    nodesFor(belt);
+    return ceilings[belt][(row + 1) * (grid.cols + 3) + col + 1];
+  };
 
-  return { gridFor, nodeAt, at, normalAt };
+  return { gridFor, nodeAt, at, ceilingAt };
 }

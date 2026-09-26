@@ -58,7 +58,7 @@ import { buildSurfaceIndex } from "./baked-scene";
 import { buildBreaklines, type Breaklines } from "./breaklines";
 import cdt2d from "cdt2d";
 import { buildRibbon, clipToCell, type Ribbon } from "./ribbon";
-import { buildGround, MAX_SLOPE_DEG, type Ground } from "./ground";
+import { buildGround, SHORE_LIP_M, splitsOnMain, type Ground } from "./ground";
 import { buildStreetGround } from "./streets";
 import {
   chooseKitHouses,
@@ -1167,8 +1167,16 @@ function bakeTerrain(
         // would put points on that chord the coarse side does not have.
         const onSeam = pieces && walk.some(([dr, dc]) => blocks.conformsAt(minX + (col + dc) * cell, minZ + (row + dr) * cell));
         if (!pieces || onSeam || !splitByRoad(row, col, pieces)) {
-          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col), vertexAt(row + 1, col + 1));
-          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col + 1), vertexAt(row, col + 1));
+          const a = vertexAt(row, col), b = vertexAt(row + 1, col);
+          const c = vertexAt(row + 1, col + 1), d = vertexAt(row, col + 1);
+          const y = (id: number) => grid.mesh.positions[id * 3 + 1];
+          if (splitsOnMain(y(a), y(b), y(c), y(d))) {
+            grid.triangle(a, b, c);
+            grid.triangle(a, c, d);
+          } else {
+            grid.triangle(a, b, d);
+            grid.triangle(b, c, d);
+          }
         }
         cellsByBelt[belt]++;
       }

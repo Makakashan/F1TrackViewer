@@ -11,7 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { BELT_ORDER, type Belt } from "./belts";
 import { buildSurfaceIndex, type SurfaceMesh } from "./baked-scene";
-import { SMOOTH_PASSES, type BeltGrid, type Ground } from "./ground";
+import { SETTLE_ROUNDS, SMOOTH_PASSES, splitsOnMain, type BeltGrid, type Ground } from "./ground";
 import { breaklinesOf, cliffThrough, syntheticGround } from "./synthetic";
 
 const MM = 1e-3;
@@ -28,7 +28,7 @@ function nodes(ground: Ground, belt: Belt): { row: number; col: number; x: numbe
   return out;
 }
 
-/** The belt as the mesher draws it: a cell split across its main diagonal. */
+/** The belt as the mesher draws it: a cell split across the diagonal `splitsOnMain` picks. */
 function meshOf(ground: Ground, belt: Belt): SurfaceMesh {
   const grid = ground.gridFor(belt);
   const width = grid.cols + 1;
@@ -49,7 +49,9 @@ function meshOf(ground: Ground, belt: Belt): SurfaceMesh {
       const c = a + width;
       const d = c + 1;
       if (![a, b, c, d].every((i) => Number.isFinite(positions[i * 3 + 1]))) continue;
-      indices.push(a, c, d, a, d, b); // the main diagonal, a to d
+      const y = (i: number) => positions[i * 3 + 1];
+      if (splitsOnMain(y(a), y(c), y(d), y(b))) indices.push(a, c, d, a, d, b);
+      else indices.push(a, c, b, b, c, d);
     }
   }
   return { positions, indices: new Uint32Array(indices) };
