@@ -556,8 +556,8 @@ function straddlesWater(
 
 /**
  * How far two terrain faces may disagree before their corner splits. The ground
- * then takes `Ground.normalAt`, so the split survives only at a surveyed line's
- * foot — which is where a cliff or a quay keeps its edge.
+ * then takes the faces' smoothed light (`smoothLight`), so the split survives
+ * only at a retaining wall's foot, where a built step keeps its edge.
  */
 const TERRAIN_CREASE_DEG = 15;
 /**
@@ -595,52 +595,73 @@ export function atSurveyedWall(
   );
 }
 
+/** Faces flatter than this count toward a vertex's light; steeper ones are a step, a skirt or a wall. */
+const LIT_FACE_MIN_NY = 0.3;
+/** Passes of averaging each lit place's normal with its neighbours'. */
+const LIGHT_SMOOTH_PASSES = 3;
+
 /**
- * A vertex at the waterline has too little land around it for the shared
- * normal, and kept the crease's facet — a row of bright teeth along every
- * shore. It takes the mean of its settled neighbours instead, the land side's,
- * a ring at a time.
+ * Each lit vertex takes the area-weighted normal of the dry, unwalled faces
+ * around its place, summed over every belt so both sides of a seam read the
+ * same. Read off a filtered copy of the ground instead, the light disagreed
+ * with the faces it fell on and a cliff came out a chequerboard.
  */
-function fillFromNeighbours(mesh: Mesh, settled: Uint8Array, open: number[]): void {
-  const { positions, normals, indices } = mesh;
-  // By position: the crease pass gave a corner several vertices.
-  const at = (v: number) => `${Math.round(positions[v * 3] * 20)},${Math.round(positions[v * 3 + 2] * 20)}`;
-  const byPlace = new Map<string, number[]>();
-  for (let v = 0; v < positions.length / 3; v++) {
-    const list = byPlace.get(at(v));
-    if (list) list.push(v);
-    else byPlace.set(at(v), [v]);
-  }
-  const around = new Map<number, Set<number>>();
-  const wanted = new Set(open);
-  for (let i = 0; i < indices.length; i += 3) {
-    for (let k = 0; k < 3; k++) {
-      const v = indices[i + k];
-      if (!wanted.has(v)) continue;
-      let ring = around.get(v);
-      if (!ring) around.set(v, (ring = new Set()));
-      for (const other of [indices[i + ((k + 1) % 3)], indices[i + ((k + 2) % 3)]]) {
-        for (const same of byPlace.get(at(other)) ?? [other]) ring.add(same);
-      }
-    }
-  }
-  for (let pass = 0; pass < 3 && wanted.size; pass++) {
-    const now: [number, number, number, number][] = [];
-    for (const v of wanted) {
-      let nx = 0, ny = 0, nz = 0;
-      for (const other of around.get(v) ?? []) {
-        if (!settled[other]) continue;
-        nx += normals[other * 3];
-        ny += normals[other * 3 + 1];
-        nz += normals[other * 3 + 2];
-      }
+function smoothLight(parts: [Mesh, Uint8Array][]): void {
+  const key = (x: number, z: number) => `${Math.round(x * 100)},${Math.round(z * 100)}`;
+  const sums = new Map<string, [number, number, number]>();
+  const neighbours = new Map<string, Set<string>>();
+  for (const [mesh] of parts) {
+    const p = mesh.positions;
+    for (let t = 0; t < mesh.indices.length; t += 3) {
+      const [a, b, c] = [mesh.indices[t], mesh.indices[t + 1], mesh.indices[t + 2]];
+      const ux = p[b * 3] - p[a * 3], uy = p[b * 3 + 1] - p[a * 3 + 1], uz = p[b * 3 + 2] - p[a * 3 + 2];
+      const wx = p[c * 3] - p[a * 3], wy = p[c * 3 + 1] - p[a * 3 + 1], wz = p[c * 3 + 2] - p[a * 3 + 2];
+      let nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
       const length = Math.hypot(nx, ny, nz);
-      if (length > 0) now.push([v, nx / length, ny / length, nz / length]);
+      if (length < 1e-9) continue;
+      // Wound either way, the ground faces up.
+      if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      if (ny / length < LIT_FACE_MIN_NY) continue;
+      if (Math.max(p[a * 3 + 1], p[b * 3 + 1], p[c * 3 + 1]) < 0) continue;
+      const keys = [a, b, c].map((v) => key(p[v * 3], p[v * 3 + 2]));
+      for (let i = 0; i < 3; i++) {
+        const sum = sums.get(keys[i]);
+        if (sum) { sum[0] += nx; sum[1] += ny; sum[2] += nz; }
+        else sums.set(keys[i], [nx, ny, nz]);
+        let around = neighbours.get(keys[i]);
+        if (!around) neighbours.set(keys[i], (around = new Set()));
+        around.add(keys[(i + 1) % 3]);
+        around.add(keys[(i + 2) % 3]);
+      }
     }
-    for (const [v, nx, ny, nz] of now) {
-      [normals[v * 3], normals[v * 3 + 1], normals[v * 3 + 2]] = [nx, ny, nz];
-      settled[v] = 1;
-      wanted.delete(v);
+  }
+  // A face is one cell of ripple; a vertex's own ring still turns the light
+  // per cell on gentle ground. A pass or two over the neighbours' normals takes
+  // that out and leaves the relief, which is wider than a ring.
+  let normals = new Map<string, [number, number, number]>();
+  for (const [k, sum] of sums) {
+    const length = Math.hypot(...sum);
+    normals.set(k, [sum[0] / length, sum[1] / length, sum[2] / length]);
+  }
+  for (let pass = 0; pass < LIGHT_SMOOTH_PASSES; pass++) {
+    const next = new Map<string, [number, number, number]>();
+    for (const [k, own] of normals) {
+      const sum: [number, number, number] = [...own];
+      for (const other of neighbours.get(k) ?? []) {
+        const n = normals.get(other);
+        if (n) { sum[0] += n[0]; sum[1] += n[1]; sum[2] += n[2]; }
+      }
+      const length = Math.hypot(...sum);
+      next.set(k, [sum[0] / length, sum[1] / length, sum[2] / length]);
+    }
+    normals = next;
+  }
+  for (const [mesh, lit] of parts) {
+    const p = mesh.positions;
+    for (let v = 0; v < lit.length; v++) {
+      if (!lit[v] || p[v * 3 + 1] < 0) continue;
+      const normal = normals.get(key(p[v * 3], p[v * 3 + 2]));
+      if (normal) [mesh.normals[v * 3], mesh.normals[v * 3 + 1], mesh.normals[v * 3 + 2]] = normal;
     }
   }
 }
@@ -697,6 +718,7 @@ function bakeTerrain(
   let conformOver2 = 0;
   let holesFilled = 0;
   const meshes = {} as Record<Belt, Mesh>;
+  const litByBelt = {} as Record<Belt, Uint8Array>;
   const plinth = createMesh();
   const cellsByBelt = { core: 0, city: 0, far: 0 } as Record<Belt, number>;
 
@@ -1183,26 +1205,16 @@ function bakeTerrain(
     }
 
     const mesh = grid.finish(TERRAIN_CREASE_DEG);
-    // One normal per place, whichever belt draws it, so a seam does not move
-    // the light: read over three cells of the coarsest block the vertex
-    // touches, which both sides of a seam agree on. The band kept at a surveyed
-    // line is the core's, for the same reason.
+    // The band kept at a surveyed line keeps its crease; everything else is
+    // lit by the faces around it, once every belt is drawn (`smoothLight`).
     const vertices = mesh.positions.length / 3;
-    const settled = new Uint8Array(vertices);
-    const open: number[] = [];
+    const lit = new Uint8Array(vertices);
     for (let v = 0; v < vertices; v++) {
       const x = mesh.positions[v * 3];
       const z = mesh.positions[v * 3 + 2];
-      if (atSurveyedWall(breaklines, plane, x, z, BELT_CELL_M.core)) continue;
-      const normal = ground.normalAt(x, z, 3 * blocks.coarsestCellAt(x, z));
-      if (!normal) {
-        open.push(v);
-        continue;
-      }
-      [mesh.normals[v * 3], mesh.normals[v * 3 + 1], mesh.normals[v * 3 + 2]] = normal;
-      settled[v] = 1;
+      if (!atSurveyedWall(breaklines, plane, x, z, BELT_CELL_M.core)) lit[v] = 1;
     }
-    fillFromNeighbours(mesh, settled, open);
+    litByBelt[belt] = lit;
     addVoidWalls(mesh, voidCells, built, hollow, surfaceHeightAt, minX, minZ, cell, cols);
     addTerrainSkirts(mesh, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
     // The bbox rim is the far belt's: the finer belts sit inside the track's
@@ -1212,6 +1224,7 @@ function bakeTerrain(
     }
     meshes[belt] = mesh;
   }
+  smoothLight(BELT_ORDER.map((belt) => [meshes[belt], litByBelt[belt]]));
 
   return {
     meshes,
@@ -3682,15 +3695,15 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // The walls' own bands, over the occlusion that shares the array. Neutral
   // tone: a band is a shade of the colour the building already is.
   for (const belt of BELT_ORDER) applyAlbedo(buildings.meshes[belt], [1, 1, 1]);
-  // One reading of how steep the ground is, for every belt alike: the field
-  // over a stride of eight metres, which is wider than its own ripple and
-  // narrower than a hillside.
+  // One reading of how steep the ground is, for every belt alike: the drawn
+  // surface over a stride of eight metres. Read off the raw field, a cliff's
+  // spikes shaded the smoothed face as a field of flames.
   const SLOPE_STRIDE_M = 8;
   const slopeDegAt = (x: number, z: number): number => {
-    const east = field.heightAt(plane.lon(x + SLOPE_STRIDE_M), plane.lat(z));
-    const west = field.heightAt(plane.lon(x - SLOPE_STRIDE_M), plane.lat(z));
-    const south = field.heightAt(plane.lon(x), plane.lat(z + SLOPE_STRIDE_M));
-    const north = field.heightAt(plane.lon(x), plane.lat(z - SLOPE_STRIDE_M));
+    const east = ground.at(x + SLOPE_STRIDE_M, z, "core");
+    const west = ground.at(x - SLOPE_STRIDE_M, z, "core");
+    const south = ground.at(x, z + SLOPE_STRIDE_M, "core");
+    const north = ground.at(x, z - SLOPE_STRIDE_M, "core");
     if ([east, west, south, north].some(Number.isNaN)) return 0;
     const run = Math.hypot(
       (east - west) / (2 * SLOPE_STRIDE_M),

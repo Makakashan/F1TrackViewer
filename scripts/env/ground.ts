@@ -47,12 +47,8 @@ export interface Ground {
   nodeAt(belt: Belt, row: number, col: number): number;
   /** Height of the surface the belt meshes, at a scene point. NaN is water. */
   at(x: number, z: number, belt: Belt): number;
-  /**
-   * Which way the ground faces at a scene point, the same for every belt: read
-   * off the finest surface over `stride` metres each way. Null only where too
-   * little of that is land to say.
-   */
-  normalAt(x: number, z: number, stride: number): [number, number, number] | null;
+  /** Highest a belt's node may stand for the shoreline beside it (`shoreCeiling`); a node with no reading of its own needs it too. */
+  ceilingAt(belt: Belt, row: number, col: number): number;
 }
 
 /**
