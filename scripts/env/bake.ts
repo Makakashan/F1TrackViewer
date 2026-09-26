@@ -386,6 +386,12 @@ export function buildBeltBlocks(
   field: HeightField,
   plane: ScenePlane,
   corridor: Corridor,
+  /**
+   * Metres from the shoreline the mesh cuts along, positive on land. The raster
+   * alone missed shore the surveyed line draws — a breakwater it saw as sea —
+   * and two belts cut that shore each from their own grid, in teeth.
+   */
+  landAt?: (x: number, z: number) => number,
 ): BeltBlocks {
   const minX = plane.x(field.bbox.minLon);
   const maxX = plane.x(field.bbox.maxLon);
@@ -401,7 +407,7 @@ export function buildBeltBlocks(
     for (let col = 0; col < blockCols; col++) {
       const x = minX + (col + 0.5) * blockM;
       const z = minZ + (row + 0.5) * blockM;
-      if (straddlesWater(field, plane, x, z, blockM)) straddles[row * blockCols + col] = 1;
+      if (straddlesWater(field, plane, x, z, blockM, landAt)) straddles[row * blockCols + col] = 1;
     }
   }
   // A rock face is the other place a coarse cell cannot hold the ground. At
@@ -539,16 +545,23 @@ function straddlesWater(
   centreX: number,
   centreZ: number,
   sizeM: number,
+  landAt?: (x: number, z: number) => number,
 ): boolean {
   let land = false;
   let water = false;
+  let dry = false;
+  let wet = false;
   const half = sizeM / 2;
   for (const dx of [-half, 0, half]) {
     for (const dz of [-half, 0, half]) {
       const value = field.heightAt(plane.lon(centreX + dx), plane.lat(centreZ + dz));
       if (Number.isNaN(value)) water = true;
       else land = true;
-      if (land && water) return true;
+      if (landAt) {
+        if (landAt(centreX + dx, centreZ + dz) > 0) dry = true;
+        else wet = true;
+      }
+      if ((land && water) || (dry && wet)) return true;
     }
   }
   return false;
@@ -730,8 +743,9 @@ function bakeTerrain(
   const ponds = findEnclosedWater(rawScalarAt, (x, z) => ground.at(x, z, "core"), minX, maxX, minZ, maxZ);
   holesFilled = ponds.cells;
   const inletsFilled = ponds.pinched;
+  const isletsDrowned = ponds.islets;
 
-  const blocks = buildBeltBlocks(field, plane, corridor);
+  const blocks = buildBeltBlocks(field, plane, corridor, rawScalarAt);
   const { blockM, blockRows, blockCols, blockBelt, beltOfCell } = blocks;
 
   /**

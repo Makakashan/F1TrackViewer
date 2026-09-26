@@ -849,7 +849,6 @@ function checkCoastline(water: WaterFile, field: HeightField): { agree: number; 
 async function audit(circuitId: string): Promise<Check[]> {
   // The same recipe the bake used, so a disagreement here is a real one.
   const { coords, plane, field, corridor, tunnels } = buildCircuitGround(await loadBakeInputs(circuitId));
-  const blocks = buildBeltBlocks(field, plane, corridor);
 
   const dir = join(ENVIRONMENTS, circuitId);
   const manifest = JSON.parse(await readFile(join(dir, "city-manifest.json"), "utf8")) as {
