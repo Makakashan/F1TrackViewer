@@ -49,6 +49,16 @@ const MIN_BASIN_M2 = 2_000;
  * line left over from before a district was reclaimed finds no water at all.
  */
 const AGREEMENT_STEPS_M = [3, 6, 10, 15];
+/**
+ * How far beyond a segment's own span its endpoint's side-vote is trusted.
+ * Farther than this the answer is NaN and the raster's smoothed edge takes
+ * over: two segments whose nearest points are both endpoints — the last leg of
+ * one way's line and the first of another's, with the segment between them
+ * dropped — each vote their side across the whole influence radius, and the
+ * votes meet along a curve that is no shoreline at all. The mesh cut along it
+ * and drew a strip of land out into the harbour.
+ */
+const ENDPOINT_TRUST_M = 6;
 
 interface Segment {
   ax: number;
@@ -75,13 +85,20 @@ export interface Coastline {
    * the water side. NaN where no line is close enough to have an opinion.
    */
   signedDistance(x: number, z: number): number;
+  /**
+   * Sharp turns of the surveyed line both of whose legs survived. The cut
+   * routes its lip through these instead of staircasing around them: at 4 m a
+   * 90° quay corner drawn through grid corners reads as a lone diamond.
+   */
+  corners: { x: number; z: number }[];
   stats: CoastlineStats;
 }
 
-/** A coastline that never has an opinion: used when there are no shore ways. */
+/** A line that never has an opinion: used when there are no shore ways. */
 export function emptyCoastline(): Coastline {
   return {
     signedDistance: () => Number.NaN,
+    corners: [],
     stats: { ways: 0, oriented: 0, unoriented: 0, segments: 0, segmentsDropped: 0 },
   };
 }
@@ -128,28 +145,78 @@ function agreesWithRaster(
   return false;
 }
 
+/** A turn this sharp keeps its corner in the cut rather than staircased. */
+const CORNER_TURN_DEG = 60;
+
 /** Segments of a way, each carrying a normal that points at the land. */
 function pushSegments(
   segments: Segment[],
+  corners: { x: number; z: number }[],
   points: readonly (readonly [number, number])[],
   sign: number,
   field: HeightField,
   plane: ScenePlane,
   stats: CoastlineStats,
 ): void {
+  const kept: boolean[] = [];
   for (let i = 0; i < points.length - 1; i++) {
     const [ax, az] = points[i];
     const [bx, bz] = points[i + 1];
     const length = Math.hypot(bx - ax, bz - az);
-    if (length < 0.5) continue;
+    if (length < 0.5) {
+      kept.push(false);
+      continue;
+    }
     const nx = -(bz - az) / length;
     const nz = (bx - ax) / length;
     const segment = { ax, az, bx, bz, nx: nx * sign, nz: nz * sign };
     if (!agreesWithRaster(segment, field, plane)) {
       stats.segmentsDropped++;
+      kept.push(false);
       continue;
     }
+    kept.push(true);
     segments.push(segment);
+  }
+  // A sharp joint both of whose legs survived is a corner the cut must honour:
+  // routed through grid corners, the lip takes the shortcut and the leftover
+  // wedge reads as a tooth. A dropped leg breaks the chain, so only joints of
+  // two kept legs count.
+  const turnAt = (i: number): void => {
+    if (!kept[i - 1] || !kept[i]) return;
+    const [px, pz] = points[i - 1];
+    const [qx, qz] = points[i];
+    const [rx, rz] = points[i + 1];
+    const ux = qx - px;
+    const uz = qz - pz;
+    const vx = rx - qx;
+    const vz = rz - qz;
+    const lu = Math.hypot(ux, uz);
+    const lv = Math.hypot(vx, vz);
+    if (lu < 1e-9 || lv < 1e-9) return;
+    const turn = (Math.acos(Math.min(1, Math.max(-1, (ux * vx + uz * vz) / (lu * lv)))) * 180) / Math.PI;
+    if (turn >= CORNER_TURN_DEG) corners.push({ x: qx, z: qz });
+  };
+  for (let i = 1; i < points.length - 1; i++) turnAt(i);
+  // A closed ring turns at its own start too: a rectangular basin has a corner
+  // there like anywhere else.
+  if (points.length > 3) {
+    const [fx, fz] = points[0];
+    const [lx, lz] = points[points.length - 1];
+    if (Math.hypot(fx - lx, fz - lz) <= 0.5 && kept[0] && kept[kept.length - 1]) {
+      const [px, pz] = points[points.length - 2];
+      const [rx, rz] = points[1];
+      const ux = fx - px;
+      const uz = fz - pz;
+      const vx = rx - fx;
+      const vz = rz - fz;
+      const lu = Math.hypot(ux, uz);
+      const lv = Math.hypot(vx, vz);
+      if (lu >= 1e-9 && lv >= 1e-9) {
+        const turn = (Math.acos(Math.min(1, Math.max(-1, (ux * vx + uz * vz) / (lu * lv)))) * 180) / Math.PI;
+        if (turn >= CORNER_TURN_DEG) corners.push({ x: fx, z: fz });
+      }
+    }
   }
 }
 
@@ -206,6 +273,7 @@ export function buildCoastline(
   plane: ScenePlane,
 ): Coastline {
   const segments: Segment[] = [];
+  const corners: { x: number; z: number }[] = [];
   const stats: CoastlineStats = {
     ways: 0,
     oriented: 0,
@@ -237,7 +305,7 @@ export function buildCoastline(
         continue;
       }
       stats.oriented++;
-      pushSegments(segments, points, ring.outwardSign, field, plane, stats);
+      pushSegments(segments, corners, points, ring.outwardSign, field, plane, stats);
       continue;
     }
 
@@ -284,7 +352,7 @@ export function buildCoastline(
       sign = landSide >= waterSide ? 1 : -1;
     }
     stats.oriented++;
-    pushSegments(segments, points, sign, field, plane, stats);
+    pushSegments(segments, corners, points, sign, field, plane, stats);
   }
 
   stats.segments = segments.length;
@@ -313,6 +381,7 @@ export function buildCoastline(
     const row = Math.floor(z / INFLUENCE_M);
     let bestDistance = Infinity;
     let bestSign = 0;
+    let bestPastEnd = false;
 
     for (let r = row - 1; r <= row + 1; r++) {
       for (let c = col - 1; c <= col + 1; c++) {
@@ -322,8 +391,8 @@ export function buildCoastline(
           const ux = segment.bx - segment.ax;
           const uz = segment.bz - segment.az;
           const lengthSquared = ux * ux + uz * uz;
-          let t = ((x - segment.ax) * ux + (z - segment.az) * uz) / lengthSquared;
-          t = Math.max(0, Math.min(1, t));
+          const raw = ((x - segment.ax) * ux + (z - segment.az) * uz) / lengthSquared;
+          const t = Math.max(0, Math.min(1, raw));
           const px = segment.ax + ux * t;
           const pz = segment.az + uz * t;
           const distance = Math.hypot(x - px, z - pz);
@@ -332,13 +401,17 @@ export function buildCoastline(
           // Which side, from the segment's land normal. Taken at the nearest
           // point, so an outside corner reads from the segment that owns it.
           bestSign = (x - px) * segment.nx + (z - pz) * segment.nz >= 0 ? 1 : -1;
+          // Past the segment's own span the nearest point is its endpoint, and
+          // the endpoint's vote is an extrapolation, not a line.
+          bestPastEnd = raw < 0 || raw > 1;
         }
       }
     }
 
     if (bestDistance > INFLUENCE_M) return Number.NaN;
+    if (bestPastEnd && bestDistance > ENDPOINT_TRUST_M) return Number.NaN;
     return bestDistance * bestSign;
   }
 
-  return { signedDistance, stats };
+  return { signedDistance, corners, stats };
 }

@@ -981,6 +981,51 @@ function bakeTerrain(
       return true;
     };
 
+    /** Sharp surveyed corners by the cell that holds them, so the lip can miter through them. */
+    const cornerCells = new Map<number, { x: number; z: number }[]>();
+    for (const corner of corners) {
+      const key = Math.floor((corner.z - minZ) / cell) * (cols + 2) + Math.floor((corner.x - minX) / cell);
+      const list = cornerCells.get(key);
+      if (list) list.push(corner);
+      else cornerCells.set(key, [corner]);
+    }
+    /** Keys for the vertices a surveyed corner adds, clear of every other kind's. */
+    const CORNER_VERTEX_KEY = 3e12;
+    /** How far in from its cell's edges a corner has to be: one on an edge would leave the neighbour's edge straight. */
+    const CORNER_MARGIN_M = 0.25;
+    /**
+     * The surveyed corner nearest a cell's lip, as a lip vertex and its foot.
+     * Without it the lip takes the shortcut across the turn and the leftover
+     * wedge reads as a tooth.
+     */
+    const shoreCorner = (row: number, col: number, inTop: number, outTop: number): [number, number] | null => {
+      const p = grid.mesh.positions;
+      const ax = p[inTop * 3], az = p[inTop * 3 + 2];
+      const abx = p[outTop * 3] - ax, abz = p[outTop * 3 + 2] - az;
+      const lengthSquared = abx * abx + abz * abz;
+      if (lengthSquared < 1e-9) return null;
+      const x0 = minX + col * cell + CORNER_MARGIN_M, x1 = minX + (col + 1) * cell - CORNER_MARGIN_M;
+      const z0 = minZ + row * cell + CORNER_MARGIN_M, z1 = minZ + (row + 1) * cell - CORNER_MARGIN_M;
+      let best: { x: number; z: number } | null = null;
+      let bestDistance = cell / 2;
+      for (const corner of cornerCells.get(row * (cols + 2) + col) ?? []) {
+        if (corner.x < x0 || corner.x > x1 || corner.z < z0 || corner.z > z1) continue;
+        const t = ((corner.x - ax) * abx + (corner.z - az) * abz) / lengthSquared;
+        if (t <= 0.05 || t >= 0.95) continue;
+        const distance = Math.hypot(corner.x - (ax + abx * t), corner.z - (az + abz * t));
+        if (distance < bestDistance) {
+          best = corner;
+          bestDistance = distance;
+        }
+      }
+      if (!best) return null;
+      const surface = ground.at(best.x, best.z, belt);
+      const ends = Math.max(p[inTop * 3 + 1], p[outTop * 3 + 1]);
+      const topY = Math.max(WATER_CLEARANCE_M, Math.min(Number.isNaN(surface) ? ends : surface, SHORE_LIP_M));
+      const key = CORNER_VERTEX_KEY + (Math.round(best.x * 4) + 20000) * 50000 + Math.round(best.z * 4) + 20000;
+      return [grid.vertex(key, best.x, topY, best.z), grid.vertex(key + 1, best.x, SHORE_FOOT_M, best.z)];
+    };
+
     /**
      * Where the shoreline crosses a cell edge: the ground's lip, and the foot of
      * the step under it. Both cells either side share them, so the step cannot part.
@@ -1015,18 +1060,34 @@ function bakeTerrain(
         return shoreVertices(row + dr, col + dc, lands[i], row + nr, col + nc, lands[(i + 1) % 4]);
       });
 
+      // One run of land may miter its lip through a surveyed corner; a saddle's
+      // two runs keep their straight lips.
+      const runs = [0, 1, 2, 3].filter((i) => dryAt(i) && !dryAt(i + 3));
+      const one = runs.length === 1 ? runs[0] : -1;
+      let corner: [number, number] | null = null;
+      let oneEnd = one;
+      if (one >= 0) {
+        while (dryAt(oneEnd)) oneEnd++;
+        corner = shoreCorner(row, col, shore[(one + 3) % 4]![0], shore[(oneEnd - 1) % 4]![0]);
+      }
+
+      // The sea side, fanned from the corner's foot where there is one: it
+      // sits on the lip between the run's two feet, so the fan stays inside.
       const wet: number[] = [];
       for (let i = 0; i < 4; i++) {
         if (!dryAt(i)) wet.push(vertexAt(row + walk[i][0], col + walk[i][1]));
         const pair = shore[i];
         if (pair) wet.push(pair[1]);
       }
+      if (corner) {
+        const inAt = wet.indexOf(shore[(one + 3) % 4]![1]);
+        wet.splice(0, wet.length, corner[1], ...wet.slice(inAt + 1), ...wet.slice(0, inAt + 1));
+      }
       for (let i = 1; i < wet.length - 1; i++) grid.triangle(wet[0], wet[i], wet[i + 1]);
 
       // Each run of dry corners is its own piece of land, from the line it
       // comes in across to the line it goes out across.
-      for (let start = 0; start < 4; start++) {
-        if (!dryAt(start) || dryAt(start + 3)) continue;
+      for (const start of runs) {
         const [inTop, inFoot] = shore[(start + 3) % 4]!;
         const dry = [inTop];
         let end = start;
@@ -1036,8 +1097,18 @@ function bakeTerrain(
         }
         const [outTop, outFoot] = shore[(end - 1) % 4]!;
         dry.push(outTop);
-        for (let i = 1; i < dry.length - 1; i++) grid.triangle(dry[0], dry[i], dry[i + 1]);
-        addStep(inTop, inFoot, outTop, outFoot, row + walk[start][0], col + walk[start][1]);
+        const landRow = row + walk[start][0];
+        const landCol = col + walk[start][1];
+        if (!corner) {
+          for (let i = 1; i < dry.length - 1; i++) grid.triangle(dry[0], dry[i], dry[i + 1]);
+          addStep(inTop, inFoot, outTop, outFoot, landRow, landCol);
+          continue;
+        }
+        // The corner closes the run between its two lips; fanned from it, the
+        // land covers its cell whichever side of the straight lip it stands.
+        for (let i = 0; i < dry.length - 1; i++) grid.triangle(corner[0], dry[i], dry[i + 1]);
+        addStep(inTop, inFoot, corner[0], corner[1], landRow, landCol);
+        addStep(corner[0], corner[1], outTop, outFoot, landRow, landCol);
       }
     };
 
@@ -3485,7 +3556,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
       sum + Math.hypot(plane.x(lon) - plane.x(coords[i][0]), plane.z(lat) - plane.z(coords[i][1])), 0);
   const ribbon = buildRibbon(coords, elevations, plane, lapLengthM, (x, z) =>
     tunnels.buried(plane.lon(x), plane.lat(z)));
-  const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, hollow, breaklines, ribbon);
+  const terrain = bakeTerrain(field, ground, plane, corridor, terrainLand, coast.corners, hollow, breaklines, ribbon);
   const water = bakeWater(field, plane);
 
   const buildingsFile = applyBuildingOverrides(
