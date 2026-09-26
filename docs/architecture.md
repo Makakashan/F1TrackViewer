@@ -81,21 +81,26 @@ ribbon — samples through it, so nothing has to guess a clearance that keeps it
 surface it cannot see.
 
 The baked ground's light is one function of place, whichever belt draws it. Its
-normal comes from `Ground.normalAt` — a Sobel over the finest surface, three cells of
-the coarsest block the point touches — and its shade from one lattice (`buildGroundShade`:
-sky, slope, blur in metres) that every belt reads by position. Worked out per belt, a
-coarse block came out a different grey from its fine neighbour and every seam showed as
-a patch; lit face by face, the DTM's ripple — half of Monaco's core nodes step 1.5 m to
-a neighbour — drew a sawtooth along the streets. At the waterline, where too little land
-surrounds a vertex for that fit, it takes its land-side neighbours' normal. Within a cell
-of a retaining wall the 15° crease stays (`TERRAIN_CREASE_DEG`), which keeps a built step
-sharp; a cliff is the ground itself and shades as it does. Water with land within two core cells on both sides is filled as land: narrower
+normal is the area-weighted normal of the drawn faces around a place, summed over every
+belt so both sides of a seam agree, then averaged with its neighbours' three times
+(`smoothLight`); faces steeper than about 72° (steps, skirts) and faces under the sea
+plane do not count. Read off a filtered copy of the ground instead, the light disagreed
+with the faces it fell on and a cliff came out a chequerboard. Its shade comes from one
+lattice (`buildGroundShade`: sky, slope, blur in metres) that every belt reads by
+position. Within a cell of a retaining wall the 15° crease stays (`TERRAIN_CREASE_DEG`),
+which keeps a built step sharp; a cliff is the ground itself and shades as it does. A
+plain cell splits across whichever diagonal joins its two closer corners
+(`splitsOnMain`), so a ridge at forty-five degrees to the grid is drawn as a ridge and
+not as a saw; `Ground.at` reads the same triangle. Water with land within two core cells on both sides is filled as land: narrower
 than the grid can draw, it came out as a slot the height of the cliff around it.
 `env:audit` holds each belt to 1% of gentle-ground edges — under 25° over 20 m — where
 the light still breaks; on steeper ground a turn that sharp can be the relief.
 
 Two belts meet at a hairline, and the skirt that hides the gap is lit as the ground it
-hangs from; lit as a wall, it drew every seam as a line. A coast raised to the core puts
+hangs from; lit as a wall, it drew every seam as a line. The belts ship in separate
+files, and `meshopt` quantises each mesh on its own box: two belts snapped one seam
+vertex to lattices up to 0.23 m apart, and from above the sea showed through a skirt
+seen edge-on. The terrain and the plinth are quantised on one shared box instead. A coast raised to the core puts
 a ring of city between itself and the far belt, so the cell never jumps more than twice.
 
 The ground does not end at the sea: past the shoreline it carries on as a seabed falling
@@ -108,27 +113,42 @@ seabed side, at vertices both neighbours share, so the waterline is the shore's 
 rather than the grid's. Without the step the sea met a slope across the cell wherever it
 happened to, half a metre to two off every quay wall. The step is the quay's wall too:
 the separate walls `shore.ts` stood along OSM's line came out as slabs a few metres off
-the ground's own edge, and are gone. Off the line the ground rises no steeper than
-`MAX_SLOPE_DEG` (70°) from the lip, or a cliff a metre from the water drew a sliver from
-its brow down to it.
-
-`Ground` holds every pair of neighbouring nodes to the same 70°, after its smoothing:
-the excess is shared between the two and spreads over a few cells, and only the road
-holds. The DTM drops a cliff in one cell where it can, and a face that sheer and a cell
-wide drew as a shard however it was lit. A built wall is let through — one taller than
-11 m in a 4 m cell is a cliff's brow, not a street's.
+the ground's own edge, and are gone.
 Left to the grid, the crossing followed whichever node stood taller: a staircase along
 every cliff, and a saw along every quay when a single slope was tried instead. Ground
-under the sea plane is the seabed to `env:audit`, as the missing ground was before.
+under the sea plane is the seabed to `env:audit`, as the missing ground was before, and
+nothing is built or planted on it: a park by the water put its trees ten metres down.
 Seabed that lies wholly two metres under the plane is not drawn: the sea is opaque.
+
+`Ground` holds every pair of neighbouring nodes to `MAX_SLOPE_DEG` (55°) after its
+smoothing: the excess is shared between the two and spreads over a few cells, and only
+the road holds. The DTM drops a cliff in one cell where it can, and a face that sheer
+and a cell wide drew as a shard however it was lit; at 70° the city belt's 8 m cells
+still stood 22 m apart and the brow over Fontvieille kept its teeth. A built wall is let
+through — one taller than the limit allows in a cell is a cliff's brow, not a street's.
+The limit moves one pair of nodes at a time along the axes and leaves a crumple of its
+own on a face, so the ground is smoothed and limited again `SETTLE_ROUNDS` times after.
+Before that, the ground is held under the lip plus the same slope off the shoreline
+(`shoreCeiling`), or a cliff a metre from the water drew a sliver from its brow down to
+it. The distance is measured to where the mesh cuts the line, between two nodes either
+side of it (`distanceToShore`), not read off the land scalar: that jumps where the line
+hands over to the raster, and under Le Rocher a node it put 11 m inland stood 2 m from
+the lip with a 16 m wall over it. The town's street levels stay under the ceiling too.
+The ground and its mesh read the shoreline from one function (`buildLandAt`), and a
+node the line calls land but the raster sea, which borrows its neighbours' height, is
+held under the same ceiling (`Ground.ceilingAt`). A scrap of land the sea rings, smaller
+than a filled hole, is drawn as sea: it is the line and the raster disagreeing off a quay.
 
 The road is burned into the field before anything is meshed: flat to its half width
 and a verge of one terrain cell (`DEFAULT_VERGE_M`, 4 m), then eased back to the ground.
 The verge stops at a surveyed line — a retaining wall beside the road keeps its step —
 and where two legs of the lap run within reach of each other the lower road keeps the
 verge between them, so the step is a wall past its kerb rather than a slope across it.
-The ground keeps the burned road as it is (`onRoad`): neither the belts' filter nor the
-town's street levels (`streets.ts`, silent within 8 m of the centreline) move it. Where
+The ground keeps the burned road as it is (`roadLevel`): neither the belts' filter nor the
+town's street levels (`streets.ts`, silent within 8 m of the centreline) move it. Under
+the ribbon itself a node is held at the road's level even where the field was not burned
+that wide; outside a tunnel only, or the hill over the bore would be cut down to it. A
+cutting's bank left there came up through the tarmac by the tunnel's mouth. Where
 a wall stands within a cell of the ribbon's edge the 4 m mesh still ramps over it; that
 needs the wall drawn as a face, which the terrain does not do yet.
 
