@@ -26,8 +26,6 @@ export interface CityLayerProps {
   manifest: CityManifest;
   /** The theme the scene is drawn in. The bake ships the light one. */
   resolvedTheme: "light" | "dark";
-  /** Weaker devices stop at the city belt and skip the core's detail. */
-  lowDetail?: boolean;
   onBeltLoaded?: (belt: CityBelt) => void;
   /** The look spike draws its own barrier along the track. */
   hideBarrier?: boolean;
@@ -125,7 +123,6 @@ function disposeGroup(group: THREE.Group) {
 export default function CityLayer({
   manifest,
   resolvedTheme,
-  lowDetail,
   onBeltLoaded,
   hideBarrier = false,
   terrainOnly = false,
@@ -145,12 +142,13 @@ export default function CityLayer({
     if (!root) return;
 
     const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
-    const belts = CITY_BELT_ORDER.filter((belt) => !(lowDetail && belt === "core"));
     const loaded: THREE.Group[] = [];
     let cancelled = false;
 
     (async () => {
-      for (const belt of belts) {
+      // Every device loads every belt: each belt owns its own blocks of ground, so
+      // a phone that skipped the core was left with the sea round the track.
+      for (const belt of CITY_BELT_ORDER) {
         try {
           const gltf = await loader.loadAsync(cityBeltUrl(manifest.circuitId, belt));
           if (cancelled) {
@@ -183,7 +181,7 @@ export default function CityLayer({
       }
       invalidate();
     };
-  }, [manifest.circuitId, lowDetail, invalidate, onBeltLoaded]);
+  }, [manifest.circuitId, invalidate, onBeltLoaded]);
 
   useEffect(() => {
     const root = rootRef.current;

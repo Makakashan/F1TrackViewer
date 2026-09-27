@@ -920,7 +920,6 @@ export default function TrackMesh({
           <CityLayer
             manifest={cityManifest!}
             resolvedTheme={resolvedTheme}
-            lowDetail={lowDetail}
             onBeltLoaded={onBeltLoaded}
             hideBarrier={newLook && lookBarriers}
             terrainOnly={terrainOnly}
