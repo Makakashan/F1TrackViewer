@@ -161,9 +161,20 @@ ribbon.
 ## Buildings
 
 A footprint extruded whole on Monaco's slopes is a blind plinth downhill and a burial
-uphill, so a piece still spanning 4 m of ground is split along its fall line (up to
+uphill, so a piece still spanning 8 m of ground is split along its fall line (up to
 sixteen terraces), and each terrace stands on its own middle with its walls run down to
-the ground under each vertex. A wall runs along a contour, so the same cut puts a
+the ground under each vertex. Terraces of one building whose roofs come within a storey
+of each other share the higher roof, and no rim runs along the edge between them: at 4 m
+and a roof per terrace, a hillside block was a dozen rimmed steps and the city read as a
+heap of them (9,694 pieces from 4,808 footprints; 5,947 now). A roof is a step darker
+than its walls, by a tone picked per building, and takes one shade over its whole face —
+read per corner, a corner by a taller neighbour drew a dark streak along every long
+triangle of it. On a cliff — ground steeper than 40° along a footprint's walls (`onCliff`) —
+the surface model reads the brow's roofs over the foot's ground: a 9 m house by Le
+Rocher measured 59 m and stood as a tower down the face. There a measurement past one
+and a half times the tag gives way to the tag. Cutting such footprints back to the brow
+instead emptied the Sainte-Dévote ravine and left the towers standing. Walls are one tone; the
+shop-front band read as a grey stripe along the foot of every building. A wall runs along a contour, so the same cut puts a
 wall-crossing footprint's halves on their own sides of it. Heights are measured off the
 MNH surface model where one exists — the Odeon bakes at 169 m against 170 real, the
 Millefiori at 111 against 111, the Mirabeau at 81 against 81 — and the OSM tags are the
