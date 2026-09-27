@@ -1990,21 +1990,9 @@ function bakeBuildings(
   taken: Set<string>,
 ): void {
   const meshes = result.meshes;
-  // An edge two terraces of one building share at one roof height is inside
-  // the roof, and a rim along it drew a ridge across it.
-  const edgeKey = (top: number, a: { x: number; z: number }, b: { x: number; z: number }): string => {
-    const [p, q] = [`${a.x.toFixed(2)},${a.z.toFixed(2)}`, `${b.x.toFixed(2)},${b.z.toFixed(2)}`].sort();
-    return `${top.toFixed(2)}|${p}|${q}`;
-  };
-  const edges = new Map<string, number>();
-  for (const building of prepared) {
-    const { wallRing, base, heightM } = building;
-    for (let i = 0; i < wallRing.length; i++) {
-      const key = edgeKey(base + heightM, wallRing[i], wallRing[(i + 1) % wallRing.length]);
-      edges.set(key, (edges.get(key) ?? 0) + 1);
-    }
-  }
-  for (const building of prepared) {
+  const tops = prepared.map((building) => building.base + building.heightM);
+  const walls = new WallIndex(prepared);
+  for (const [index, building] of prepared.entries()) {
     if (taken.has(building.id)) continue;
     const { wallRing, footAt, base, heightM, belt } = building;
     // Every roof is flat. A pitch was built from the survey's `roof:shape` and
@@ -2017,14 +2005,80 @@ function bakeBuildings(
     // belt is silhouettes and gets none.
     const near = belt !== "far";
     const top = base + heightM;
-    const inside = wallRing.map((point, i) => (edges.get(edgeKey(top, point, wallRing[(i + 1) % wallRing.length])) ?? 0) > 1);
-    // Keyed on the building, not the terrace, so one block keeps one roof.
     const id = building.id.split("#")[0];
+    // No rim where a neighbour's wall stands on the same edge and rises past this
+    // roof: the rim's face lay in that wall and the two flickered. Nor where
+    // another terrace of this building carries the same roof on.
+    const inside = wallRing.map((point, i) =>
+      walls.sharing(index, point, wallRing[(i + 1) % wallRing.length]).some((other) =>
+        !taken.has(prepared[other].id) &&
+        (tops[other] > top + ROOF_SAME_M ||
+          (Math.abs(tops[other] - top) <= ROOF_SAME_M && prepared[other].id.split("#")[0] === id))));
+    // Keyed on the building, not the terrace, so one block keeps one roof.
     let seed = 0;
     for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) % 1_000_003;
     const roofTone = ROOF_TONE.low + (ROOF_TONE.high - ROOF_TONE.low) * hashAt(seed, 0);
     extrude(meshes[belt], wallRing, footAt, top, near ? PARAPET_M : 0, roofTone, inside);
     result.built++;
+  }
+}
+
+/** Two roofs this close in height are one roof plane. */
+const ROOF_SAME_M = 0.01;
+/** How far apart two walls may lie and still be one wall. */
+const WALL_SHARED_M = 0.05;
+/** Bucket size of the wall index. */
+const WALL_BUCKET_M = 16;
+
+/** Every wall of every footprint, found by the edge another footprint shares with it. */
+class WallIndex {
+  private readonly buckets = new Map<string, { owner: number; a: { x: number; z: number }; b: { x: number; z: number } }[]>();
+
+  constructor(prepared: PreparedBuilding[]) {
+    for (const [owner, { wallRing }] of prepared.entries()) {
+      for (let i = 0; i < wallRing.length; i++) {
+        const a = wallRing[i];
+        const b = wallRing[(i + 1) % wallRing.length];
+        for (const key of this.keys(a, b)) {
+          let list = this.buckets.get(key);
+          if (!list) this.buckets.set(key, (list = []));
+          list.push({ owner, a, b });
+        }
+      }
+    }
+  }
+
+  /** Footprints other than `self` with a wall along most of the edge a–b. */
+  sharing(self: number, a: { x: number; z: number }, b: { x: number; z: number }): number[] {
+    const length = Math.hypot(b.x - a.x, b.z - a.z);
+    if (length < WALL_SHARED_M) return [];
+    const ux = (b.x - a.x) / length;
+    const uz = (b.z - a.z) / length;
+    const found = new Set<number>();
+    for (const key of this.keys(a, b)) {
+      for (const wall of this.buckets.get(key) ?? []) {
+        if (wall.owner === self || found.has(wall.owner)) continue;
+        // On the edge's line, both ends.
+        const off = (p: { x: number; z: number }) => Math.abs((p.x - a.x) * uz - (p.z - a.z) * ux);
+        if (off(wall.a) > WALL_SHARED_M || off(wall.b) > WALL_SHARED_M) continue;
+        // Covering most of it.
+        const along = (p: { x: number; z: number }) => (p.x - a.x) * ux + (p.z - a.z) * uz;
+        const lo = Math.max(0, Math.min(along(wall.a), along(wall.b)));
+        const hi = Math.min(length, Math.max(along(wall.a), along(wall.b)));
+        if (hi - lo >= 0.5 * length) found.add(wall.owner);
+      }
+    }
+    return [...found];
+  }
+
+  private keys(a: { x: number; z: number }, b: { x: number; z: number }): string[] {
+    const keys: string[] = [];
+    const c0 = Math.floor(Math.min(a.x, b.x) / WALL_BUCKET_M);
+    const c1 = Math.floor(Math.max(a.x, b.x) / WALL_BUCKET_M);
+    const r0 = Math.floor(Math.min(a.z, b.z) / WALL_BUCKET_M);
+    const r1 = Math.floor(Math.max(a.z, b.z) / WALL_BUCKET_M);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) keys.push(`${c},${r}`);
+    return keys;
   }
 }
 
