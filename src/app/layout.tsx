@@ -11,7 +11,6 @@ const timingFont = Titillium_Web({
 });
 import { Toaster } from "@/components/ui/toaster";
 import { AppPrefProvider } from "@/components/app-pref-provider";
-import IntroGate from "@/components/intro-gate";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const faviconUrl = `${basePath}/favicon.svg`;
@@ -55,7 +54,7 @@ export default function RootLayout({
     >
       <body className="antialiased bg-background text-foreground">
         <AppPrefProvider>
-          <IntroGate>{children}</IntroGate>
+          {children}
         </AppPrefProvider>
         <Toaster />
       </body>
