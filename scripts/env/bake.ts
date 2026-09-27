@@ -1560,6 +1560,8 @@ interface BuildingResult {
   pushedOffTrack: number;
   /** Extra pieces a footprint was split into along its fall line. */
   terraced: number;
+  /** Pieces on a cliff whose measured height was the cliff's, and took the tag. */
+  cliffHeights: number;
 }
 
 /**
@@ -1844,8 +1846,16 @@ function prepareBuildings(
     // terraced first, so each terrace stands on its own middle.
     let emitted = 0;
     for (const carvedShape of pieces) {
-      const terraces = splitTerraces(carvedShape, groundAt, (x, z) =>
-        corridor.distance(x, z) >= TRACK_CLEARANCE_M);
+      const firstTerrace = prepared.length;
+      const mayAdd = (x: number, z: number) => corridor.distance(x, z) >= TRACK_CLEARANCE_M;
+      // On a cliff the surface model reads the brow's roofs over the foot's
+      // ground: a nine-metre house by Le Rocher measured fifty-nine. There the
+      // survey's tag is the better guess.
+      const pieceHeight = height > CLIFF_HEIGHT_TRUST * building.height && onCliff(carvedShape, groundAt, mayAdd)
+        ? building.height
+        : height;
+      if (pieceHeight !== height) result.cliffHeights++;
+      const terraces = splitTerraces(carvedShape, groundAt, mayAdd);
       if (terraces.length > 1) result.terraced += terraces.length - 1;
       for (const shape of terraces) {
         const piece = emitted++;
@@ -1915,7 +1925,7 @@ function prepareBuildings(
         wallRing,
         footAt,
         base,
-        heightM: height,
+        heightM: pieceHeight,
         centreX,
         centreZ,
         belt: beltAtDistance(corridor.distance(centreX, centreZ)),
@@ -1925,6 +1935,45 @@ function prepareBuildings(
   }
 
   return prepared;
+}
+
+/** Ground this steep under a footprint is a cliff's face, not a street's slope. */
+const CLIFF_DEG = 40;
+/** On a cliff, a measured height past this many times the tag is the cliff's, not the building's. */
+const CLIFF_HEIGHT_TRUST = 1.5;
+
+/** Whether the ground anywhere along a footprint's walls is as steep as a cliff. */
+function onCliff(
+  shape: { x: number; z: number }[],
+  groundAt: (x: number, z: number) => number,
+  mayAdd: (x: number, z: number) => boolean,
+): boolean {
+  const steep = Math.tan((CLIFF_DEG * Math.PI) / 180);
+  const step = 2;
+  // Resampled first, or a drop between two corners goes unseen.
+  return followGround(shape, groundAt, mayAdd).some(({ x, z }) => {
+    const dx = groundAt(x + step, z) - groundAt(x - step, z);
+    const dz = groundAt(x, z + step) - groundAt(x, z - step);
+    return Math.hypot(dx, dz) / (2 * step) > steep;
+  });
+}
+
+/**
+ * Terraces whose roofs are within a storey of each other take the highest of
+ * them, so a block on a slope steps where its floors do rather than at every
+ * terrace the split made.
+ */
+function levelRoofs(terraces: PreparedBuilding[]): void {
+  const byTop = terraces.slice().sort((a, b) => a.base + a.heightM - (b.base + b.heightM));
+  let start = 0;
+  while (start < byTop.length) {
+    const lowest = byTop[start].base + byTop[start].heightM;
+    let end = start + 1;
+    while (end < byTop.length && byTop[end].base + byTop[end].heightM - lowest < ROOF_STEP_MIN_M) end++;
+    const top = byTop[end - 1].base + byTop[end - 1].heightM;
+    for (let i = start; i < end; i++) byTop[i].heightM = top - byTop[i].base;
+    start = end;
+  }
 }
 
 function bakeBuildings(
@@ -2010,6 +2059,7 @@ function emptyBuildingResult(): BuildingResult {
     droppedTooLow: 0,
     pushedOffTrack: 0,
     terraced: 0,
+    cliffHeights: 0,
   };
 }
 
@@ -4011,7 +4061,8 @@ async function main() {
     `  buildings ${b.built} built, ${b.pushedOffTrack} pushed off the track, ` +
       `dropped: ${b.droppedOnTrack} on track, ${b.droppedOverWater} over water, ` +
       `${b.droppedTooLow} too low`
-      + (b.terraced ? `, ${b.terraced} terraces split along the fall line` : ""),
+      + (b.terraced ? `, ${b.terraced} terraces split along the fall line` : "")
+      + `, ${b.cliffHeights} on a cliff at their tagged height`,
   );
   console.log(`  track profile ${report.trackVertices} vertices`);
   const h = report.heights;
