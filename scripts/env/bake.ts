@@ -2407,7 +2407,10 @@ function extrude(
   // `triangulateShape` works in the contour's own plane, which is (x, -z); read
   // back in scene axes that winding already faces the sky, so it is kept as it
   // comes. Reversing it here is what made every flat roof invisible from above.
-  mesh.tone = BAND_TONE.body;
+  // One shade over the whole roof (`flats`): read per corner, a dark corner by
+  // a taller neighbour drew a streak across every long triangle of it.
+  mesh.tone = roofTone;
+  const roofStart = mesh.positions.length / 3;
   for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
     addFlatTriangle(
       mesh,
@@ -2416,6 +2419,7 @@ function extrude(
       ordered[k].x, top, ordered[k].z,
     );
   }
+  (mesh.flats ??= []).push(roofStart, mesh.positions.length / 3);
 }
 
 // ─── tunnel portals ────────────────────────────────────────────────────────

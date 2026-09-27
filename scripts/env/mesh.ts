@@ -28,6 +28,8 @@ export interface Mesh {
    * dropped, and from there the two arrays are one wall apart for good.
    */
   tone?: number;
+  /** Vertex ranges, as start and end pairs, that the AO pass shades as one: a flat roof. */
+  flats?: number[];
 }
 
 export function createMesh(): Mesh {

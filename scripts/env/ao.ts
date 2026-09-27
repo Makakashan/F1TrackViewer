@@ -159,6 +159,13 @@ export function applyAmbientOcclusion(mesh: Mesh, occluders: Occluders): void {
     colors[i * 3 + 1] = shade;
     colors[i * 3 + 2] = shade;
   }
+  const flats = mesh.flats ?? [];
+  for (let f = 0; f < flats.length; f += 2) {
+    let sum = 0;
+    for (let i = flats[f]; i < flats[f + 1]; i++) sum += colors[i * 3];
+    const shade = sum / Math.max(1, flats[f + 1] - flats[f]);
+    for (let i = flats[f] * 3; i < flats[f + 1] * 3; i++) colors[i] = shade;
+  }
   mesh.colors = colors;
 }
 
