@@ -915,8 +915,8 @@ function bakeTerrain(
 
   for (const belt of BELT_ORDER) {
     const cell = BELT_CELL_M[belt];
-    const cols = Math.floor((maxX - minX) / cell);
-    const rows = Math.floor((maxZ - minZ) / cell);
+    const cols = Math.round((rimEnd(minX, maxX) - minX) / cell);
+    const rows = Math.round((rimEnd(minZ, maxZ) - minZ) / cell);
     const grid = new GridMesh();
 
     const ownHeightAt = (row: number, col: number): number => surfaceHeightOn(belt, row, col);
@@ -1263,11 +1263,8 @@ function bakeTerrain(
     litByBelt[belt] = lit;
     addVoidWalls(mesh, voidCells, built, hollow, surfaceHeightAt, minX, minZ, cell, cols);
     addTerrainSkirts(mesh, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
-    // The bbox rim is the far belt's: the finer belts sit inside the track's
-    // radius and never reach it.
-    if (belt === "far") {
-      addPlinth(plinth, surfaceHeightAt, minX, minZ, cell, rows, cols);
-    }
+    addPlinth(plinth, surfaceHeightAt, (row, col) => beltOfCell(row, col, cell) === belt, minX, minZ, cell, rows, cols);
+    if (belt === "far") addPlinthFloor(plinth, minX, minZ, minX + cols * cell, minZ + rows * cell);
     meshes[belt] = mesh;
   }
   smoothLight(BELT_ORDER.map((belt) => [meshes[belt], litByBelt[belt]]));
@@ -1360,10 +1357,10 @@ function addVoidWalls(
 }
 
 /**
- * The block the landscape is cut from: a wall around the bbox down to one floor,
- * and the floor itself.
+ * One belt's stretch of the wall round the block the landscape is cut from,
+ * down to one floor.
  *
- * The top of the wall is the far belt's own rim vertex wherever the rim is land,
+ * The top of the wall is the rim vertex of whichever belt owns that stretch,
  * so the two meet exactly rather than nearly; where the rim is sea it is the
  * datum, which is where the water quad lies. Land that reads below the datum —
  * a metre of beach — takes the datum too, so the wall is never under the water
@@ -1372,6 +1369,8 @@ function addVoidWalls(
 function addPlinth(
   mesh: Mesh,
   surfaceHeightAt: (row: number, col: number) => number,
+  /** Whether a rim cell is this belt's: each belt walls its own stretch, from its own rim. */
+  owns: (row: number, col: number) => boolean,
   minX: number,
   minZ: number,
   cell: number,
@@ -1388,34 +1387,43 @@ function addPlinth(
     const x1 = xAt(col + 1);
     const north = zAt(0);
     const south = zAt(rows);
-    const n0 = top(0, col);
-    const n1 = top(0, col + 1);
-    addFlatQuad(mesh, x0, n0, north, x1, n1, north, x1, PLINTH_FLOOR_M, north, x0, PLINTH_FLOOR_M, north);
-    const s0 = top(rows, col);
-    const s1 = top(rows, col + 1);
-    addFlatQuad(mesh, x1, s1, south, x0, s0, south, x0, PLINTH_FLOOR_M, south, x1, PLINTH_FLOOR_M, south);
+    if (owns(0, col)) {
+      const n0 = top(0, col);
+      const n1 = top(0, col + 1);
+      addFlatQuad(mesh, x0, n0, north, x1, n1, north, x1, PLINTH_FLOOR_M, north, x0, PLINTH_FLOOR_M, north);
+    }
+    if (owns(rows - 1, col)) {
+      const s0 = top(rows, col);
+      const s1 = top(rows, col + 1);
+      addFlatQuad(mesh, x1, s1, south, x0, s0, south, x0, PLINTH_FLOOR_M, south, x1, PLINTH_FLOOR_M, south);
+    }
   }
   for (let row = 0; row < rows; row++) {
     const z0 = zAt(row);
     const z1 = zAt(row + 1);
     const west = xAt(0);
     const east = xAt(cols);
-    const w0 = top(row, 0);
-    const w1 = top(row + 1, 0);
-    addFlatQuad(mesh, west, w1, z1, west, w0, z0, west, PLINTH_FLOOR_M, z0, west, PLINTH_FLOOR_M, z1);
-    const e0 = top(row, cols);
-    const e1 = top(row + 1, cols);
-    addFlatQuad(mesh, east, e0, z0, east, e1, z1, east, PLINTH_FLOOR_M, z1, east, PLINTH_FLOOR_M, z0);
+    if (owns(row, 0)) {
+      const w0 = top(row, 0);
+      const w1 = top(row + 1, 0);
+      addFlatQuad(mesh, west, w1, z1, west, w0, z0, west, PLINTH_FLOOR_M, z0, west, PLINTH_FLOOR_M, z1);
+    }
+    if (owns(row, cols - 1)) {
+      const e0 = top(row, cols);
+      const e1 = top(row + 1, cols);
+      addFlatQuad(mesh, east, e0, z0, east, e1, z1, east, PLINTH_FLOOR_M, z1, east, PLINTH_FLOOR_M, z0);
+    }
   }
+}
 
-  // The floor is two triangles nobody sees — the camera stops at the horizon —
-  // but a block with an open bottom is not a block.
+/** The block's floor: two triangles nobody sees, but a block with an open bottom is not a block. */
+function addPlinthFloor(mesh: Mesh, minX: number, minZ: number, maxX: number, maxZ: number): void {
   addFlatQuad(
     mesh,
-    xAt(0), PLINTH_FLOOR_M, zAt(0),
-    xAt(cols), PLINTH_FLOOR_M, zAt(0),
-    xAt(cols), PLINTH_FLOOR_M, zAt(rows),
-    xAt(0), PLINTH_FLOOR_M, zAt(rows),
+    minX, PLINTH_FLOOR_M, minZ,
+    maxX, PLINTH_FLOOR_M, minZ,
+    maxX, PLINTH_FLOOR_M, maxZ,
+    minX, PLINTH_FLOOR_M, maxZ,
   );
 }
 
@@ -1432,14 +1440,10 @@ function addTerrainSkirts(
   rows: number,
   cols: number,
 ): void {
-  // Off the grid altogether is the outside of the model. For the far belt that
-  // edge is the plinth's, and a hem there would hang inside the block's own
-  // wall; the finer belts end on their own cell size — up to 12 m further out
-  // than the far belt does — so out there a hem is still all they have.
-  const rimIsPlinth = belt === "far";
+  // Off the grid altogether is the outside of the model, and that edge is the
+  // plinth's: a hem there would hang in the block's own wall and flicker with it.
   const offGrid = (row: number, col: number): boolean =>
     row < 0 || col < 0 || row >= rows || col >= cols;
-  const outside = (row: number, col: number): boolean => rimIsPlinth && offGrid(row, col);
 
   const built = (row: number, col: number): boolean =>
     !offGrid(row, col) && beltOfCell(row, col, cell) === belt;
@@ -1460,16 +1464,16 @@ function addTerrainSkirts(
       const h11 = surfaceHeightAt(row + 1, col + 1);
 
 
-      if (!built(row - 1, col) && !outside(row - 1, col)) {
+      if (!built(row - 1, col) && !offGrid(row - 1, col)) {
         addFlatQuad(mesh, x0, h00, z0, x1, h10, z0, x1, h10 - SKIRT_M, z0, x0, h00 - SKIRT_M, z0);
       }
-      if (!built(row + 1, col) && !outside(row + 1, col)) {
+      if (!built(row + 1, col) && !offGrid(row + 1, col)) {
         addFlatQuad(mesh, x1, h11, z1, x0, h01, z1, x0, h01 - SKIRT_M, z1, x1, h11 - SKIRT_M, z1);
       }
-      if (!built(row, col - 1) && !outside(row, col - 1)) {
+      if (!built(row, col - 1) && !offGrid(row, col - 1)) {
         addFlatQuad(mesh, x0, h01, z1, x0, h00, z0, x0, h00 - SKIRT_M, z0, x0, h01 - SKIRT_M, z1);
       }
-      if (!built(row, col + 1) && !outside(row, col + 1)) {
+      if (!built(row, col + 1) && !offGrid(row, col + 1)) {
         addFlatQuad(mesh, x1, h10, z0, x1, h11, z1, x1, h11 - SKIRT_M, z1, x1, h10 - SKIRT_M, z0);
       }
     }
@@ -1483,6 +1487,28 @@ function addTerrainSkirts(
   }
 }
 
+/**
+ * Where the model ends on its far sides: the far belt's last whole cell. Every
+ * belt and the sea stop there, at the plinth's wall — a finer belt run to its own
+ * last cell stood up to 12 m outside the wall, and the sea run to the bbox stuck
+ * out of it as a blue line.
+ */
+function rimEnd(start: number, end: number): number {
+  return start + Math.floor((end - start) / BELT_CELL_M.far) * BELT_CELL_M.far;
+}
+
+/** The ground the model covers: the bbox, cut back on its far sides to `rimEnd`. */
+function modelRim(field: HeightField, plane: ScenePlane): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  const minX = plane.x(field.bbox.minLon);
+  const minZ = plane.z(field.bbox.maxLat);
+  return {
+    minX,
+    maxX: rimEnd(minX, plane.x(field.bbox.maxLon)),
+    minZ,
+    maxZ: rimEnd(minZ, plane.z(field.bbox.minLat)),
+  };
+}
+
 // ─── water ─────────────────────────────────────────────────────────────────
 
 /**
@@ -1493,10 +1519,7 @@ function addTerrainSkirts(
  */
 function bakeWater(field: HeightField, plane: ScenePlane): Mesh {
   const mesh = createMesh();
-  const x0 = plane.x(field.bbox.minLon);
-  const x1 = plane.x(field.bbox.maxLon);
-  const z0 = plane.z(field.bbox.maxLat);
-  const z1 = plane.z(field.bbox.minLat);
+  const { minX: x0, maxX: x1, minZ: z0, maxZ: z1 } = modelRim(field, plane);
   addFlatQuad(mesh, x0, 0, z0, x0, 0, z1, x1, 0, z1, x1, 0, z0);
   return mesh;
 }
