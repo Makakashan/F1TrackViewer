@@ -382,69 +382,132 @@ function box(
   addFlatQuad(mesh, p.x, p.y, p.z, q.x, q.y, q.z, r.x, r.y, r.z, s.x, s.y, s.z);
 }
 
+/** A quad wound to face `out`, whichever order its corners came in. */
+function facing(
+  mesh: Mesh,
+  corners: { x: number; y: number; z: number }[],
+  out: [number, number, number],
+) {
+  const [a, b, c, d] = corners;
+  const ux = b.x - a.x, uy = b.y - a.y, uz = b.z - a.z;
+  const vx = d.x - a.x, vy = d.y - a.y, vz = d.z - a.z;
+  const nx = uy * vz - uz * vy;
+  const ny = uz * vx - ux * vz;
+  const nz = ux * vy - uy * vx;
+  if (nx * out[0] + ny * out[1] + nz * out[2] >= 0) {
+    addFlatQuad(mesh, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z);
+  } else {
+    addFlatQuad(mesh, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
+  }
+}
+
 /**
- * A hull, lofted from five stations: square transom, full amidships, fine bow.
- *
- * Read from the quay a boat is a waterline, a sheer and a deckhouse, and this
- * is those three. The stations are the ratios a displacement motor yacht
- * actually carries, so a 40 m boat comes out 8.7 m in the beam rather than
- * whatever a box would have given.
+ * Half-beam along the hull, stern to bow: a square transom, the full beam
+ * held through the middle, and a fine raked bow. The ratios are a displacement
+ * motor yacht's, which is what fills Port Hercule.
  */
 const HULL_STATIONS: [number, number][] = [
-  [0.0, 0.44],
-  [0.18, 0.5],
-  [0.5, 0.5],
-  [0.78, 0.38],
-  [1.0, 0.05],
+  [0.0, 0.43],
+  [0.1, 0.48],
+  [0.4, 0.5],
+  [0.65, 0.47],
+  [0.82, 0.35],
+  [0.94, 0.16],
+  [1.0, 0.0],
 ];
+/** The bow overhangs its waterline by this share of the length: a raked stem. */
+const BOW_RAKE = 0.07;
+/** One deck of superstructure, in metres: a real one, whatever the boat's size. */
+const DECK_M = 2.4;
 
+/**
+ * A motor yacht: a white hull with sheer and a raked bow, and one to three
+ * decks of superstructure stepping back as they rise, each with a dark band of
+ * glass. Every boat in the harbour is this one shape at its own length, so
+ * Port Hercule reads as one fleet rather than a kit's toys among wedges.
+ */
 function yacht(dark: Mesh, light: Mesh, frame: Frame, lengthM: number) {
-  const beam = lengthM / 4.6;
-  const freeboard = lengthM * 0.075;
-  const draught = lengthM * 0.03;
-  /** Sheer: the deck rises toward the bow. Without it the hull is a wedge of
-   *  paper — the first version read as a barge from the quay. */
-  const sheerAt = (t: number) => freeboard * (1 + 0.45 * t * t);
+  const beam = lengthM / 4.8;
+  const freeboard = 0.6 + lengthM * 0.06;
+  const draught = 0.6;
+  const sheerAt = (t: number) => freeboard * (1 + 0.3 * t * t);
+  const side = (s: number): [number, number, number] => [frame.nx * s, 0, frame.nz * s];
+  const ahead: [number, number, number] = [frame.ux, 0, frame.uz];
+  const astern: [number, number, number] = [-frame.ux, 0, -frame.uz];
+  const up: [number, number, number] = [0, 1, 0];
 
+  // Topsides, from the sheer down to under the water, the waterline drawn in
+  // from the deck and short of the bow.
   for (let i = 0; i < HULL_STATIONS.length - 1; i++) {
     const [t0, w0] = HULL_STATIONS[i];
     const [t1, w1] = HULL_STATIONS[i + 1];
-    const a0 = t0 * lengthM;
-    const a1 = t1 * lengthM;
-    const h0 = w0 * beam;
-    const h1 = w1 * beam;
-    const y0 = sheerAt(t0);
-    const y1 = sheerAt(t1);
-    for (const side of [-1, 1]) {
-      const a = at(frame, a0, h0 * side, y0);
-      const b = at(frame, a1, h1 * side, y1);
-      const c = at(frame, a1, h1 * side * 0.35, -draught);
-      const d = at(frame, a0, h0 * side * 0.35, -draught);
-      if (side < 0) {
-        addFlatQuad(dark, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z);
-      } else {
-        addFlatQuad(dark, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
-      }
+    const wl = (t: number) => t * (1 - BOW_RAKE) * lengthM;
+    for (const s of [-1, 1]) {
+      facing(light, [
+        at(frame, t0 * lengthM, w0 * beam * s, sheerAt(t0)),
+        at(frame, t1 * lengthM, w1 * beam * s, sheerAt(t1)),
+        at(frame, wl(t1), w1 * beam * 0.85 * s, -draught),
+        at(frame, wl(t0), w0 * beam * 0.85 * s, -draught),
+      ], side(s));
     }
-    // The deck, closing the sheer over each pair of stations.
-    const p = at(frame, a0, -h0, y0);
-    const q = at(frame, a1, -h1, y1);
-    const r = at(frame, a1, h1, y1);
-    const s = at(frame, a0, h0, y0);
-    addFlatQuad(light, p.x, p.y, p.z, q.x, q.y, q.z, r.x, r.y, r.z, s.x, s.y, s.z);
+    facing(light, [
+      at(frame, t0 * lengthM, -w0 * beam, sheerAt(t0)),
+      at(frame, t1 * lengthM, -w1 * beam, sheerAt(t1)),
+      at(frame, t1 * lengthM, w1 * beam, sheerAt(t1)),
+      at(frame, t0 * lengthM, w0 * beam, sheerAt(t0)),
+    ], up);
   }
+  const [, w0] = HULL_STATIONS[0];
+  facing(dark, [
+    at(frame, 0, -w0 * beam, sheerAt(0)),
+    at(frame, 0, w0 * beam, sheerAt(0)),
+    at(frame, 0, w0 * beam * 0.85, -draught),
+    at(frame, 0, -w0 * beam * 0.85, -draught),
+  ], astern);
 
-  // A deckhouse, set back from both ends and narrower than the beam, so the
-  // silhouette is a boat rather than a container on a raft.
-  box(
-    light,
-    frame,
-    lengthM * 0.26,
-    lengthM * 0.56,
-    beam * 0.3,
-    freeboard,
-    freeboard + lengthM * 0.07,
-  );
+  // Decks of superstructure, each set back from the one under it, its front
+  // raked. Painted in three bands: bulkhead, glass, roof edge.
+  const decks = lengthM < 24 ? 1 : lengthM < 34 ? 2 : 3;
+  for (let deck = 0; deck < decks; deck++) {
+    const aft = lengthM * (0.12 + 0.07 * deck);
+    const fore = lengthM * (0.64 - 0.1 * deck);
+    const half = beam * (0.4 - 0.06 * deck);
+    const base = sheerAt(0.4) + deck * DECK_M;
+    const rake = DECK_M * 0.6;
+    const foreAt = (f: number) => fore - rake * f;
+    const bands: [number, number, Mesh][] = [[0, 0.35, light], [0.35, 0.8, dark], [0.8, 1, light]];
+    for (const [f0, f1, mesh] of bands) {
+      const y0 = base + f0 * DECK_M;
+      const y1 = base + f1 * DECK_M;
+      for (const s of [-1, 1]) {
+        facing(mesh, [
+          at(frame, aft, half * s, y0),
+          at(frame, foreAt(f0), half * s, y0),
+          at(frame, foreAt(f1), half * s, y1),
+          at(frame, aft, half * s, y1),
+        ], side(s));
+      }
+      facing(mesh, [
+        at(frame, foreAt(f0), -half, y0),
+        at(frame, foreAt(f0), half, y0),
+        at(frame, foreAt(f1), half, y1),
+        at(frame, foreAt(f1), -half, y1),
+      ], ahead);
+      facing(light, [
+        at(frame, aft, -half, y0),
+        at(frame, aft, half, y0),
+        at(frame, aft, half, y1),
+        at(frame, aft, -half, y1),
+      ], astern);
+    }
+    const top = base + DECK_M;
+    facing(light, [
+      at(frame, aft, -half, top),
+      at(frame, foreAt(1), -half, top),
+      at(frame, foreAt(1), half, top),
+      at(frame, aft, half, top),
+    ], up);
+  }
 }
 
 /** A harbour crane: a tower on the quay and a jib reaching over the water. */
