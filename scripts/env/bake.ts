@@ -1579,6 +1579,8 @@ interface BuildingResult {
   built: number;
   droppedOnTrack: number;
   droppedOverWater: number;
+  /** Footprints reaching past the plinth's wall, which would stand over nothing. */
+  droppedOffEdge: number;
   droppedTooLow: number;
   pushedOffTrack: number;
   /** Extra pieces a footprint was split into along its fall line. */
@@ -1816,7 +1818,9 @@ function prepareBuildings(
   measured: Map<string, { measured: number }>,
   result: BuildingResult,
   /** Pontoon decks: a harbour building's ground is its deck, water to the terrain. */
-  decks: PierDeck[] = [],
+  decks: PierDeck[],
+  /** The model's footprint on the ground; a building reaching past it is cut off by the wall. */
+  rim: { minX: number; maxX: number; minZ: number; maxZ: number },
 ): PreparedBuilding[] {
   const prepared: PreparedBuilding[] = [];
   const deckAt = (x: number, z: number): number | null => {
@@ -1850,6 +1854,10 @@ function prepareBuildings(
       ring.pop();
     }
     if (ring.length < 3) continue;
+    if (ring.some(({ x, z }) => x < rim.minX || x > rim.maxX || z < rim.minZ || z > rim.maxZ)) {
+      result.droppedOffEdge++;
+      continue;
+    }
 
     const pushed = pushOffTrack(ring, corridor);
     if (!pushed) {
@@ -2168,6 +2176,7 @@ function emptyBuildingResult(): BuildingResult {
     built: 0,
     droppedOnTrack: 0,
     droppedOverWater: 0,
+    droppedOffEdge: 0,
     droppedTooLow: 0,
     pushedOffTrack: 0,
     terraced: 0,
@@ -3850,7 +3859,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const greeneryStats = { ...greenery.stats };
 
   const prepared = prepareBuildings(
-    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings, piers.decks,
+    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings, piers.decks, modelRim(field, plane),
   );
 
   // The kit runs before the props are merged, because its houses are props: it
@@ -4133,7 +4142,7 @@ async function main() {
   console.log(`  total ${(total / 1_000_000).toFixed(2)} MB`);
   console.log(
     `  buildings ${b.built} built, ${b.pushedOffTrack} pushed off the track, ` +
-      `dropped: ${b.droppedOnTrack} on track, ${b.droppedOverWater} over water, ` +
+      `dropped: ${b.droppedOnTrack} on track, ${b.droppedOverWater} over water, ${b.droppedOffEdge} off the edge, ` +
       `${b.droppedTooLow} too low`
       + (b.terraced ? `, ${b.terraced} terraces split along the fall line` : "")
       + `, ${b.cliffHeights} on a cliff at their tagged height`,
