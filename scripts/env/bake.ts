@@ -3584,12 +3584,10 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
     // The list is the switch — the loader and the placement pass stay.
     kitHouses: await loadKitHouses(REPO_ROOT, []),
     kitTrees: await loadKitPaths(REPO_ROOT, "assets/models/kenney-city-suburban", ["tree-"]),
-    kitBoats: await loadKitPaths(REPO_ROOT, "assets/models/kenney-watercraft", [
-      "boat-speed",
-      "boat-row",
-      "boat-fishing",
-      "boat-sail",
-    ]),
+    // Switched off for the same reason: a kit's painted speedboat among the
+    // harbour's white yachts was a toy in somebody else's colours. The short
+    // berths take the parametric yacht at their own length instead.
+    kitBoats: await loadKitPaths(REPO_ROOT, "assets/models/kenney-watercraft", []),
   };
 }
 
