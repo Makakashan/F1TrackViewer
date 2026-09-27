@@ -56,11 +56,14 @@ function paintForTheme(group: THREE.Group, theme: "light" | "dark") {
   });
 }
 
-/** Meshes that lie *on* the ground rather than being it, and z-fight with it. */
-const DECAL_MESHES = new Set(["park", "pool", "pitch"]);
+/**
+ * Meshes that z-fight with the ground: the ones that lie *on* it, and the
+ * plinth's wall, which the seabed's edge meets in its own plane.
+ */
+const DECAL_MESHES = new Set(["park", "pool", "pitch", "plinth"]);
 
 /**
- * Lifts the flat surfaces off the ground in the depth buffer.
+ * Lifts these off the ground in the depth buffer.
  *
  * A park, a pool and a pitch are baked 0.12 m above the terrain, which is the
  * depth buffer's whole precision at two kilometres — camera near is 2 m and far
@@ -73,7 +76,7 @@ const DECAL_MESHES = new Set(["park", "pool", "pitch"]);
 function liftDecals(group: THREE.Group) {
   group.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
-    if (!DECAL_MESHES.has(node.name)) return;
+    if (!DECAL_MESHES.has(node.name.replace(/_\d+$/, ""))) return;
     const materials = Array.isArray(node.material) ? node.material : [node.material];
     for (const material of materials) {
       material.polygonOffset = true;
