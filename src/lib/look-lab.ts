@@ -2,8 +2,8 @@ import { create } from "zustand";
 import { readPref, writePref } from "@/lib/local-pref";
 
 /**
- * Knobs for the scene-look spike (docs/scene-look-plan.md). The panel that turns
- * them only mounts in development, so a production build keeps today's look.
+ * Knobs for the race view's look (docs/scene-look-plan.md). The new look is the
+ * default everywhere; only the panel that turns the knobs is development-only.
  */
 export interface LookSettings {
   /** The A/B switch: the new look, or the scene as it was. */
@@ -29,7 +29,7 @@ export interface LookSettings {
 }
 
 export const LOOK_DEFAULTS: LookSettings = {
-  enabled: process.env.NODE_ENV === "development",
+  enabled: true,
   sunAzimuthDeg: 225,
   sunElevationDeg: 42,
   sunIntensity: 3.2,
