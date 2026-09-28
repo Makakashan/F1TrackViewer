@@ -7,6 +7,7 @@ import GlobeEarth from "./globe-earth";
 import GlobeInfoCard from "./globe-info-card";
 import RaceModeBanner from "./race-mode-banner";
 import { GlobeStage, StartScreen, useStarted } from "./start-screen";
+import { WhatsNew, useWhatsNew } from "./whats-new";
 import type { GlobeCircuit } from "./globe-marker";
 import { useAppPref } from "@/components/app-pref-provider";
 import { countryFlag, countryFromId } from "@/lib/f1-circuits";
@@ -73,6 +74,7 @@ function openCircuitSearch(circuit: GlobeCircuit) {
 export default function GlobeLanding() {
 	const { resolvedTheme } = useAppPref();
 	const [started, start] = useStarted();
+	const whatsNew = useWhatsNew();
 	const [circuits, setCircuits] = useState<GlobeCircuit[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [earthReady, setEarthReady] = useState(false);
@@ -233,7 +235,14 @@ export default function GlobeLanding() {
 				<GlobeStage started={started} />
 			</Canvas>
 
-			<StartScreen started={started} circuitCount={circuits.length} onStart={start} />
+			<StartScreen
+				started={started}
+				circuitCount={circuits.length}
+				onStart={start}
+				whatsNewUnseen={whatsNew.unseen}
+				onWhatsNew={whatsNew.show}
+			/>
+			<WhatsNew open={whatsNew.open} onClose={whatsNew.close} />
 
 			{/* The chrome waits for Start: before it the screen is the title and the globe. */}
 			<div className={`transition-opacity duration-700 ${started ? "opacity-100" : "pointer-events-none opacity-0"}`}>
