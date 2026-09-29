@@ -3855,7 +3855,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   );
   // After the terrain, because these lie on the ground that is drawn rather
   // than on the field the belts filtered.
-  const greenery = buildGreenery(greenWays, standOn, plane);
+  const greenery = buildGreenery(greenWays, standOn, plane, (x, z) => corridor.distance(x, z) >= TRACK_CLEARANCE_M);
   const greeneryStats = { ...greenery.stats };
 
   const prepared = prepareBuildings(
