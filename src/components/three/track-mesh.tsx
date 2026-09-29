@@ -1020,13 +1020,16 @@ export default function TrackMesh({
         </>
       )}
 
-      <mesh
-        geometry={edgeLineGeometry}
-        renderOrder={TRACK_OVERLAY_RENDER_ORDER}
-        receiveShadow={newLook}
-      >
-        <RoadMaterial lit={newLook} color="#f2f4f7" />
-      </mesh>
+      {/* Under the sector band the lines only showed through it in slivers. */}
+      {!showSectors && (
+        <mesh
+          geometry={edgeLineGeometry}
+          renderOrder={TRACK_OVERLAY_RENDER_ORDER}
+          receiveShadow={newLook}
+        >
+          <RoadMaterial lit={newLook} color="#f2f4f7" />
+        </mesh>
+      )}
 
       {/* Paved verge and kerbs belong to the race view. The map view is a
           schematic — there the ribbon is the circuit's shape, and a second
