@@ -74,12 +74,16 @@ const DECAL_MESHES = new Set(["park", "pool", "pitch", "plinth"]);
 function liftDecals(group: THREE.Group) {
   group.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
-    if (!DECAL_MESHES.has(node.name.replace(/_\d+$/, ""))) return;
+    const name = node.name.replace(/_\d+$/, "");
+    // The sea is the other way round: land is held only 0.25 m over it, and a
+    // coastal flat like Jeddah's showed the water through it from a distance.
+    const sign = DECAL_MESHES.has(name) ? -1 : name === "water" ? 1 : 0;
+    if (!sign) return;
     const materials = Array.isArray(node.material) ? node.material : [node.material];
     for (const material of materials) {
       material.polygonOffset = true;
-      material.polygonOffsetFactor = -2;
-      material.polygonOffsetUnits = -4;
+      material.polygonOffsetFactor = 2 * sign;
+      material.polygonOffsetUnits = 4 * sign;
       material.needsUpdate = true;
     }
   });
