@@ -97,6 +97,8 @@ import {
   getSceneColors,
 } from "@/lib/scene-config";
 
+/** The map view's markings lie on the sector band, not under it, or they showed through it in shards. */
+const MAP_PAINT_RAISE = TRACK_OVERLAY_RAISE + 0.02;
 /** Asphalt in race view. Warm-neutral rather than pure grey, which reads blue. */
 const ASPHALT_COLOR = "#3a3a3d";
 
@@ -618,7 +620,7 @@ export default function TrackMesh({
             curve,
             startFinishPlacement.s,
             markerHalfWidth,
-            TRACK_PAINT_RAISE,
+            MAP_PAINT_RAISE,
           ),
     [raceView, curve, startFinishPlacement.s, halfWidth, markerHalfWidth],
   );
@@ -629,10 +631,10 @@ export default function TrackMesh({
         curve,
         startFinishPlacement.s,
         halfWidth,
-        TRACK_PAINT_RAISE,
+        raceView ? TRACK_PAINT_RAISE : MAP_PAINT_RAISE,
         markers?.directionSign ?? 1,
       ),
-    [curve, startFinishPlacement.s, halfWidth, markers?.directionSign],
+    [raceView, curve, startFinishPlacement.s, halfWidth, markers?.directionSign],
   );
 
   // One source for the cars and for the camera that follows them.
