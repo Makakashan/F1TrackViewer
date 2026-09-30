@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Titillium_Web } from "next/font/google";
+import { Inter, Titillium_Web } from "next/font/google";
 import "./globals.css";
 
 /** The timing overlay's typeface, and only its typeface — the rest of the app keeps the system stack. */
@@ -9,6 +9,8 @@ const timingFont = Titillium_Web({
   variable: "--font-timing",
   display: "swap",
 });
+/** The interface typeface. */
+const interFont = Inter({ subsets: ["latin", "latin-ext", "cyrillic"], variable: "--font-inter", display: "swap" });
 import { Toaster } from "@/components/ui/toaster";
 import { AppPrefProvider } from "@/components/app-pref-provider";
 
@@ -52,7 +54,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${timingFont.variable}`}
+      className={`dark ${timingFont.variable} ${interFont.variable}`}
       suppressHydrationWarning
     >
       <body className="antialiased bg-background text-foreground">
