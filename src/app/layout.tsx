@@ -14,6 +14,7 @@ import { AppPrefProvider } from "@/components/app-pref-provider";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const faviconUrl = `${basePath}/favicon.svg`;
+const faviconLightUrl = `${basePath}/favicon-light.svg`;
 
 export const metadata: Metadata = {
   title: "Boxlane — every F1 circuit in 3D",
@@ -22,9 +23,11 @@ export const metadata: Metadata = {
   keywords: ["F1", "Formula 1", "Three.js", "3D", "circuits", "tracks"],
   authors: [{ name: "Makakashan" }],
   icons: {
-    icon: [{ url: faviconUrl, type: "image/svg+xml" }],
-    shortcut: faviconUrl,
-    apple: faviconUrl,
+    icon: [
+      { url: faviconLightUrl, type: "image/svg+xml", media: "(prefers-color-scheme: light)" },
+      { url: faviconUrl, type: "image/svg+xml", media: "(prefers-color-scheme: dark)" },
+    ],
+    apple: `${basePath}/apple-touch-icon.png`,
   },
 };
 
