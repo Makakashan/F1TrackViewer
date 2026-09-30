@@ -16,7 +16,7 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const faviconUrl = `${basePath}/favicon.svg`;
 
 export const metadata: Metadata = {
-  title: "F1 Track Studio — 3D Circuit Viewer",
+  title: "Boxlane — every F1 circuit in 3D",
   description:
     "Interactive 3D viewer for Formula 1 circuit configurations, built with Next.js + Three.js. Unofficial, non-commercial.",
   keywords: ["F1", "Formula 1", "Three.js", "3D", "circuits", "tracks"],

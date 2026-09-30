@@ -23,7 +23,7 @@ export const THEMES: { code: Theme; labelKey: keyof typeof en; flag: string }[] 
 
 const en = {
   // App header
-  appName: "F1 Track Studio",
+  appName: "Boxlane",
   appTagline: "Globe Circuit Viewer · MVP 4",
   // Start screen
   startKicker: "3D circuit viewer",
@@ -211,7 +211,7 @@ const en = {
 type Dict = typeof en;
 
 const ru: Dict = {
-  appName: "F1 Track Studio",
+  appName: "Boxlane",
   appTagline: "Глобус выбора трасс · MVP 4",
   // Стартовый экран
   startKicker: "3D-просмотр трасс",
