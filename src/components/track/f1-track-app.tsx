@@ -2,14 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Globe2, RefreshCw, Flag, X } from "lucide-react";
-import TrackOverlay from "@/components/track/track-overlay";
-import TrackSidePanel from "@/components/track/track-side-panel";
+import { RefreshCw, X } from "lucide-react";
+import TrackSettingsPanel from "@/components/track/track-settings-panel";
+import { TrackScene } from "@/components/track/track-scene";
 import ErrorBanner from "@/components/error-banner";
-import MobileInfoSheet from "@/components/track/mobile-info-sheet";
-import MobileLayersSheet from "@/components/track/mobile-layers-sheet";
-import SettingsMenu from "@/components/settings-menu";
-import { Button } from "@/components/ui/button";
 import { useAppPref } from "@/components/app-pref-provider";
 import { type CircuitProperties } from "@/lib/f1-circuits";
 import { useCircuits } from "@/hooks/use-circuits";
@@ -83,7 +79,6 @@ export default function F1TrackApp({
     setAutoRotateState(v);
     writePref(AUTO_ROTATE_STORAGE_KEY, v);
   }, []);
-  const [mobileInfoOpen, setMobileInfoOpen] = useState(false);
   const [startFinishPlacement, setStartFinishPlacement] =
     useState<StartFinishPlacement | null>(null);
   const [footerExpanded, setFooterExpanded] = useState(false);
@@ -198,7 +193,6 @@ export default function F1TrackApp({
 
   const properties: CircuitProperties | null =
     geojson?.features[0]?.properties ?? null;
-  const pointCount = geojson?.features[0]?.geometry.coordinates.length;
   const sectorsAvailable = !!markers?.sectors?.length;
   const realWidthAvailable = !!widthProfile;
   const terrainModeActive =
@@ -206,70 +200,7 @@ export default function F1TrackApp({
 
   return (
     <div className="flex h-dvh w-screen flex-col overflow-hidden bg-background text-foreground">
-      {/* 3.5rem of content, plus room for whatever the status bar covers. */}
-      <header className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center justify-between border-b border-border bg-background/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur md:px-4">
-        <div className="flex items-center gap-2 md:gap-3">
-          <div className="flex items-center gap-2">
-            <div className="relative flex h-8 w-8 items-center justify-center rounded-md bg-linear-to-br from-red-600 to-orange-600 shadow-[0_0_20px_rgba(225,6,0,0.4)]">
-              <Flag className="h-4 w-4 text-white" />
-            </div>
-            <div className="leading-none">
-              <div className="text-sm font-bold tracking-tight">
-                {t.appName}
-              </div>
-              <div className="hidden text-[10px] uppercase tracking-wider text-muted-foreground sm:block">
-                {t.appTagline}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 md:gap-3">
-          {/* The globe is where a circuit is picked, and the admin panel has no
-              globe: without this its terrain view is stuck on one circuit. */}
-          {terrainOnly ? (
-            <select
-              aria-label="Circuit"
-              value={selectedId ?? ""}
-              onChange={(event) => {
-                onSelect(event.target.value);
-                setUrlTrack(event.target.value);
-              }}
-              className="h-8 rounded-md border border-border bg-background px-2 text-[12px]"
-            >
-              {circuits.map((circuit) => (
-                <option key={circuit.id} value={circuit.id}>
-                  {circuit.name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <>
-              <Button
-                size="sm"
-                className="gap-2 bg-[#e10600] text-white hover:bg-[#c00500]"
-                onClick={() => setUrlRaceMode(true)}
-              >
-                <Flag className="h-4 w-4" />
-                {t.raceEnter}
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={handleBackToGlobe}
-              >
-                <Globe2 className="h-4 w-4" />
-                Earth
-              </Button>
-            </>
-          )}
-          <SettingsMenu />
-        </div>
-      </header>
-
-      <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[minmax(0,1fr)_320px]">
-        <main className="relative min-h-0 bg-background">
+        <main className="relative min-h-0 flex-1 bg-background">
           {error && <ErrorBanner error={error} />}
           {geojson ? (
             <TrackViewer
@@ -300,99 +231,71 @@ export default function F1TrackApp({
             </div>
           )}
 
-          <TrackOverlay
-            properties={properties}
-            loadingElevations={loadingElevations}
-            startFinishStatus={startFinishPlacement?.source ?? null}
-            viewMode={viewMode}
-            markers={markers}
-            environmentActive={terrainModeActive}
-            onOpenCircuit={() => setMobileInfoOpen(true)}
-          />
-
-          {properties && (
-            <MobileLayersSheet
-              autoRotate={autoRotate}
-              setAutoRotate={setAutoRotate}
-              elevationEnabled={elevationEnabled}
-              setElevationEnabled={setUrlElevationEnabled}
-              trackWidth={trackWidth}
-              setTrackWidth={setUrlTrackWidth}
-              onCameraPreset={setUrlCameraPreset}
-              viewMode={viewMode}
+            <TrackScene
+              properties={properties}
+              elevations={panelElevations ?? null}
+              markers={markers}
+              viewMode={viewMode ?? "normal"}
               setViewMode={handleViewModeChange}
-              sectorsAvailable={sectorsAvailable}
+              onCameraPreset={setUrlCameraPreset}
               environmentAvailable={!!environmentAvailable}
               environmentEnabled={environmentEnabled}
               setEnvironmentEnabled={setUrlEnvironmentEnabled}
-              environmentTerrain={environmentTerrain}
-              setEnvironmentTerrain={setUrlEnvironmentTerrain}
-              realWidthAvailable={realWidthAvailable}
-              realWidthEnabled={realWidthEnabled}
-              setRealWidthEnabled={handleRealWidthChange}
-              meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
-              minWidthMeters={widthProfile?.minWidthMeters ?? null}
-              maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
-              qualityMode={qualityMode}
-              setQualityMode={setUrlQualityMode}
+              onRace={() => setUrlRaceMode(true)}
+              onEarth={handleBackToGlobe}
+              status={startFinishCalibration ? startFinishPlacement?.source : undefined}
+              actions={
+                // The globe is where a circuit is picked, and the admin panel has no
+                // globe: without this its terrain view is stuck on one circuit.
+                terrainOnly ? (
+                  <select
+                    aria-label={t.circuit}
+                    value={selectedId ?? ""}
+                    onChange={(event) => {
+                      onSelect(event.target.value);
+                      setUrlTrack(event.target.value);
+                    }}
+                    className="h-8 rounded-[10px] border border-border bg-background px-2 text-[13px]"
+                  >
+                    {circuits.map((circuit) => (
+                      <option key={circuit.id} value={circuit.id}>
+                        {circuit.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : undefined
+              }
+              settings={
+                <TrackSettingsPanel
+                  autoRotate={autoRotate}
+                  setAutoRotate={setAutoRotate}
+                  elevationEnabled={!!elevationEnabled}
+                  setElevationEnabled={setUrlElevationEnabled}
+                  trackWidth={trackWidth}
+                  setTrackWidth={setUrlTrackWidth}
+                  onCameraPreset={setUrlCameraPreset}
+                  viewMode={viewMode ?? "normal"}
+                  setViewMode={handleViewModeChange}
+                  sectorsAvailable={sectorsAvailable}
+                  environmentAvailable={!!environmentAvailable}
+                  environmentEnabled={environmentEnabled}
+                  setEnvironmentEnabled={setUrlEnvironmentEnabled}
+                  environmentTerrain={environmentTerrain}
+                  setEnvironmentTerrain={setUrlEnvironmentTerrain}
+                  realWidthAvailable={realWidthAvailable}
+                  realWidthEnabled={realWidthEnabled}
+                  setRealWidthEnabled={handleRealWidthChange}
+                  meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
+                  minWidthMeters={widthProfile?.minWidthMeters ?? null}
+                  maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
+                  qualityMode={qualityMode}
+                  setQualityMode={setUrlQualityMode}
+                />
+              }
             />
-          )}
 
-          <MobileInfoSheet
-            properties={properties}
-            loadingTrack={loadingTrack}
-            pointCount={pointCount}
-            elevations={panelElevations}
-            elevationsBaked={!!bakedProfile?.length}
-            elevationEnabled={elevationEnabled && !terrainModeActive}
-            markers={markers}
-            viewMode={viewMode}
-            trackWidth={trackWidth}
-            realWidthAvailable={realWidthAvailable}
-            realWidthEnabled={realWidthEnabled}
-            meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
-            minWidthMeters={widthProfile?.minWidthMeters ?? null}
-            maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
-            open={mobileInfoOpen}
-            onOpenChange={setMobileInfoOpen}
-            showTrigger={false}
-          />
         </main>
 
-        <aside className="hidden min-h-0 border-l border-border bg-sidebar/70 shadow-[-24px_0_80px_rgba(0,0,0,0.22)] backdrop-blur-xl md:block">
-          <TrackSidePanel
-            properties={properties}
-            loading={loadingTrack}
-            pointCount={pointCount}
-            elevations={panelElevations}
-            elevationsBaked={!!bakedProfile?.length}
-            elevationEnabled={elevationEnabled}
-            markers={markers}
-            viewMode={viewMode}
-            autoRotate={autoRotate}
-            setAutoRotate={setAutoRotate}
-            setElevationEnabled={setUrlElevationEnabled}
-            trackWidth={trackWidth}
-            setTrackWidth={setUrlTrackWidth}
-            onCameraPreset={setUrlCameraPreset}
-            setViewMode={handleViewModeChange}
-            sectorsAvailable={sectorsAvailable}
-            environmentAvailable={!!environmentAvailable}
-            environmentEnabled={environmentEnabled}
-            setEnvironmentEnabled={setUrlEnvironmentEnabled}
-            environmentTerrain={environmentTerrain}
-            setEnvironmentTerrain={setUrlEnvironmentTerrain}
-            realWidthAvailable={realWidthAvailable}
-            realWidthEnabled={realWidthEnabled}
-            setRealWidthEnabled={handleRealWidthChange}
-            meanWidthMeters={widthProfile?.meanWidthMeters ?? null}
-            minWidthMeters={widthProfile?.minWidthMeters ?? null}
-            maxWidthMeters={widthProfile?.maxWidthMeters ?? null}
-            qualityMode={qualityMode}
-            setQualityMode={setUrlQualityMode}
-          />
-        </aside>
-      </div>
 
       {!footerDismissed && (
         <footer className="shrink-0 border-t border-border bg-background/80 text-[10px] text-muted-foreground backdrop-blur">
