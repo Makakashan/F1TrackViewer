@@ -24,10 +24,7 @@ export const THEMES: { code: Theme; labelKey: keyof typeof en; flag: string }[] 
 const en = {
   // App header
   appName: "Boxlane",
-  appTagline: "Globe Circuit Viewer · MVP 4",
   // Start screen
-  startKicker: "3D circuit viewer",
-  startTagline: "Every corner of every circuit, rendered in real-time 3D.",
   startButton: "Start",
   startLead: (n: number) => `Every Formula 1 circuit in 3D — ${n || "··"} tracks on real terrain, with the race on top.`,
   source: "Source",
@@ -39,9 +36,6 @@ const en = {
   circuitType: "Type",
   ready: "Ready",
   notYet: "Not yet",
-  startFactCircuits: "circuits",
-  startFactTerrain: "real terrain",
-  startFactRace: "race mode",
   // What's new
   whatsNewButton: "What's new",
   whatsNewKicker: "What's new",
@@ -104,33 +98,13 @@ const en = {
   // Track info sidebar
   circuit: "Circuit",
   length: "Length",
-  altitudeStart: "Altitude (start)",
   opened: "Opened",
   firstGp: "First GP",
   elevationProfile: "Elevation profile",
-  elevationOn: "on",
-  elevationOff: "off",
-  elevationLoading: "loading…",
-  elevationUnavailable: "unavailable",
-  elevationMin: "min",
-  elevationMax: "max",
-  elevationRange: "range",
   climb: "climb",
   descent: "descent",
-  elevationSource: "Source: Open-Meteo Elevation API · SRTM-3 arcsec",
-  elevationSourceBaked: "Source: the baked ground · IGN 3.9 m",
   geometry: "Geometry",
-  geometryDesc: (n: number) => `${n} points · LineString (closed)`,
-  geoSource: "Source: bacinger/f1-circuits (MIT)",
-  widthTitle: "Track width",
-  widthRealValue: (mean: number, min: number, max: number) =>
-    `~${mean} m avg · ${min}–${max} m (real, per-point)`,
-  widthRealSource: "Source: TUMFTM/racetrack-database (LGPL-3.0)",
-  widthUniformValue: (w: number) => `${w} m uniform (manual)`,
   widthUnavailable: "This circuit is not available in the TUMFTM width dataset",
-  mvpBadge: "MVP 4 · Globe circuit selector",
-  mvpDesc:
-    "Start from a textured 3D Earth, select a circuit by marker or menu, then open the detailed TrackViewer. Tracks are built from GeoJSON LineString via CatmullRomCurve3 + ribbon mesh, with sector splits, elevation, static environments, and real per-point width where available.",
   // Sector view
   viewMode: "View",
   viewModeNormal: "Normal",
@@ -183,25 +157,15 @@ const en = {
   raceNoCars:
     "Car models are missing from this build, so the grid is empty. The circuit still renders.",
   raceBannerCta: "Try it on a random circuit of the season",
-  sectorUnavailable: "Sectors unavailable for this layout",
-  sectorSourceFastf1: "FastF1 telemetry-derived",
-  sectorSourceManual: "Manual verified",
-  sectorSourceEstimated: "Estimated",
-  sectorLegend: "Sector splits",
   sectorN: (n: number) => `S${n}`,
   // Viewer overlay
-  nowViewing: "Now viewing",
   loadingElevations: "Loading elevation profile (Open-Meteo)…",
   // Controls hint
-  controlsLMB: "LMB — rotate",
   cameraTarget: "Camera on",
-  controlsRMB: "RMB — pan",
-  controlsWheel: "Wheel — zoom",
   // Loading states
   loadingThree: "Loading Three.js…",
   loadingTrack: "Loading track…",
   selectTrack: "Select a track",
-  selectTrackHint: "Pick a circuit on the left to see its metadata.",
   loadingCircuits: "Loading circuit list…",
   // Errors
   errLoadCircuits: "Failed to load circuit list",
@@ -212,20 +176,14 @@ const en = {
     "This is an unofficial, non-commercial project. Not affiliated with, endorsed by, or sponsored by Formula 1, Formula One Licensing B.V., the FIA, or any of the data providers. F1, FORMULA ONE, and related marks are trademarks of Formula One Licensing B.V. Used here for identification purposes only.",
   dataSourcesTitle: "Data sources",
   // Specific unit suffixes
-  unitKm: "km",
   unitM: "m",
-  // Empty-ish extras
-  trackEmpty: "—",
 };
 
 type Dict = typeof en;
 
 const ru: Dict = {
   appName: "Boxlane",
-  appTagline: "Глобус выбора трасс · MVP 4",
   // Стартовый экран
-  startKicker: "3D-просмотр трасс",
-  startTagline: "Каждый поворот каждой трассы — в 3D в реальном времени.",
   startButton: "Старт",
   startLead: (n: number) => `Все трассы Формулы 1 в 3D — ${n || "··"} трасс на настоящем рельефе, и гонка поверх.`,
   source: "Исходники",
@@ -237,9 +195,6 @@ const ru: Dict = {
   circuitType: "Тип",
   ready: "Готово",
   notYet: "Пока нет",
-  startFactCircuits: "трасс",
-  startFactTerrain: "рельеф и город",
-  startFactRace: "режим гонки",
   // What's new
   whatsNewButton: "Что нового",
   whatsNewKicker: "Что нового",
@@ -298,33 +253,13 @@ const ru: Dict = {
   noResults: "Ничего не найдено",
   circuit: "Трасса",
   length: "Длина",
-  altitudeStart: "Высота (старт)",
   opened: "Открыта",
   firstGp: "Первый ГП",
   elevationProfile: "Профиль высот",
-  elevationOn: "вкл",
-  elevationOff: "выкл",
-  elevationLoading: "загрузка…",
-  elevationUnavailable: "недоступно",
-  elevationMin: "мин",
-  elevationMax: "макс",
-  elevationRange: "перепад",
   climb: "подъём",
   descent: "спуск",
-  elevationSource: "Источник: Open-Meteo Elevation API · SRTM-3 arcsec",
-  elevationSourceBaked: "Источник: запечённый рельеф · IGN 3.9 м",
   geometry: "Геометрия",
-  geometryDesc: (n: number) => `${n} точек · LineString (замкнутая)`,
-  geoSource: "Источник: bacinger/f1-circuits (MIT)",
-  widthTitle: "Ширина трассы",
-  widthRealValue: (mean: number, min: number, max: number) =>
-    `~${mean} м в ср. · ${min}–${max} м (реальная, по точкам)`,
-  widthRealSource: "Источник: TUMFTM/racetrack-database (LGPL-3.0)",
-  widthUniformValue: (w: number) => `${w} м равномерно (вручную)`,
-    widthUnavailable: "Этой трассы нет в датасете ширины TUMFTM",
-  mvpBadge: "MVP 4 · Выбор трасс на глобусе",
-  mvpDesc:
-    "Стартовый экран теперь показывает текстурированную 3D Землю: трассу можно выбрать по маркеру или меню, а затем открыть подробный TrackViewer. Трассы строятся из GeoJSON LineString через CatmullRomCurve3 + ribbon mesh, с секторами, высотами, статичными окружениями и реальной шириной там, где она доступна.",
+  widthUnavailable: "Этой трассы нет в датасете ширины TUMFTM",
   // Sector view
   viewMode: "Вид",
   viewModeNormal: "Обычный",
@@ -372,22 +307,12 @@ const ru: Dict = {
   raceNoCars:
     "В этой сборке нет моделей машин, поэтому решётка пустая. Трасса рисуется как обычно.",
   raceBannerCta: "Попробовать на случайной трассе сезона",
-  sectorUnavailable: "Сектора недоступны для этой конфигурации",
-  sectorSourceFastf1: "На основе телеметрии FastF1",
-  sectorSourceManual: "Проверено вручную",
-  sectorSourceEstimated: "Приблизительно",
-  sectorLegend: "Разделение секторов",
   sectorN: (n: number) => `С${n}`,
-  nowViewing: "Сейчас просматриваете",
   loadingElevations: "Загрузка профиля высот (Open-Meteo)…",
-  controlsLMB: "ЛКМ — вращать",
   cameraTarget: "Камера на",
-  controlsRMB: "ПКМ — панорамировать",
-  controlsWheel: "Колесо — зум",
   loadingThree: "Загрузка Three.js…",
   loadingTrack: "Загрузка трассы…",
   selectTrack: "Выберите трассу",
-  selectTrackHint: "Выберите трассу слева, чтобы увидеть метаданные.",
   loadingCircuits: "Загрузка списка трасс…",
   errLoadCircuits: "Не удалось загрузить список трасс",
   errLoadTrack: "Не удалось загрузить трассу",
@@ -395,9 +320,7 @@ const ru: Dict = {
   disclaimerBody:
     "Это неофициальный некоммерческий проект. Не связан с Formula 1, Formula One Licensing B.V., FIA или поставщиками данных, не одобрен ими и не спонсируется ими. F1, FORMULA ONE и связанные знаки являются товарными знаками Formula One Licensing B.V. Используются здесь только для идентификации.",
   dataSourcesTitle: "Источники данных",
-  unitKm: "км",
   unitM: "м",
-  trackEmpty: "—",
 };
 
 export const DICTS: Record<Lang, Dict> = { en, ru };
