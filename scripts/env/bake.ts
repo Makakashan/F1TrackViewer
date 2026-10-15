@@ -1560,6 +1560,8 @@ interface BuildingResult {
   pushedOffTrack: number;
   /** Extra pieces a footprint was split into along its fall line. */
   terraced: number;
+  /** Pieces on a cliff whose measured height was the cliff's, and took the tag. */
+  cliffHeights: number;
 }
 
 /**
@@ -1659,8 +1661,14 @@ function splitEdge(
   splitEdge(out, mid, heightMid, b, heightB, groundAt, mayAdd, depth + 1);
 }
 
-/** A piece still spanning more than this is split along its fall line. */
-const TERRACE_STEP_M = 4;
+/**
+ * A piece still spanning more than this is split along its fall line. At 4 m a
+ * hillside block came apart into a dozen roofs a storey apart, and the city
+ * read as a heap of steps rather than as buildings.
+ */
+const TERRACE_STEP_M = 8;
+/** Terraces of one building whose roofs are closer than a storey share the higher roof. */
+const ROOF_STEP_MIN_M = STOREY_M;
 /** ...as long as it is this wide along the fall, or the halves are slivers. */
 const TERRACE_MIN_M = 4;
 /** Two rounds is four terraces, four rounds sixteen: a 46 m cliffside plot still steps at 4 m. */
@@ -1844,8 +1852,16 @@ function prepareBuildings(
     // terraced first, so each terrace stands on its own middle.
     let emitted = 0;
     for (const carvedShape of pieces) {
-      const terraces = splitTerraces(carvedShape, groundAt, (x, z) =>
-        corridor.distance(x, z) >= TRACK_CLEARANCE_M);
+      const firstTerrace = prepared.length;
+      const mayAdd = (x: number, z: number) => corridor.distance(x, z) >= TRACK_CLEARANCE_M;
+      // On a cliff the surface model reads the brow's roofs over the foot's
+      // ground: a nine-metre house by Le Rocher measured fifty-nine. There the
+      // survey's tag is the better guess.
+      const pieceHeight = height > CLIFF_HEIGHT_TRUST * building.height && onCliff(carvedShape, groundAt, mayAdd)
+        ? building.height
+        : height;
+      if (pieceHeight !== height) result.cliffHeights++;
+      const terraces = splitTerraces(carvedShape, groundAt, mayAdd);
       if (terraces.length > 1) result.terraced += terraces.length - 1;
       for (const shape of terraces) {
         const piece = emitted++;
@@ -1915,16 +1931,56 @@ function prepareBuildings(
         wallRing,
         footAt,
         base,
-        heightM: height,
+        heightM: pieceHeight,
         centreX,
         centreZ,
         belt: beltAtDistance(corridor.distance(centreX, centreZ)),
       });
       }
+      levelRoofs(prepared.slice(firstTerrace));
     }
   }
 
   return prepared;
+}
+
+/** Ground this steep under a footprint is a cliff's face, not a street's slope. */
+const CLIFF_DEG = 40;
+/** On a cliff, a measured height past this many times the tag is the cliff's, not the building's. */
+const CLIFF_HEIGHT_TRUST = 1.5;
+
+/** Whether the ground anywhere along a footprint's walls is as steep as a cliff. */
+function onCliff(
+  shape: { x: number; z: number }[],
+  groundAt: (x: number, z: number) => number,
+  mayAdd: (x: number, z: number) => boolean,
+): boolean {
+  const steep = Math.tan((CLIFF_DEG * Math.PI) / 180);
+  const step = 2;
+  // Resampled first, or a drop between two corners goes unseen.
+  return followGround(shape, groundAt, mayAdd).some(({ x, z }) => {
+    const dx = groundAt(x + step, z) - groundAt(x - step, z);
+    const dz = groundAt(x, z + step) - groundAt(x, z - step);
+    return Math.hypot(dx, dz) / (2 * step) > steep;
+  });
+}
+
+/**
+ * Terraces whose roofs are within a storey of each other take the highest of
+ * them, so a block on a slope steps where its floors do rather than at every
+ * terrace the split made.
+ */
+function levelRoofs(terraces: PreparedBuilding[]): void {
+  const byTop = terraces.slice().sort((a, b) => a.base + a.heightM - (b.base + b.heightM));
+  let start = 0;
+  while (start < byTop.length) {
+    const lowest = byTop[start].base + byTop[start].heightM;
+    let end = start + 1;
+    while (end < byTop.length && byTop[end].base + byTop[end].heightM - lowest < ROOF_STEP_MIN_M) end++;
+    const top = byTop[end - 1].base + byTop[end - 1].heightM;
+    for (let i = start; i < end; i++) byTop[i].heightM = top - byTop[i].base;
+    start = end;
+  }
 }
 
 function bakeBuildings(
@@ -1934,6 +1990,20 @@ function bakeBuildings(
   taken: Set<string>,
 ): void {
   const meshes = result.meshes;
+  // An edge two terraces of one building share at one roof height is inside
+  // the roof, and a rim along it drew a ridge across it.
+  const edgeKey = (top: number, a: { x: number; z: number }, b: { x: number; z: number }): string => {
+    const [p, q] = [`${a.x.toFixed(2)},${a.z.toFixed(2)}`, `${b.x.toFixed(2)},${b.z.toFixed(2)}`].sort();
+    return `${top.toFixed(2)}|${p}|${q}`;
+  };
+  const edges = new Map<string, number>();
+  for (const building of prepared) {
+    const { wallRing, base, heightM } = building;
+    for (let i = 0; i < wallRing.length; i++) {
+      const key = edgeKey(base + heightM, wallRing[i], wallRing[(i + 1) % wallRing.length]);
+      edges.set(key, (edges.get(key) ?? 0) + 1);
+    }
+  }
   for (const building of prepared) {
     if (taken.has(building.id)) continue;
     const { wallRing, footAt, base, heightM, belt } = building;
@@ -1946,10 +2016,24 @@ function bakeBuildings(
     // the walls run past the roof plane and turn back down inside it. The far
     // belt is silhouettes and gets none.
     const near = belt !== "far";
-    extrude(meshes[belt], wallRing, footAt, base + heightM, near ? PARAPET_M : 0, near);
+    const top = base + heightM;
+    const inside = wallRing.map((point, i) => (edges.get(edgeKey(top, point, wallRing[(i + 1) % wallRing.length])) ?? 0) > 1);
+    // Keyed on the building, not the terrace, so one block keeps one roof.
+    const id = building.id.split("#")[0];
+    let seed = 0;
+    for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) % 1_000_003;
+    const roofTone = ROOF_TONE.low + (ROOF_TONE.high - ROOF_TONE.low) * hashAt(seed, 0);
+    extrude(meshes[belt], wallRing, footAt, top, near ? PARAPET_M : 0, roofTone, inside);
     result.built++;
   }
 }
+
+/**
+ * What a roof multiplies the wall's colour by, picked per building between the
+ * two. One tone for every roof and the walls drew the city from above as one
+ * white mass; a step darker and a little apart, each block reads as itself.
+ */
+const ROOF_TONE = { low: 0.78, high: 0.92 };
 
 /** The rim round a flat roof: what makes it read as a roof and not a lid. */
 const PARAPET_M = 0.9;
@@ -2010,6 +2094,7 @@ function emptyBuildingResult(): BuildingResult {
     droppedTooLow: 0,
     pushedOffTrack: 0,
     terraced: 0,
+    cliffHeights: 0,
   };
 }
 
@@ -2268,55 +2353,8 @@ function densifyAcrossCorridor(
   return added ? out : ring;
 }
 
-/**
- * A wall in three tones: a shop front, the storeys over it, and the band under
- * the roof.
- *
- * A prism painted one colour reads as a box whatever its outline, and the two
- * lines that say otherwise from a street away are the ground floor and the
- * cornice. Both are painted rather than modelled — the geometry is two extra
- * rows of vertices per wall, and no ledge sticks out to catch a shadow.
- */
-const GROUND_FLOOR_M = 4;
-const CORNICE_M = 1.4;
-/**
- * What each band multiplies the wall's own colour by.
- *
- * Wide steps on purpose: the occlusion pass has already put most of this city's
- * walls between 0.35 and 0.5, and a tenth either way disappears into that. A
- * band has to be a step the eye catches, not a shade. The floor under it is
- * I11 — nothing in the scene goes below 0.278 — and the occlusion floor is
- * 0.45, so a band cannot take more than a third of the wall's own colour.
- */
-const BAND_TONE = { ground: 0.65, body: 1, cornice: 0.8 };
-/** Under this a building is one storey and takes one tone. */
-const BANDED_MIN_M = 7;
-
-function wallBands(
-  mesh: Mesh,
-  a: { x: number; z: number },
-  b: { x: number; z: number },
-  baseA: number,
-  baseB: number,
-  top: number,
-  banded: boolean,
-): void {
-  const foot = Math.min(baseA, baseB);
-  const shopTop = foot + GROUND_FLOOR_M;
-  if (!banded || top - foot < BANDED_MIN_M || shopTop >= top - CORNICE_M) {
-    mesh.tone = BAND_TONE.body;
-    addFlatQuad(mesh, a.x, baseA, a.z, b.x, baseB, b.z, b.x, top, b.z, a.x, top, a.z);
-    return;
-  }
-  // The shop front follows the ground it stands on; what is over it is level,
-  // because a floor line is level whatever the street does. Two bands rather
-  // than three: the top of the wall already has the parapet's own edge, and a
-  // third band costs the city belt a third as much again in triangles.
-  mesh.tone = BAND_TONE.ground;
-  addFlatQuad(mesh, a.x, baseA, a.z, b.x, baseB, b.z, b.x, shopTop, b.z, a.x, shopTop, a.z);
-  mesh.tone = BAND_TONE.body;
-  addFlatQuad(mesh, a.x, shopTop, a.z, b.x, shopTop, b.z, b.x, top, b.z, a.x, top, a.z);
-}
+/** What the rim's inside face multiplies the wall's own colour by: the roof's edge reads as an edge. */
+const RIM_TONE = 0.8;
 
 /** Repeatable per place: the same footprint rolls the same numbers every bake. */
 function hashAt(x: number, z: number): number {
@@ -2336,8 +2374,9 @@ function extrude(
   baseAt: number[],
   top: number,
   parapetM = 0,
-  /** Whether the wall is painted in bands. The far belt is silhouettes. */
-  banded = false,
+  roofTone = 1,
+  /** Per ring edge (point i to i + 1): inside a roof another piece continues, so no rim. */
+  inside?: boolean[],
 ): void {
   const contour = ring.map((point) => new Vector2(point.x, -point.z));
   const clockwise = ShapeUtils.area(contour) < 0;
@@ -2345,16 +2384,22 @@ function extrude(
   const ordered = clockwise ? [...order].reverse().map((i) => ring[i]) : ring;
   const orderedBase = clockwise ? [...order].reverse().map((i) => baseAt[i]) : baseAt;
   const orderedContour = clockwise ? [...contour].reverse() : contour;
+  // Reversed, edge i runs from point n-1-i to n-2-i: the edge (n-2-i, n-1-i) of the ring.
+  const orderedInside = (i: number): boolean =>
+    !!inside && (clockwise ? inside[(2 * ring.length - 2 - i) % ring.length] : inside[i]);
 
   const wallTop = top + parapetM;
   for (let i = 0; i < ordered.length; i++) {
     const j = (i + 1) % ordered.length;
     const a = ordered[i];
     const b = ordered[j];
-    wallBands(mesh, a, b, orderedBase[i], orderedBase[j], wallTop, banded);
-    if (parapetM > 0) {
+    const rim = parapetM > 0 && !orderedInside(i);
+    const wall = rim ? wallTop : top;
+    mesh.tone = 1;
+    addFlatQuad(mesh, a.x, orderedBase[i], a.z, b.x, orderedBase[j], b.z, b.x, wall, b.z, a.x, wall, a.z);
+    if (rim) {
       // Inside face of the rim, seen from anywhere above the roof.
-      mesh.tone = BAND_TONE.cornice;
+      mesh.tone = RIM_TONE;
       addFlatQuad(mesh, b.x, top, b.z, a.x, top, a.z, a.x, wallTop, a.z, b.x, wallTop, b.z);
     }
   }
@@ -2362,7 +2407,10 @@ function extrude(
   // `triangulateShape` works in the contour's own plane, which is (x, -z); read
   // back in scene axes that winding already faces the sky, so it is kept as it
   // comes. Reversing it here is what made every flat roof invisible from above.
-  mesh.tone = BAND_TONE.body;
+  // One shade over the whole roof (`flats`): read per corner, a dark corner by
+  // a taller neighbour drew a streak across every long triangle of it.
+  mesh.tone = roofTone;
+  const roofStart = mesh.positions.length / 3;
   for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
     addFlatTriangle(
       mesh,
@@ -2371,6 +2419,7 @@ function extrude(
       ordered[k].x, top, ordered[k].z,
     );
   }
+  (mesh.flats ??= []).push(roofStart, mesh.positions.length / 3);
 }
 
 // ─── tunnel portals ────────────────────────────────────────────────────────
@@ -4011,7 +4060,8 @@ async function main() {
     `  buildings ${b.built} built, ${b.pushedOffTrack} pushed off the track, ` +
       `dropped: ${b.droppedOnTrack} on track, ${b.droppedOverWater} over water, ` +
       `${b.droppedTooLow} too low`
-      + (b.terraced ? `, ${b.terraced} terraces split along the fall line` : ""),
+      + (b.terraced ? `, ${b.terraced} terraces split along the fall line` : "")
+      + `, ${b.cliffHeights} on a cliff at their tagged height`,
   );
   console.log(`  track profile ${report.trackVertices} vertices`);
   const h = report.heights;
