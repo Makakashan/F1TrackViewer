@@ -26,7 +26,7 @@ const CELL_M = 8;
 /** The datum the water quad lies on. Under it, the sea is a one-way surface too. */
 const SEA_Y = 0;
 /** The names the bake gives the ground. Buildings are not in it: they are scenery. */
-const GROUND_MESHES = new Set(["terrain", "pier", "shore"]);
+const GROUND_MESHES = new Set(["terrain", "pier"]);
 
 interface GroundGrid {
   minX: number;

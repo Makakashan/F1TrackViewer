@@ -26,6 +26,10 @@ import type { HeightField } from "./heightfield";
 
 /** A breakline segment in field-node space: column is x, row is y. */
 interface Segment {
+  /** A natural cliff, as against a built wall: the two are smoothed differently. */
+  cliff: boolean;
+  /** A quay or a breakwater: the edge of the land, not a step inside it. */
+  shore: boolean;
   c0: number;
   r0: number;
   c1: number;
@@ -37,6 +41,17 @@ export interface Breaklines {
   crosses(col0: number, row0: number, col1: number, row1: number): boolean;
   /** The same question asked in degrees, for callers that hold no field index. */
   crossesLonLat(lon0: number, lat0: number, lon1: number, lat1: number): boolean;
+  /**
+   * The same, counting built lines only — a retaining wall, a quay, a
+   * breakwater — and not a natural cliff.
+   *
+   * A wall has flat ground on both sides and the step between them is the whole
+   * point of it. A cliff *is* the ground: the line marks where the rock falls
+   * away, and on a face there is no step to keep, only the scan's noise on it.
+   */
+  crossesWallLonLat(lon0: number, lat0: number, lon1: number, lat1: number): boolean;
+  /** The same, counting built lines inside the land only: a retaining wall, not a quay or a cliff. */
+  crossesRetainingLonLat(lon0: number, lat0: number, lon1: number, lat1: number): boolean;
   /**
    * Is any surveyed line inside this box of field nodes? Answered from the
    * index alone, so a filter can ask before it decides how hard to work.
@@ -64,7 +79,8 @@ function orient(ax: number, ay: number, bx: number, by: number, px: number, py: 
 const SHORE_BREAKLINES = new Set<ShoreWay["kind"]>(["quay", "breakwater"]);
 
 export function buildBreaklines(
-  field: HeightField,
+  /** The grid the lines are indexed on: the field, or the raster it is built from. */
+  field: Pick<HeightField, "bbox" | "width" | "height">,
   breaklineWays: BreaklineWay[],
   shoreWays: ShoreWay[],
 ): Breaklines {
@@ -73,9 +89,11 @@ export function buildBreaklines(
   const toRow = (lat: number) => ((maxLat - lat) / (maxLat - minLat)) * (field.height - 1);
 
   const segments: Segment[] = [];
-  const addLine = (points: [number, number][]) => {
+  const addLine = (points: [number, number][], cliff: boolean, shore: boolean) => {
     for (let i = 1; i < points.length; i++) {
       const segment: Segment = {
+        cliff,
+        shore,
         c0: toCol(points[i - 1][0]),
         r0: toRow(points[i - 1][1]),
         c1: toCol(points[i][0]),
@@ -92,8 +110,8 @@ export function buildBreaklines(
       if (!outside) segments.push(segment);
     }
   };
-  for (const way of breaklineWays) addLine(way.points);
-  for (const way of shoreWays) if (SHORE_BREAKLINES.has(way.kind)) addLine(way.points);
+  for (const way of breaklineWays) addLine(way.points, way.kind === "cliff", false);
+  for (const way of shoreWays) if (SHORE_BREAKLINES.has(way.kind)) addLine(way.points, false, true);
 
   const bucketCols = Math.ceil(field.width / BUCKET);
   const bucketRows = Math.ceil(field.height / BUCKET);
@@ -110,7 +128,14 @@ export function buildBreaklines(
     }
   }
 
-  const crosses = (col0: number, row0: number, col1: number, row1: number): boolean => {
+  const crosses = (
+    col0: number,
+    row0: number,
+    col1: number,
+    row1: number,
+    builtOnly = false,
+    inlandOnly = false,
+  ): boolean => {
     if (!segments.length) return false;
     const bc0 = Math.max(0, Math.floor(Math.min(col0, col1) / BUCKET));
     const bc1 = Math.min(bucketCols - 1, Math.floor(Math.max(col0, col1) / BUCKET));
@@ -119,6 +144,8 @@ export function buildBreaklines(
     for (let br = br0; br <= br1; br++) {
       for (let bc = bc0; bc <= bc1; bc++) {
         for (const s of buckets[br * bucketCols + bc]) {
+          if (builtOnly && s.cliff) continue;
+          if (inlandOnly && s.shore) continue;
           const d1 = orient(col0, row0, col1, row1, s.c0, s.r0);
           const d2 = orient(col0, row0, col1, row1, s.c1, s.r1);
           if (d1 > 0 === d2 > 0) continue;
@@ -135,6 +162,12 @@ export function buildBreaklines(
   const crossesLonLat = (lon0: number, lat0: number, lon1: number, lat1: number): boolean =>
     crosses(toCol(lon0), toRow(lat0), toCol(lon1), toRow(lat1));
 
+  const crossesWallLonLat = (lon0: number, lat0: number, lon1: number, lat1: number): boolean =>
+    crosses(toCol(lon0), toRow(lat0), toCol(lon1), toRow(lat1), true);
+
+  const crossesRetainingLonLat = (lon0: number, lat0: number, lon1: number, lat1: number): boolean =>
+    crosses(toCol(lon0), toRow(lat0), toCol(lon1), toRow(lat1), true, true);
+
   const near = (col0: number, row0: number, col1: number, row1: number): boolean => {
     const bc0 = Math.max(0, Math.floor(Math.min(col0, col1) / BUCKET));
     const bc1 = Math.min(bucketCols - 1, Math.floor(Math.max(col0, col1) / BUCKET));
@@ -146,5 +179,5 @@ export function buildBreaklines(
     return false;
   };
 
-  return { crosses, crossesLonLat, near, count: segments.length };
+  return { crosses, crossesLonLat, crossesWallLonLat, crossesRetainingLonLat, near, count: segments.length };
 }

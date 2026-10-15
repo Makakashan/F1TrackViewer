@@ -39,6 +39,12 @@ export interface TrackConstraint {
   /** Distance over which the ground eases back to its own level. */
   blendM?: number;
   /**
+   * A surveyed wall or cliff between two points. The verge stops at one: the
+   * step beside the road is the wall's, and flattening across it ramped the
+   * retaining walls along Monaco's streets.
+   */
+  walls?(lon0: number, lat0: number, lon1: number, lat1: number): boolean;
+  /**
    * Where the track runs under the ground rather than on it — the Monaco
    * tunnel. The raster there describes the hill, not the road beneath it, so
    * these samples take an interpolated elevation instead of a measured one.
@@ -88,11 +94,12 @@ export interface HeightField {
 
 /**
  * Paved shoulder the ground has to meet flush before it is allowed to rise.
- * Two metres, not the six §3.4 guessed: a street circuit's road is a shelf cut
- * into the slope with a wall at its edge, and a wide corridor flattens the
- * hillside the buildings stand on.
+ * One terrain cell: the ground is meshed at four metres, and with less the
+ * triangle that climbs away from the road started inside the ribbon — up to
+ * 2.5 m of hillside over the tarmac past the tunnel. No wider, or it flattens
+ * the hillside the buildings stand on.
  */
-const DEFAULT_VERGE_M = 2;
+export const DEFAULT_VERGE_M = 4;
 /**
  * Over this distance the ground eases from the track's level back to its own.
  * Short for the same reason — a 25 m ramp turns Monaco's retaining walls into
@@ -213,6 +220,7 @@ function burnTrack(
   vergeM: number,
   blendM: number,
   vaulted: ((lon: number, lat: number) => boolean) | undefined,
+  walls?: (lon0: number, lat0: number, lon1: number, lat1: number) => boolean,
 ): HeightFieldStats {
   const cellX = bboxSizeMeters(bbox).width / (width - 1);
   const cellZ = bboxSizeMeters(bbox).height / (height - 1);
@@ -231,6 +239,20 @@ function burnTrack(
   // start/finish join cannot fight.
   const bestDist = new Float32Array(width * height).fill(Infinity);
   const bestElev = new Float32Array(width * height);
+  // Where along the lap each claim came from, so two legs can be told from two
+  // neighbouring stretches of one road.
+  const bestArc = new Float32Array(width * height);
+  const arcAt = [0];
+  for (let i = 1; i < coords.length; i++) {
+    arcAt.push(
+      arcAt[i - 1]
+        + Math.hypot(
+          plane.toX(coords[i][0]) - plane.toX(coords[i - 1][0]),
+          plane.toZ(coords[i][1]) - plane.toZ(coords[i - 1][1]),
+        ),
+    );
+  }
+  const lap = arcAt[arcAt.length - 1];
 
   // Where the burn meets a vault it stops square, not round. The corridor is a
   // distance to a polyline, so every segment carries a round end cap reaching a
@@ -306,10 +328,30 @@ function burnTrack(
         const dz = pz - (az + abz * t);
         const dist = Math.hypot(dx, dz);
         if (dist > reach) continue;
+        const toLon = (x: number) => bbox.minLon + x / plane.mPerDegLon;
+        const toLat = (z: number) => bbox.maxLat - z / METERS_PER_DEG_LAT;
+        if (
+          walls
+          && dist > halfWidthM
+          && walls(toLon(ax + abx * t), toLat(az + abz * t), toLon(px), toLat(pz))
+        ) continue;
         const idx = row * width + col;
-        if (dist >= bestDist[idx]) continue;
+        const elevation = ea + (eb - ea) * t;
+        const arc = arcAt[i] + t * (arcAt[i + 1] - arcAt[i]);
+        const apart = Math.abs(arc - bestArc[idx]);
+        const otherLeg = Number.isFinite(bestDist[idx]) && Math.min(apart, lap - apart) > 3 * reach;
+        // Two legs of the lap that close contest the verge between them, and
+        // the lower road keeps it: the step is then a wall past its kerb, and
+        // the upper road's edge overhangs it. Nearest wins, and the step fell
+        // inside the lower road — ten metres of it at Beau Rivage. The tarmac
+        // itself is always its own road's.
+        const verge = (d: number) => d > halfWidthM - 4 && d <= hard;
+        if (otherLeg && verge(dist) && verge(bestDist[idx])) {
+          if (elevation >= bestElev[idx]) continue;
+        } else if (dist >= bestDist[idx]) continue;
         bestDist[idx] = dist;
-        bestElev[idx] = ea + (eb - ea) * t;
+        bestElev[idx] = elevation;
+        bestArc[idx] = arc;
       }
     }
   }
@@ -404,6 +446,7 @@ export function buildHeightField(options: BuildHeightFieldOptions): HeightField 
     track.vergeM ?? DEFAULT_VERGE_M,
     track.blendM ?? DEFAULT_BLEND_M,
     track.vaulted ?? track.buried,
+    track.walls,
   );
 
   return heightFieldFrom({

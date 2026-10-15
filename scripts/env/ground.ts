@@ -21,14 +21,15 @@
  *    at a surveyed cliff, wall or quay (`breaklines.ts`), which is what keeps the
  *    averaging from turning one into a ramp.
  * 2. **`at()` interpolates the way the mesh triangulates.** Not bilinear — the
- *    terrain splits each cell across its main diagonal, so a query has to pick
- *    the same triangle or it answers about a surface nobody drew.
+ *    terrain splits each cell across one diagonal (`splitsOnMain`), so a query
+ *    has to pick the same triangle or it answers about a surface nobody drew.
  */
 
 import type { Breaklines } from "./breaklines";
 import { BELT_CELL_M, type Belt } from "./belts";
 import type { HeightField } from "./heightfield";
 import type { ScenePlane } from "./plane";
+import type { StreetGround } from "./streets";
 
 export interface BeltGrid {
   cell: number;
@@ -46,6 +47,8 @@ export interface Ground {
   nodeAt(belt: Belt, row: number, col: number): number;
   /** Height of the surface the belt meshes, at a scene point. NaN is water. */
   at(x: number, z: number, belt: Belt): number;
+  /** Highest a belt's node may stand for the shoreline beside it (`shoreCeiling`); a node with no reading of its own needs it too. */
+  ceilingAt(belt: Belt, row: number, col: number): number;
 }
 
 /**
@@ -58,6 +61,113 @@ export interface Ground {
 function radiusFor(cellM: number, fieldCellM: number): number {
   return Math.max(0, Math.round(cellM / fieldCellM / 2 - 0.5));
 }
+
+/**
+ * Smoothing passes over a belt's own nodes, and how far each moves toward its
+ * neighbours' mean. Two gentle passes rather than one hard one: the same
+ * smoothing, with a wider reach and no risk of a node overshooting its own
+ * neighbourhood.
+ */
+export const SMOOTH_PASSES = 16;
+/**
+ * How far a node moves toward its neighbours' mean in one pass, on ground that
+ * is flat and on a face.
+ *
+ * A DTM sees a cliff badly: a laser scan from above gets few returns off a
+ * vertical face, and what it interpolates between them comes out as spikes.
+ * Meshed at four metres those are drawn as a row of teeth down the rock. The
+ * face's own drop survives any amount of averaging — it is the noise on top of
+ * it that goes — so the steeper the ground, the harder this pulls.
+ */
+const FLAT_STRENGTH = 0.09;
+const FACE_STRENGTH = 0.55;
+/** Slope, in degrees, over which the ground counts wholly as a face. */
+const FACE_FROM_DEG = 25;
+const FACE_FULL_DEG = 45;
+/** Cells of fade: at the wall no smoothing, this far off it the full strength. */
+const WALL_FADE_CELLS = 2;
+/** Stand-in for "no wall anywhere near", in cells. */
+const FAR_FROM_WALL = 1e6;
+/** Steepest face the ground keeps between two neighbouring nodes, and how many passes it gets to settle. */
+export const MAX_SLOPE_DEG = 55;
+/** Highest the ground stands where it meets the water: a quay's lip, not a cliff's brow. */
+export const SHORE_LIP_M = 3;
+
+/**
+ * Highest the ground may stand `land` metres in from the shoreline: the lip,
+ * then no steeper than the limit. A cliff a metre from the water drew a sliver
+ * from its brow down to it.
+ */
+export function shoreCeiling(land: number): number {
+  return land > 0 ? SHORE_LIP_M + land * Math.tan((MAX_SLOPE_DEG * Math.PI) / 180) : Infinity;
+}
+
+/**
+ * Metres from each node of a grid to the nearest point where `land` changes
+ * sign along a grid edge, interpolated the way the mesher cuts the shore. Each
+ * node carries its nearest crossing forward and back over the grid, a sweep
+ * each way, twice.
+ */
+export function distanceToShore(land: Float32Array, width: number, height: number, cell: number): Float32Array {
+  const crossX: number[] = [];
+  const crossZ: number[] = [];
+  const nearest = new Int32Array(width * height).fill(-1);
+  const away = new Float32Array(width * height).fill(Infinity);
+  const offer = (index: number, crossing: number): void => {
+    const dx = crossX[crossing] - (index % width);
+    const dz = crossZ[crossing] - Math.floor(index / width);
+    const distance = Math.hypot(dx, dz) * cell;
+    if (distance < away[index]) {
+      away[index] = distance;
+      nearest[index] = crossing;
+    }
+  };
+  for (let index = 0; index < width * height; index++) {
+    const col = index % width;
+    for (const next of [col < width - 1 ? index + 1 : -1, index + width < width * height ? index + width : -1]) {
+      if (next < 0 || land[index] > 0 === land[next] > 0) continue;
+      const t = land[index] / (land[index] - land[next]);
+      crossX.push(col + (next === index + 1 ? t : 0));
+      crossZ.push(Math.floor(index / width) + (next === index + 1 ? 0 : t));
+      offer(index, crossX.length - 1);
+      offer(next, crossX.length - 1);
+    }
+  }
+  const sweep = (from: number, to: number, step: number, neighbours: [number, number][]): void => {
+    for (let index = from; index !== to; index += step) {
+      const row = Math.floor(index / width);
+      const col = index % width;
+      for (const [dr, dc] of neighbours) {
+        const r = row + dr;
+        const c = col + dc;
+        if (r < 0 || c < 0 || r >= height || c >= width) continue;
+        const crossing = nearest[r * width + c];
+        if (crossing >= 0) offer(index, crossing);
+      }
+    }
+  };
+  for (let round = 0; round < 2; round++) {
+    sweep(0, width * height, 1, [[-1, -1], [-1, 0], [-1, 1], [0, -1]]);
+    sweep(width * height - 1, -1, -1, [[1, 1], [1, 0], [1, -1], [0, 1]]);
+  }
+  return away;
+}
+
+const SLOPE_PASSES = 64;
+/** Rounds of smoothing and limiting again after the first limit. */
+export const SETTLE_ROUNDS = 12;
+
+/**
+ * Whether a cell splits across its main diagonal, (row, col) to (row + 1,
+ * col + 1), given its corners in walk order. The diagonal runs along the ground
+ * rather than across it: a ridge at forty-five degrees to the grid, split the
+ * other way, is drawn as a saw. A corner with no height keeps the main one.
+ */
+export function splitsOnMain(h00: number, h01: number, h11: number, h10: number): boolean {
+  return !(Math.abs(h01 - h10) < Math.abs(h00 - h11));
+}
+/** Four neighbours, not eight: a diagonal is a cell and a half away. */
+const NEIGHBOURS = 4;
 
 /**
  * Summed-area tables over the field, one for the values and one for the count
@@ -81,7 +191,21 @@ function summedArea(field: HeightField): { sums: Float64Array; counts: Uint32Arr
   return { sums, counts };
 }
 
-export function buildGround(field: HeightField, plane: ScenePlane, breaklines?: Breaklines): Ground {
+export function buildGround(
+  field: HeightField,
+  plane: ScenePlane,
+  breaklines?: Breaklines,
+  /** The level the town is built to, where there is a town; see `streets.ts`. */
+  streets?: StreetGround,
+  /**
+   * The road's level at a node, NaN off it; a node on it is held there.
+   * Averaged with the hillside beside it, the racing surface came out two
+   * metres under the ground along the harbour.
+   */
+  roadAt?: (x: number, z: number) => number,
+  /** Metres from the shoreline, positive on land. */
+  landAt?: (x: number, z: number) => number,
+): Ground {
   const { sums, counts } = summedArea(field);
   const stride = field.width + 1;
   const fieldCellM = (field.cellSizeM.x + field.cellSizeM.y) / 2;
@@ -136,6 +260,7 @@ export function buildGround(field: HeightField, plane: ScenePlane, breaklines?: 
 
   const grids = {} as Record<Belt, BeltGrid>;
   const nodes = {} as Record<Belt, Float32Array>;
+  const ceilings = {} as Record<Belt, Float32Array>;
 
   const gridFor = (belt: Belt): BeltGrid => {
     const existing = grids[belt];
@@ -168,6 +293,7 @@ export function buildGround(field: HeightField, plane: ScenePlane, breaklines?: 
     const width = grid.cols + 3;
     const height = grid.rows + 3;
     const table = new Float32Array(width * height);
+    const held = new Uint8Array(width * height);
     for (let row = -1; row <= grid.rows + 1; row++) {
       for (let col = -1; col <= grid.cols + 1; col++) {
         const x = minX + col * grid.cell;
@@ -175,7 +301,11 @@ export function buildGround(field: HeightField, plane: ScenePlane, breaklines?: 
         const lon = plane.lon(x);
         const lat = plane.lat(z);
         let value: number;
-        if (grid.radius === 0) {
+        const road = roadAt?.(x, z) ?? Number.NaN;
+        if (!Number.isNaN(road)) {
+          held[(row + 1) * width + col + 1] = 1;
+          value = road;
+        } else if (grid.radius === 0) {
           value = field.heightAt(lon, lat);
         } else {
           // The window is centred on the field node nearest the belt node, so
@@ -191,8 +321,239 @@ export function buildGround(field: HeightField, plane: ScenePlane, breaklines?: 
         table[(row + 1) * width + col + 1] = value;
       }
     }
-    nodes[belt] = table;
-    return table;
+
+    // A pass or two of smoothing over the belt's own nodes, on top of the
+    // filter's window over the field. The window can only average what fits
+    // inside one cell; the ripple left over is between the cells, and on a rock
+    // face meshed at four metres that is what reads as a rough surface.
+    //
+    // It lets go at a surveyed wall, and it does so gradually. Refusing to
+    // average across the line outright was tried first: the line meanders
+    // between nodes, so which neighbours a node kept flipped from node to node,
+    // and the result measured rougher than no smoothing at all — kink 3.24 m
+    // against 2.55 m. Fading the smoothing out as the wall comes near keeps the
+    // step and adds no ripple of its own.
+    const wallAway = new Float32Array(width * height).fill(FAR_FROM_WALL);
+    if (breaklines?.count) {
+      for (let row = -1; row <= grid.rows + 1; row++) {
+        for (let col = -1; col <= grid.cols + 1; col++) {
+          const lon = plane.lon(minX + col * grid.cell);
+          const lat = plane.lat(minZ + row * grid.cell);
+          const east = plane.lon(minX + (col + 1) * grid.cell);
+          const south = plane.lat(minZ + (row + 1) * grid.cell);
+          if (
+            breaklines.crossesLonLat(lon, lat, east, lat)
+            || breaklines.crossesLonLat(lon, lat, lon, south)
+          ) {
+            wallAway[(row + 1) * width + col + 1] = 0;
+          }
+        }
+      }
+      const spread = (index: number, from: number) => {
+        const candidate = wallAway[from] + 1;
+        if (candidate < wallAway[index]) wallAway[index] = candidate;
+      };
+      for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+          const index = row * width + col;
+          if (row > 0) spread(index, index - width);
+          if (col > 0) spread(index, index - 1);
+        }
+      }
+      for (let row = height - 1; row >= 0; row--) {
+        for (let col = width - 1; col >= 0; col--) {
+          const index = row * width + col;
+          if (row < height - 1) spread(index, index + width);
+          if (col < width - 1) spread(index, index + 1);
+        }
+      }
+    }
+
+    // How hard each node is pulled, from how steep the bare ground is there.
+    const pull = new Float32Array(width * height);
+    const faceShare = new Float32Array(width * height);
+    for (let row = -1; row <= grid.rows + 1; row++) {
+      for (let col = -1; col <= grid.cols + 1; col++) {
+        const x = minX + col * grid.cell;
+        const z = minZ + row * grid.cell;
+        const inside = (px: number, pz: number): boolean => {
+          const lon = plane.lon(px);
+          const lat = plane.lat(pz);
+          return (
+            lon >= field.bbox.minLon && lon <= field.bbox.maxLon
+            && lat >= field.bbox.minLat && lat <= field.bbox.maxLat
+          );
+        };
+        const here = field.heightAt(plane.lon(x), plane.lat(z));
+        const east = field.heightAt(plane.lon(x + grid.cell), plane.lat(z));
+        const west = field.heightAt(plane.lon(x - grid.cell), plane.lat(z));
+        const south = field.heightAt(plane.lon(x), plane.lat(z + grid.cell));
+        const north = field.heightAt(plane.lon(x), plane.lat(z - grid.cell));
+        // At the water the slope is read from the side that has ground, or the
+        // last row of land before a cliff reads flat. Past the bbox there is no
+        // ground either side, so that node keeps the flat pull it had.
+        const gradient = (ahead: number, behind: number, aheadIn: boolean, behindIn: boolean): number => {
+          if (!Number.isNaN(ahead) && !Number.isNaN(behind)) return (ahead - behind) / (2 * grid.cell);
+          if (Number.isNaN(here) || !aheadIn || !behindIn) return Number.NaN;
+          if (!Number.isNaN(ahead)) return (ahead - here) / grid.cell;
+          if (!Number.isNaN(behind)) return (here - behind) / grid.cell;
+          return Number.NaN;
+        };
+        const alongX = gradient(east, west, inside(x + grid.cell, z), inside(x - grid.cell, z));
+        const alongZ = gradient(south, north, inside(x, z + grid.cell), inside(x, z - grid.cell));
+        let face = 0;
+        if (!Number.isNaN(alongX) || !Number.isNaN(alongZ)) {
+          const run = Math.hypot(
+            Number.isNaN(alongX) ? 0 : alongX,
+            Number.isNaN(alongZ) ? 0 : alongZ,
+          );
+          const slope = (Math.atan(run) * 180) / Math.PI;
+          face = Math.max(0, Math.min(1, (slope - FACE_FROM_DEG) / (FACE_FULL_DEG - FACE_FROM_DEG)));
+        }
+        const index = (row + 1) * width + col + 1;
+        faceShare[index] = face;
+        pull[index] = FLAT_STRENGTH + (FACE_STRENGTH - FLAT_STRENGTH) * face;
+      }
+    }
+
+    const settled = new Float32Array(table);
+    const smoothPass = (): void => {
+      const before = new Float32Array(settled);
+      for (let row = -1; row <= grid.rows + 1; row++) {
+        for (let col = -1; col <= grid.cols + 1; col++) {
+          const index = (row + 1) * width + col + 1;
+          const here = before[index];
+          if (Number.isNaN(here) || held[index]) continue;
+          const away = wallAway[index];
+          const lon = plane.lon(minX + col * grid.cell);
+          const lat = plane.lat(minZ + row * grid.cell);
+          /** NaN is water, undefined is off the table. */
+          const neighbour = (dr: number, dc: number): number | undefined => {
+            const r = row + dr;
+            const c = col + dc;
+            if (r < -1 || c < -1 || r > grid.rows + 1 || c > grid.cols + 1) return undefined;
+            return before[(r + 1) * width + c + 1];
+          };
+          // A built wall is not averaged across, and a node beside one is left
+          // alone. A natural cliff is the rock itself, not a step between two
+          // flats, so it is crossed where the ground is steep.
+          const walled = (dr: number, dc: number): boolean => {
+            if (!breaklines?.count) return false;
+            const neighbourLon = plane.lon(minX + (col + dc) * grid.cell);
+            const neighbourLat = plane.lat(minZ + (row + dr) * grid.cell);
+            return (
+              breaklines.crossesWallLonLat(lon, lat, neighbourLon, neighbourLat)
+              || (faceShare[index] < 0.5
+                && breaklines.crossesLonLat(lon, lat, neighbourLon, neighbourLat))
+            );
+          };
+          // One axis at a time, with the sea mirrored rather than read, so the
+          // axis along the shore still averages. Dropping the node instead left
+          // the brow the coast's wall hangs from unsmoothed: 31 m to 39 m
+          // between neighbours on Le Rocher.
+          let sum = 0;
+          let blocked = false;
+          for (const [dr, dc] of [[-1, 0], [0, -1]] as const) {
+            if (walled(dr, dc) || walled(-dr, -dc)) { blocked = true; break; }
+            const back = neighbour(dr, dc);
+            const forth = neighbour(-dr, -dc);
+            // Past the bbox there is nothing to reflect: leave the node be.
+            if (back === undefined || forth === undefined) { blocked = true; break; }
+            // The mirror is `2 * here - dry`, so a wet axis averages to `here`.
+            sum += Number.isNaN(back) || Number.isNaN(forth) ? 2 * here : back + forth;
+          }
+          if (blocked) continue;
+          const clear = Math.min(1, away / WALL_FADE_CELLS);
+          const strength = pull[index] * (clear + (1 - clear) * faceShare[index]);
+          settled[index] = here + (sum / NEIGHBOURS - here) * strength;
+        }
+      }
+    };
+    for (let pass = 0; pass < SMOOTH_PASSES; pass++) smoothPass();
+
+    // No face steeper than the limit between two nodes. The DTM drops a cliff
+    // in one cell where it can, and a face that sheer, a cell wide, drew as a
+    // shard however it was lit. The excess is shared between the two nodes and
+    // spreads over a few cells; the road holds. A built wall is let through: one
+    // taller than the limit allows in a cell is a cliff's brow, not a street's.
+    const maxRise = grid.cell * Math.tan((MAX_SLOPE_DEG * Math.PI) / 180);
+    // Off the shoreline too (`shoreCeiling`), measured to where the mesh puts
+    // the line: between two nodes either side of it. The scalar alone jumps where
+    // the surveyed line hands over to the raster, and a node it put 11 m inland
+    // stood 2 m from the lip, a 16 m wall over it.
+    const shoreCap = new Float32Array(width * height).fill(Infinity);
+    if (landAt) {
+      const land = new Float32Array(width * height);
+      for (let row = -1; row <= grid.rows + 1; row++) {
+        for (let col = -1; col <= grid.cols + 1; col++) {
+          land[(row + 1) * width + col + 1] = landAt(minX + col * grid.cell, minZ + row * grid.cell);
+        }
+      }
+      const away = distanceToShore(land, width, height, grid.cell);
+      for (let index = 0; index < width * height; index++) {
+        if (!held[index]) shoreCap[index] = shoreCeiling(Math.min(land[index], away[index]));
+      }
+    }
+    for (let index = 0; index < width * height; index++) {
+      if (settled[index] > shoreCap[index]) settled[index] = shoreCap[index];
+    }
+    const limit = (a: number, b: number): boolean => {
+      const ha = settled[a];
+      const hb = settled[b];
+      if (Number.isNaN(ha) || Number.isNaN(hb)) return false;
+      const excess = Math.abs(ha - hb) - maxRise;
+      if (excess <= 1e-3) return false;
+      const sign = ha > hb ? 1 : -1;
+      if (held[a] && held[b]) return false;
+      if (held[a]) settled[b] += sign * excess;
+      else if (held[b]) settled[a] -= sign * excess;
+      else {
+        settled[a] -= (sign * excess) / 2;
+        settled[b] += (sign * excess) / 2;
+      }
+      return true;
+    };
+    const limitAll = (): void => {
+      for (let pass = 0; pass < SLOPE_PASSES; pass++) {
+        let moved = false;
+        for (let index = 0; index < width * height; index++) {
+          const col = index % width;
+          if (col < width - 1 && limit(index, index + 1)) moved = true;
+          if (index + width < width * height && limit(index, index + width)) moved = true;
+        }
+        if (!moved) break;
+      }
+    };
+    // The limit works one pair of nodes at a time along the axes, and what it
+    // leaves on a face is a crumple of its own: smoothed again and limited
+    // again, the face settles into one slope.
+    limitAll();
+    for (let round = 0; round < SETTLE_ROUNDS; round++) {
+      smoothPass();
+      for (let index = 0; index < width * height; index++) {
+        if (settled[index] > shoreCap[index]) settled[index] = shoreCap[index];
+      }
+      limitAll();
+    }
+
+    // The town's levels go on after the smoothing, not through it: the road is
+    // drawn at its own height and the ground has to meet it there.
+    for (let row = -1; row <= grid.rows + 1; row++) {
+      for (let col = -1; col <= grid.cols + 1; col++) {
+        const index = (row + 1) * width + col + 1;
+        const value = settled[index];
+        if (Number.isNaN(value)) continue;
+        if (!streets?.count) continue;
+        const town = streets.at(minX + col * grid.cell, minZ + row * grid.cell);
+        // Still off the shoreline: a street the survey puts on a seawall half
+        // a metre from the line is a wall straight into the sea.
+        if (town) settled[index] = Math.min(value + (town.height - value) * town.weight, shoreCap[index]);
+      }
+    }
+
+    nodes[belt] = settled;
+    ceilings[belt] = shoreCap;
+    return settled;
   };
 
   const nodeAt = (belt: Belt, row: number, col: number): number => {
@@ -211,20 +572,33 @@ export function buildGround(field: HeightField, plane: ScenePlane, breaklines?: 
     const v = fz - row;
 
     const h00 = nodeAt(belt, row, col);
+    const h01 = nodeAt(belt, row + 1, col);
     const h11 = nodeAt(belt, row + 1, col + 1);
-    // The mesher splits a cell across the main diagonal: (row, col) to
-    // (row + 1, col + 1). Below it the third corner is (row + 1, col); above
-    // it, (row, col + 1). Reading the other one answers about a surface that
-    // was never drawn.
-    if (v >= u) {
-      const h01 = nodeAt(belt, row + 1, col);
-      if (Number.isNaN(h00) || Number.isNaN(h01) || Number.isNaN(h11)) return Number.NaN;
-      return h00 + (h11 - h01) * u + (h01 - h00) * v;
-    }
     const h10 = nodeAt(belt, row, col + 1);
-    if (Number.isNaN(h00) || Number.isNaN(h10) || Number.isNaN(h11)) return Number.NaN;
-    return h00 + (h10 - h00) * u + (h11 - h10) * v;
+    // The same diagonal the mesher drew (`splitsOnMain`): reading the other
+    // one answers about a surface that was never drawn.
+    if (splitsOnMain(h00, h01, h11, h10)) {
+      if (v >= u) {
+        if (Number.isNaN(h00) || Number.isNaN(h01) || Number.isNaN(h11)) return Number.NaN;
+        return h00 + (h11 - h01) * u + (h01 - h00) * v;
+      }
+      if (Number.isNaN(h00) || Number.isNaN(h10) || Number.isNaN(h11)) return Number.NaN;
+      return h00 + (h10 - h00) * u + (h11 - h10) * v;
+    }
+    if (u + v <= 1) {
+      if (Number.isNaN(h00) || Number.isNaN(h01) || Number.isNaN(h10)) return Number.NaN;
+      return h00 + (h10 - h00) * u + (h01 - h00) * v;
+    }
+    if (Number.isNaN(h11) || Number.isNaN(h01) || Number.isNaN(h10)) return Number.NaN;
+    return h11 + (h01 - h11) * (1 - u) + (h10 - h11) * (1 - v);
   };
 
-  return { gridFor, nodeAt, at };
+  const ceilingAt = (belt: Belt, row: number, col: number): number => {
+    const grid = gridFor(belt);
+    if (row < -1 || col < -1 || row > grid.rows + 1 || col > grid.cols + 1) return Infinity;
+    nodesFor(belt);
+    return ceilings[belt][(row + 1) * (grid.cols + 3) + col + 1];
+  };
+
+  return { gridFor, nodeAt, at, ceilingAt };
 }

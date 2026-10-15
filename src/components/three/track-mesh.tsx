@@ -188,6 +188,8 @@ export interface TrackMeshProps {
   onCameraDetach?: () => void;
   /** Hand corrections from the track editor, laid over the automatic track. */
   overrides?: TrackOverrides | null;
+  /** Admin only: the baked ground with nothing standing on it. */
+  terrainOnly?: boolean;
   /** Track editor only: a click on the road, as an arc position and the lap it sits on. */
   onTrackPick?: (s: number, lapLengthM: number) => void;
   /** Track editor only: draw its markers. */
@@ -224,6 +226,7 @@ export default function TrackMesh({
   overrides,
   onTrackPick,
   editing,
+  terrainOnly = false,
 }: TrackMeshProps) {
   const feature = geojson.features[0];
   const coords = feature.geometry.coordinates;
@@ -920,6 +923,7 @@ export default function TrackMesh({
             lowDetail={lowDetail}
             onBeltLoaded={onBeltLoaded}
             hideBarrier={newLook && lookBarriers}
+            terrainOnly={terrainOnly}
           />
           <CameraGroundClamp version={beltsLoaded} />
         </>

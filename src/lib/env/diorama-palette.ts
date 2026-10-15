@@ -49,7 +49,6 @@ export type BakedMeshKind =
   | "water"
   | "tunnel"
   | "portal"
-  | "shore"
   | "pier"
   | "barrier"
   | "prop"
@@ -84,7 +83,6 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     // nothing in it changes with depth. Dark enough to stay a tunnel.
     tunnel: "#23272D",
     portal: DIORAMA_COLORS.buildingSide,
-    shore: DIORAMA_COLORS.buildingSide,
     barrier: "#C9CFD6",
     prop: DIORAMA_COLORS.building,
     model: "#FFFFFF",
@@ -114,7 +112,6 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     water: "#0E3F55",
     tunnel: "#101317",
     portal: "#7D828A",
-    shore: "#7D828A",
     barrier: "#757B83",
     prop: "#909399",
     // A tint over the kit house's own vertex colour, not a colour of its own.

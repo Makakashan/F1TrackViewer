@@ -10,13 +10,14 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { Document, NodeIO } from "@gltf-transform/core";
-import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { meshopt } from "@gltf-transform/functions";
+import { ALL_EXTENSIONS, KHRMeshQuantization } from "@gltf-transform/extensions";
+import { meshopt, quantize, reorder } from "@gltf-transform/functions";
 import { MeshoptEncoder } from "meshoptimizer";
 import { ShapeUtils, Vector2 } from "three";
 
 import { BAKED_MESH_COLORS, DIORAMA_COLORS, type BakedMeshKind } from "../../src/lib/env/diorama-palette";
 import { ENVIRONMENT_ATTRIBUTION, type BuildingsFile } from "../../src/lib/env/environment-types";
+import { DEFAULT_HALF_WIDTH_M as RIBBON_HALF_WIDTH_M } from "../../src/lib/track/track-geometry";
 import {
   BELT_BUDGET,
   BELT_CELL_M,
@@ -27,7 +28,7 @@ import {
   type Belt,
   type Corridor,
 } from "./belts";
-import { buildHeightField, type HeightField } from "./heightfield";
+import { buildHeightField, DEFAULT_VERGE_M, type HeightField } from "./heightfield";
 import {
   addFlatQuad,
   addFlatTriangle,
@@ -38,23 +39,28 @@ import {
   type Mesh,
 } from "./mesh";
 import { scenePlaneFor, type ScenePlane } from "./plane";
-import { applyAlbedo, applyAmbientOcclusion, buildOccluders, shadeBySlope } from "./ao";
+import { applyAlbedo, applyAmbientOcclusion, buildGroundShade, buildOccluders, paintGround } from "./ao";
 import {
   fetchBuildingWays,
+  fetchStreetWays,
   fetchGreenWays,
   fetchBreaklineWays,
   fetchShoreWays,
   fetchStructureWays,
   type BreaklineWay,
   type BuildingWay,
+  type StreetWay,
   type GreenWay,
   type ShoreWay,
   type StructureWay,
 } from "./overpass";
 import { buildGreenery, plantTrees, type GreeneryResult } from "./greenery";
 import { buildSurfaceIndex } from "./baked-scene";
-import { buildBreaklines } from "./breaklines";
-import { buildGround, type Ground } from "./ground";
+import { buildBreaklines, type Breaklines } from "./breaklines";
+import cdt2d from "cdt2d";
+import { buildRibbon, clipToCell, type Ribbon } from "./ribbon";
+import { buildGround, SHORE_LIP_M, splitsOnMain, type Ground } from "./ground";
+import { buildStreetGround } from "./streets";
 import {
   chooseKitHouses,
   repaintKitHouse,
@@ -72,9 +78,8 @@ import {
   type RasterBBox,
 } from "./raster";
 import { measureBuildingHeights, type HeightStats } from "./building-heights";
-import { buildPiers, type PierResult } from "./piers";
+import { buildPiers, type PierDeck, type PierResult } from "./piers";
 import { berthYachts, buildProps, type PropResult } from "./props";
-import { bakeShoreWalls, type ShoreResult } from "./shore";
 import { buildCoastline, type Coastline, type CoastlineStats } from "./coastline";
 import { buildShoreDistance } from "./shore-distance";
 import {
@@ -88,7 +93,7 @@ import {
   type OverrideStats,
 } from "./overrides";
 import { buildTunnelMask, type TunnelMask } from "./tunnels";
-import { circuitBBox, loadCircuitCoords } from "./circuit";
+import { circuitBBox, circuitLengthM, loadCircuitCoords } from "./circuit";
 
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 const OUTPUT_ROOT = join(REPO_ROOT, "public", "environments");
@@ -120,12 +125,7 @@ const SKIRT_M = 3;
  * 455 m, so a 60 m block is under a seventh of it.
  */
 const PLINTH_FLOOR_M = -60;
-/**
- * Where the coast's skirt ends. A fixed drop is wrong at the water: a cliff
- * standing 30 m up gets a 3 m hem and the rest is open air, so from the sea the
- * headland reads as a shelf hanging over nothing. Going to a fixed depth below
- * the datum instead costs the same two triangles and closes the wall.
- */
+/** Where the step at the shoreline and a pontoon deck's walls end, under the sea plane. */
 const SHORE_FOOT_M = -3;
 /**
  * Highest the land is allowed to be at the water's edge itself.
@@ -166,13 +166,22 @@ const SURVEYED_HOLE_M = 2.5;
 const RASTER_CONFIDENT_M = 8;
 /** How wet a node cleared for a deck reads. Any negative would do; this keeps the cut's interpolation sane. */
 const DECK_CLEARED_SCALAR_M = 2;
+/** How the seabed falls away from the shoreline, metres per metre, and where it stops. */
+const SEABED_SLOPE = 4;
+const SEABED_FLOOR_M = -15;
+/** Keys for the vertices the shoreline adds, clear of the grid's and the road's. */
+const SHORE_VERTEX_KEY = 2e12;
+/** Ground this far under the sea plane is not drawn. */
+const SEABED_HIDDEN_M = -2;
 /** Buildings below this are noise — bin stores, lift housings, map clutter. */
 const MIN_BUILDING_HEIGHT_M = 2;
 
-/** The band a terrain surface vertex is allowed to live in: clear of the sea plane, below the cliff cap. */
-function clampToSurface(y: number): number {
-  return Math.max(WATER_CLEARANCE_M, Math.min(y, SHORE_EDGE_MAX_M));
-}
+/**
+ * How far the cut may sit below the land behind it. Capping a cliff at
+ * `SHORE_EDGE_MAX_M` hung its whole face on one row of triangles, which drew
+ * the coast as a fan of slabs; the drop belongs to the skirt instead.
+ */
+export const MAX_COAST_DROP_M = 6;
 
 /**
  * The hue a merged model's colour is pulled toward: the palette's building
@@ -194,11 +203,16 @@ const MESH_COLOR = BAKED_MESH_COLORS.light;
 
 interface TerrainResult {
   meshes: Record<Belt, Mesh>;
+  blocks: BeltBlocks;
   /** The block's sides and its floor, cut from the far belt's own rim. */
   plinth: Mesh;
   cellsByBelt: Record<Belt, number>;
   /** Cells of water that never reached the sea and were filled as holes. */
   holesFilled: number;
+  /** Cells of water too narrow to draw, filled as land. */
+  inletsFilled: number;
+  /** Cells of land too small and too far out to be anything but noise, drawn as sea. */
+  isletsDrowned: number;
   /** How much the fine belts gave up to meet the coarse ones — see `surfaceHeightAt`. */
   conform: { nodes: number; worstM: number; meanM: number; over1M: number; over2M: number };
 }
@@ -213,6 +227,15 @@ const POND_CELL_M = BELT_CELL_M.core;
 const MIN_POND_M2 = 400;
 /** How much land a filled hole reports. Enough that no cell edge crosses zero inside it. */
 const POND_FILLED_SCALAR_M = 2;
+/**
+ * Water with high land this many lattice nodes away on both sides is narrower
+ * than the grid can draw. Between a mole and Le Rocher it came out as a slot
+ * eight metres wide and thirty deep, the cut raised with the cliff on either
+ * side. Only where it is raised: between two pontoons the cut stays at the cap
+ * and the gap is water.
+ */
+const PINCH_NODES = 2;
+const PINCH_LAND_M = SHORE_EDGE_MAX_M + MAX_COAST_DROP_M;
 
 /**
  * Water that never reaches the open sea, and is small.
@@ -230,11 +253,18 @@ const POND_FILLED_SCALAR_M = 2;
  */
 function findEnclosedWater(
   scalarAt: (x: number, z: number) => number,
+  heightAt: (x: number, z: number) => number,
   minX: number,
   maxX: number,
   minZ: number,
   maxZ: number,
-): { cells: number; has(x: number, z: number): boolean } {
+): {
+  cells: number;
+  pinched: number;
+  islets: number;
+  /** Land drawn where the scalar says water, or water where it says land; zero where it is left alone. */
+  overrideAt(x: number, z: number): number;
+} {
   const cols = Math.floor((maxX - minX) / POND_CELL_M) + 1;
   const rows = Math.floor((maxZ - minZ) / POND_CELL_M) + 1;
   const wet = new Uint8Array(rows * cols);
@@ -247,49 +277,86 @@ function findEnclosedWater(
   }
 
   const filled = new Uint8Array(rows * cols);
-  const seen = new Uint8Array(rows * cols);
+  const drowned = new Uint8Array(rows * cols);
   const maxCells = Math.round(MIN_POND_M2 / (POND_CELL_M * POND_CELL_M));
-  const component: number[] = [];
-  const queue: number[] = [];
-  let cells = 0;
+  /** Every patch of nodes `wet` marks as `kind` that is small and never reaches the bbox's edge. */
+  const enclosed = (kind: number, into: Uint8Array): number => {
+    const seen = new Uint8Array(rows * cols);
+    const component: number[] = [];
+    const queue: number[] = [];
+    let cells = 0;
+    for (let start = 0; start < wet.length; start++) {
+      if (seen[start] || wet[start] !== kind) continue;
+      component.length = 0;
+      queue.length = 0;
+      queue.push(start);
+      seen[start] = 1;
+      let reachesTheEdge = false;
 
-  for (let start = 0; start < wet.length; start++) {
-    if (seen[start] || !wet[start]) continue;
-    component.length = 0;
-    queue.length = 0;
-    queue.push(start);
-    seen[start] = 1;
-    let reachesTheSea = false;
+      while (queue.length) {
+        const index = queue.pop() as number;
+        component.push(index);
+        const row = Math.floor(index / cols);
+        const col = index - row * cols;
+        if (row === 0 || col === 0 || row === rows - 1 || col === cols - 1) reachesTheEdge = true;
+        for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+          const nr = row + dr;
+          const nc = col + dc;
+          if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
+          const next = nr * cols + nc;
+          if (seen[next] || wet[next] !== kind) continue;
+          seen[next] = 1;
+          queue.push(next);
+        }
+      }
 
-    while (queue.length) {
-      const index = queue.pop() as number;
-      component.push(index);
-      const row = Math.floor(index / cols);
-      const col = index - row * cols;
-      if (row === 0 || col === 0 || row === rows - 1 || col === cols - 1) reachesTheSea = true;
-      for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
-        const nr = row + dr;
-        const nc = col + dc;
-        if (nr < 0 || nc < 0 || nr >= rows || nc >= cols) continue;
-        const next = nr * cols + nc;
-        if (seen[next] || !wet[next]) continue;
-        seen[next] = 1;
-        queue.push(next);
+      if (reachesTheEdge || component.length > maxCells) continue;
+      for (const index of component) into[index] = 1;
+      cells += component.length;
+    }
+    return cells;
+  };
+  const cells = enclosed(1, filled);
+  // The same holds the other way round: a scrap of land the sea rings, smaller
+  // than a hole would be, is the line and the raster disagreeing off a quay.
+  for (let i = 0; i < wet.length; i++) if (filled[i]) wet[i] = 1 - wet[i];
+  const islets = enclosed(0, drowned);
+  for (let i = 0; i < wet.length; i++) if (filled[i]) wet[i] = 1 - wet[i];
+
+  // Land close on both sides along any axis, straight or diagonal.
+  const dryWithin = (row: number, col: number, dr: number, dc: number): boolean => {
+    for (let step = 1; step <= PINCH_NODES; step++) {
+      const r = row + dr * step;
+      const c = col + dc * step;
+      if (r < 0 || c < 0 || r >= rows || c >= cols) return false;
+      if (!wet[r * cols + c]) return heightAt(minX + c * POND_CELL_M, minZ + r * POND_CELL_M) > PINCH_LAND_M;
+    }
+    return false;
+  };
+  let pinched = 0;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const index = row * cols + col;
+      if (!wet[index] || filled[index]) continue;
+      for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]] as const) {
+        if (!dryWithin(row, col, dr, dc) || !dryWithin(row, col, -dr, -dc)) continue;
+        filled[index] = 1;
+        pinched++;
+        break;
       }
     }
-
-    if (reachesTheSea || component.length > maxCells) continue;
-    for (const index of component) filled[index] = 1;
-    cells += component.length;
   }
 
   return {
     cells,
-    has(x: number, z: number): boolean {
+    pinched,
+    islets,
+    overrideAt(x: number, z: number): number {
       const col = Math.round((x - minX) / POND_CELL_M);
       const row = Math.round((z - minZ) / POND_CELL_M);
-      if (row < 0 || col < 0 || row >= rows || col >= cols) return false;
-      return filled[row * cols + col] === 1;
+      if (row < 0 || col < 0 || row >= rows || col >= cols) return 0;
+      const index = row * cols + col;
+      return filled[index] ? POND_FILLED_SCALAR_M : drowned[index] ? -POND_FILLED_SCALAR_M : 0;
     },
   };
 }
@@ -309,6 +376,11 @@ export interface BeltBlocks {
    * copy of the rule.
    */
   conformsAt(x: number, z: number): boolean;
+  /**
+   * The coarsest cell among the blocks a point touches. Two belts sharing a
+   * seam point touch the same blocks, so anything scaled by it agrees there.
+   */
+  coarsestCellAt(x: number, z: number): number;
 }
 
 /**
@@ -335,6 +407,12 @@ export function buildBeltBlocks(
   field: HeightField,
   plane: ScenePlane,
   corridor: Corridor,
+  /**
+   * Metres from the shoreline the mesh cuts along, positive on land. The raster
+   * alone missed shore the surveyed line draws — a breakwater it saw as sea —
+   * and two belts cut that shore each from their own grid, in teeth.
+   */
+  landAt?: (x: number, z: number) => number,
 ): BeltBlocks {
   const minX = plane.x(field.bbox.minLon);
   const maxX = plane.x(field.bbox.maxLon);
@@ -350,13 +428,34 @@ export function buildBeltBlocks(
     for (let col = 0; col < blockCols; col++) {
       const x = minX + (col + 0.5) * blockM;
       const z = minZ + (row + 0.5) * blockM;
-      if (straddlesWater(field, plane, x, z, blockM)) straddles[row * blockCols + col] = 1;
+      if (straddlesWater(field, plane, x, z, blockM, landAt)) straddles[row * blockCols + col] = 1;
     }
   }
+  // A rock face is the other place a coarse cell cannot hold the ground. At
+  // sixty degrees a 16 m cell drops fourteen metres in one step, and a row of
+  // them along a headland reads as sawteeth rather than a cliff; measured on
+  // the shipped bake, 1,000 of far's 5,465 terrain triangles fell that steeply.
+  // So a steep block is meshed at the fine cell too, grown by a ring like the
+  // coast so the face and its brow are one piece.
+  const steep = new Uint8Array(blockRows * blockCols);
+  for (let row = 0; row < blockRows; row++) {
+    for (let col = 0; col < blockCols; col++) {
+      const x = minX + (col + 0.5) * blockM;
+      const z = minZ + (row + 0.5) * blockM;
+      const east = field.heightAt(plane.lon(x + blockM / 2), plane.lat(z));
+      const west = field.heightAt(plane.lon(x - blockM / 2), plane.lat(z));
+      const south = field.heightAt(plane.lon(x), plane.lat(z + blockM / 2));
+      const north = field.heightAt(plane.lon(x), plane.lat(z - blockM / 2));
+      if ([east, west, south, north].some(Number.isNaN)) continue;
+      const run = Math.hypot((east - west) / blockM, (south - north) / blockM);
+      if ((Math.atan(run) * 180) / Math.PI > FACE_DEG) steep[row * blockCols + col] = 1;
+    }
+  }
+
   const coastal = new Uint8Array(blockRows * blockCols);
   for (let row = 0; row < blockRows; row++) {
     for (let col = 0; col < blockCols; col++) {
-      if (!straddles[row * blockCols + col]) continue;
+      if (!straddles[row * blockCols + col] && !steep[row * blockCols + col]) continue;
       for (let dr = -1; dr <= 1; dr++) {
         for (let dc = -1; dc <= 1; dc++) {
           const r = row + dr;
@@ -378,6 +477,28 @@ export function buildBeltBlocks(
       blockBelt[row * blockCols + col] = BELT_ORDER.indexOf(belt);
     }
   }
+  // A coast raised to the core has far blocks for neighbours, and a 4 m block
+  // bent onto a 16 m chord drew Larvotto as a patchwork of slabs. A far block
+  // beside a core one steps to the city, so the cell never jumps more than twice.
+  const core = BELT_ORDER.indexOf("core");
+  const far = BELT_ORDER.indexOf("far");
+  const besideCore = (row: number, col: number): boolean => {
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const r = row + dr;
+        const c = col + dc;
+        if (r < 0 || c < 0 || r >= blockRows || c >= blockCols) continue;
+        if (blockBelt[r * blockCols + c] === core) return true;
+      }
+    }
+    return false;
+  };
+  for (let row = 0; row < blockRows; row++) {
+    for (let col = 0; col < blockCols; col++) {
+      const index = row * blockCols + col;
+      if (blockBelt[index] === far && besideCore(row, col)) blockBelt[index] = BELT_ORDER.indexOf("city");
+    }
+  }
 
   const beltOfCell = (row: number, col: number, cell: number): Belt => {
     const blockRow = Math.min(blockRows - 1, Math.floor((row * cell) / blockM));
@@ -388,6 +509,17 @@ export function buildBeltBlocks(
   const cellOfBlock = (blockRow: number, blockCol: number): number => {
     if (blockRow < 0 || blockCol < 0 || blockRow >= blockRows || blockCol >= blockCols) return 0;
     return BELT_CELL_M[BELT_ORDER[blockBelt[blockRow * blockCols + blockCol]]];
+  };
+
+  const coarsestCellAt = (x: number, z: number): number => {
+    let coarsest = 0;
+    for (const dx of [-0.5, 0.5]) {
+      for (const dz of [-0.5, 0.5]) {
+        const cell = cellOfBlock(Math.floor((z - minZ + dz) / blockM), Math.floor((x - minX + dx) / blockM));
+        if (cell > coarsest) coarsest = cell;
+      }
+    }
+    return coarsest || BELT_CELL_M.core;
   };
 
   const conformsAt = (x: number, z: number): boolean => {
@@ -421,8 +553,11 @@ export function buildBeltBlocks(
     return coarsest > finest;
   };
 
-  return { blockM, blockRows, blockCols, blockBelt, beltOfCell, conformsAt };
+  return { blockM, blockRows, blockCols, blockBelt, beltOfCell, conformsAt, coarsestCellAt };
 }
+
+/** Above this the ground is a face, not a slope, and a coarse cell aliases it. */
+const FACE_DEG = 35;
 
 /** Does this block have both land and water in it? */
 function straddlesWater(
@@ -431,64 +566,168 @@ function straddlesWater(
   centreX: number,
   centreZ: number,
   sizeM: number,
+  landAt?: (x: number, z: number) => number,
 ): boolean {
   let land = false;
   let water = false;
+  let dry = false;
+  let wet = false;
   const half = sizeM / 2;
   for (const dx of [-half, 0, half]) {
     for (const dz of [-half, 0, half]) {
       const value = field.heightAt(plane.lon(centreX + dx), plane.lat(centreZ + dz));
       if (Number.isNaN(value)) water = true;
       else land = true;
-      if (land && water) return true;
+      if (landAt) {
+        if (landAt(centreX + dx, centreZ + dz) > 0) dry = true;
+        else wet = true;
+      }
+      if ((land && water) || (dry && wet)) return true;
     }
   }
   return false;
 }
 
 /**
- * One grid per belt, each at its own cell size, each covering only the cells
- * whose centre falls in that belt. Where a cell has no neighbour — the coast,
- * or the step to a coarser belt — the edge drops a skirt, which is cheaper than
- * stitching two resolutions and hides the same seam.
- *
- * The water edge is the exception: it is cut against the surveyed shoreline
- * rather than the grid (P4.0), because a grid edge is a staircase and no cell
- * size makes it not one.
- */
-/**
- * How far two terrain faces may disagree before the corner they share stops
- * being one surface. Below it the hillside shades smoothly; above it — a cliff
- * top, a quay, a terrace riser — the edge stays an edge.
- *
- * Fifteen degrees, looked at rather than reasoned about: 25° left Le Rocher
- * reading as drapery, 15° gives it faces, and 10° is not visibly different from
- * 15° while costing another 0.07 MB on the core belt. The hillside is still
- * smooth at 15° — that was the other half of the check.
+ * How far two terrain faces may disagree before their corner splits. The ground
+ * then takes the faces' smoothed light (`smoothLight`), so the split survives
+ * only at a retaining wall's foot, where a built step keeps its edge.
  */
 const TERRAIN_CREASE_DEG = 15;
-
-function bakeTerrain(
-  field: HeightField,
-  ground: Ground,
-  plane: ScenePlane,
+/**
+ * The road's own ground: within the burned half width of the centreline, and
+ * level with it across — which a tunnel's hill is not, so the vault is left out.
+ */
+const ROAD_HELD_M = DEFAULT_TRACK_HALF_WIDTH_M + DEFAULT_VERGE_M;
+/**
+ * The level a node on the road is held at, or NaN off it. Under the ribbon the
+ * level is the road's whether or not the field was burned that wide: a cutting's
+ * bank left there came up through the tarmac as shards by the tunnel's mouth.
+ */
+export function roadLevel(
   corridor: Corridor,
+  field: HeightField,
+  plane: ScenePlane,
+  buried: (x: number, z: number) => boolean,
+): (x: number, z: number) => number {
+  return (x, z) => {
+    const { distanceM, footX, footZ } = corridor.measure(x, z);
+    if (distanceM > ROAD_HELD_M) return Number.NaN;
+    const here = field.heightAt(plane.lon(x), plane.lat(z));
+    const road = field.heightAt(plane.lon(footX), plane.lat(footZ));
+    if (distanceM <= RIBBON_HALF_WIDTH_M && !buried(x, z)) return road;
+    return Math.abs(here - road) < 0.5 ? here : Number.NaN;
+  };
+}
+
+/**
+ * Within a cell of a retaining wall the crease stays: that step is built and
+ * sharp. A cliff is the ground itself and shades as it does — creased along its
+ * surveyed line, the brow drew a zigzag — and a quay's edge is the cut's.
+ */
+export function atSurveyedWall(
+  breaklines: Breaklines,
+  plane: ScenePlane,
+  x: number,
+  z: number,
+  cell: number,
+): boolean {
+  const lon = plane.lon(x);
+  const lat = plane.lat(z);
+  return (
+    breaklines.crossesRetainingLonLat(plane.lon(x - cell), lat, plane.lon(x + cell), lat)
+    || breaklines.crossesRetainingLonLat(lon, plane.lat(z - cell), lon, plane.lat(z + cell))
+  );
+}
+
+/** Faces flatter than this count toward a vertex's light; steeper ones are a step, a skirt or a wall. */
+const LIT_FACE_MIN_NY = 0.3;
+/** Passes of averaging each lit place's normal with its neighbours'. */
+const LIGHT_SMOOTH_PASSES = 3;
+
+/**
+ * Each lit vertex takes the area-weighted normal of the dry, unwalled faces
+ * around its place, summed over every belt so both sides of a seam read the
+ * same. Read off a filtered copy of the ground instead, the light disagreed
+ * with the faces it fell on and a cliff came out a chequerboard.
+ */
+function smoothLight(parts: [Mesh, Uint8Array][]): void {
+  const key = (x: number, z: number) => `${Math.round(x * 100)},${Math.round(z * 100)}`;
+  const sums = new Map<string, [number, number, number]>();
+  const neighbours = new Map<string, Set<string>>();
+  for (const [mesh] of parts) {
+    const p = mesh.positions;
+    for (let t = 0; t < mesh.indices.length; t += 3) {
+      const [a, b, c] = [mesh.indices[t], mesh.indices[t + 1], mesh.indices[t + 2]];
+      const ux = p[b * 3] - p[a * 3], uy = p[b * 3 + 1] - p[a * 3 + 1], uz = p[b * 3 + 2] - p[a * 3 + 2];
+      const wx = p[c * 3] - p[a * 3], wy = p[c * 3 + 1] - p[a * 3 + 1], wz = p[c * 3 + 2] - p[a * 3 + 2];
+      let nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+      const length = Math.hypot(nx, ny, nz);
+      if (length < 1e-9) continue;
+      // Wound either way, the ground faces up.
+      if (ny < 0) { nx = -nx; ny = -ny; nz = -nz; }
+      if (ny / length < LIT_FACE_MIN_NY) continue;
+      if (Math.max(p[a * 3 + 1], p[b * 3 + 1], p[c * 3 + 1]) < 0) continue;
+      const keys = [a, b, c].map((v) => key(p[v * 3], p[v * 3 + 2]));
+      for (let i = 0; i < 3; i++) {
+        const sum = sums.get(keys[i]);
+        if (sum) { sum[0] += nx; sum[1] += ny; sum[2] += nz; }
+        else sums.set(keys[i], [nx, ny, nz]);
+        let around = neighbours.get(keys[i]);
+        if (!around) neighbours.set(keys[i], (around = new Set()));
+        around.add(keys[(i + 1) % 3]);
+        around.add(keys[(i + 2) % 3]);
+      }
+    }
+  }
+  // A face is one cell of ripple; a vertex's own ring still turns the light
+  // per cell on gentle ground. A pass or two over the neighbours' normals takes
+  // that out and leaves the relief, which is wider than a ring.
+  let normals = new Map<string, [number, number, number]>();
+  for (const [k, sum] of sums) {
+    const length = Math.hypot(...sum);
+    normals.set(k, [sum[0] / length, sum[1] / length, sum[2] / length]);
+  }
+  for (let pass = 0; pass < LIGHT_SMOOTH_PASSES; pass++) {
+    const next = new Map<string, [number, number, number]>();
+    for (const [k, own] of normals) {
+      const sum: [number, number, number] = [...own];
+      for (const other of neighbours.get(k) ?? []) {
+        const n = normals.get(other);
+        if (n) { sum[0] += n[0]; sum[1] += n[1]; sum[2] += n[2]; }
+      }
+      const length = Math.hypot(...sum);
+      next.set(k, [sum[0] / length, sum[1] / length, sum[2] / length]);
+    }
+    normals = next;
+  }
+  for (const [mesh, lit] of parts) {
+    const p = mesh.positions;
+    for (let v = 0; v < lit.length; v++) {
+      if (!lit[v] || p[v * 3 + 1] < 0) continue;
+      const normal = normals.get(key(p[v * 3], p[v * 3 + 2]));
+      if (normal) [mesh.normals[v * 3], mesh.normals[v * 3 + 1], mesh.normals[v * 3 + 2]] = normal;
+    }
+  }
+}
+
+/** Keys for the vertices the road adds, clear of every grid node's own. */
+const ROAD_VERTEX_KEY = 1e12;
+
+/**
+ * How much land there is at a point: metres from the surveyed shoreline where
+ * there is one, and otherwise the smoothed raster distance — where no surveyed
+ * line reaches, a third of a kilometre of Larvotto among others. The ground and
+ * its mesh both read this, so they agree on where the sea starts.
+ */
+export function buildLandAt(
+  field: HeightField,
+  plane: ScenePlane,
   coast: Coastline,
   piers: PierResult,
-  hollow: PortalHollow,
-): TerrainResult {
-  // Where no surveyed line reaches — a third of a kilometre of Larvotto, among
-  // others — the edge still has to come from somewhere smoother than a boolean
-  // flag, or the cut falls back on the grid it exists to escape.
+): (x: number, z: number) => number {
   const rasterShore = buildShoreDistance(field);
-
-  /**
-   * How much land there is at a point: metres from the surveyed shoreline where
-   * there is one, and otherwise the smoothed raster distance. The terrain is
-   * where this is positive, so the coast lands wherever it crosses zero rather
-   * than on the nearest grid line.
-   */
-  const rawScalarAt = (x: number, z: number): number => {
+  return (x, z) => {
     // The raster's own copy of a deck is not land: the LiDAR saw the pontoon and
     // the boats tied to it, a few metres off where the ring is mapped, so the
     // deck and a torn strip of terrain were drawn side by side. The deck is the
@@ -502,6 +741,21 @@ function bakeTerrain(
     }
     return value;
   };
+}
+
+function bakeTerrain(
+  field: HeightField,
+  ground: Ground,
+  plane: ScenePlane,
+  corridor: Corridor,
+  rawScalarAt: (x: number, z: number) => number,
+  /** Sharp turns of the surveyed line: the lip routes through these. */
+  corners: { x: number; z: number }[],
+  hollow: PortalHollow,
+  breaklines: Breaklines,
+  /** Where the viewer draws the road; its edges are edges of the core belt's mesh. */
+  ribbon: Ribbon | null,
+): TerrainResult {
   let conformed = 0;
   let worstConform = 0;
   let conformSum = 0;
@@ -509,6 +763,7 @@ function bakeTerrain(
   let conformOver2 = 0;
   let holesFilled = 0;
   const meshes = {} as Record<Belt, Mesh>;
+  const litByBelt = {} as Record<Belt, Uint8Array>;
   const plinth = createMesh();
   const cellsByBelt = { core: 0, city: 0, far: 0 } as Record<Belt, number>;
 
@@ -517,10 +772,12 @@ function bakeTerrain(
   const minZ = plane.z(field.bbox.maxLat); // north edge is the smaller Z
   const maxZ = plane.z(field.bbox.minLat);
 
-  const ponds = findEnclosedWater(rawScalarAt, minX, maxX, minZ, maxZ);
+  const ponds = findEnclosedWater(rawScalarAt, (x, z) => ground.at(x, z, "core"), minX, maxX, minZ, maxZ);
   holesFilled = ponds.cells;
+  const inletsFilled = ponds.pinched;
+  const isletsDrowned = ponds.islets;
 
-  const blocks = buildBeltBlocks(field, plane, corridor);
+  const blocks = buildBeltBlocks(field, plane, corridor, rawScalarAt);
   const { blockM, blockRows, blockCols, blockBelt, beltOfCell } = blocks;
 
   /**
@@ -558,8 +815,34 @@ function bakeTerrain(
     return 0;
   };
 
-  const surfaceHeightOn = (belt: Belt, row: number, col: number): number =>
-    Math.max(solidHeightOn(belt, row, col), WATER_CLEARANCE_M);
+  /** Metres from the shoreline at a belt's node: positive on land. */
+  const landCache = {} as Record<Belt, Map<number, number>>;
+  const landOn = (belt: Belt, row: number, col: number): number => {
+    const cache = (landCache[belt] ??= new Map());
+    const key = row * 1e6 + col;
+    const cached = cache.get(key);
+    if (cached !== undefined) return cached;
+    const cell = BELT_CELL_M[belt];
+    const x = minX + col * cell;
+    const z = minZ + row * cell;
+    const value = ponds.overrideAt(x, z) || rawScalarAt(x, z);
+    cache.set(key, value);
+    return value;
+  };
+
+  /**
+   * The ground carries on under the water instead of ending at it, so there is
+   * no edge to fall through: past the shoreline it is a seabed falling away.
+   */
+  const surfaceHeightOn = (belt: Belt, row: number, col: number): number => {
+    const land = landOn(belt, row, col);
+    if (land <= 0) return Math.max(SEABED_FLOOR_M, land * SEABED_SLOPE);
+    // A node the line calls land and the raster sea borrows its neighbours'
+    // height, which can be a clifftop's: it is held off the shore as the ground is.
+    const solid = solidHeightOn(belt, row, col);
+    const borrowed = Number.isNaN(ground.nodeAt(belt, row, col));
+    return Math.max(borrowed ? Math.min(solid, ground.ceilingAt(belt, row, col)) : solid, WATER_CLEARANCE_M);
+  };
 
   /** The coarsest cell of the blocks meeting at a node's own position. */
   const coarsestAt = (offsetX: number, offsetZ: number): number => {
@@ -636,14 +919,6 @@ function bakeTerrain(
     const rows = Math.floor((maxZ - minZ) / cell);
     const grid = new GridMesh();
 
-    const nodes = (rows + 2) * (cols + 2);
-
-    // This belt's own view of the one surface: it averages the field over its
-    // own cell rather than sampling it — see `ground.ts`.
-    const heightAt = (row: number, col: number): number => ground.nodeAt(belt, row, col);
-
-    const solidHeightAt = (row: number, col: number): number => solidHeightOn(belt, row, col);
-
     const ownHeightAt = (row: number, col: number): number => surfaceHeightOn(belt, row, col);
 
     /**
@@ -671,57 +946,261 @@ function bakeTerrain(
         minZ + row * cell,
       );
 
-    // How much land there is at a node: metres from the surveyed shoreline
-    // where there is one, and otherwise a flag standing in for "well inside"
-    // the raster's own land or water. The terrain is the region where this is
-    // positive, so the coast lands wherever it crosses zero rather than on the
-    // nearest grid line.
-    const scalarCache = new Map<number, number>();
-    const scalarAt = (row: number, col: number): number => {
-      const key = row * (cols + 2) + col;
-      const cached = scalarCache.get(key);
-      if (cached !== undefined) return cached;
-      const x = minX + col * cell;
-      const z = minZ + row * cell;
-      const value = ponds.has(x, z) ? POND_FILLED_SCALAR_M : rawScalarAt(x, z);
-      scalarCache.set(key, value);
-      return value;
+    // The ribbon's edges, clipped to the core cells they cross. A cell a 4 m
+    // grid splits on its diagonal cannot hold an edge that runs through it, and
+    // the hillside beside the road ramped onto the tarmac within one cell.
+    const roadInCell = new Map<number, number[][]>();
+    if (ribbon && belt === "core") {
+      for (const edge of ribbon.edges) {
+        for (let i = 1; i < edge.length; i++) {
+          const a = edge[i - 1];
+          const b = edge[i];
+          const c0 = Math.floor((Math.min(a.x, b.x) - minX) / cell);
+          const c1 = Math.floor((Math.max(a.x, b.x) - minX) / cell);
+          const r0 = Math.floor((Math.min(a.z, b.z) - minZ) / cell);
+          const r1 = Math.floor((Math.max(a.z, b.z) - minZ) / cell);
+          for (let r = r0; r <= r1; r++) {
+            for (let c = c0; c <= c1; c++) {
+              const piece = clipToCell(a, b, minX + c * cell, minZ + r * cell, cell);
+              if (!piece) continue;
+              const key = r * (cols + 2) + c;
+              const list = roadInCell.get(key);
+              if (list) list.push(piece);
+              else roadInCell.set(key, [piece]);
+            }
+          }
+        }
+      }
+    }
+    // Shared by position, so two cells that meet on an edge meet at its points.
+    const roadVertices = new Map<string, number>();
+    const roadVertex = (x: number, y: number, z: number): number => {
+      const key = `${x.toFixed(3)},${z.toFixed(3)}`;
+      let id = roadVertices.get(key);
+      if (id === undefined) {
+        id = grid.vertex(ROAD_VERTEX_KEY + roadVertices.size, x, y, z);
+        roadVertices.set(key, id);
+      }
+      return id;
+    };
+    const splitByRoad = (row: number, col: number, pieces: number[][]): boolean => {
+      const x0 = minX + col * cell;
+      const z0 = minZ + row * cell;
+      const x1 = x0 + cell;
+      const z1 = z0 + cell;
+      const corners: [number, number, number][] = [
+        [x0, z0, vertexAt(row, col)],
+        [x0, z1, vertexAt(row + 1, col)],
+        [x1, z1, vertexAt(row + 1, col + 1)],
+        [x1, z0, vertexAt(row, col + 1)],
+      ];
+      const points: [number, number][] = [];
+      const ids: number[] = [];
+      const local = (x: number, y: number, z: number): number => {
+        // A point on a corner is the corner: two vertices there would crack.
+        for (const [cx, cz, id] of corners) {
+          if (Math.abs(cx - x) < 0.05 && Math.abs(cz - z) < 0.05) return addLocal(cx, cz, id);
+        }
+        return addLocal(x, z, roadVertex(x, y, z));
+      };
+      const addLocal = (x: number, z: number, id: number): number => {
+        const found = ids.indexOf(id);
+        if (found >= 0) return found;
+        points.push([x, z]);
+        ids.push(id);
+        return points.length - 1;
+      };
+      for (const [x, z, id] of corners) addLocal(x, z, id);
+      const constraints: [number, number][] = [];
+      for (const [ax, ay, az, bx, by, bz] of pieces) {
+        const a = local(ax, ay, az);
+        const b = local(bx, by, bz);
+        if (a !== b) constraints.push([a, b]);
+      }
+      // The cell's own rim, through every point that landed on it, so the
+      // neighbour across each side sees the same points.
+      const sides: [(p: [number, number]) => boolean, (p: [number, number]) => number][] = [
+        [(p) => Math.abs(p[0] - x0) < 1e-3, (p) => p[1]],
+        [(p) => Math.abs(p[1] - z1) < 1e-3, (p) => p[0]],
+        [(p) => Math.abs(p[0] - x1) < 1e-3, (p) => p[1]],
+        [(p) => Math.abs(p[1] - z0) < 1e-3, (p) => p[0]],
+      ];
+      for (const [on, along] of sides) {
+        const rim = points.map((p, i) => i).filter((i) => on(points[i]));
+        rim.sort((i, j) => along(points[i]) - along(points[j]));
+        for (let i = 1; i < rim.length; i++) constraints.push([rim[i - 1], rim[i]]);
+      }
+      let triangles: [number, number, number][];
+      try {
+        triangles = cdt2d(points, constraints);
+      } catch {
+        return false;
+      }
+      if (!triangles.length) return false;
+      for (const [a, b, c] of triangles) {
+        const area =
+          (points[b][0] - points[a][0]) * (points[c][1] - points[a][1])
+          - (points[b][1] - points[a][1]) * (points[c][0] - points[a][0]);
+        if (Math.abs(area) < 1e-9) continue;
+        // The grid's own winding, (x0,z0) → (x0,z1) → (x1,z1), is negative here.
+        if (area < 0) grid.triangle(ids[a], ids[b], ids[c]);
+        else grid.triangle(ids[a], ids[c], ids[b]);
+      }
+      return true;
+    };
+
+    /** Sharp surveyed corners by the cell that holds them, so the lip can miter through them. */
+    const cornerCells = new Map<number, { x: number; z: number }[]>();
+    for (const corner of corners) {
+      const key = Math.floor((corner.z - minZ) / cell) * (cols + 2) + Math.floor((corner.x - minX) / cell);
+      const list = cornerCells.get(key);
+      if (list) list.push(corner);
+      else cornerCells.set(key, [corner]);
+    }
+    /** Keys for the vertices a surveyed corner adds, clear of every other kind's. */
+    const CORNER_VERTEX_KEY = 3e12;
+    /** How far in from its cell's edges a corner has to be: one on an edge would leave the neighbour's edge straight. */
+    const CORNER_MARGIN_M = 0.25;
+    /**
+     * The surveyed corner nearest a cell's lip, as a lip vertex and its foot.
+     * Without it the lip takes the shortcut across the turn and the leftover
+     * wedge reads as a tooth.
+     */
+    const shoreCorner = (row: number, col: number, inTop: number, outTop: number): [number, number] | null => {
+      const p = grid.mesh.positions;
+      const ax = p[inTop * 3], az = p[inTop * 3 + 2];
+      const abx = p[outTop * 3] - ax, abz = p[outTop * 3 + 2] - az;
+      const lengthSquared = abx * abx + abz * abz;
+      if (lengthSquared < 1e-9) return null;
+      const x0 = minX + col * cell + CORNER_MARGIN_M, x1 = minX + (col + 1) * cell - CORNER_MARGIN_M;
+      const z0 = minZ + row * cell + CORNER_MARGIN_M, z1 = minZ + (row + 1) * cell - CORNER_MARGIN_M;
+      let best: { x: number; z: number } | null = null;
+      let bestDistance = cell / 2;
+      for (const corner of cornerCells.get(row * (cols + 2) + col) ?? []) {
+        if (corner.x < x0 || corner.x > x1 || corner.z < z0 || corner.z > z1) continue;
+        const t = ((corner.x - ax) * abx + (corner.z - az) * abz) / lengthSquared;
+        if (t <= 0.05 || t >= 0.95) continue;
+        const distance = Math.hypot(corner.x - (ax + abx * t), corner.z - (az + abz * t));
+        if (distance < bestDistance) {
+          best = corner;
+          bestDistance = distance;
+        }
+      }
+      if (!best) return null;
+      const surface = ground.at(best.x, best.z, belt);
+      const ends = Math.max(p[inTop * 3 + 1], p[outTop * 3 + 1]);
+      const topY = Math.max(WATER_CLEARANCE_M, Math.min(Number.isNaN(surface) ? ends : surface, SHORE_LIP_M));
+      const key = CORNER_VERTEX_KEY + (Math.round(best.x * 4) + 20000) * 50000 + Math.round(best.z * 4) + 20000;
+      return [grid.vertex(key, best.x, topY, best.z), grid.vertex(key + 1, best.x, SHORE_FOOT_M, best.z)];
     };
 
     /**
-     * The point on a cell edge where the land runs out, as a shared vertex: the
-     * two cells either side of the edge compute it from the same two nodes, so
-     * the cut cannot open a seam.
+     * Where the shoreline crosses a cell edge: the ground's lip, and the foot of
+     * the step under it. Both cells either side share them, so the step cannot part.
      */
-    const crossingAt = (
-      rowA: number, colA: number, sA: number,
-      rowB: number, colB: number, sB: number,
-    ): number => {
-      const horizontal = rowA === rowB;
+    const shoreVertices = (rowA: number, colA: number, sA: number, rowB: number, colB: number, sB: number): [number, number] => {
       const key =
-        nodes * (horizontal ? 1 : 2) +
-        Math.min(rowA, rowB) * (cols + 2) +
-        Math.min(colA, colB);
-      const t = Math.max(0, Math.min(1, sA / (sA - sB)));
-      const xA = minX + colA * cell;
-      const zA = minZ + rowA * cell;
-      const x = xA + (minX + colB * cell - xA) * t;
-      const z = zA + (minZ + rowB * cell - zA) * t;
-      // Height comes from the dry end. The wet end has none, and reading the
-      // datum there would ramp the quay down into the sea like a beach.
-      const hA = heightAt(rowA, colA);
-      const hB = heightAt(rowB, colB);
-      let y: number;
-      if (!Number.isNaN(hA) && !Number.isNaN(hB)) y = hA + (hB - hA) * t;
-      else if (!Number.isNaN(hA)) y = hA;
-      else if (!Number.isNaN(hB)) y = hB;
-      else y = solidHeightAt(rowA, colA);
-      return grid.vertex(key, x, clampToSurface(y), z);
+        SHORE_VERTEX_KEY
+        + 4 * (Math.min(rowA, rowB) * (cols + 2) + Math.min(colA, colB))
+        + (rowA === rowB ? 0 : 2);
+      const t = sA / (sA - sB);
+      const x = minX + (colA + (colB - colA) * t) * cell;
+      const z = minZ + (rowA + (rowB - rowA) * t) * cell;
+      const dry = sA > 0 ? surfaceHeightAt(rowA, colA) : surfaceHeightAt(rowB, colB);
+      return [
+        grid.vertex(key, x, Math.min(dry, SHORE_LIP_M), z),
+        grid.vertex(key + 1, x, SHORE_FOOT_M, z),
+      ];
     };
 
-    // Land–water crossings, as vertex pairs, so the coast can drop a skirt once
-    // the grid is finished and its positions are settled.
-    const shoreEdges: [number, number][] = [];
+    /**
+     * A cell the shoreline crosses, drawn as its land side, a step down at the
+     * line and its seabed side, so the waterline is the shore's own line rather
+     * than wherever a slope across the cell met the sea plane. A saddle — land on
+     * two opposite corners — is two corners of land with the sea between them:
+     * drawn whole, it was a face from the clifftop to the seabed across the water.
+     */
+    const splitByShore = (row: number, col: number, lands: number[]): void => {
+      const dryAt = (i: number) => lands[i % 4] > 0;
+      const shore = walk.map(([dr, dc], i) => {
+        if (dryAt(i) === dryAt(i + 1)) return null;
+        const [nr, nc] = walk[(i + 1) % 4];
+        return shoreVertices(row + dr, col + dc, lands[i], row + nr, col + nc, lands[(i + 1) % 4]);
+      });
+
+      // One run of land may miter its lip through a surveyed corner; a saddle's
+      // two runs keep their straight lips.
+      const runs = [0, 1, 2, 3].filter((i) => dryAt(i) && !dryAt(i + 3));
+      const one = runs.length === 1 ? runs[0] : -1;
+      let corner: [number, number] | null = null;
+      let oneEnd = one;
+      if (one >= 0) {
+        while (dryAt(oneEnd)) oneEnd++;
+        corner = shoreCorner(row, col, shore[(one + 3) % 4]![0], shore[(oneEnd - 1) % 4]![0]);
+      }
+
+      // The sea side, fanned from the corner's foot where there is one: it
+      // sits on the lip between the run's two feet, so the fan stays inside.
+      const wet: number[] = [];
+      for (let i = 0; i < 4; i++) {
+        if (!dryAt(i)) wet.push(vertexAt(row + walk[i][0], col + walk[i][1]));
+        const pair = shore[i];
+        if (pair) wet.push(pair[1]);
+      }
+      if (corner) {
+        const inAt = wet.indexOf(shore[(one + 3) % 4]![1]);
+        wet.splice(0, wet.length, corner[1], ...wet.slice(inAt + 1), ...wet.slice(0, inAt + 1));
+      }
+      for (let i = 1; i < wet.length - 1; i++) grid.triangle(wet[0], wet[i], wet[i + 1]);
+
+      // Each run of dry corners is its own piece of land, from the line it
+      // comes in across to the line it goes out across.
+      for (const start of runs) {
+        const [inTop, inFoot] = shore[(start + 3) % 4]!;
+        const dry = [inTop];
+        let end = start;
+        while (dryAt(end)) {
+          dry.push(vertexAt(row + walk[end % 4][0], col + walk[end % 4][1]));
+          end++;
+        }
+        const [outTop, outFoot] = shore[(end - 1) % 4]!;
+        dry.push(outTop);
+        const landRow = row + walk[start][0];
+        const landCol = col + walk[start][1];
+        if (!corner) {
+          for (let i = 1; i < dry.length - 1; i++) grid.triangle(dry[0], dry[i], dry[i + 1]);
+          addStep(inTop, inFoot, outTop, outFoot, landRow, landCol);
+          continue;
+        }
+        // The corner closes the run between its two lips; fanned from it, the
+        // land covers its cell whichever side of the straight lip it stands.
+        for (let i = 0; i < dry.length - 1; i++) grid.triangle(corner[0], dry[i], dry[i + 1]);
+        addStep(inTop, inFoot, corner[0], corner[1], landRow, landCol);
+        addStep(corner[0], corner[1], outTop, outFoot, landRow, landCol);
+      }
+    };
+
+    /** The step under the shoreline, wound to face away from the land at (`landRow`, `landCol`). */
+    const addStep = (
+      topA: number, footA: number, topB: number, footB: number,
+      landRow: number, landCol: number,
+    ): void => {
+      const p = grid.mesh.positions;
+      const ax = p[topA * 3], az = p[topA * 3 + 2];
+      const alongX = p[topB * 3] - ax;
+      const alongZ = p[topB * 3 + 2] - az;
+      const landX = minX + landCol * cell - ax;
+      const landZ = minZ + landRow * cell - az;
+      // The face (top A, foot A, foot B) faces (-alongZ, alongX).
+      if (alongX * landZ - alongZ * landX < 0) {
+        grid.triangle(topA, footA, footB);
+        grid.triangle(topA, footB, topB);
+      } else {
+        grid.triangle(topB, footB, footA);
+        grid.triangle(topB, footA, topA);
+      }
+    };
+
     // The cells a portal took out, and the ones that were built, so the pit can
     // be walled along its own rim rather than along a guessed rectangle.
     const voidCells: number[] = [];
@@ -738,67 +1217,69 @@ function bakeTerrain(
         }
         built.add(row * (cols + 2) + col);
 
-        const scalars = walk.map(([dr, dc]) => scalarAt(row + dr, col + dc));
-        if (scalars.every((value) => value <= 0)) continue;
+        const heights = walk.map(([dr, dc]) => surfaceHeightAt(row + dr, col + dc));
+        // Seabed wholly under the opaque sea plane is never seen.
+        if (heights.every((h) => h < SEABED_HIDDEN_M)) continue;
 
-        if (scalars.every((value) => value > 0)) {
-          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col), vertexAt(row + 1, col + 1));
-          grid.triangle(vertexAt(row, col), vertexAt(row + 1, col + 1), vertexAt(row, col + 1));
+        const lands = walk.map(([dr, dc]) => landOn(belt, row + dr, col + dc));
+        if (lands.some((s) => s > 0) && lands.some((s) => s <= 0)) {
+          splitByShore(row, col, lands);
           cellsByBelt[belt]++;
           continue;
         }
 
-        // A cut cell: walk its rim, keeping the dry corners and adding a vertex
-        // wherever the rim crosses the water's edge, then fan the result.
-        const ring: number[] = [];
-        const cut: boolean[] = [];
-        for (let i = 0; i < 4; i++) {
-          const [dr, dc] = walk[i];
-          const [nr, nc] = walk[(i + 1) % 4];
-          if (scalars[i] > 0) {
-            ring.push(vertexAt(row + dr, col + dc));
-            cut.push(false);
+        // The road is land's: a ribbon edge over the sea is a chord the
+        // centreline closes across a window, not a road.
+        const pieces = lands.every((s) => s > 0) ? roadInCell.get(row * (cols + 2) + col) : undefined;
+        // A cell on a seam is drawn on the coarse belt's chord; splitting it
+        // would put points on that chord the coarse side does not have.
+        const onSeam = pieces && walk.some(([dr, dc]) => blocks.conformsAt(minX + (col + dc) * cell, minZ + (row + dr) * cell));
+        if (!pieces || onSeam || !splitByRoad(row, col, pieces)) {
+          const a = vertexAt(row, col), b = vertexAt(row + 1, col);
+          const c = vertexAt(row + 1, col + 1), d = vertexAt(row, col + 1);
+          const y = (id: number) => grid.mesh.positions[id * 3 + 1];
+          if (splitsOnMain(y(a), y(b), y(c), y(d))) {
+            grid.triangle(a, b, c);
+            grid.triangle(a, c, d);
+          } else {
+            grid.triangle(a, b, d);
+            grid.triangle(b, c, d);
           }
-          if (scalars[i] > 0 !== scalars[(i + 1) % 4] > 0) {
-            ring.push(
-              crossingAt(
-                row + dr, col + dc, scalars[i],
-                row + nr, col + nc, scalars[(i + 1) % 4],
-              ),
-            );
-            cut.push(true);
-          }
-        }
-        if (ring.length < 3) continue;
-
-        for (let i = 1; i < ring.length - 1; i++) {
-          grid.triangle(ring[0], ring[i], ring[i + 1]);
-        }
-        for (let i = 0; i < ring.length; i++) {
-          const next = (i + 1) % ring.length;
-          if (cut[i] && cut[next]) shoreEdges.push([ring[i], ring[next]]);
         }
         cellsByBelt[belt]++;
       }
     }
 
     const mesh = grid.finish(TERRAIN_CREASE_DEG);
+    // The band kept at a surveyed line keeps its crease; everything else is
+    // lit by the faces around it, once every belt is drawn (`smoothLight`).
+    const vertices = mesh.positions.length / 3;
+    const lit = new Uint8Array(vertices);
+    for (let v = 0; v < vertices; v++) {
+      const x = mesh.positions[v * 3];
+      const z = mesh.positions[v * 3 + 2];
+      if (!atSurveyedWall(breaklines, plane, x, z, BELT_CELL_M.core)) lit[v] = 1;
+    }
+    litByBelt[belt] = lit;
     addVoidWalls(mesh, voidCells, built, hollow, surfaceHeightAt, minX, minZ, cell, cols);
-    addTerrainSkirts(mesh, scalarAt, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
-    addShoreSkirts(mesh, shoreEdges);
+    addTerrainSkirts(mesh, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
     // The bbox rim is the far belt's: the finer belts sit inside the track's
     // radius and never reach it.
     if (belt === "far") {
-      addPlinth(plinth, scalarAt, surfaceHeightAt, minX, minZ, cell, rows, cols);
+      addPlinth(plinth, surfaceHeightAt, minX, minZ, cell, rows, cols);
     }
     meshes[belt] = mesh;
   }
+  smoothLight(BELT_ORDER.map((belt) => [meshes[belt], litByBelt[belt]]));
 
   return {
     meshes,
+    blocks,
     plinth,
     cellsByBelt,
     holesFilled,
+    inletsFilled,
+    isletsDrowned,
     conform: {
       nodes: conformed,
       worstM: worstConform,
@@ -890,7 +1371,6 @@ function addVoidWalls(
  */
 function addPlinth(
   mesh: Mesh,
-  scalarAt: (row: number, col: number) => number,
   surfaceHeightAt: (row: number, col: number) => number,
   minX: number,
   minZ: number,
@@ -898,8 +1378,7 @@ function addPlinth(
   rows: number,
   cols: number,
 ): void {
-  const top = (row: number, col: number): number =>
-    scalarAt(row, col) > 0 ? Math.max(surfaceHeightAt(row, col), 0) : 0;
+  const top = (row: number, col: number): number => Math.max(surfaceHeightAt(row, col), 0);
   const xAt = (col: number): number => minX + col * cell;
   const zAt = (row: number): number => minZ + row * cell;
 
@@ -940,23 +1419,10 @@ function addPlinth(
   );
 }
 
-/**
- * A vertical drop on every edge whose neighbour cell was not built — the belt
- * boundary and the edge of the bbox. The water's edge is not one of these: it
- * is cut inside the cell and gets its skirt from `addShoreSkirts`.
- */
+/** A vertical drop on every edge whose neighbour belongs to another belt or lies past the bbox. */
 function addTerrainSkirts(
   mesh: Mesh,
-  scalarAt: (row: number, col: number) => number,
-  /**
-   * The height the *surface* was built at, not the raster's own reading.
-   *
-   * The two differ wherever the raster has no value for a node the cut calls
-   * land, and there the skirt used to be skipped for want of a height while the
-   * surface above it was drawn anyway — an open crack down the belt boundary,
-   * on half of every boundary in Monaco. A skirt has to answer the same
-   * question the emitter did, from the same source.
-   */
+  /** The height the surface was built at, or the skirt hangs from where the ground is not. */
   surfaceHeightAt: (row: number, col: number) => number,
   beltOfCell: (row: number, col: number, cell: number) => Belt,
   belt: Belt,
@@ -975,25 +1441,10 @@ function addTerrainSkirts(
     row < 0 || col < 0 || row >= rows || col >= cols;
   const outside = (row: number, col: number): boolean => rimIsPlinth && offGrid(row, col);
 
-  // Built by the same test the emitter used, or a cell would drop a skirt
-  // against a neighbour that is standing right there.
-  const built = (row: number, col: number): boolean => {
-    if (offGrid(row, col)) return false;
-    if (beltOfCell(row, col, cell) !== belt) return false;
-    return (
-      scalarAt(row, col) > 0 ||
-      scalarAt(row, col + 1) > 0 ||
-      scalarAt(row + 1, col) > 0 ||
-      scalarAt(row + 1, col + 1) > 0
-    );
-  };
+  const built = (row: number, col: number): boolean =>
+    !offGrid(row, col) && beltOfCell(row, col, cell) === belt;
 
-  // Only a rim of dry ground gets a grid-aligned skirt: the water's edge is cut
-  // inside the cell and gets its own from `addShoreSkirts`. Dry is decided by
-  // the same scalar the emitter used and by nothing else.
-  const dry = (rowA: number, colA: number, rowB: number, colB: number): boolean =>
-    scalarAt(rowA, colA) > 0 && scalarAt(rowB, colB) > 0;
-
+  const first = mesh.normals.length;
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       if (!built(row, col)) continue;
@@ -1008,48 +1459,27 @@ function addTerrainSkirts(
       const h01 = surfaceHeightAt(row + 1, col);
       const h11 = surfaceHeightAt(row + 1, col + 1);
 
-      if (!built(row - 1, col) && !outside(row - 1, col) && dry(row, col, row, col + 1)) {
+
+      if (!built(row - 1, col) && !outside(row - 1, col)) {
         addFlatQuad(mesh, x0, h00, z0, x1, h10, z0, x1, h10 - SKIRT_M, z0, x0, h00 - SKIRT_M, z0);
       }
-      if (!built(row + 1, col) && !outside(row + 1, col) && dry(row + 1, col, row + 1, col + 1)) {
+      if (!built(row + 1, col) && !outside(row + 1, col)) {
         addFlatQuad(mesh, x1, h11, z1, x0, h01, z1, x0, h01 - SKIRT_M, z1, x1, h11 - SKIRT_M, z1);
       }
-      if (!built(row, col - 1) && !outside(row, col - 1) && dry(row, col, row + 1, col)) {
+      if (!built(row, col - 1) && !outside(row, col - 1)) {
         addFlatQuad(mesh, x0, h01, z1, x0, h00, z0, x0, h00 - SKIRT_M, z0, x0, h01 - SKIRT_M, z1);
       }
-      if (!built(row, col + 1) && !outside(row, col + 1) && dry(row, col + 1, row + 1, col + 1)) {
+      if (!built(row, col + 1) && !outside(row, col + 1)) {
         addFlatQuad(mesh, x1, h10, z0, x1, h11, z1, x1, h11 - SKIRT_M, z1, x1, h10 - SKIRT_M, z0);
       }
     }
   }
-}
-
-/**
- * The coast's own drop. The cut leaves the ground ending at the quay's height
- * in mid-air; this closes it down past the datum so the sea plane meets a wall
- * rather than a torn edge.
- *
- * Each edge runs the way the land's rim does — counter-clockwise seen from
- * above — so reversing it puts the face outward, at the water.
- */
-function addShoreSkirts(mesh: Mesh, edges: [number, number][]): void {
-  const { positions } = mesh;
-  for (const [a, b] of edges) {
-    const ax = positions[a * 3];
-    const ay = positions[a * 3 + 1];
-    const az = positions[a * 3 + 2];
-    const bx = positions[b * 3];
-    const by = positions[b * 3 + 1];
-    const bz = positions[b * 3 + 2];
-    // Down to the sea floor, not down by a fixed hem: see SHORE_FOOT_M.
-    const foot = Math.min(SHORE_FOOT_M, Math.min(ay, by) - 0.5);
-    addFlatQuad(
-      mesh,
-      bx, by, bz,
-      ax, ay, az,
-      ax, foot, az,
-      bx, foot, bz,
-    );
+  // The seam between two belts is a hairline, and through it a skirt lit as a
+  // wall drew Larvotto as brickwork. Lit as the ground it hangs from, it is not seen.
+  for (let i = first; i < mesh.normals.length; i += 3) {
+    mesh.normals[i] = 0;
+    mesh.normals[i + 1] = 1;
+    mesh.normals[i + 2] = 0;
   }
 }
 
@@ -1128,6 +1558,8 @@ interface BuildingResult {
   droppedOverWater: number;
   droppedTooLow: number;
   pushedOffTrack: number;
+  /** Extra pieces a footprint was split into along its fall line. */
+  terraced: number;
 }
 
 /**
@@ -1227,6 +1659,122 @@ function splitEdge(
   splitEdge(out, mid, heightMid, b, heightB, groundAt, mayAdd, depth + 1);
 }
 
+/** A piece still spanning more than this is split along its fall line. */
+const TERRACE_STEP_M = 4;
+/** ...as long as it is this wide along the fall, or the halves are slivers. */
+const TERRACE_MIN_M = 4;
+/** Two rounds is four terraces, four rounds sixteen: a 46 m cliffside plot still steps at 4 m. */
+const TERRACE_ROUNDS = 4;
+/** Below this a half is a sliver, not a terrace. */
+const TERRACE_MIN_M2 = 4;
+
+function ringAreaM2(ring: { x: number; z: number }[]): number {
+  let twice = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    twice += a.x * b.z - b.x * a.z;
+  }
+  return Math.abs(twice) / 2;
+}
+
+/** The footprint clipped to one side of a line: both halves keep the cut edge. */
+function clipHalf(
+  ring: { x: number; z: number }[],
+  at: (point: { x: number; z: number }) => number,
+  keep: (signed: number) => boolean,
+): { x: number; z: number }[] {
+  const out: { x: number; z: number }[] = [];
+  for (let i = 0; i < ring.length; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % ring.length];
+    const sa = at(a);
+    const sb = at(b);
+    if (keep(sa)) out.push(a);
+    if (keep(sa) !== keep(sb)) {
+      const t = sa === sb ? 0 : sa / (sa - sb);
+      out.push({ x: a.x + (b.x - a.x) * t, z: a.z + (b.z - a.z) * t });
+    }
+  }
+  return out;
+}
+
+/**
+ * One footprint, one floor: on Monaco's slopes that is a tall blind plinth
+ * downhill and a block dug to its neck uphill. Split along the fall line, each
+ * terrace stands on its own middle and the block steps down the slope as the
+ * real ones do. A retaining wall runs along a contour, so the same cut puts a
+ * wall-crossing footprint's halves on their own sides of it.
+ */
+export function splitTerraces(
+  ring: { x: number; z: number }[],
+  groundAt: (x: number, z: number) => number,
+  /** A vertex may only be added where this allows one. */
+  mayAdd: (x: number, z: number) => boolean,
+): { x: number; z: number }[][] {
+  let out = [ring];
+  for (let round = 0; round < TERRACE_ROUNDS; round++) {
+    let split = false;
+    const next: { x: number; z: number }[][] = [];
+    for (const shape of out) {
+      const halves = splitOnce(shape, groundAt, mayAdd);
+      split ||= halves.length > 1;
+      next.push(...halves);
+    }
+    out = next;
+    if (!split) break;
+  }
+  return out;
+}
+
+function splitOnce(
+  shape: { x: number; z: number }[],
+  groundAt: (x: number, z: number) => number,
+  mayAdd: (x: number, z: number) => boolean,
+): { x: number; z: number }[][] {
+  const known = shape
+    .map((point) => ({ point, h: groundAt(point.x, point.z) }))
+    .filter((known) => !Number.isNaN(known.h));
+  if (known.length < 3) return [shape];
+  const ordered = known.slice().sort((a, b) => a.h - b.h);
+  const half = Math.max(1, Math.floor(ordered.length / 2));
+  const centroid = (list: typeof ordered): { x: number; z: number } => {
+    let x = 0;
+    let z = 0;
+    for (const { point } of list) {
+      x += point.x / list.length;
+      z += point.z / list.length;
+    }
+    return { x, z };
+  };
+  const low = centroid(ordered.slice(0, half));
+  const high = centroid(ordered.slice(ordered.length - half));
+  const dx = high.x - low.x;
+  const dz = high.z - low.z;
+  const length = Math.hypot(dx, dz);
+  if (length < 1) return [shape];
+  const along = (point: { x: number; z: number }): number =>
+    ((point.x - low.x) * dx + (point.z - low.z) * dz) / length;
+  const spans = shape.map(along);
+  const width = Math.max(...spans) - Math.min(...spans);
+  if (width < TERRACE_MIN_M) return [shape];
+  const heights = known.map((known) => known.h);
+  if (Math.max(...heights) - Math.min(...heights) <= TERRACE_STEP_M) return [shape];
+  const orderedSpans = [...spans].sort((a, b) => a - b);
+  const cut = (orderedSpans[(orderedSpans.length - 1) >> 1] + orderedSpans[orderedSpans.length >> 1]) / 2;
+  const downhill = clipHalf(shape, (point) => along(point) - cut, (signed) => signed <= 1e-9);
+  const uphill = clipHalf(shape, (point) => along(point) - cut, (signed) => signed >= -1e-9);
+  if (downhill.length < 3 || uphill.length < 3) return [shape];
+  if (ringAreaM2(downhill) < TERRACE_MIN_M2 || ringAreaM2(uphill) < TERRACE_MIN_M2) return [shape];
+  // The cut adds vertices the push never saw: a chord across a corridor corner
+  // cuts inside it, and a half over water is a building the bake then drops.
+  for (const half of [downhill, uphill]) {
+    if (!half.every((point) => mayAdd(point.x, point.z))) return [shape];
+    if (!half.some((point) => !Number.isNaN(groundAt(point.x, point.z)))) return [shape];
+  }
+  return [downhill, uphill];
+}
+
 function prepareBuildings(
   buildings: BuildingsFile,
   groundAt: (x: number, z: number) => number,
@@ -1236,8 +1784,25 @@ function prepareBuildings(
   road: RoadIndex,
   measured: Map<string, { measured: number }>,
   result: BuildingResult,
+  /** Pontoon decks: a harbour building's ground is its deck, water to the terrain. */
+  decks: PierDeck[] = [],
 ): PreparedBuilding[] {
   const prepared: PreparedBuilding[] = [];
+  const deckAt = (x: number, z: number): number | null => {
+    for (const deck of decks) {
+      let inside = false;
+      const ring = deck.ring;
+      for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i].x;
+        const zi = ring[i].z;
+        const xj = ring[j].x;
+        const zj = ring[j].z;
+        if (zi > z !== zj > z && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+      }
+      if (inside) return deck.deckY;
+    }
+    return null;
+  };
 
   for (const building of buildings.buildings) {
     // The measurement wins where there is one; the tag is the fallback (D8).
@@ -1275,21 +1840,38 @@ function prepareBuildings(
     if (pushed.moved || carved.carved || carvedOffRoad) result.pushedOffTrack++;
 
     // One entry per piece: a carved footprint is two or three buildings now,
-    // and each stands on its own ground.
-    for (let piece = 0; piece < pieces.length; piece++) {
-      const shape = pieces[piece];
+    // and each stands on its own ground. A piece still spanning a slope is
+    // terraced first, so each terrace stands on its own middle.
+    let emitted = 0;
+    for (const carvedShape of pieces) {
+      const terraces = splitTerraces(carvedShape, groundAt, (x, z) =>
+        corridor.distance(x, z) >= TRACK_CLEARANCE_M);
+      if (terraces.length > 1) result.terraced += terraces.length - 1;
+      for (const shape of terraces) {
+        const piece = emitted++;
 
       // Fontvieille stands on reclaimed land and Monaco's quays are built to the
       // water, so a footprint with a corner over a water cell is normal. Only a
-      // footprint with no ground under it at all is not a building we can place.
+      // footprint with no ground under it at all is not a building we can place —
+      // unless it stands on a pontoon deck, which is water to the terrain.
       const grounds: number[] = [];
       for (const point of shape) {
         const h = groundAt(point.x, point.z);
         if (!Number.isNaN(h)) grounds.push(h);
       }
       if (!grounds.length) {
-        result.droppedOverWater++;
-        continue;
+        let cx = 0;
+        let cz = 0;
+        for (const point of shape) {
+          cx += point.x / shape.length;
+          cz += point.z / shape.length;
+        }
+        const deck = deckAt(cx, cz);
+        if (deck === null) {
+          result.droppedOverWater++;
+          continue;
+        }
+        grounds.push(deck);
       }
       grounds.sort((a, b) => a - b);
       // The floor sits at the middle of the ground it covers and the walls run
@@ -1338,6 +1920,7 @@ function prepareBuildings(
         centreZ,
         belt: beltAtDistance(corridor.distance(centreX, centreZ)),
       });
+      }
     }
   }
 
@@ -1426,6 +2009,7 @@ function emptyBuildingResult(): BuildingResult {
     droppedOverWater: 0,
     droppedTooLow: 0,
     pushedOffTrack: 0,
+    terraced: 0,
   };
 }
 
@@ -2749,13 +3333,44 @@ function srgbToLinear(hex: string): [number, number, number, number] {
   return [channel(16), channel(8), channel(0), 1];
 }
 
-async function writeGlb(path: string, parts: { kind: MeshKind; mesh: Mesh }[]): Promise<number> {
+/**
+ * Meshes whose edges meet another file's. Each mesh is quantised on its own box,
+ * so two belts snap a shared seam vertex to lattices a few centimetres apart and
+ * the sea shows through the crack; these share one lattice instead.
+ */
+const SEAMED_KINDS: ReadonlySet<MeshKind> = new Set(["terrain", "plinth"]);
+
+/** The box every seamed mesh is quantised on: its centre and half its widest side. */
+interface Lattice {
+  offset: [number, number, number];
+  scale: number;
+}
+
+function latticeOf(meshes: Mesh[]): Lattice {
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (const mesh of meshes) {
+    for (let i = 0; i < mesh.positions.length; i++) {
+      const axis = i % 3;
+      if (mesh.positions[i] < min[axis]) min[axis] = mesh.positions[i];
+      if (mesh.positions[i] > max[axis]) max[axis] = mesh.positions[i];
+    }
+  }
+  const offset = [0, 1, 2].map((axis) => (min[axis] + max[axis]) / 2) as Lattice["offset"];
+  const scale = Math.max(...[0, 1, 2].map((axis) => (max[axis] - min[axis]) / 2));
+  return { offset, scale };
+}
+
+async function writeGlb(
+  path: string,
+  parts: { kind: MeshKind; mesh: Mesh }[],
+  lattice: Lattice,
+): Promise<number> {
   const document = new Document();
   const buffer = document.createBuffer();
   const scene = document.createScene();
 
-  for (const { kind, mesh } of parts) {
-    if (isEmpty(mesh)) continue;
+  const add = (kind: MeshKind, mesh: Mesh, positions: Float32Array<ArrayBuffer> | Int16Array<ArrayBuffer>) => {
     const material = document
       .createMaterial(kind)
       .setBaseColorFactor(srgbToLinear(MESH_COLOR[kind]))
@@ -2768,7 +3383,12 @@ async function writeGlb(path: string, parts: { kind: MeshKind; mesh: Mesh }[]): 
       .setMaterial(material)
       .setAttribute(
         "POSITION",
-        document.createAccessor().setType("VEC3").setArray(new Float32Array(mesh.positions)).setBuffer(buffer),
+        document
+          .createAccessor()
+          .setType("VEC3")
+          .setArray(positions)
+          .setNormalized(positions instanceof Int16Array)
+          .setBuffer(buffer),
       )
       .setAttribute(
         "NORMAL",
@@ -2788,11 +3408,36 @@ async function writeGlb(path: string, parts: { kind: MeshKind; mesh: Mesh }[]): 
         document.createAccessor().setType("SCALAR").setArray(new Uint32Array(mesh.indices)).setBuffer(buffer),
       );
 
-    scene.addChild(document.createNode(kind).setMesh(document.createMesh(kind).addPrimitive(primitive)));
-  }
+    const node = document.createNode(kind).setMesh(document.createMesh(kind).addPrimitive(primitive));
+    scene.addChild(node);
+    return node;
+  };
 
+  for (const { kind, mesh } of parts) {
+    if (!isEmpty(mesh) && !SEAMED_KINDS.has(kind)) add(kind, mesh, new Float32Array(mesh.positions));
+  }
   await MeshoptEncoder.ready;
   await document.transform(meshopt({ encoder: MeshoptEncoder }));
+
+  // Quantised here rather than by `meshopt`, which would fit each its own box:
+  // 14 bits spread over the int16 the way `quantize` stores them.
+  const { offset, scale } = lattice;
+  for (const { kind, mesh } of parts) {
+    if (isEmpty(mesh) || !SEAMED_KINDS.has(kind)) continue;
+    const positions = new Int16Array(mesh.positions.length);
+    for (let i = 0; i < positions.length; i++) {
+      const value = (mesh.positions[i] - offset[i % 3]) / scale;
+      const step = Math.round(Math.min(1, Math.abs(value)) * 8191);
+      positions[i] = Math.sign(value) * ((step << 2) | (step >> 11));
+    }
+    add(kind, mesh, positions).setTranslation(offset).setScale([scale, scale, scale]);
+  }
+  document.createExtension(KHRMeshQuantization).setRequired(true);
+  await document.transform(
+    quantize({ pattern: /^COLOR_0$/ }),
+    reorder({ encoder: MeshoptEncoder, target: "size" }),
+  );
+
   const glb = await new NodeIO()
     .registerExtensions(ALL_EXTENSIONS)
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder })
@@ -2810,10 +3455,11 @@ export interface BakeReport {
   cellsByBelt: Record<Belt, number>;
   conform: TerrainResult["conform"];
   holesFilled: number;
+  inletsFilled: number;
+  isletsDrowned: number;
   trackVertices: number;
   portalTriangles: number;
   barrierTriangles: number;
-  shore: ShoreResult;
   piers: PierResult;
   coast: CoastlineStats;
   heights: HeightStats;
@@ -2846,6 +3492,8 @@ export interface BakeInputs {
   buildingWays: BuildingWay[];
   greenWays: GreenWay[];
   breaklineWays: BreaklineWay[];
+  /** The street network: what the town's ground is built to. */
+  streetWays: StreetWay[];
   overrides: CityOverrides | null;
   kitHouses: KitModel[];
   /** Boat model paths, as the props pass wants them. */
@@ -2879,6 +3527,7 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
     buildingWays: await fetchBuildingWays(circuitId, bbox, refresh),
     greenWays: await fetchGreenWays(circuitId, bbox, refresh),
     breaklineWays: await fetchBreaklineWays(circuitId, bbox, refresh),
+    streetWays: await fetchStreetWays(circuitId, bbox, refresh),
     overrides: await loadOverrides(circuitId),
     // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
     // Switched off: a modelled building is somebody else's house stretched onto
@@ -2922,6 +3571,8 @@ export interface CircuitGround {
 export function buildCircuitGround(inputs: BakeInputs): CircuitGround {
   const { circuitId, coords, bbox, dtm, structures, overrides } = inputs;
   const plane = scenePlaneFor(coords);
+  // The surveyed lines, indexed on the raster so the burn can stop at them.
+  const lines = buildBreaklines(dtm.header, inputs.breaklineWays, inputs.shoreWays);
   const overrideStats = emptyOverrideStats();
 
   const found = buildTunnelMask(coords, structures, plane, {
@@ -2962,6 +3613,7 @@ export function buildCircuitGround(inputs: BakeInputs): CircuitGround {
       halfWidthM: DEFAULT_TRACK_HALF_WIDTH_M,
       buried: tunnels.buried,
       vaulted: vaults.covers,
+      walls: lines.crossesLonLat,
     },
   });
   // Applied after the burn-in: a hand-set height is the last word, over both
@@ -2994,13 +3646,12 @@ export interface BakeOptions {
 
 /** The pipeline itself, over inputs somebody else read. */
 export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): Promise<BakeReport> {
-  const { circuitId, buildingWays, greenWays, breaklineWays, mnh, kitHouses, kitBoats, kitTrees } =
+  const { circuitId, buildingWays, greenWays, breaklineWays, streetWays, mnh, kitHouses, kitBoats, kitTrees } =
     inputs;
   const { coords, plane, field, hill, corridor, tunnels, vaults, overrides, overrideStats } =
     buildCircuitGround(inputs);
   const shoreWays = overrideShoreWays(inputs.shoreWays, overrides, overrideStats);
   const coast = buildCoastline(shoreWays, field, plane);
-  const shore = bakeShoreWalls(shoreWays, field, plane, coast);
   const piers = buildPiers(shoreWays, field, plane);
   const pierDecks = bakePierDecks(piers);
 
@@ -3011,9 +3662,36 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // The surveyed lines the belts' filter may not average across: cliffs and
   // retaining walls from their own query, quays and breakwaters from the shore.
   const breaklines = buildBreaklines(field, breaklineWays, shoreWays);
-  const ground = buildGround(field, plane, breaklines);
+  // Where there is land at all: a walkway along a pontoon is not ground whose
+  // level the town sets, and laying one serrated the quays.
+  const shoreDistance = buildShoreDistance(field);
+  const landAt = (x: number, z: number): number => {
+    const surveyed = coast.signedDistance(x, z);
+    return Number.isNaN(surveyed) ? shoreDistance.at(plane.lon(x), plane.lat(z)) : surveyed;
+  };
+  // The town's own levels, from the street network the audit reads too.
+  const streets = buildStreetGround(
+    streetWays,
+    coords,
+    field,
+    plane,
+    breaklines,
+    landAt,
+  );
+  const terrainLand = buildLandAt(field, plane, coast, piers);
+  const ground = buildGround(
+    field, plane, breaklines, streets,
+    roadLevel(corridor, field, plane, (x, z) => tunnels.buried(plane.lon(x), plane.lat(z))),
+    terrainLand,
+  );
   const hollow = portalVoids(vaults, hill, plane);
-  const terrain = bakeTerrain(field, ground, plane, corridor, coast, piers, hollow);
+  // The road as the viewer draws it, so the ground meets the ribbon at its edge.
+  const lapLengthM = (await circuitLengthM(circuitId))
+    ?? coords.slice(1).reduce((sum, [lon, lat], i) =>
+      sum + Math.hypot(plane.x(lon) - plane.x(coords[i][0]), plane.z(lat) - plane.z(coords[i][1])), 0);
+  const ribbon = buildRibbon(coords, elevations, plane, lapLengthM, (x, z) =>
+    tunnels.buried(plane.lon(x), plane.lat(z)));
+  const terrain = bakeTerrain(field, ground, plane, corridor, terrainLand, coast.corners, hollow, breaklines, ribbon);
   const water = bakeWater(field, plane);
 
   const buildingsFile = applyBuildingOverrides(
@@ -3030,7 +3708,11 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // surface band — all after the nodes were read. A wall asking where the
   // ground is gets the triangle it will stand on.
   const drawnGround = buildSurfaceIndex(BELT_ORDER.map((belt) => [terrain.meshes[belt]]));
-  const standOn = (x: number, z: number): number => drawnGround.at(x, z);
+  // The seabed is drawn but is no ground: nothing is built or planted on it.
+  const standOn = (x: number, z: number): number => {
+    const y = drawnGround.at(x, z);
+    return y < 0 ? Number.NaN : y;
+  };
   // Only where the road is actually drawn: a building over a tunnel is a
   // building over a tunnel, and cutting a slot through it would open the hill.
   const roadIndex = buildRoadIndex(
@@ -3044,7 +3726,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const greeneryStats = { ...greenery.stats };
 
   const prepared = prepareBuildings(
-    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings,
+    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings, piers.decks,
   );
 
   // The kit runs before the props are merged, because its houses are props: it
@@ -3113,13 +3795,9 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   ];
   // Barriers occlude nothing worth the trouble and, being thin and at ground
   // level in a street canyon, they come back from the AO pass nearly black.
-  const occluders = buildOccluders(field, plane, standing);
+  const occluders = buildOccluders(field, plane, standing, (x, z) => ground.at(x, z, "core"));
   for (const mesh of [
-    terrain.meshes.core,
-    terrain.meshes.city,
-    terrain.meshes.far,
     ...standing,
-    shore.walls,
     pierDecks,
     props.dark,
     props.light,
@@ -3135,13 +3813,38 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   // The walls' own bands, over the occlusion that shares the array. Neutral
   // tone: a band is a shade of the colour the building already is.
   for (const belt of BELT_ORDER) applyAlbedo(buildings.meshes[belt], [1, 1, 1]);
-  // After the occlusion pass, which owns the same array: an open hillside sees
-  // the whole sky, so AO says nothing about it and slope is what is left to
-  // read the relief by.
-  let slopeShaded = 0;
+  // One reading of how steep the ground is, for every belt alike: the drawn
+  // surface over a stride of eight metres. Read off the raw field, a cliff's
+  // spikes shaded the smoothed face as a field of flames.
+  const SLOPE_STRIDE_M = 8;
+  const slopeDegAt = (x: number, z: number): number => {
+    const east = ground.at(x + SLOPE_STRIDE_M, z, "core");
+    const west = ground.at(x - SLOPE_STRIDE_M, z, "core");
+    const south = ground.at(x, z + SLOPE_STRIDE_M, "core");
+    const north = ground.at(x, z - SLOPE_STRIDE_M, "core");
+    if ([east, west, south, north].some(Number.isNaN)) return 0;
+    const run = Math.hypot(
+      (east - west) / (2 * SLOPE_STRIDE_M),
+      (south - north) / (2 * SLOPE_STRIDE_M),
+    );
+    return (Math.atan(run) * 180) / Math.PI;
+  };
+  // The ground's shade once, on the finest surface, and every belt reads it.
+  const groundShade = buildGroundShade(
+    occluders,
+    {
+      minX: plane.x(field.bbox.minLon),
+      maxX: plane.x(field.bbox.maxLon),
+      minZ: plane.z(field.bbox.maxLat),
+      maxZ: plane.z(field.bbox.minLat),
+    },
+    (x, z) => ground.at(x, z, "core"),
+    slopeDegAt,
+  );
   for (const belt of BELT_ORDER) {
-    slopeShaded += shadeBySlope(terrain.meshes[belt]);
+    paintGround(terrain.meshes[belt], groundShade, occluders, slopeDegAt, terrain.blocks.coarsestCellAt);
   }
+  const slopeShaded = groundShade.sloped;
 
   const outDir = options.outDir ?? join(OUTPUT_ROOT, circuitId);
   await mkdir(outDir, { recursive: true });
@@ -3166,11 +3869,8 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     city: [
       { kind: "terrain", mesh: terrain.meshes.city },
       { kind: "building", mesh: buildings.meshes.city },
-      // The waterfront is one thing wherever it runs, so it ships whole rather
-      // than split across belts by distance.
-      { kind: "shore", mesh: shore.walls },
-      // Decks go with the waterfront for the same reason: the harbour is one
-      // thing, and splitting it by distance would cut a pontoon in half.
+      // The harbour is one thing, so its decks ship whole rather than split
+      // across belts by distance, which would cut a pontoon in half.
       { kind: "pier", mesh: pierDecks },
       // The boats belong to the harbour they are tied to, so they ship with it.
       { kind: "propDark", mesh: props.dark },
@@ -3191,9 +3891,10 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   };
 
   const belts = {} as BakeReport["belts"];
+  const lattice = latticeOf([...BELT_ORDER.map((belt) => terrain.meshes[belt]), terrain.plinth]);
   for (const belt of BELT_ORDER) {
     const parts = layout[belt].filter((part) => !isEmpty(part.mesh));
-    const bytes = await writeGlb(join(outDir, `${belt}.glb`), parts);
+    const bytes = await writeGlb(join(outDir, `${belt}.glb`), parts, lattice);
     belts[belt] = {
       bytes,
       triangles: parts.reduce((sum, part) => sum + triangleCount(part.mesh), 0),
@@ -3208,10 +3909,11 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
     cellsByBelt: terrain.cellsByBelt,
     conform: terrain.conform,
     holesFilled: terrain.holesFilled,
+    inletsFilled: terrain.inletsFilled,
+    isletsDrowned: terrain.isletsDrowned,
     trackVertices: elevations.length,
     portalTriangles: triangleCount(portals.sleeve) + triangleCount(portals.surround),
     barrierTriangles: triangleCount(barriers),
-    shore,
     piers,
     coast: coast.stats,
     heights: heightStats.value,
@@ -3308,7 +4010,8 @@ async function main() {
   console.log(
     `  buildings ${b.built} built, ${b.pushedOffTrack} pushed off the track, ` +
       `dropped: ${b.droppedOnTrack} on track, ${b.droppedOverWater} over water, ` +
-      `${b.droppedTooLow} too low`,
+      `${b.droppedTooLow} too low`
+      + (b.terraced ? `, ${b.terraced} terraces split along the fall line` : ""),
   );
   console.log(`  track profile ${report.trackVertices} vertices`);
   const h = report.heights;
@@ -3324,18 +4027,13 @@ async function main() {
       `${report.coast.segmentsDropped} segments the raster does not confirm`,
   );
   console.log(
-    `  shore ${report.shore.built} wall segments, ` +
-      `${report.shore.skippedDisagreement} skipped where OSM and the raster disagree, ` +
-      `${report.shore.skippedKind} piers skipped, ` +
-      `${report.shore.skippedCliff} against cliffs, ` +
-      `${report.shore.skippedOffCut} off the cut edge`,
-  );
-  console.log(
     `  belt seams ${report.conform.nodes} nodes conformed to the coarser chord, ` +
       `worst ${report.conform.worstM.toFixed(2)} m, mean ${report.conform.meanM.toFixed(2)} m, ` +
       `${report.conform.over1M} over 1 m, ${report.conform.over2M} over 2 m`,
   );
-  console.log(`  enclosed water ${report.holesFilled} cells filled as holes`);
+  console.log(
+    `  enclosed water ${report.holesFilled} cells filled as holes, ${report.inletsFilled} in inlets too narrow to draw, ${report.isletsDrowned} of islets drowned`,
+  );
   console.log(
     `  piers ${report.piers.decks.length} decks, ` +
       `${report.piers.skippedOpen} mapped as a line, ` +

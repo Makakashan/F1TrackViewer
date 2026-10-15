@@ -11,7 +11,7 @@
 import { describe, expect, test } from "bun:test";
 import { BELT_ORDER, type Belt } from "./belts";
 import { buildSurfaceIndex, type SurfaceMesh } from "./baked-scene";
-import type { BeltGrid, Ground } from "./ground";
+import { SETTLE_ROUNDS, SMOOTH_PASSES, splitsOnMain, type BeltGrid, type Ground } from "./ground";
 import { breaklinesOf, cliffThrough, syntheticGround } from "./synthetic";
 
 const MM = 1e-3;
@@ -28,7 +28,7 @@ function nodes(ground: Ground, belt: Belt): { row: number; col: number; x: numbe
   return out;
 }
 
-/** The belt as the mesher draws it: a cell split across its main diagonal. */
+/** The belt as the mesher draws it: a cell split across the diagonal `splitsOnMain` picks. */
 function meshOf(ground: Ground, belt: Belt): SurfaceMesh {
   const grid = ground.gridFor(belt);
   const width = grid.cols + 1;
@@ -49,7 +49,9 @@ function meshOf(ground: Ground, belt: Belt): SurfaceMesh {
       const c = a + width;
       const d = c + 1;
       if (![a, b, c, d].every((i) => Number.isFinite(positions[i * 3 + 1]))) continue;
-      indices.push(a, c, d, a, d, b); // the main diagonal, a to d
+      const y = (i: number) => positions[i * 3 + 1];
+      if (splitsOnMain(y(a), y(c), y(d), y(b))) indices.push(a, c, d, a, d, b);
+      else indices.push(a, c, b, b, c, d);
     }
   }
   return { positions, indices: new Uint32Array(indices) };
@@ -104,16 +106,18 @@ describe("a 30° slope", () => {
   const cellM = 4;
   // Height depends on x alone, so the analytic answer at any scene point is a
   // line — which a symmetric box filter reproduces exactly away from the edge.
-  const { ground } = syntheticGround({ cols: 65, rows: 65, cellM, at: (col) => col * cellM * slope });
-  const heightAtX = (x: number) => (x + (64 * cellM) / 2) * slope;
+  // Wide enough that the smoothing's reach from the edge stops short of the middle.
+  const { ground } = syntheticGround({ cols: 129, rows: 65, cellM, at: (col) => col * cellM * slope });
+  const heightAtX = (x: number) => (x + (128 * cellM) / 2) * slope;
 
   test("the filter does not flatten it — nodes sit on the ramp to the millimetre", () => {
     for (const belt of BELT_ORDER) {
       const grid = ground.gridFor(belt);
       for (const { row, col, x } of nodes(ground, belt)) {
         // The window clamps at the field's edge, where a symmetric mean is no
-        // longer symmetric; the interior is what the invariant is about.
-        const margin = grid.radius * cellM + grid.cell;
+        // longer symmetric, and the smoothing that follows it reaches a cell
+        // further per pass; the interior is what the invariant is about.
+        const margin = grid.radius * cellM + grid.cell * (SMOOTH_PASSES + SETTLE_ROUNDS + 1);
         if (x < grid.minX + margin || x > -grid.minX - margin) continue;
         expect(ground.nodeAt(belt, row, col)).toBeCloseTo(heightAtX(x), 3);
       }
@@ -122,8 +126,11 @@ describe("a 30° slope", () => {
 
   test("and the drawn surface keeps the same gradient", () => {
     for (const belt of BELT_ORDER) {
-      const rise = ground.at(40, 0, belt) - ground.at(-40, 0, belt);
-      expect(rise / 80).toBeCloseTo(slope, 6);
+      // Read well inside the field: the smoothing that follows the filter
+      // reaches a cell per pass, and at the edge it has neighbours on one side
+      // only, which tips the nodes there off the ramp by a millionth.
+      const rise = ground.at(32, 0, belt) - ground.at(-32, 0, belt);
+      expect(rise / 64).toBeCloseTo(slope, 5);
     }
   });
 });
@@ -185,7 +192,10 @@ describe("a terrace", () => {
       const grid = ground.gridFor(belt);
       for (const { row, col, x } of nodes(ground, belt)) {
         const fieldCol = Math.round((x - grid.minX) / cellM);
-        expect(ground.nodeAt(belt, row, col)).toBeCloseTo(levelOf(fieldCol), 6);
+        // To the millimetre, which is the invariant: the smoothing that follows
+        // the filter is one-sided at the field's own border and moves a node
+        // there by a micron.
+        expect(ground.nodeAt(belt, row, col)).toBeCloseTo(levelOf(fieldCol), 3);
       }
     }
   });

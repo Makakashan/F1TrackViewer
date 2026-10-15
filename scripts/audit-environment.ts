@@ -16,9 +16,13 @@ import { join } from "node:path";
 import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types";
 import {
   buildBeltBlocks,
+  buildLandAt,
   buildCircuitGround,
   loadBakeInputs,
   fromOverpass,
+  atSurveyedWall,
+  MAX_COAST_DROP_M,
+  roadLevel,
   SHORE_EDGE_MAX_M,
   WATER_CLEARANCE_M,
   type BeltBlocks,
@@ -33,10 +37,15 @@ import {
 } from "./env/baked-scene";
 import { buildBreaklines, type Breaklines } from "./env/breaklines";
 import { buildCoastline, type Coastline } from "./env/coastline";
+import { buildPiers } from "./env/piers";
 import { buildGround, type Ground } from "./env/ground";
 import { buildShoreDistance, type ShoreDistance } from "./env/shore-distance";
-import { fetchBreaklineWays, fetchBuildingWays, fetchShoreWays } from "./env/overpass";
-import { BELT_BUDGET, BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
+import { fetchBreaklineWays, fetchBuildingWays, fetchShoreWays, fetchStreetWays } from "./env/overpass";
+import { buildStreetGround, type StreetGround } from "./env/streets";
+import { buildRibbon } from "./env/ribbon";
+import { circuitLengthM } from "./env/circuit";
+import { TRACK_SURFACE_RAISE } from "@/lib/scene-config";
+import { BELT_BUDGET, BELT_CELL_M, BELT_ORDER, buildCorridor, type Belt } from "./env/belts";
 import type { HeightField } from "./env/heightfield";
 import type { ScenePlane } from "./env/plane";
 
@@ -103,7 +112,29 @@ const BREAKLINE_STEP_M = 2;
  * overshoots past 100%, because the raster smeared the wall in the first place.
  */
 export const RELIEF_KINK_M = 2;
-export const RELIEF_SLOPE_DEG = 0.5;
+/**
+ * The filter must never add ripple of its own.
+ *
+ * An absolute metre count was the proxy for that while every node was measured.
+ * Now the town's own levels are counted apart and what is left is the open
+ * hillside, where the belt's window is stopped by cliffs and the filter has
+ * little room to average: measured on the plain filter, with no street levels
+ * anywhere, the ratio there is 0.98 — so the honest statement is that the
+ * surface is no rougher than the field it came from, not a fraction of it.
+ */
+const RELIEF_KINK_RATIO = 1;
+/**
+ * How far the mean slope may drift from the field's own.
+ *
+ * The surface is deliberately smoothed past what the belt's window does — a
+ * rock face meshed at four metres still reads rough without it — and smoothing
+ * costs slope: measured over Monaco, three passes cost 0.39°, and 0.65° inside
+ * the harbour fixture, which is steeper than the circuit as a whole. The guard
+ * is here to catch a filter that flattens the hill, not to forbid the
+ * smoothing, so it sits above what the smoothing measures and below what
+ * flattening would.
+ */
+export const RELIEF_SLOPE_DEG = 1;
 export const RELIEF_STEP_KEPT = 0.95;
 
 /** Slope of a belt cell from its central differences, in degrees. */
@@ -113,6 +144,174 @@ function slopeDeg(dEast: number, dSouth: number, cellM: number): number {
 
 function check(name: string, measured: string, limit: string, ok: boolean, fatal = true): Check {
   return { name, measured, limit, ok, fatal };
+}
+
+/** How far the light may turn between neighbouring ground vertices before the eye reads an edge. */
+const LIGHT_BEND_DEG = 15;
+/** The share of gentle-ground edges allowed past it, on each belt. */
+const LIGHT_BEND_SHARE = 0.01;
+/**
+ * Gentle: under this slope over `GENTLE_WINDOW_M`. There a 15° turn per cell can
+ * only be ripple; on steeper ground it can be the relief itself.
+ */
+const GENTLE_GROUND_DEG = 25;
+const GENTLE_WINDOW_M = 20;
+
+/**
+ * Where the light breaks across the shipped ground: edges between two ground
+ * faces whose normals disagree past `LIGHT_BEND_DEG`, split at either end or
+ * turning along it. Asked of gentle ground, where the bake evens the light out;
+ * steep ground keeps its creases on purpose and is reported beside it.
+ */
+function checkLight(
+  meshes: BakedMesh[],
+  cell: number,
+  /** A vertex the bake kept creased at a surveyed line's foot. */
+  kept: (x: number, z: number) => boolean,
+): { gentle: number; wall: number; steep: number; edges: number } {
+  const cosBend = Math.cos((LIGHT_BEND_DEG * Math.PI) / 180);
+  const cosGentle = Math.cos((GENTLE_GROUND_DEG * Math.PI) / 180);
+  const window = Math.max(GENTLE_WINDOW_M, 2 * cell);
+  let gentleEdges = 0, gentleBent = 0, wallEdges = 0, wallBent = 0, steepEdges = 0, steepBent = 0;
+
+  for (const { name, positions, indices, normals } of meshes) {
+    if (name !== "terrain" || !normals) continue;
+    const faces = indices.length / 3;
+    const faceNormal = new Float64Array(faces * 3);
+    const ground = new Uint8Array(faces);
+    const buckets = new Map<string, number[]>();
+    for (let f = 0; f < faces; f++) {
+      const [a, b, c] = [0, 1, 2].map((k) => indices[f * 3 + k] * 3);
+      const ux = positions[b] - positions[a], uy = positions[b + 1] - positions[a + 1], uz = positions[b + 2] - positions[a + 2];
+      const vx = positions[c] - positions[a], vy = positions[c + 1] - positions[a + 1], vz = positions[c + 2] - positions[a + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      faceNormal.set([nx, ny, nz], f * 3);
+      // A skirt or a wall is not ground.
+      if (ny < 0.3 * Math.hypot(nx, ny, nz)) continue;
+      ground[f] = 1;
+      const cx = (positions[a] + positions[b] + positions[c]) / 3;
+      const cz = (positions[a + 2] + positions[b + 2] + positions[c + 2]) / 3;
+      const key = `${Math.floor(cx / window)},${Math.floor(cz / window)}`;
+      const list = buckets.get(key);
+      if (list) list.push(f);
+      else buckets.set(key, [f]);
+    }
+
+    // Gentle, the way the bake reads it: the faces within the window, averaged.
+    const gentle = (v: number): boolean => {
+      const x = positions[v * 3], z = positions[v * 3 + 2];
+      const bx = Math.floor(x / window), bz = Math.floor(z / window);
+      let sx = 0, sy = 0, sz = 0;
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          for (const f of buckets.get(`${bx + dx},${bz + dz}`) ?? []) {
+            const [a, b, c] = [0, 1, 2].map((k) => indices[f * 3 + k] * 3);
+            const cx = (positions[a] + positions[b] + positions[c]) / 3;
+            const cz = (positions[a + 2] + positions[b + 2] + positions[c + 2]) / 3;
+            if (Math.hypot(cx - x, cz - z) > window) continue;
+            sx += faceNormal[f * 3];
+            sy += faceNormal[f * 3 + 1];
+            sz += faceNormal[f * 3 + 2];
+          }
+        }
+      }
+      const length = Math.hypot(sx, sy, sz);
+      return length > 0 && sy / length >= cosGentle;
+    };
+
+    // Edges by position: the crease pass gives a corner several vertices.
+    const at = (v: number) =>
+      `${Math.round(positions[v * 3] * 100)},${Math.round(positions[v * 3 + 1] * 100)},${Math.round(positions[v * 3 + 2] * 100)}`;
+    const edges = new Map<string, [number, number, number][]>();
+    for (let f = 0; f < faces; f++) {
+      if (!ground[f]) continue;
+      for (let k = 0; k < 3; k++) {
+        const a = indices[f * 3 + k], b = indices[f * 3 + ((k + 1) % 3)];
+        const [ka, kb] = [at(a), at(b)];
+        const [key, first, second] = ka < kb ? [`${ka}|${kb}`, a, b] : [`${kb}|${ka}`, b, a];
+        const list = edges.get(key);
+        if (list) list.push([f, first, second]);
+        else edges.set(key, [[f, first, second]]);
+      }
+    }
+    const agree = (p: number, q: number) =>
+      normals[p * 3] * normals[q * 3] + normals[p * 3 + 1] * normals[q * 3 + 1] + normals[p * 3 + 2] * normals[q * 3 + 2]
+      >= cosBend;
+    const isGentle = new Map<number, boolean>();
+    const gentleAt = (v: number) => {
+      let known = isGentle.get(v);
+      if (known === undefined) isGentle.set(v, (known = gentle(v)));
+      return known;
+    };
+    for (const list of edges.values()) {
+      if (list.length !== 2) continue;
+      const [[, a0, b0], [, a1, b1]] = list;
+      const bent = !agree(a0, a1) || !agree(b0, b1) || !agree(a0, b0);
+      // By vertex, as the bake decides it: an edge with a kept end turns the
+      // light on purpose, whichever side of the band its middle falls.
+      const atFoot = (v: number) => kept(positions[v * 3], positions[v * 3 + 2]);
+      if (!gentleAt(a0) || !gentleAt(b0)) {
+        steepEdges++;
+        if (bent) steepBent++;
+      } else if (atFoot(a0) || atFoot(b0)) {
+        wallEdges++;
+        if (bent) wallBent++;
+      } else {
+        gentleEdges++;
+        if (bent) gentleBent++;
+      }
+    }
+  }
+  return {
+    gentle: gentleBent / Math.max(1, gentleEdges),
+    wall: wallBent / Math.max(1, wallEdges),
+    steep: steepBent / Math.max(1, steepEdges),
+    edges: gentleEdges,
+  };
+}
+
+/** Ground this far over the ribbon's top shows through it. */
+const OVER_RIBBON_M = 0.3;
+/** The share of samples across the ribbon allowed to show ground. */
+const OVER_RIBBON_SHARE = 0.005;
+
+/**
+ * Does the drawn ground stay under the ribbon the viewer draws? Sampled across
+ * its width, the ribbon built by the bake's own helper, so the two cannot
+ * disagree about where the road is.
+ */
+function checkRibbon(
+  ribbon: ReturnType<typeof buildRibbon>,
+  ground: GroundIndex,
+  hidden: (x: number, z: number) => boolean,
+): { samples: number; over: number; worstM: number; worstAt: { x: number; z: number } | null } {
+  let samples = 0;
+  let over = 0;
+  let worstM = 0;
+  let worstAt: { x: number; z: number } | null = null;
+  const steps = ribbon.samples * 4;
+  for (let k = 0; k < steps; k++) {
+    const u = k / steps;
+    const p = ribbon.curve.getPointAt(u);
+    if (hidden(p.x, p.z)) continue;
+    const t = ribbon.curve.getTangentAt(u);
+    const length = Math.hypot(t.x, t.z) || 1;
+    const hw = ribbon.halfWidthAt(u);
+    for (const f of [-0.98, -0.9, -0.5, 0, 0.5, 0.9, 0.98]) {
+      const g = ground.at(p.x - (t.z / length) * hw * f, p.z + (t.x / length) * hw * f);
+      if (Number.isNaN(g)) continue;
+      samples++;
+      const up = g - (p.y + TRACK_SURFACE_RAISE);
+      if (up > OVER_RIBBON_M) {
+        over++;
+        if (up > worstM) {
+          worstM = up;
+          worstAt = { x: p.x - (t.z / length) * hw * f, z: p.z + (t.x / length) * hw * f };
+        }
+      }
+    }
+  }
+  return { samples, over, worstM, worstAt };
 }
 
 /** Does the shipped terrain still sit where the field says the ground is? */
@@ -135,11 +334,20 @@ function checkTerrain(
   coast: Coastline,
   rasterShore: ShoreDistance,
   blocks: BeltBlocks,
-): { worst: number; sampled: number; shore: number; worstShore: number; seam: number; worstSeam: number } {
+  /** A vertex the ribbon's edge put there: it stands at the road, not on the surface. */
+  onRibbonEdge: (x: number, z: number) => boolean,
+): {
+  worst: number; sampled: number; shore: number; worstShore: number; worstShoreAt: { x: number; z: number } | null;
+  seam: number; worstSeam: number;
+  road: number; worstRoad: number;
+} {
   let worst = 0;
   let sampled = 0;
+  let road = 0;
+  let worstRoad = 0;
   let shore = 0;
   let worstShore = 0;
+  let worstShoreAt: { x: number; z: number } | null = null;
   let seam = 0;
   let worstSeam = 0;
 
@@ -202,13 +410,18 @@ function checkTerrain(
       // The surface is held clear of the sea plane, so that is the height it is
       // meant to have where the raster reads at or below the datum.
       const delta = Math.abs(y - Math.max(ground, WATER_CLEARANCE_M));
-      // Sitting on the cap the waterline is held to, with ground above it, is
-      // the signature of `SHORE_EDGE_MAX_M` and of nothing else: this is a cut
-      // vertex at the foot of a rise, however far the line has drifted from it.
-      const capped = y <= SHORE_EDGE_MAX_M + 0.1 && ground > y + 0.1;
+      // A cut vertex below the ground behind it sits either on the cap or a
+      // full `MAX_COAST_DROP_M` under the brow: the signature of the cut and of
+      // nothing else, however far the line has drifted from it. The cap itself
+      // is read after quantisation, which moves a vertex a tenth either way.
+      const capped = ground > y + 0.1
+        && (y <= SHORE_EDGE_MAX_M + 0.2 || ground - y >= MAX_COAST_DROP_M - 0.5);
       if (onCut(x, z) || capped) {
         shore++;
-        if (delta > worstShore) worstShore = delta;
+        if (delta > worstShore) {
+          worstShore = delta;
+          worstShoreAt = { x, z };
+        }
         continue;
       }
       // A node the fine belt gave up to the coarse one is on the coarse chord
@@ -219,11 +432,16 @@ function checkTerrain(
         if (delta > worstSeam) worstSeam = delta;
         continue;
       }
+      if (onRibbonEdge(x, z)) {
+        road++;
+        if (delta > worstRoad) worstRoad = delta;
+        continue;
+      }
       sampled++;
       if (delta > worst) worst = delta;
     }
   }
-  return { worst, sampled, shore, worstShore, seam, worstSeam };
+  return { worst, sampled, shore, worstShore, worstShoreAt, seam, worstSeam, road, worstRoad };
 }
 
 export interface Seam {
@@ -231,6 +449,7 @@ export interface Seam {
   worstM: number;
   meanM: number;
   overToleranceM: number;
+  worstAt: { x: number; z: number } | null;
 }
 
 /**
@@ -253,7 +472,7 @@ export function checkSeams(
     index.set(belt, buildSurfaceIndex([ground]));
   }
 
-  const seam: Seam = { points: 0, worstM: 0, meanM: 0, overToleranceM: 0 };
+  const seam: Seam = { points: 0, worstM: 0, meanM: 0, overToleranceM: 0, worstAt: null };
   let sum = 0;
   for (let i = 1; i < BELT_ORDER.length; i++) {
     const fine = BELT_ORDER[i - 1];
@@ -278,7 +497,10 @@ export function checkSeams(
         seam.points++;
         sum += apart;
         if (apart > tolerance) seam.overToleranceM++;
-        if (apart > seam.worstM) seam.worstM = apart;
+        if (apart > seam.worstM) {
+          seam.worstM = apart;
+          seam.worstAt = { x, z };
+        }
       }
     }
   }
@@ -296,6 +518,8 @@ export interface Relief {
   /** Height kept across a surveyed breakline, as a fraction of the raw step. */
   stepKept: number;
   stepEdges: number;
+  /** Nodes left out of the two filter numbers because the town's streets set them. */
+  onTownLevels: number;
 }
 
 /**
@@ -305,6 +529,11 @@ export interface Relief {
  * with the line between its neighbours (the aliasing the filter is for), what
  * the mean slope does (the relief it must not flatten), and how much of a
  * surveyed wall's step survives (the edge it must not ramp).
+ *
+ * The first two are asked of open ground only. Under the town the surface is
+ * not the filter's output: it is the level the streets are built to
+ * (`streets.ts`), and a flat block or a step at a retaining wall there is the
+ * point rather than a filter misbehaving. Those nodes are counted and reported.
  */
 export function checkRelief(
   surface: Ground,
@@ -312,6 +541,7 @@ export function checkRelief(
   plane: ScenePlane,
   breaklines: Breaklines,
   belt: Belt,
+  streets: StreetGround,
 ): Relief {
   const grid = surface.gridFor(belt);
   const height = (row: number, col: number) => surface.nodeAt(belt, row, col);
@@ -324,6 +554,13 @@ export function checkRelief(
   let slopeSum = 0;
   let rawSlopeSum = 0;
   let slopes = 0;
+  let onTownLevels = 0;
+  const inTown = (row: number, col: number): boolean => {
+    const x = grid.minX + col * grid.cell;
+    const z = grid.minZ + row * grid.cell;
+    const town = streets.at(x, z);
+    return town !== null && town.weight > 0;
+  };
   for (let row = 1; row < grid.rows; row++) {
     for (let col = 1; col < grid.cols; col++) {
       const c = height(row, col);
@@ -337,6 +574,18 @@ export function checkRelief(
       const rn = raw(row - 1, col);
       const rs = raw(row + 1, col);
       if ([c, west, east, north, south, rc, rw, re, rn, rs].some(Number.isNaN)) continue;
+      // A node the streets set is the town's shape, not the filter's, and its
+      // neighbours go with it: a second difference reads all three.
+      if (
+        inTown(row, col)
+        || inTown(row, col - 1)
+        || inTown(row, col + 1)
+        || inTown(row - 1, col)
+        || inTown(row + 1, col)
+      ) {
+        onTownLevels++;
+        continue;
+      }
       kinkSq += (2 * c - west - east) ** 2 + (2 * c - north - south) ** 2;
       rawKinkSq += (2 * rc - rw - re) ** 2 + (2 * rc - rn - rs) ** 2;
       kinks += 2;
@@ -360,7 +609,11 @@ export function checkRelief(
       const lon0 = plane.lon(grid.minX + col * grid.cell);
       const lon1 = plane.lon(grid.minX + (col + 1) * grid.cell);
       const lat = plane.lat(grid.minZ + row * grid.cell);
-      if (!breaklines.crossesLonLat(lon0, lat, lon1, lat)) continue;
+      // Built lines only — a retaining wall, a quay, a breakwater. A natural
+      // cliff is not a step between two flats but the rock itself, and the
+      // surface is deliberately smoothed along one (`ground.ts`), so counting
+      // those edges here would measure that smoothing and call it a failure.
+      if (!breaklines.crossesWallLonLat(lon0, lat, lon1, lat)) continue;
       rawSum += rawStep;
       keptSum += step;
       stepEdges++;
@@ -374,6 +627,7 @@ export function checkRelief(
     rawSlopeDeg: rawSlopeSum / slopes,
     stepKept: stepEdges ? keptSum / rawSum : 1,
     stepEdges,
+    onTownLevels,
   };
 }
 
@@ -382,6 +636,9 @@ interface BuildingFit {
   worstBuriedM: number;
   inCorridor: number;
   total: number;
+  /** Footprints a surveyed retaining wall runs through: the bake terraces them. */
+  crossingWall: number;
+  worstCrossingM: number;
 }
 
 /**
@@ -394,18 +651,23 @@ function checkBuildings(
   field: HeightField,
   plane: ScenePlane,
   corridor: ReturnType<typeof buildCorridor>,
+  breaklines: Breaklines,
 ): BuildingFit {
   const fit: BuildingFit = {
     buriedOverLimit: 0,
     worstBuriedM: 0,
     inCorridor: 0,
     total: 0,
+    crossingWall: 0,
+    worstCrossingM: 0,
   };
 
   for (const building of buildings.buildings) {
     const heights: number[] = [];
     let inCorridor = false;
-    for (const [lon, lat] of building.footprint) {
+    const ring = building.footprint;
+    for (let i = 0; i < ring.length; i++) {
+      const [lon, lat] = ring[i];
       const h = field.heightAt(lon, lat);
       if (!Number.isNaN(h)) heights.push(h);
       const distance = corridor.distance(plane.x(lon), plane.z(lat));
@@ -418,6 +680,16 @@ function checkBuildings(
     const buried = Math.max(...heights) - Math.min(...heights);
     if (buried > fit.worstBuriedM) fit.worstBuriedM = buried;
     if (buried > BURIED_LIMIT_M) fit.buriedOverLimit++;
+
+    for (let i = 0; i < ring.length; i++) {
+      const [lon0, lat0] = ring[i];
+      const [lon1, lat1] = ring[(i + 1) % ring.length];
+      if (breaklines.crossesRetainingLonLat(lon0, lat0, lon1, lat1)) {
+        fit.crossingWall++;
+        if (buried > fit.worstCrossingM) fit.worstCrossingM = buried;
+        break;
+      }
+    }
   }
 
   return fit;
@@ -508,9 +780,9 @@ export function checkStanding(
       const y = mesh.positions[i * 3 + 1];
       const z = mesh.positions[i * 3 + 2];
       const terrain = ground.at(x, z);
-      // No ground under it at all is water: a hull floats on the datum, and a
-      // quay's own edge hangs over the basin on purpose.
-      if (Number.isNaN(terrain)) continue;
+      // Ground under the sea plane is the seabed: a hull floats on the datum,
+      // and a quay's own edge hangs over the basin on purpose.
+      if (Number.isNaN(terrain) || terrain < 0) continue;
       // A model rests on the ground or on what was built on it, whichever is
       // higher under the vertex; a building's own walls only ever mean ground.
       const under = mesh.name === "building" ? terrain : Math.max(terrain, builtAt(built, x, z));
@@ -580,7 +852,6 @@ function checkCoastline(water: WaterFile, field: HeightField): { agree: number; 
 async function audit(circuitId: string): Promise<Check[]> {
   // The same recipe the bake used, so a disagreement here is a real one.
   const { coords, plane, field, corridor, tunnels } = buildCircuitGround(await loadBakeInputs(circuitId));
-  const blocks = buildBeltBlocks(field, plane, corridor);
 
   const dir = join(ENVIRONMENTS, circuitId);
   const manifest = JSON.parse(await readFile(join(dir, "city-manifest.json"), "utf8")) as {
@@ -602,8 +873,11 @@ async function audit(circuitId: string): Promise<Check[]> {
   let terrainSamples = 0;
   let shoreSamples = 0;
   let worstShore = 0;
+  let worstShoreAt: { x: number; z: number } | null = null;
   let seamSamples = 0;
   let worstSeam = 0;
+  let roadSamples = 0;
+  let worstRoad = 0;
   let waterOffDatum = 0;
   let buildingVerticesOnTrack = 0;
   let worstIntrusionM = 0;
@@ -629,7 +903,66 @@ async function audit(circuitId: string): Promise<Check[]> {
     await fetchBreaklineWays(circuitId, field.bbox),
     shoreWays,
   );
-  const surface = buildGround(field, plane, breaklines);
+  // The same street network the bake built the town's ground from.
+  // The same land test the bake laid the streets under.
+  const onLand = (x: number, z: number): number => {
+    const surveyed = cutLine.signedDistance(x, z);
+    return Number.isNaN(surveyed) ? rasterShore.at(plane.lon(x), plane.lat(z)) : surveyed;
+  };
+  const streets = buildStreetGround(
+    await fetchStreetWays(circuitId, field.bbox),
+    coords,
+    field,
+    plane,
+    breaklines,
+    onLand,
+  );
+  // The ground's own land test: the line, the raster where it is sure, the decks.
+  const terrainLand = buildLandAt(field, plane, cutLine, buildPiers(shoreWays, field, plane));
+  const surface = buildGround(
+    field, plane, breaklines, streets,
+    roadLevel(corridor, field, plane, (x, z) => tunnels.buried(plane.lon(x), plane.lat(z))),
+    terrainLand,
+  );
+  const blocks = buildBeltBlocks(field, plane, corridor, terrainLand);
+  // The band the bake keeps creased: the core's cell, on every belt.
+  const kept = (x: number, z: number) => atSurveyedWall(breaklines, plane, x, z, BELT_CELL_M.core);
+
+  // The ribbon the viewer draws, and the edge the core belt was meshed to.
+  const hidden = (x: number, z: number) => tunnels.buried(plane.lon(x), plane.lat(z));
+  const ribbon = buildRibbon(
+    coords,
+    manifest.track.elevations,
+    plane,
+    (await circuitLengthM(circuitId)) ?? corridor.samples.length * 10,
+    hidden,
+  );
+  const edgeBuckets = new Map<string, [number, number, number, number][]>();
+  for (const edge of ribbon.edges) {
+    for (let i = 1; i < edge.length; i++) {
+      const seg: [number, number, number, number] = [edge[i - 1].x, edge[i - 1].z, edge[i].x, edge[i].z];
+      for (const p of [edge[i - 1], edge[i]]) {
+        const key = `${Math.floor(p.x / 8)},${Math.floor(p.z / 8)}`;
+        const list = edgeBuckets.get(key);
+        if (list) list.push(seg);
+        else edgeBuckets.set(key, [seg]);
+      }
+    }
+  }
+  const onRibbonEdge = (x: number, z: number): boolean => {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dz = -1; dz <= 1; dz++) {
+        for (const [ax, az, bx, bz] of edgeBuckets.get(`${Math.floor(x / 8) + dx},${Math.floor(z / 8) + dz}`) ?? []) {
+          const vx = bx - ax;
+          const vz = bz - az;
+          const t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / (vx * vx + vz * vz || 1)));
+          // A few quantisation steps of the shipped mesh; a grid node is metres off.
+          if (Math.hypot(x - ax - vx * t, z - az - vz * t) < 0.25) return true;
+        }
+      }
+    }
+    return false;
+  };
 
   for (const { belt, bytes, meshes } of baked) {
     const triangles = meshes.reduce((sum, mesh) => sum + mesh.triangles, 0);
@@ -652,6 +985,16 @@ async function audit(circuitId: string): Promise<Check[]> {
         triangles.toLocaleString(),
         budget.triangles.toLocaleString(),
         triangles <= budget.triangles,
+      ),
+    );
+    const light = checkLight(meshes, BELT_CELL_M[belt], kept);
+    checks.push(
+      check(
+        `${belt}: light breaks on gentle ground`,
+        `${(light.gentle * 100).toFixed(2)}% of ${light.edges.toLocaleString()} edges`
+          + ` (at a wall's foot ${(light.wall * 100).toFixed(2)}%, steep ground ${(light.steep * 100).toFixed(2)}%)`,
+        `${LIGHT_BEND_SHARE * 100}%`,
+        light.gentle <= LIGHT_BEND_SHARE,
       ),
     );
 
@@ -693,13 +1036,18 @@ async function audit(circuitId: string): Promise<Check[]> {
     // than one per face.
     checkStanding(meshes, ["building", "model"], ground, standing);
 
-    const terrain = checkTerrain(meshes, belt, surface, plane, cutLine, rasterShore, blocks);
+    const terrain = checkTerrain(meshes, belt, surface, plane, cutLine, rasterShore, blocks, onRibbonEdge);
     if (terrain.worst > worstTerrain) worstTerrain = terrain.worst;
     terrainSamples += terrain.sampled;
     shoreSamples += terrain.shore;
-    if (terrain.worstShore > worstShore) worstShore = terrain.worstShore;
+    if (terrain.worstShore > worstShore) {
+      worstShore = terrain.worstShore;
+      worstShoreAt = terrain.worstShoreAt;
+    }
     seamSamples += terrain.seam;
     if (terrain.worstSeam > worstSeam) worstSeam = terrain.worstSeam;
+    roadSamples += terrain.road;
+    if (terrain.worstRoad > worstRoad) worstRoad = terrain.worstRoad;
 
     for (const mesh of meshes) {
       if (mesh.name !== "water") continue;
@@ -719,8 +1067,11 @@ async function audit(circuitId: string): Promise<Check[]> {
     check(
       "terrain follows the surface it meshes",
       `worst ${worstTerrain.toFixed(2)} m over ${terrainSamples.toLocaleString()} vertices`
-        + ` (${shoreSamples.toLocaleString()} at the cut coast, worst ${worstShore.toFixed(2)} m;`
-        + ` ${seamSamples.toLocaleString()} at a belt seam, worst ${worstSeam.toFixed(2)} m)`,
+        + ` (${shoreSamples.toLocaleString()} at the cut coast, worst ${worstShore.toFixed(2)} m`
+        + (worstShoreAt ? ` at (${worstShoreAt.x.toFixed(0)}, ${worstShoreAt.z.toFixed(0)})` : ``)
+        + `;`
+        + ` ${seamSamples.toLocaleString()} at a belt seam, worst ${worstSeam.toFixed(2)} m;`
+        + ` ${roadSamples.toLocaleString()} on the ribbon's edge, worst ${worstRoad.toFixed(2)} m)`,
       `${TERRAIN_TOLERANCE_M} m`,
       worstTerrain <= TERRAIN_TOLERANCE_M,
     ),
@@ -730,7 +1081,8 @@ async function audit(circuitId: string): Promise<Check[]> {
     check(
       "belts agree where they meet",
       `${seam.overToleranceM} of ${seam.points.toLocaleString()} shared points apart,`
-        + ` mean ${seam.meanM.toFixed(2)} m, worst ${seam.worstM.toFixed(2)} m`,
+        + ` mean ${seam.meanM.toFixed(2)} m, worst ${seam.worstM.toFixed(2)} m`
+        + (seam.worstAt ? ` at (${seam.worstAt.x.toFixed(0)}, ${seam.worstAt.z.toFixed(0)})` : ``),
       `${SEAM_TOLERANCE_M} m`,
       seam.overToleranceM === 0,
       // Reported, not fatal. What is left is 28 points under half a metre on a
@@ -742,13 +1094,24 @@ async function audit(circuitId: string): Promise<Check[]> {
 
   // I7, on the city belt: the first one the filter touches, and the one the
   // eye is closest to.
-  const relief = checkRelief(surface, field, plane, breaklines, "city");
+  const underRibbon = checkRibbon(ribbon, ground, hidden);
+  checks.push(
+    check(
+      "ground stays under the ribbon",
+      `${underRibbon.over} of ${underRibbon.samples.toLocaleString()} samples over it by ${OVER_RIBBON_M} m, worst ${underRibbon.worstM.toFixed(2)} m`
+        + (underRibbon.worstAt ? ` at (${underRibbon.worstAt.x.toFixed(0)}, ${underRibbon.worstAt.z.toFixed(0)})` : ``),
+      `${OVER_RIBBON_SHARE * 100}%`,
+      underRibbon.over <= underRibbon.samples * OVER_RIBBON_SHARE,
+    ),
+  );
+  const relief = checkRelief(surface, field, plane, breaklines, "city", streets);
   checks.push(
     check(
       "the filter takes the ripple out",
-      `kink ${relief.kinkM.toFixed(2)} m against the field's own ${relief.rawKinkM.toFixed(2)} m`,
-      `${RELIEF_KINK_M} m`,
-      relief.kinkM <= RELIEF_KINK_M,
+      `kink ${relief.kinkM.toFixed(2)} m against the field's own ${relief.rawKinkM.toFixed(2)} m`
+        + ` (${relief.onTownLevels.toLocaleString()} nodes on the town's own levels)`,
+      `${(RELIEF_KINK_RATIO * 100).toFixed(0)}% of the field's`,
+      relief.kinkM <= relief.rawKinkM * RELIEF_KINK_RATIO,
     ),
   );
   checks.push(
@@ -762,7 +1125,7 @@ async function audit(circuitId: string): Promise<Check[]> {
   checks.push(
     check(
       "a surveyed wall keeps its step",
-      `${(relief.stepKept * 100).toFixed(0)}% of the raw step over ${relief.stepEdges} edges`
+      `${(relief.stepKept * 100).toFixed(0)}% of the raw step over ${relief.stepEdges} wall edges`
         + ` across ${breaklines.count.toLocaleString()} breakline segments`,
       `${(RELIEF_STEP_KEPT * 100).toFixed(0)}%`,
       relief.stepKept >= RELIEF_STEP_KEPT,
@@ -845,7 +1208,7 @@ async function audit(circuitId: string): Promise<Check[]> {
     ),
   );
 
-  const fit = checkBuildings(buildings, field, plane, corridor);
+  const fit = checkBuildings(buildings, field, plane, corridor, breaklines);
   // Measured on the shipped mesh: the bake pushes footprints out of the
   // corridor, so checking the source data would only re-read its input.
   checks.push(
@@ -870,6 +1233,15 @@ async function audit(circuitId: string): Promise<Check[]> {
       "ground range under a footprint",
       `${fit.buriedOverLimit} of ${fit.total}, worst ${fit.worstBuriedM.toFixed(1)} m`,
       `over ${BURIED_LIMIT_M} m: reported`,
+      true,
+      false,
+    ),
+  );
+  checks.push(
+    check(
+      "footprints crossing a retaining wall",
+      `${fit.crossingWall} of ${fit.total}, worst ${fit.worstCrossingM.toFixed(1)} m over one`,
+      "reported",
       true,
       false,
     ),

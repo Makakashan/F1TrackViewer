@@ -36,6 +36,7 @@ function box(min: [number, number, number], max: [number, number, number]): Bake
     positions: new Float32Array(positions),
     indices: new Uint32Array(indices),
     colors: null,
+    normals: null,
     triangles: indices.length / 3,
   };
 }
@@ -64,6 +65,7 @@ function merge(meshes: BakedMesh[]): BakedMesh {
     positions: new Float32Array(positions),
     indices: new Uint32Array(indices),
     colors: null,
+    normals: null,
     triangles: indices.length / 3,
   };
 }

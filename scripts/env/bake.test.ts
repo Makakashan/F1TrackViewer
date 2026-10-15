@@ -37,6 +37,7 @@ import { BELT_BUDGET, BELT_ORDER } from "./belts";
 import { buildBreaklines } from "./breaklines";
 import { loadFixture } from "./fixture";
 import { buildGround } from "./ground";
+import { buildStreetGround } from "./streets";
 
 /** The AO floor: `COLOR_0` below it is a hole, not a shadow (I11). */
 const SHADE_FLOOR = 0.278;
@@ -56,8 +57,7 @@ describe("the slice bakes", () => {
     expect(named.get("core")).toContain("terrain");
     expect(named.get("core")).toContain("building");
     expect(named.get("city")).toContain("terrain");
-    // The harbour is in frame, so the shore wall and the water are too.
-    expect(named.get("city")).toContain("shore");
+    // The harbour is in frame, so the water is too.
     expect(named.get("far")).toContain("water");
   });
 
@@ -126,8 +126,12 @@ describe("what the shipped GLB has to hold", () => {
 describe("the filter, on ground that was surveyed rather than written", () => {
   const { field, plane } = buildCircuitGround(inputs);
   const breaklines = buildBreaklines(field, inputs.breaklineWays, inputs.shoreWays);
-  const surface = buildGround(field, plane, breaklines);
-  const relief = checkRelief(surface, field, plane, breaklines, "city");
+  // The filter on its own: this window is all town, and the street levels laid
+  // over it (`streets.ts`) are a different thing to measure — the surface they
+  // make is the town's, not the filter's.
+  const streets = buildStreetGround([], [], field, plane, breaklines);
+  const surface = buildGround(field, plane, breaklines, streets);
+  const relief = checkRelief(surface, field, plane, breaklines, "city", streets);
 
   test("takes the ripple out and leaves the relief in (I7)", () => {
     expect(relief.kinkM).toBeLessThanOrEqual(RELIEF_KINK_M);

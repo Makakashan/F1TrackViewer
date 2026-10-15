@@ -18,18 +18,25 @@ import type { ScenePlane } from "./plane";
 /** Resolution of the occluder height map. Fine enough for a street, coarse
  *  enough to sweep in a second. */
 const CELL_M = 4;
-/** Directions sampled around each vertex, and how far out along each. */
-const AZIMUTHS = 8;
+/**
+ * Directions sampled around each vertex, and how far out along each.
+ *
+ * Sixteen rather than eight, and off the axes by half a step: with eight, four
+ * of them ran along the occluder grid's own rows and columns, and a building's
+ * shade came out as a square with its corners on the compass points.
+ */
+const AZIMUTHS = 16;
+const AZIMUTH_OFFSET = Math.PI / AZIMUTHS;
 const RANGES_M = [2, 3, 5, 8, 12, 18, 26, 38];
 /** Full shade never goes below this: an unlit crevice is a hole, not a shadow. */
-const FLOOR = 0.45;
+const FLOOR = 0.62;
 /**
  * Physical sky visibility is a gentle thing — a street with towers on two sides
  * still sees three quarters of the sky — and reads as no shading at all. The
  * curve keeps the open ground open and deepens the enclosed places, which is
  * what the effect is for.
  */
-const CONTRAST = 2.6;
+const CONTRAST = 1.7;
 
 export interface Occluders {
   heights: Float32Array;
@@ -49,6 +56,8 @@ export function buildOccluders(
   field: HeightField,
   plane: ScenePlane,
   standing: Mesh[],
+  /** The ground as it is drawn: the raw field's ripple and spikes cast shade the mesh has not got. */
+  groundAt: (x: number, z: number) => number,
 ): Occluders {
   const minX = plane.x(field.bbox.minLon);
   const maxX = plane.x(field.bbox.maxLon);
@@ -60,10 +69,7 @@ export function buildOccluders(
 
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
-      const ground = field.heightAt(
-        plane.lon(minX + (col + 0.5) * CELL_M),
-        plane.lat(minZ + (row + 0.5) * CELL_M),
-      );
+      const ground = groundAt(minX + (col + 0.5) * CELL_M, minZ + (row + 0.5) * CELL_M);
       heights[row * width + col] = Number.isNaN(ground) ? 0 : ground;
     }
   }
@@ -93,11 +99,50 @@ export function buildOccluders(
   return { heights, width, height, minX, minZ, cellM: CELL_M };
 }
 
+/**
+ * The skyline between the cells, not the cell the point lands in.
+ *
+ * Read cell by cell, the horizon a vertex sees changes in four metre jumps and
+ * the shade under a building steps along the grid — square shadows on ground
+ * that has none.
+ */
 function heightAt(occluders: Occluders, x: number, z: number): number {
-  const col = Math.floor((x - occluders.minX) / occluders.cellM);
-  const row = Math.floor((z - occluders.minZ) / occluders.cellM);
-  if (col < 0 || row < 0 || col >= occluders.width || row >= occluders.height) return 0;
-  return occluders.heights[row * occluders.width + col];
+  const { heights, width, height, minX, minZ, cellM } = occluders;
+  const fx = (x - minX) / cellM - 0.5;
+  const fz = (z - minZ) / cellM - 0.5;
+  const col = Math.floor(fx);
+  const row = Math.floor(fz);
+  if (col < -1 || row < -1 || col >= width || row >= height) return 0;
+  const u = fx - col;
+  const v = fz - row;
+  const at = (r: number, c: number): number => {
+    if (r < 0 || c < 0 || r >= height || c >= width) return 0;
+    return heights[r * width + c];
+  };
+  const top = at(row, col) * (1 - u) + at(row, col + 1) * u;
+  const bottom = at(row + 1, col) * (1 - u) + at(row + 1, col + 1) * u;
+  return top * (1 - v) + bottom * v;
+}
+
+/** The grey a point at (x, y, z) takes from the sky it sees: 1 open, `FLOOR` walled in. */
+function openSky(occluders: Occluders, x: number, y: number, z: number): number {
+  let blocked = 0;
+  for (let a = 0; a < AZIMUTHS; a++) {
+    const angle = (2 * Math.PI * a) / AZIMUTHS + AZIMUTH_OFFSET;
+    const dx = Math.cos(angle);
+    const dz = Math.sin(angle);
+    let highest = 0;
+    for (const range of RANGES_M) {
+      const rise = heightAt(occluders, x + dx * range, z + dz * range) - y;
+      if (rise <= 0) continue;
+      // Elevation angle of the horizon in this direction, as a sine.
+      const sine = rise / Math.hypot(rise, range);
+      if (sine > highest) highest = sine;
+    }
+    blocked += highest;
+  }
+  const openness = 1 - blocked / AZIMUTHS;
+  return FLOOR + (1 - FLOOR) * Math.max(0, Math.min(1, openness)) ** CONTRAST;
 }
 
 /**
@@ -108,87 +153,180 @@ function heightAt(occluders: Occluders, x: number, z: number): number {
 export function applyAmbientOcclusion(mesh: Mesh, occluders: Occluders): void {
   const count = mesh.positions.length / 3;
   const colors = new Array<number>(count * 3);
-
   for (let i = 0; i < count; i++) {
-    const x = mesh.positions[i * 3];
-    const y = mesh.positions[i * 3 + 1];
-    const z = mesh.positions[i * 3 + 2];
-
-    let blocked = 0;
-    for (let a = 0; a < AZIMUTHS; a++) {
-      const angle = (2 * Math.PI * a) / AZIMUTHS;
-      const dx = Math.cos(angle);
-      const dz = Math.sin(angle);
-      let highest = 0;
-      for (const range of RANGES_M) {
-        const rise = heightAt(occluders, x + dx * range, z + dz * range) - y;
-        if (rise <= 0) continue;
-        // Elevation angle of the horizon in this direction, as a sine.
-        const sine = rise / Math.hypot(rise, range);
-        if (sine > highest) highest = sine;
-      }
-      blocked += highest;
-    }
-
-    const openness = 1 - blocked / AZIMUTHS;
-    const shade = FLOOR + (1 - FLOOR) * Math.max(0, Math.min(1, openness)) ** CONTRAST;
+    const shade = openSky(occluders, mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]);
     colors[i * 3] = shade;
     colors[i * 3 + 1] = shade;
     colors[i * 3 + 2] = shade;
   }
-
   mesh.colors = colors;
 }
 
-/**
- * Darkens the ground by how steep it is.
- *
- * The terrain came out of the field one flat colour, and AO only speaks where
- * something stands nearby — an open hillside sees the whole sky and reads as
- * paper. Slope is the other thing the eye uses to see relief: a quay is
- * concrete, a 45° hillside is scrub over rock, and a cliff is rock. So the
- * vertex's own normal picks a factor on the colour AO already wrote, warmed a
- * little as it steepens so a cliff reads stony rather than merely dim.
- *
- * This replaced the green ground tint, which said *planted* by painting the
- * terrain and read as paint.
- */
 /** Below this the ground is flat enough to leave alone. */
 const FLAT_DEG = 12;
 /** At and beyond this it is as dark as ground gets. */
 const STEEP_DEG = 55;
 /** What the steepest ground keeps of its own colour. */
-const STEEP_SHADE = 0.62;
+const STEEP_SHADE = 0.78;
 /** The steepest ground's warmth, as a multiplier per channel. */
 const ROCK_TINT: [number, number, number] = [1, 0.985, 0.96];
+/** How far the shade is spread over the ground, and how hard. */
+const SHADE_BLUR_PASSES = 3;
+const SHADE_BLUR_STRENGTH = 0.7;
 
-export function shadeBySlope(mesh: Mesh): number {
-  if (!mesh.colors) return 0;
+/**
+ * The grey the sky gives, darkened and warmed by how steep the ground is: an
+ * open hillside sees the whole sky, so slope is what is left to read relief by.
+ * Only where there is light left to take — what AO already darkened, slope
+ * leaves alone, or the terraces' cut faces came out as soot.
+ */
+function slopeShade(grey: number, slopeDeg: number): [number, number, number] {
   const flat = Math.cos((FLAT_DEG * Math.PI) / 180);
   const steep = Math.cos((STEEP_DEG * Math.PI) / 180);
-  let shaded = 0;
-  const count = mesh.positions.length / 3;
-  for (let i = 0; i < count; i++) {
-    // The normal points up on ground; a vertical wall of a cut reads as 0.
-    const up = Math.abs(mesh.normals[i * 3 + 1]);
-    if (up >= flat) continue;
-    const t = Math.max(0, Math.min(1, (flat - up) / (flat - steep)));
-    // Smoothstep, or the first degree past flat shows as a band.
-    let k = t * t * (3 - 2 * t);
-    // Only where there is light left to take. AO and slope multiply, and in a
-    // terraced street they were multiplying together: the cut faces between
-    // Monaco's terraces are both enclosed and vertical, and stacking the two
-    // full-strength painted a smear of soot across the hillside. What AO has
-    // already darkened, slope leaves alone.
-    const lit = (mesh.colors[i * 3] - FLOOR) / (1 - FLOOR);
-    k *= Math.max(0, Math.min(1, lit));
-    const shade = 1 - (1 - STEEP_SHADE) * k;
-    mesh.colors[i * 3] *= shade * (1 + (ROCK_TINT[0] - 1) * k);
-    mesh.colors[i * 3 + 1] *= shade * (1 + (ROCK_TINT[1] - 1) * k);
-    mesh.colors[i * 3 + 2] *= shade * (1 + (ROCK_TINT[2] - 1) * k);
-    shaded++;
+  const up = Math.cos((Math.min(89, slopeDeg) * Math.PI) / 180);
+  if (up >= flat) return [grey, grey, grey];
+  const t = Math.max(0, Math.min(1, (flat - up) / (flat - steep)));
+  // Smoothstep, or the first degree past flat shows as a band.
+  const k = t * t * (3 - 2 * t) * Math.max(0, Math.min(1, (grey - FLOOR) / (1 - FLOOR)));
+  const shade = grey * (1 - (1 - STEEP_SHADE) * k);
+  return ROCK_TINT.map((tint) => shade * (1 + (tint - 1) * k)) as [number, number, number];
+}
+
+export interface GroundShade {
+  /**
+   * The ground's colour at a scene point, blurred to a mesh of `cell` metres so
+   * a coarse vertex does not pick one fine detail out of many. Null where no
+   * ground was shaded near it.
+   */
+  at(x: number, z: number, cell: number): [number, number, number] | null;
+  /** Lattice nodes the slope darkened, for the report. */
+  sloped: number;
+}
+
+/**
+ * The ground's shade as one field, whatever belt draws it.
+ *
+ * Read at each vertex's own height and blurred over its own mesh, a coarse belt
+ * came out a different grey from the fine one beside it, and every seam showed
+ * as a patch. So it is worked out once on a lattice — the sky at the shared
+ * surface's height, the slope, the blur in metres — and every belt reads it.
+ */
+export function buildGroundShade(
+  occluders: Occluders,
+  bounds: { minX: number; minZ: number; maxX: number; maxZ: number },
+  groundAt: (x: number, z: number) => number,
+  slopeDegAt: (x: number, z: number) => number,
+): GroundShade {
+  const width = Math.ceil((bounds.maxX - bounds.minX) / CELL_M) + 1;
+  const height = Math.ceil((bounds.maxZ - bounds.minZ) / CELL_M) + 1;
+  const raw = new Float32Array(width * height * 3).fill(Number.NaN);
+  let sloped = 0;
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      const x = bounds.minX + col * CELL_M;
+      const z = bounds.minZ + row * CELL_M;
+      const y = groundAt(x, z);
+      if (Number.isNaN(y)) continue;
+      const grey = openSky(occluders, x, y, z);
+      const rgb = slopeShade(grey, slopeDegAt(x, z));
+      if (rgb[0] < grey) sloped++;
+      raw.set(rgb, (row * width + col) * 3);
+    }
   }
-  return shaded;
+
+  // Grey in, grey out: the blur moves one number and keeps each node's tint.
+  const blur = (from: Float32Array, passes: number): Float32Array => {
+    let colour = from;
+    for (let pass = 0; pass < passes; pass++) {
+      const next = colour.slice();
+      for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+          const i = (row * width + col) * 3;
+          const here = colour[i];
+          if (Number.isNaN(here)) continue;
+          let sum = here;
+          let count = 1;
+          for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const r = row + dr;
+            const c = col + dc;
+            if (r < 0 || c < 0 || r >= height || c >= width) continue;
+            const other = colour[(r * width + c) * 3];
+            if (Number.isNaN(other)) continue;
+            sum += other;
+            count++;
+          }
+          const shade = here + (sum / count - here) * SHADE_BLUR_STRENGTH;
+          next[i] = shade;
+          next[i + 1] = (colour[i + 1] / here) * shade;
+          next[i + 2] = (colour[i + 2] / here) * shade;
+        }
+      }
+      colour = next;
+    }
+    return colour;
+  };
+  // A diffusion spreads with the square root of its passes, so twice the cell
+  // takes four times the passes.
+  const levels = new Map<number, Float32Array>();
+  let reached = blur(raw, SHADE_BLUR_PASSES);
+  let passes = SHADE_BLUR_PASSES;
+  for (const cell of [CELL_M, 2 * CELL_M, 4 * CELL_M]) {
+    const wanted = SHADE_BLUR_PASSES * (cell / CELL_M) ** 2;
+    reached = blur(reached, wanted - passes);
+    passes = wanted;
+    levels.set(cell, reached);
+  }
+
+  const at = (x: number, z: number, cell: number): [number, number, number] | null => {
+    const colour = levels.get(cell) ?? levels.get(CELL_M)!;
+    const fx = (x - bounds.minX) / CELL_M;
+    const fz = (z - bounds.minZ) / CELL_M;
+    const col = Math.floor(fx);
+    const row = Math.floor(fz);
+    const u = fx - col;
+    const v = fz - row;
+    const out: [number, number, number] = [0, 0, 0];
+    let weight = 0;
+    // Bilinear over whichever corners are ground, so the waterline reads the land.
+    for (const [dr, dc, w] of [[0, 0, (1 - u) * (1 - v)], [0, 1, u * (1 - v)], [1, 0, (1 - u) * v], [1, 1, u * v]]) {
+      const r = row + dr;
+      const c = col + dc;
+      if (r < 0 || c < 0 || r >= height || c >= width || w === 0) continue;
+      const i = (r * width + c) * 3;
+      if (Number.isNaN(colour[i])) continue;
+      for (let k = 0; k < 3; k++) out[k] += colour[i + k] * w;
+      weight += w;
+    }
+    return weight > 0 ? (out.map((value) => value / weight) as [number, number, number]) : null;
+  };
+
+  return { at, sloped };
+}
+
+/**
+ * Paints a belt's ground from the shared field. A vertex out of the field's
+ * reach — past the last node of land at the cut — works its own shade out.
+ */
+export function paintGround(
+  mesh: Mesh,
+  shade: GroundShade,
+  occluders: Occluders,
+  slopeDegAt: (x: number, z: number) => number,
+  /** The mesh scale a point is read at; see `BeltBlocks.coarsestCellAt`. */
+  cellAt: (x: number, z: number) => number,
+): void {
+  const count = mesh.positions.length / 3;
+  const colors = new Array<number>(count * 3);
+  for (let i = 0; i < count; i++) {
+    const x = mesh.positions[i * 3];
+    const y = mesh.positions[i * 3 + 1];
+    const z = mesh.positions[i * 3 + 2];
+    const rgb = shade.at(x, z, cellAt(x, z)) ?? slopeShade(openSky(occluders, x, y, z), slopeDegAt(x, z));
+    colors[i * 3] = rgb[0];
+    colors[i * 3 + 1] = rgb[1];
+    colors[i * 3 + 2] = rgb[2];
+  }
+  mesh.colors = colors;
 }
 
 /**

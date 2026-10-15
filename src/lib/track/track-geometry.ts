@@ -4,6 +4,8 @@ import type { SectorDefinition, TrackMarkers } from "@/lib/track/track-markers";
 
 /** Half-width may be a constant (manual slider) or a function of normalized arc position s ∈ [0. */
 export type HalfWidth = number | ((s: number) => number);
+/** The ribbon's half width a fresh link draws; the bake meets the ground to it. */
+export const DEFAULT_HALF_WIDTH_M = 7;
 export type TrackColorAt = (s: number, target: THREE.Color) => void;
 
 export function halfWidthAt(halfWidth: HalfWidth, s: number): number {

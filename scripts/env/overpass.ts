@@ -24,6 +24,13 @@ const ENDPOINTS = [
   "https://overpass.osm.ch/api/interpreter",
 ];
 const USER_AGENT = "F1TrackViewer/0.1 (https://github.com/Makakashan/F1TrackViewer)";
+/**
+ * How long one endpoint may keep a query. The longest server-side limit asked
+ * for is 180 s; past that and a margin the endpoint is not coming back. Without
+ * it a mirror that accepts the connection and never answers held a bake forever,
+ * before the retry schedule ever started.
+ */
+const REQUEST_TIMEOUT_MS = 210_000;
 
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 const CACHE_DIR = join(REPO_ROOT, "data", "cache", "overpass-structures");
@@ -92,6 +99,25 @@ export interface StructureWay {
   name?: string;
 }
 
+/**
+ * A road, path or square: the ground a town's level is actually set by.
+ *
+ * The DTM reads a street correctly — it is bare ground — and everything between
+ * the streets is buildings, whose bare earth nobody ever sees. So the streets
+ * are the anchors the city's ground is built from, and these are them.
+ */
+export interface StreetWay {
+  id: string;
+  points: [number, number][];
+  highway: string;
+  /** A carriageway's width in metres where OSM says, else its class's default. */
+  lanes: number;
+  /** A way in a tunnel or on a bridge is not the ground under it. */
+  offGround: boolean;
+  /** True for a square or a pedestrian area: a patch, not a line. */
+  area: boolean;
+}
+
 interface OverpassResponse {
   elements: OverpassWay[];
   /** Overpass reports a refusal in the body, under HTTP 200. */
@@ -121,6 +147,83 @@ function query(bbox: RasterBBox): string {
   way["highway"]["covered"="yes"](${box});
 );
 out geom tags;`;
+}
+
+/** Every street, path and square, which is the ground the town is built to. */
+function streetQuery(bbox: RasterBBox): string {
+  const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
+  return `[out:json][timeout:180];
+(
+  way["highway"](${box});
+  way["area:highway"](${box});
+);
+out geom tags;`;
+}
+
+/** Ways that carry traffic or feet; the rest of `highway` is furniture. */
+const STREET_KINDS = new Set([
+  "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link",
+  "secondary", "secondary_link", "tertiary", "tertiary_link", "unclassified",
+  "residential", "living_street", "service", "pedestrian", "footway", "path",
+  "track", "steps", "cycleway",
+]);
+
+/** Metres across, by class, where OSM does not say. */
+const STREET_WIDTH_M: Record<string, number> = {
+  motorway: 14, trunk: 12, primary: 12, secondary: 10, tertiary: 9,
+  unclassified: 7, residential: 7, living_street: 6, service: 5,
+  pedestrian: 6, footway: 3, path: 2, track: 3, steps: 2, cycleway: 2.5,
+};
+
+export async function fetchStreetWays(
+  circuitId: string,
+  bbox: RasterBBox,
+  refresh = false,
+): Promise<StreetWay[]> {
+  const cachePath = join(CACHE_DIR, `${circuitId}-streets.json`);
+  if (!refresh) {
+    try {
+      return JSON.parse(await readFile(cachePath, "utf8")) as StreetWay[];
+    } catch {
+      // not cached yet
+    }
+  }
+
+  const response = await run(streetQuery(bbox));
+  if (!response) throw new Error(`overpass: no endpoint answered for ${circuitId} streets`);
+
+  const ways: StreetWay[] = [];
+  for (const element of response.elements) {
+    if (element.type !== "way" || !element.geometry?.length) continue;
+    const tags = element.tags ?? {};
+    const highway = tags.highway ?? tags["area:highway"] ?? "";
+    const base = highway.replace(/_link$/, "");
+    if (!STREET_KINDS.has(highway) && !STREET_KINDS.has(base)) continue;
+    const width = Number.parseFloat(tags.width ?? "");
+    const lanes = Number.parseFloat(tags.lanes ?? "");
+    ways.push({
+      id: `way/${element.id}`,
+      points: element.geometry.map((p) => [p.lon, p.lat] as [number, number]),
+      highway,
+      lanes: Number.isFinite(width) && width > 0
+        ? width
+        : Number.isFinite(lanes) && lanes > 0
+          ? lanes * 3.2
+          : (STREET_WIDTH_M[base] ?? STREET_WIDTH_M[highway] ?? 6),
+      offGround:
+        tags.tunnel !== undefined
+        || tags.bridge !== undefined
+        || tags.covered === "yes"
+        || (Number.parseInt(tags.layer ?? "0", 10) || 0) !== 0,
+      area: tags.area === "yes" || tags["area:highway"] !== undefined,
+    });
+  }
+
+  if (ways.length) {
+    await mkdir(CACHE_DIR, { recursive: true });
+    await writeFile(cachePath, JSON.stringify(ways));
+  }
+  return ways;
 }
 
 /**
@@ -188,6 +291,7 @@ async function runOnce(body: string, waitMs: number): Promise<OverpassResponse |
         method: "POST",
         headers: { "Content-Type": "text/plain", "User-Agent": USER_AGENT },
         body,
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       if (!res.ok) {
         await new Promise((resolve) => setTimeout(resolve, waitMs));

@@ -158,6 +158,7 @@ const en = {
   loadingElevations: "Loading elevation profile (Open-Meteo)…",
   // Controls hint
   controlsLMB: "LMB — rotate",
+  cameraTarget: "Camera on",
   controlsRMB: "RMB — pan",
   controlsWheel: "Wheel — zoom",
   // Loading states
@@ -308,6 +309,7 @@ const ru: Dict = {
   nowViewing: "Сейчас просматриваете",
   loadingElevations: "Загрузка профиля высот (Open-Meteo)…",
   controlsLMB: "ЛКМ — вращать",
+  cameraTarget: "Камера на",
   controlsRMB: "ПКМ — панорамировать",
   controlsWheel: "Колесо — зум",
   loadingThree: "Загрузка Three.js…",

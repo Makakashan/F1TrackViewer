@@ -35,6 +35,8 @@ const TrackViewer = dynamic(() => import("@/components/track/track-viewer"), {
 
 interface F1TrackAppProps {
   startFinishCalibration?: boolean;
+  /** Admin only: the baked ground with nothing standing on it. */
+  terrainOnly?: boolean;
 }
 
 const DISCLAIMER_DISMISSED_STORAGE_KEY = "f1tv-disclaimer-dismissed";
@@ -42,6 +44,7 @@ const AUTO_ROTATE_STORAGE_KEY = "f1tv:autoRotate";
 
 export default function F1TrackApp({
   startFinishCalibration = false,
+  terrainOnly = false,
 }: F1TrackAppProps) {
   const { t, resolvedTheme } = useAppPref();
   const [error, setError] = useState<string | null>(null);
@@ -222,23 +225,45 @@ export default function F1TrackApp({
         </div>
 
         <div className="flex items-center gap-2 md:gap-3">
-          <Button
-            size="sm"
-            className="gap-2 bg-[#e10600] text-white hover:bg-[#c00500]"
-            onClick={() => setUrlRaceMode(true)}
-          >
-            <Flag className="h-4 w-4" />
-            {t.raceEnter}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={handleBackToGlobe}
-          >
-            <Globe2 className="h-4 w-4" />
-            Earth
-          </Button>
+          {/* The globe is where a circuit is picked, and the admin panel has no
+              globe: without this its terrain view is stuck on one circuit. */}
+          {terrainOnly ? (
+            <select
+              aria-label="Circuit"
+              value={selectedId ?? ""}
+              onChange={(event) => {
+                onSelect(event.target.value);
+                setUrlTrack(event.target.value);
+              }}
+              className="h-8 rounded-md border border-border bg-background px-2 text-[12px]"
+            >
+              {circuits.map((circuit) => (
+                <option key={circuit.id} value={circuit.id}>
+                  {circuit.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                className="gap-2 bg-[#e10600] text-white hover:bg-[#c00500]"
+                onClick={() => setUrlRaceMode(true)}
+              >
+                <Flag className="h-4 w-4" />
+                {t.raceEnter}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={handleBackToGlobe}
+              >
+                <Globe2 className="h-4 w-4" />
+                Earth
+              </Button>
+            </>
+          )}
           <SettingsMenu />
         </div>
       </header>
@@ -255,6 +280,7 @@ export default function F1TrackApp({
               resolvedTheme={resolvedTheme}
               cameraPreset={cameraPreset}
               startFinishCalibration={startFinishCalibration}
+              terrainOnly={terrainOnly}
               onStartFinishPlacement={setStartFinishPlacement}
               viewMode={viewMode}
               markers={markers}

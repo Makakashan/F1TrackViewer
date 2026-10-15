@@ -46,6 +46,21 @@ export async function loadCircuitCoords(circuitId: string): Promise<[number, num
   return line.geometry.coordinates;
 }
 
+/**
+ * The length the viewer reads off its own copy of the circuit, which is what it
+ * sizes the ribbon's sampling by. Null where the app ships no copy (a fixture).
+ */
+export async function circuitLengthM(circuitId: string): Promise<number | null> {
+  try {
+    const text = await readFile(join(REPO_ROOT, "public", "circuits", `${circuitId}.geojson`), "utf8");
+    const length = (JSON.parse(text) as { features?: { properties?: { length?: number } }[] }).features?.[0]
+      ?.properties?.length;
+    return typeof length === "number" && length > 0 ? length : null;
+  } catch {
+    return null;
+  }
+}
+
 export function circuitBBox(
   coords: [number, number][],
   paddingM = DEFAULT_PADDING_M,
