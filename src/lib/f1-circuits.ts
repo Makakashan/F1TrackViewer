@@ -1,8 +1,15 @@
-/** Helpers for the bacinger/f1-circuits GeoJSON dataset. */
+/**
+ * Helpers for the bacinger/f1-circuits GeoJSON dataset.
+ *
+ * The files are copied into `public/circuits/` by `bun run circuits:generate`
+ * rather than read from GitHub at run time: a page view should not depend on a
+ * third party's rate limit, and raw.githubusercontent.com answers 429 once a
+ * machine has pulled enough for the day, which leaves the app with no circuits
+ * and nothing the user can do about it.
+ */
 
-const RAW_BASE =
-  "https://raw.githubusercontent.com/bacinger/f1-circuits/master";
-const LOCATIONS_URL = `${RAW_BASE}/f1-locations.json`;
+const BASE = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/circuits`;
+const LOCATIONS_URL = `${BASE}/index.json`;
 
 export interface CircuitLocation {
   /** Circuit id, e.g. "mc-1929" — matches the file stem under circuits/*.geojson */
@@ -11,7 +18,6 @@ export interface CircuitLocation {
   location: string;
   lat: number;
   lon: number;
-  zoom: number;
 }
 
 export interface CircuitProperties {
@@ -43,23 +49,21 @@ export interface CircuitGeoJSON {
 
 /** Fetch the lightweight circuit index (~5KB JSON). */
 export async function fetchCircuitIndex(): Promise<CircuitLocation[]> {
-  const res = await fetch(LOCATIONS_URL, { next: { revalidate: 86400 } });
+  const res = await fetch(LOCATIONS_URL);
   if (!res.ok) throw new Error(`Failed to fetch circuit index: ${res.status}`);
   return res.json();
 }
 
-/** Build the raw GitHub URL for a single circuit's GeoJSON file. */
+/** Build the URL for a single circuit's GeoJSON file. */
 export function circuitGeoJsonUrl(id: string): string {
-  return `${RAW_BASE}/circuits/${id}.geojson`;
+  return `${BASE}/${id}.geojson`;
 }
 
 /** Fetch a single circuit's GeoJSON by id. */
 export async function fetchCircuitGeoJson(
   id: string,
 ): Promise<CircuitGeoJSON> {
-  const res = await fetch(circuitGeoJsonUrl(id), {
-    next: { revalidate: 86400 },
-  });
+  const res = await fetch(circuitGeoJsonUrl(id));
   if (!res.ok)
     throw new Error(`Failed to fetch circuit ${id}: ${res.status}`);
   return res.json();

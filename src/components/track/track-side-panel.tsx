@@ -15,6 +15,7 @@ export default function TrackSidePanel({
   loading,
   pointCount,
   elevations,
+  elevationsBaked,
   elevationEnabled,
   markers,
   viewMode,
@@ -74,6 +75,7 @@ export default function TrackSidePanel({
           loading={loading}
           pointCount={pointCount}
           elevations={elevations}
+          elevationsBaked={elevationsBaked}
           elevationEnabled={elevationEnabled && !terrainModeActive}
           markers={markers}
           viewMode={viewMode}

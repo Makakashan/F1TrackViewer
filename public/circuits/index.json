@@ -1,0 +1,219 @@
+[
+  {
+    "id": "ae-2009",
+    "name": "Yas Marina Circuit",
+    "location": "Yas Marina",
+    "lat": 24.470903,
+    "lon": 54.605562
+  },
+  {
+    "id": "at-1969",
+    "name": "Red Bull Ring",
+    "location": "Spielberg",
+    "lat": 47.222836,
+    "lon": 14.7623585
+  },
+  {
+    "id": "au-1953",
+    "name": "Albert Park Circuit",
+    "location": "Melbourne",
+    "lat": -37.845965500000005,
+    "lon": 144.97036400000002
+  },
+  {
+    "id": "az-2016",
+    "name": "Baku City Circuit",
+    "location": "Baku",
+    "lat": 40.3693935,
+    "lon": 49.843058
+  },
+  {
+    "id": "be-1925",
+    "name": "Circuit de Spa-Francorchamps",
+    "location": "Spa Francorchamps",
+    "lat": 50.4369475,
+    "lon": 5.968581
+  },
+  {
+    "id": "bh-2002",
+    "name": "Bahrain International Circuit",
+    "location": "Sakhir",
+    "lat": 26.031485500000002,
+    "lon": 50.514332499999995
+  },
+  {
+    "id": "br-1940",
+    "name": "Autódromo José Carlos Pace - Interlagos",
+    "location": "Sao Paulo",
+    "lat": -23.701691,
+    "lon": -46.697284499999995
+  },
+  {
+    "id": "ca-1978",
+    "name": "Circuit Gilles-Villeneuve",
+    "location": "Montreal",
+    "lat": 45.505679,
+    "lon": -73.52594450000001
+  },
+  {
+    "id": "cn-2004",
+    "name": "Shanghai International Circuit",
+    "location": "Shanghai",
+    "lat": 31.340654999999998,
+    "lon": 121.2214075
+  },
+  {
+    "id": "de-1927",
+    "name": "Nürburgring",
+    "location": "Nürburg",
+    "lat": 50.3308295,
+    "lon": 6.94206
+  },
+  {
+    "id": "de-1932",
+    "name": "Hockenheimring",
+    "location": "Hockenheim",
+    "lat": 49.329716000000005,
+    "lon": 8.574261499999999
+  },
+  {
+    "id": "es-1991",
+    "name": "Circuit de Barcelona-Catalunya",
+    "location": "Barcelona",
+    "lat": 41.5694695,
+    "lon": 2.2579015
+  },
+  {
+    "id": "fr-1969",
+    "name": "Circuit Paul Ricard",
+    "location": "Le Castellet",
+    "lat": 43.25284,
+    "lon": 5.790946
+  },
+  {
+    "id": "gb-1948",
+    "name": "Silverstone Circuit",
+    "location": "Silverstone",
+    "lat": 52.0712245,
+    "lon": -1.016775
+  },
+  {
+    "id": "hu-1986",
+    "name": "Hungaroring",
+    "location": "Budapest",
+    "lat": 47.5830225,
+    "lon": 19.2494675
+  },
+  {
+    "id": "it-1914",
+    "name": "Autodromo Internazionale del Mugello",
+    "location": "Scarperia e San Piero",
+    "lat": 43.9974045,
+    "lon": 11.371521999999999
+  },
+  {
+    "id": "it-1922",
+    "name": "Autodromo Nazionale Monza",
+    "location": "Monza",
+    "lat": 45.621611,
+    "lon": 9.2887765
+  },
+  {
+    "id": "it-1953",
+    "name": "Autodromo Enzo e Dino Ferrari",
+    "location": "Imola",
+    "lat": 44.340781,
+    "lon": 11.713593500000002
+  },
+  {
+    "id": "jp-1962",
+    "name": "Suzuka International Racing Course",
+    "location": "Suzuka",
+    "lat": 34.843665,
+    "lon": 136.53267499999998
+  },
+  {
+    "id": "mc-1929",
+    "name": "Circuit de Monaco",
+    "location": "Monaco",
+    "lat": 43.736738,
+    "lon": 7.4257895000000005
+  },
+  {
+    "id": "mx-1962",
+    "name": "Autódromo Hermanos Rodríguez",
+    "location": "Mexico City",
+    "lat": 19.401727,
+    "lon": -99.0899725
+  },
+  {
+    "id": "nl-1948",
+    "name": "Circuit Zandvoort",
+    "location": "Zandvoort",
+    "lat": 52.388087,
+    "lon": 4.545901499999999
+  },
+  {
+    "id": "pt-2008",
+    "name": "Autódromo Internacional do Algarve",
+    "location": "Portimão",
+    "lat": 37.231278,
+    "lon": -8.628213
+  },
+  {
+    "id": "qa-2004",
+    "name": "Losail International Circuit",
+    "location": "Lusail",
+    "lat": 25.490475,
+    "lon": 51.453725
+  },
+  {
+    "id": "ru-2014",
+    "name": "Sochi Autodrom",
+    "location": "Sochi",
+    "lat": 43.4074555,
+    "lon": 39.9587295
+  },
+  {
+    "id": "sa-2021",
+    "name": "Jeddah Corniche Circuit",
+    "location": "Jeddah",
+    "lat": 21.6377375,
+    "lon": 39.103705000000005
+  },
+  {
+    "id": "sg-2008",
+    "name": "Marina Bay Street Circuit",
+    "location": "Singapore",
+    "lat": 1.2907325,
+    "lon": 103.85799399999999
+  },
+  {
+    "id": "tr-2005",
+    "name": "Intercity Istanbul Park",
+    "location": "Istanbul",
+    "lat": 40.9571745,
+    "lon": 29.408721
+  },
+  {
+    "id": "us-2012",
+    "name": "Circuit of the Americas",
+    "location": "Austin",
+    "lat": 30.134742,
+    "lon": -97.6339605
+  },
+  {
+    "id": "us-2022",
+    "name": "Miami International Autodrome",
+    "location": "Miami",
+    "lat": 25.957905500000003,
+    "lon": -80.2372735
+  },
+  {
+    "id": "us-2023",
+    "name": "Las Vegas Street Circuit",
+    "location": "Las Vegas",
+    "lat": 36.116734,
+    "lon": -115.16664399999999
+  }
+]

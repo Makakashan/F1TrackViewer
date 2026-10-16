@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useMemo } from "react";
+import { Suspense, useCallback, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
@@ -8,22 +8,28 @@ import type { TrackWidthProfile } from "@/lib/track/track-width";
 import type { StartFinishPlacement } from "@/lib/track/start-finish";
 import type { CircuitGeoJSON } from "@/lib/f1-circuits";
 import type { TrackMarkers, TrackViewMode } from "@/lib/track/track-markers";
+import type { CityManifest } from "@/lib/env/city-loader";
 import type { EnvironmentBundle } from "@/lib/env/environment-types";
 import type { QualityMode } from "@/lib/url-state";
 import type { GridEntry } from "@/lib/race/f1-teams";
 import type { RaceController } from "@/hooks/use-race-simulation";
+import type { TrackOverrides } from "@/lib/track/track-overrides";
 import PointerCaptureBoundary from "@/components/pointer-capture-boundary";
 import TrackMesh from "@/components/three/track-mesh";
-import {
-  RACE_FOLLOW_MIN_DISTANCE_M,
-  RACE_FREE_MIN_DISTANCE_M,
-} from "@/components/three/race-camera-rig";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useStartFinishCalibration } from "@/hooks/use-start-finish-calibration";
-import { canCreateWebGLContext, getSceneBackground } from "@/lib/scene-config";
-import { computeBounds, sceneRadiusFromBounds } from "@/lib/geo-utils";
+import {
+  CAMERA_FOV_DEG,
+  DEFAULT_EXPOSURE,
+  canCreateWebGLContext,
+  getSceneBackground,
+} from "@/lib/scene-config";
 import CalibrationPanel from "@/components/three/calibration-panel";
+import CameraTargetReadout from "@/components/three/camera-target-readout";
+import { useAppPref } from "@/components/app-pref-provider";
 import SceneDebugHandle from "@/components/three/scene-debug-handle";
+import LookSun from "@/components/three/look-sun";
+import { useLookLab } from "@/lib/look-lab";
 
 export type CameraPreset = "top" | "iso" | "side" | "reset";
 
@@ -35,10 +41,13 @@ export interface TrackViewerProps {
   resolvedTheme?: "light" | "dark";
   cameraPreset?: CameraPreset | null;
   startFinishCalibration?: boolean;
+  /** Admin only: the baked ground with nothing standing on it. */
+  terrainOnly?: boolean;
   onStartFinishPlacement?: (placement: StartFinishPlacement) => void;
   viewMode?: TrackViewMode;
   markers?: TrackMarkers | null;
   environmentBundle?: EnvironmentBundle | null;
+  cityManifest?: CityManifest | null;
   environmentTerrain?: boolean;
   widthProfile?: TrackWidthProfile | null;
   realWidthEnabled?: boolean;
@@ -56,6 +65,9 @@ export interface TrackViewerProps {
   raceLaps?: number;
   cameraFollow?: boolean;
   onCameraDetach?: () => void;
+  overrides?: TrackOverrides | null;
+  onTrackPick?: (s: number, lapLengthM: number) => void;
+  editing?: boolean;
 }
 
 function SceneSpinner() {
@@ -75,10 +87,12 @@ export default function TrackViewer({
   resolvedTheme = "dark",
   cameraPreset = null,
   startFinishCalibration = false,
+  terrainOnly = false,
   onStartFinishPlacement,
   viewMode = "normal",
   markers,
   environmentBundle,
+  cityManifest,
   environmentTerrain = true,
   widthProfile,
   realWidthEnabled = true,
@@ -91,8 +105,12 @@ export default function TrackViewer({
   raceLaps,
   cameraFollow,
   onCameraDetach,
+  overrides,
+  onTrackPick,
+  editing,
 }: TrackViewerProps) {
   const raceMode = viewMode === "realistic";
+  const newLook = useLookLab((s) => s.enabled) && raceMode;
   const [canvasEventSource, setCanvasEventSource] =
     useState<HTMLDivElement | null>(null);
   const isMobile = useIsMobile();
@@ -103,6 +121,16 @@ export default function TrackViewer({
   );
   const circuitId = geojson.features[0]?.properties.id;
   const calibrationEnabled = startFinishCalibration;
+  const { t } = useAppPref();
+  const targetLabel = useRef<HTMLSpanElement>(null);
+  const writeTarget = useCallback(
+    ({ x, y, z }: THREE.Vector3) => {
+      if (targetLabel.current) {
+        targetLabel.current.textContent = `${t.cameraTarget} x ${x.toFixed(0)} · y ${y.toFixed(0)} · z ${z.toFixed(0)}`;
+      }
+    },
+    [t.cameraTarget],
+  );
 
   const [resolvedStartFinishS, setResolvedStartFinishS] = useState<
     number | null
@@ -112,16 +140,15 @@ export default function TrackViewer({
 
   const { bgGradient, sceneBackgroundColor } = getSceneBackground(resolvedTheme);
 
-  // Compute scene radius for dynamic camera limits (must match TrackMesh).
-  const sceneRadius = useMemo(() => {
-    const coords = geojson.features[0]?.geometry.coordinates;
-    if (!coords) return 1000;
-    return sceneRadiusFromBounds(computeBounds(coords));
-  }, [geojson]);
-
   return (
     <PointerCaptureBoundary>
       <div ref={setCanvasEventSource} className="relative h-full w-full">
+        {terrainOnly && (
+          <span
+            ref={targetLabel}
+            className="pointer-events-none absolute left-4 top-4 z-20 rounded-md border border-border/80 bg-background/90 px-2 py-1 font-mono text-[11px] text-muted-foreground"
+          />
+        )}
         {calibrationEnabled && circuitId && (
           <CalibrationPanel
             circuitId={circuitId}
@@ -149,12 +176,13 @@ export default function TrackViewer({
         ) : canvasEventSource ? (
           <Canvas
             eventSource={canvasEventSource}
-            shadows={false}
+            // Only the look spike's sun casts; a shadow map with no caster is never drawn.
+            shadows={raceMode ? "percentage" : false}
             // Nothing in this scene animates on its own — no useFrame outside the globe's own canvas.
             frameloop={autoRotate || raceSim?.racing ? "always" : "demand"}
             dpr={[1, 1.5]}
             camera={{
-              fov: 50,
+              fov: CAMERA_FOV_DEG,
               // Race mode parks the camera a few meters from a car.
               near: raceMode ? 1 : isMobile ? 8 : 2,
               far: 20000,
@@ -169,34 +197,40 @@ export default function TrackViewer({
             }}
             onCreated={({ gl }) => {
               gl.toneMapping = THREE.ACESFilmicToneMapping;
-              gl.toneMappingExposure = 1.05;
+              gl.toneMappingExposure = DEFAULT_EXPOSURE;
               gl.outputColorSpace = THREE.SRGBColorSpace;
               gl.setClearColor(sceneBackgroundColor, 0);
             }}
             style={{ background: bgGradient, touchAction: "none" }}
           >
-            <ambientLight intensity={resolvedTheme === "dark" ? 0.42 : 0.55} />
-            <hemisphereLight
-              args={
-                resolvedTheme === "dark"
-                  ? ["#AFC2FF", "#07080C", 0.58]
-                  : ["#AAB4D8", "#16181D", 0.48]
-              }
-            />
-            <directionalLight
-              position={[500, 800, 400]}
-              intensity={resolvedTheme === "dark" ? 1.45 : 1.05}
-            />
-            <directionalLight
-              position={[-400, 300, -500]}
-              intensity={0.5}
-              color="#7D9BFF"
-            />
-            <directionalLight
-              position={[0, 260, -900]}
-              intensity={0.55}
-              color="#E10600"
-            />
+            {newLook ? (
+              <LookSun />
+            ) : (
+              <>
+                <ambientLight intensity={resolvedTheme === "dark" ? 0.42 : 0.55} />
+                <hemisphereLight
+                  args={
+                    resolvedTheme === "dark"
+                      ? ["#AFC2FF", "#07080C", 0.58]
+                      : ["#AAB4D8", "#16181D", 0.48]
+                  }
+                />
+                <directionalLight
+                  position={[500, 800, 400]}
+                  intensity={resolvedTheme === "dark" ? 1.45 : 1.05}
+                />
+                <directionalLight
+                  position={[-400, 300, -500]}
+                  intensity={0.5}
+                  color="#7D9BFF"
+                />
+                <directionalLight
+                  position={[0, 260, -900]}
+                  intensity={0.55}
+                  color="#E10600"
+                />
+              </>
+            )}
 
             {process.env.NODE_ENV === "development" && <SceneDebugHandle />}
 
@@ -215,6 +249,7 @@ export default function TrackViewer({
                 viewMode={viewMode}
                 markers={markers}
                 environmentBundle={environmentBundle}
+                cityManifest={cityManifest}
                 environmentTerrain={environmentTerrain}
                 widthProfile={widthProfile}
                 realWidthEnabled={realWidthEnabled}
@@ -227,30 +262,31 @@ export default function TrackViewer({
                 raceLaps={raceLaps}
                 cameraFollow={cameraFollow}
                 onCameraDetach={onCameraDetach}
+                overrides={overrides}
+                onTrackPick={onTrackPick}
+                editing={editing}
+                terrainOnly={terrainOnly}
               />
             </Suspense>
 
-            {/* The overview limits keep the whole circuit in frame and are a
-                fraction of the scene radius — on a 3 km lap that is a floor of
-                250 m, which makes standing next to a car impossible. Race mode
-                gets limits in car lengths instead, and lets the camera drop
-                almost to the horizon for a trackside view. */}
+            {/* Distance limits are off while the city rebuild is being looked
+                at: inspecting the ground means getting under the eaves and down
+                to street level, which every one of the old bounds forbade.
+
+                The floor stays. Terrain is a surface, not a solid, and its back
+                faces are culled, so from below the whole city is see-through —
+                the road shows through the hillside and the water shows through
+                the ground. Stopping just short of the horizon keeps the camera
+                above the surface it is looking at, and `CameraGroundClamp`
+                keeps it out of the surface itself. */}
+            {terrainOnly && <CameraTargetReadout onChange={writeTarget} />}
             <OrbitControls
               makeDefault
               enableDamping
               dampingFactor={0.08}
               autoRotate={autoRotate}
               autoRotateSpeed={0.5}
-              minDistance={
-                raceMode
-                  ? cameraFollow
-                    ? RACE_FOLLOW_MIN_DISTANCE_M
-                    : RACE_FREE_MIN_DISTANCE_M
-                  : sceneRadius * 0.4
-              }
-              maxDistance={raceMode ? sceneRadius * 4 : sceneRadius * 4}
-              minPolarAngle={Math.PI / 12}
-              maxPolarAngle={raceMode ? Math.PI / 2.12 : Math.PI / 2.8}
+              maxPolarAngle={Math.PI / 2 - 0.02}
             />
           </Canvas>
         ) : null}

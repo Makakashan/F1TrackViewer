@@ -4,6 +4,8 @@ import type { SectorDefinition, TrackMarkers } from "@/lib/track/track-markers";
 
 /** Half-width may be a constant (manual slider) or a function of normalized arc position s ∈ [0. */
 export type HalfWidth = number | ((s: number) => number);
+/** The ribbon's half width a fresh link draws; the bake meets the ground to it. */
+export const DEFAULT_HALF_WIDTH_M = 7;
 export type TrackColorAt = (s: number, target: THREE.Color) => void;
 
 export function halfWidthAt(halfWidth: HalfWidth, s: number): number {
@@ -25,6 +27,13 @@ export function buildExtrudedTrack(
   samples: number,
   bottomYAt?: TrackBottomYAt,
   colorAt?: TrackColorAt,
+  /**
+   * Where along the lap the ribbon is not to be drawn at all. Under a hill the
+   * road is inside the terrain, and no depth offset hides it once the camera is
+   * far enough for depth precision to run out — the ribbon shows through the
+   * hillside in patches. The bake says which stretches those are.
+   */
+  hiddenAt?: (s: number) => boolean,
 ): THREE.BufferGeometry {
   const N = samples;
   const pts = curve.getSpacedPoints(N);
@@ -123,6 +132,7 @@ export function buildExtrudedTrack(
   }
 
   for (let i = 0; i < N; i++) {
+    if (hiddenAt?.((i + 0.5) / N)) continue;
     const base0 = i * stride;
     const base1 = (i + 1) * stride;
     const tL0 = base0 + 0;
@@ -163,6 +173,8 @@ export function buildTrackOutline(
   halfWidth: HalfWidth,
   topRaise: number,
   samples: number,
+  /** Stretches the ribbon is not drawn on; see `buildExtrudedTrack`. */
+  hiddenAt?: (s: number) => boolean,
 ): THREE.BufferGeometry {
   const N = samples;
   const pts = curve.getSpacedPoints(N);
@@ -190,6 +202,7 @@ export function buildTrackOutline(
 
   const positions: number[] = [];
   for (let i = 0; i < N; i++) {
+    if (hiddenAt?.((i + 0.5) / N)) continue;
     positions.push(leftPts[i * 3], leftPts[i * 3 + 1], leftPts[i * 3 + 2]);
     positions.push(
       leftPts[(i + 1) * 3],
@@ -438,5 +451,20 @@ export function buildSectorSplitLineGeometry(
   );
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
+  return geometry;
+}
+
+/** UVs from the ground plane in tiles of `tileMeters`, so a road texture has no seam along the lap. */
+export function addTopDownUv(
+  geometry: THREE.BufferGeometry,
+  tileMeters: number,
+): THREE.BufferGeometry {
+  const position = geometry.getAttribute("position");
+  const uv = new Float32Array(position.count * 2);
+  for (let i = 0; i < position.count; i++) {
+    uv[i * 2] = position.getX(i) / tileMeters;
+    uv[i * 2 + 1] = position.getZ(i) / tileMeters;
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
   return geometry;
 }

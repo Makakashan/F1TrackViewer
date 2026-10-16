@@ -1,0 +1,367 @@
+/**
+ * Ambient occlusion, baked into vertex colours (docs/city-generation.md D9).
+ *
+ * The city and the sun are both static, so paying for occlusion once at
+ * generation time and never again per frame is the only trade that makes sense
+ * here — AGENTS.md puts frame rate first, and a screen-space pass costs a full
+ * pass over every frame to compute something that never changes.
+ *
+ * What is computed is sky visibility: from each vertex, how much of the sky is
+ * blocked by what stands around it. That is what darkens a courtyard, a street
+ * canyon and the foot of a wall, which is the whole of the effect worth having.
+ */
+
+import type { HeightField } from "./heightfield";
+import type { Mesh } from "./mesh";
+import type { ScenePlane } from "./plane";
+
+/** Resolution of the occluder height map. Fine enough for a street, coarse
+ *  enough to sweep in a second. */
+const CELL_M = 4;
+/**
+ * Directions sampled around each vertex, and how far out along each.
+ *
+ * Sixteen rather than eight, and off the axes by half a step: with eight, four
+ * of them ran along the occluder grid's own rows and columns, and a building's
+ * shade came out as a square with its corners on the compass points.
+ */
+const AZIMUTHS = 16;
+const AZIMUTH_OFFSET = Math.PI / AZIMUTHS;
+const RANGES_M = [2, 3, 5, 8, 12, 18, 26, 38];
+/** Full shade never goes below this: an unlit crevice is a hole, not a shadow. */
+const FLOOR = 0.62;
+/**
+ * Physical sky visibility is a gentle thing — a street with towers on two sides
+ * still sees three quarters of the sky — and reads as no shading at all. The
+ * curve keeps the open ground open and deepens the enclosed places, which is
+ * what the effect is for.
+ */
+const CONTRAST = 1.7;
+
+export interface Occluders {
+  heights: Float32Array;
+  width: number;
+  height: number;
+  minX: number;
+  minZ: number;
+  cellM: number;
+}
+
+/**
+ * The skyline as a grid: the terrain, with whatever stands on it stamped on
+ * top. Buildings come from the meshes that were just built, so nothing has to
+ * agree twice about how tall they are.
+ */
+export function buildOccluders(
+  field: HeightField,
+  plane: ScenePlane,
+  standing: Mesh[],
+  /** The ground as it is drawn: the raw field's ripple and spikes cast shade the mesh has not got. */
+  groundAt: (x: number, z: number) => number,
+): Occluders {
+  const minX = plane.x(field.bbox.minLon);
+  const maxX = plane.x(field.bbox.maxLon);
+  const minZ = plane.z(field.bbox.maxLat);
+  const maxZ = plane.z(field.bbox.minLat);
+  const width = Math.max(1, Math.ceil((maxX - minX) / CELL_M));
+  const height = Math.max(1, Math.ceil((maxZ - minZ) / CELL_M));
+  const heights = new Float32Array(width * height);
+
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      const ground = groundAt(minX + (col + 0.5) * CELL_M, minZ + (row + 0.5) * CELL_M);
+      heights[row * width + col] = Number.isNaN(ground) ? 0 : ground;
+    }
+  }
+
+  // Every triangle is rasterised, not just its corners. A wall carries vertices
+  // only where its footprint turns, so stamping vertices alone lets a 40 m
+  // block occlude two cells and leaves the street beside it in full sunlight.
+  for (const mesh of standing) {
+    for (let i = 0; i < mesh.indices.length; i += 3) {
+      const a = mesh.indices[i] * 3;
+      const b = mesh.indices[i + 1] * 3;
+      const c = mesh.indices[i + 2] * 3;
+      const top = Math.max(mesh.positions[a + 1], mesh.positions[b + 1], mesh.positions[c + 1]);
+      const colFrom = Math.max(0, Math.floor((Math.min(mesh.positions[a], mesh.positions[b], mesh.positions[c]) - minX) / CELL_M));
+      const colTo = Math.min(width - 1, Math.ceil((Math.max(mesh.positions[a], mesh.positions[b], mesh.positions[c]) - minX) / CELL_M));
+      const rowFrom = Math.max(0, Math.floor((Math.min(mesh.positions[a + 2], mesh.positions[b + 2], mesh.positions[c + 2]) - minZ) / CELL_M));
+      const rowTo = Math.min(height - 1, Math.ceil((Math.max(mesh.positions[a + 2], mesh.positions[b + 2], mesh.positions[c + 2]) - minZ) / CELL_M));
+      for (let row = rowFrom; row <= rowTo; row++) {
+        for (let col = colFrom; col <= colTo; col++) {
+          const index = row * width + col;
+          if (top > heights[index]) heights[index] = top;
+        }
+      }
+    }
+  }
+
+  return { heights, width, height, minX, minZ, cellM: CELL_M };
+}
+
+/**
+ * The skyline between the cells, not the cell the point lands in.
+ *
+ * Read cell by cell, the horizon a vertex sees changes in four metre jumps and
+ * the shade under a building steps along the grid — square shadows on ground
+ * that has none.
+ */
+function heightAt(occluders: Occluders, x: number, z: number): number {
+  const { heights, width, height, minX, minZ, cellM } = occluders;
+  const fx = (x - minX) / cellM - 0.5;
+  const fz = (z - minZ) / cellM - 0.5;
+  const col = Math.floor(fx);
+  const row = Math.floor(fz);
+  if (col < -1 || row < -1 || col >= width || row >= height) return 0;
+  const u = fx - col;
+  const v = fz - row;
+  const at = (r: number, c: number): number => {
+    if (r < 0 || c < 0 || r >= height || c >= width) return 0;
+    return heights[r * width + c];
+  };
+  const top = at(row, col) * (1 - u) + at(row, col + 1) * u;
+  const bottom = at(row + 1, col) * (1 - u) + at(row + 1, col + 1) * u;
+  return top * (1 - v) + bottom * v;
+}
+
+/** The grey a point at (x, y, z) takes from the sky it sees: 1 open, `FLOOR` walled in. */
+function openSky(occluders: Occluders, x: number, y: number, z: number): number {
+  let blocked = 0;
+  for (let a = 0; a < AZIMUTHS; a++) {
+    const angle = (2 * Math.PI * a) / AZIMUTHS + AZIMUTH_OFFSET;
+    const dx = Math.cos(angle);
+    const dz = Math.sin(angle);
+    let highest = 0;
+    for (const range of RANGES_M) {
+      const rise = heightAt(occluders, x + dx * range, z + dz * range) - y;
+      if (rise <= 0) continue;
+      // Elevation angle of the horizon in this direction, as a sine.
+      const sine = rise / Math.hypot(rise, range);
+      if (sine > highest) highest = sine;
+    }
+    blocked += highest;
+  }
+  const openness = 1 - blocked / AZIMUTHS;
+  return FLOOR + (1 - FLOOR) * Math.max(0, Math.min(1, openness)) ** CONTRAST;
+}
+
+/**
+ * Writes a grey per vertex: 1 where the sky is open, `FLOOR` where it is walled
+ * in. glTF multiplies vertex colour into the base colour, so the palette stays
+ * the palette and this only shades it.
+ */
+export function applyAmbientOcclusion(mesh: Mesh, occluders: Occluders): void {
+  const count = mesh.positions.length / 3;
+  const colors = new Array<number>(count * 3);
+  for (let i = 0; i < count; i++) {
+    const shade = openSky(occluders, mesh.positions[i * 3], mesh.positions[i * 3 + 1], mesh.positions[i * 3 + 2]);
+    colors[i * 3] = shade;
+    colors[i * 3 + 1] = shade;
+    colors[i * 3 + 2] = shade;
+  }
+  const flats = mesh.flats ?? [];
+  for (let f = 0; f < flats.length; f += 2) {
+    let sum = 0;
+    for (let i = flats[f]; i < flats[f + 1]; i++) sum += colors[i * 3];
+    const shade = sum / Math.max(1, flats[f + 1] - flats[f]);
+    for (let i = flats[f] * 3; i < flats[f + 1] * 3; i++) colors[i] = shade;
+  }
+  mesh.colors = colors;
+}
+
+/** Below this the ground is flat enough to leave alone. */
+const FLAT_DEG = 12;
+/** At and beyond this it is as dark as ground gets. */
+const STEEP_DEG = 55;
+/** What the steepest ground keeps of its own colour. */
+const STEEP_SHADE = 0.78;
+/** The steepest ground's warmth, as a multiplier per channel. */
+const ROCK_TINT: [number, number, number] = [1, 0.985, 0.96];
+/** How far the shade is spread over the ground, and how hard. */
+const SHADE_BLUR_PASSES = 3;
+const SHADE_BLUR_STRENGTH = 0.7;
+
+/**
+ * The grey the sky gives, darkened and warmed by how steep the ground is: an
+ * open hillside sees the whole sky, so slope is what is left to read relief by.
+ * Only where there is light left to take — what AO already darkened, slope
+ * leaves alone, or the terraces' cut faces came out as soot.
+ */
+function slopeShade(grey: number, slopeDeg: number): [number, number, number] {
+  const flat = Math.cos((FLAT_DEG * Math.PI) / 180);
+  const steep = Math.cos((STEEP_DEG * Math.PI) / 180);
+  const up = Math.cos((Math.min(89, slopeDeg) * Math.PI) / 180);
+  if (up >= flat) return [grey, grey, grey];
+  const t = Math.max(0, Math.min(1, (flat - up) / (flat - steep)));
+  // Smoothstep, or the first degree past flat shows as a band.
+  const k = t * t * (3 - 2 * t) * Math.max(0, Math.min(1, (grey - FLOOR) / (1 - FLOOR)));
+  const shade = grey * (1 - (1 - STEEP_SHADE) * k);
+  return ROCK_TINT.map((tint) => shade * (1 + (tint - 1) * k)) as [number, number, number];
+}
+
+export interface GroundShade {
+  /**
+   * The ground's colour at a scene point, blurred to a mesh of `cell` metres so
+   * a coarse vertex does not pick one fine detail out of many. Null where no
+   * ground was shaded near it.
+   */
+  at(x: number, z: number, cell: number): [number, number, number] | null;
+  /** Lattice nodes the slope darkened, for the report. */
+  sloped: number;
+}
+
+/**
+ * The ground's shade as one field, whatever belt draws it.
+ *
+ * Read at each vertex's own height and blurred over its own mesh, a coarse belt
+ * came out a different grey from the fine one beside it, and every seam showed
+ * as a patch. So it is worked out once on a lattice — the sky at the shared
+ * surface's height, the slope, the blur in metres — and every belt reads it.
+ */
+export function buildGroundShade(
+  occluders: Occluders,
+  bounds: { minX: number; minZ: number; maxX: number; maxZ: number },
+  groundAt: (x: number, z: number) => number,
+  slopeDegAt: (x: number, z: number) => number,
+): GroundShade {
+  const width = Math.ceil((bounds.maxX - bounds.minX) / CELL_M) + 1;
+  const height = Math.ceil((bounds.maxZ - bounds.minZ) / CELL_M) + 1;
+  const raw = new Float32Array(width * height * 3).fill(Number.NaN);
+  let sloped = 0;
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      const x = bounds.minX + col * CELL_M;
+      const z = bounds.minZ + row * CELL_M;
+      const y = groundAt(x, z);
+      if (Number.isNaN(y)) continue;
+      const grey = openSky(occluders, x, y, z);
+      const rgb = slopeShade(grey, slopeDegAt(x, z));
+      if (rgb[0] < grey) sloped++;
+      raw.set(rgb, (row * width + col) * 3);
+    }
+  }
+
+  // Grey in, grey out: the blur moves one number and keeps each node's tint.
+  const blur = (from: Float32Array, passes: number): Float32Array => {
+    let colour = from;
+    for (let pass = 0; pass < passes; pass++) {
+      const next = colour.slice();
+      for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+          const i = (row * width + col) * 3;
+          const here = colour[i];
+          if (Number.isNaN(here)) continue;
+          let sum = here;
+          let count = 1;
+          for (const [dr, dc] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const r = row + dr;
+            const c = col + dc;
+            if (r < 0 || c < 0 || r >= height || c >= width) continue;
+            const other = colour[(r * width + c) * 3];
+            if (Number.isNaN(other)) continue;
+            sum += other;
+            count++;
+          }
+          const shade = here + (sum / count - here) * SHADE_BLUR_STRENGTH;
+          next[i] = shade;
+          next[i + 1] = (colour[i + 1] / here) * shade;
+          next[i + 2] = (colour[i + 2] / here) * shade;
+        }
+      }
+      colour = next;
+    }
+    return colour;
+  };
+  // A diffusion spreads with the square root of its passes, so twice the cell
+  // takes four times the passes.
+  const levels = new Map<number, Float32Array>();
+  let reached = blur(raw, SHADE_BLUR_PASSES);
+  let passes = SHADE_BLUR_PASSES;
+  for (const cell of [CELL_M, 2 * CELL_M, 4 * CELL_M]) {
+    const wanted = SHADE_BLUR_PASSES * (cell / CELL_M) ** 2;
+    reached = blur(reached, wanted - passes);
+    passes = wanted;
+    levels.set(cell, reached);
+  }
+
+  const at = (x: number, z: number, cell: number): [number, number, number] | null => {
+    const colour = levels.get(cell) ?? levels.get(CELL_M)!;
+    const fx = (x - bounds.minX) / CELL_M;
+    const fz = (z - bounds.minZ) / CELL_M;
+    const col = Math.floor(fx);
+    const row = Math.floor(fz);
+    const u = fx - col;
+    const v = fz - row;
+    const out: [number, number, number] = [0, 0, 0];
+    let weight = 0;
+    // Bilinear over whichever corners are ground, so the waterline reads the land.
+    for (const [dr, dc, w] of [[0, 0, (1 - u) * (1 - v)], [0, 1, u * (1 - v)], [1, 0, (1 - u) * v], [1, 1, u * v]]) {
+      const r = row + dr;
+      const c = col + dc;
+      if (r < 0 || c < 0 || r >= height || c >= width || w === 0) continue;
+      const i = (r * width + c) * 3;
+      if (Number.isNaN(colour[i])) continue;
+      for (let k = 0; k < 3; k++) out[k] += colour[i + k] * w;
+      weight += w;
+    }
+    return weight > 0 ? (out.map((value) => value / weight) as [number, number, number]) : null;
+  };
+
+  return { at, sloped };
+}
+
+/**
+ * Paints a belt's ground from the shared field. A vertex out of the field's
+ * reach — past the last node of land at the cut — works its own shade out.
+ */
+export function paintGround(
+  mesh: Mesh,
+  shade: GroundShade,
+  occluders: Occluders,
+  slopeDegAt: (x: number, z: number) => number,
+  /** The mesh scale a point is read at; see `BeltBlocks.coarsestCellAt`. */
+  cellAt: (x: number, z: number) => number,
+): void {
+  const count = mesh.positions.length / 3;
+  const colors = new Array<number>(count * 3);
+  for (let i = 0; i < count; i++) {
+    const x = mesh.positions[i * 3];
+    const y = mesh.positions[i * 3 + 1];
+    const z = mesh.positions[i * 3 + 2];
+    const rgb = shade.at(x, z, cellAt(x, z)) ?? slopeShade(openSky(occluders, x, y, z), slopeDegAt(x, z));
+    colors[i * 3] = rgb[0];
+    colors[i * 3 + 1] = rgb[1];
+    colors[i * 3 + 2] = rgb[2];
+  }
+  mesh.colors = colors;
+}
+
+/**
+ * Multiplies a merged model's own colour into the shade AO wrote.
+ *
+ * The occlusion pass writes `colors` from scratch, so a model's palette cannot
+ * live there until after it has run. Its material is white, and this is what
+ * puts the colour back.
+ */
+export function applyAlbedo(mesh: Mesh, tone: [number, number, number]): number {
+  if (!mesh.colors || !mesh.albedo) return 0;
+  const count = Math.min(mesh.colors.length, mesh.albedo.length) / 3;
+  for (let i = 0; i < count; i++) {
+    const r = mesh.albedo[i * 3];
+    const g = mesh.albedo[i * 3 + 1];
+    const b = mesh.albedo[i * 3 + 2];
+    // A kit is painted for a toy town and the diorama is not. What is worth
+    // keeping is which part of the model this is — roof, wall, window — not the
+    // author's palette, so most of the chroma comes out and what is left is
+    // pulled toward the city's own hue. The luminance is untouched: that is the
+    // part that says roof from wall.
+    const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    mesh.colors[i * 3] *= (grey + (r - grey) * CHROMA_KEPT) * tone[0];
+    mesh.colors[i * 3 + 1] *= (grey + (g - grey) * CHROMA_KEPT) * tone[1];
+    mesh.colors[i * 3 + 2] *= (grey + (b - grey) * CHROMA_KEPT) * tone[2];
+  }
+  return count;
+}
+
+/** How much of a merged model's own colour survives. */
+const CHROMA_KEPT = 0.35;

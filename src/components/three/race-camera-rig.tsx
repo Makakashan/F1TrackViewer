@@ -7,6 +7,8 @@ import type { GridSlot } from "@/lib/race/start-grid";
 import type { PoseAt } from "@/components/three/start-grid-cars";
 import type { RaceController } from "@/hooks/use-race-simulation";
 import { interpolateCarPose } from "@/lib/race/race-sim";
+import { useLookLab } from "@/lib/look-lab";
+import { CAMERA_FOV_DEG } from "@/lib/scene-config";
 
 export interface RaceCameraRigProps {
   slots: GridSlot[];
@@ -18,6 +20,8 @@ export interface RaceCameraRigProps {
   follow?: boolean;
   /** The user took the camera — a drag, or a movement key. */
   onDetach?: () => void;
+  /** Which circuit these slots belong to; a rebuilt centreline is not a new one. */
+  circuitId?: string;
 }
 
 /** How far ahead of the car the camera sits on the grid, and how high. */
@@ -90,17 +94,24 @@ export default function RaceCameraRig({
   poseAt,
   follow = true,
   onDetach,
+  circuitId,
 }: RaceCameraRigProps) {
   const camera = useThree((state) => state.camera);
   const controls = useThree((state) => state.controls) as OrbitLike | null;
   const invalidate = useThree((state) => state.invalidate);
+  // The look spike's helicopter camera replaces the chase shot while it is on.
+  const heli = useLookLab((s) => s.enabled);
+  const heliHeight = useLookLab((s) => s.heliHeightM);
+  const heliBack = useLookLab((s) => s.heliBackM);
+  const heliLateral = useLookLab((s) => s.heliLateralM);
+  const heliFov = useLookLab((s) => s.heliFovDeg);
   const lastKey = useRef<string | null>(null);
   const pressed = useRef<Set<string>>(new Set());
   // Set when the rig owes the camera a framing.
   const needsFraming = useRef(true);
   // Where the camera sits in the followed car's own frame — across, up, ahead.
   const localOffset = useRef<THREE.Vector3 | null>(null);
-  const knownSlots = useRef<GridSlot[] | null>(null);
+  const knownCircuit = useRef<string | undefined>(undefined);
   const scratch = useRef({
     position: new THREE.Vector3(),
     quaternion: new THREE.Quaternion(),
@@ -124,9 +135,9 @@ export default function RaceCameraRig({
     out: THREE.Vector3,
   ) {
     const offset = localOffset.current;
-    const ox = offset ? offset.x : LATERAL_M;
-    const oy = offset ? offset.y : HEIGHT_M;
-    const oz = offset ? offset.z : DISTANCE_M;
+    const ox = offset ? offset.x : heli ? heliLateral : LATERAL_M;
+    const oy = offset ? offset.y : heli ? heliHeight : HEIGHT_M;
+    const oz = offset ? offset.z : heli ? -heliBack : DISTANCE_M;
     out
       .copy(origin)
       .addScaledVector(across, ox)
@@ -183,19 +194,42 @@ export default function RaceCameraRig({
     if (follow) needsFraming.current = true;
   }, [follow, focusIndex, racing]);
 
+  // New knobs drop whatever the user had orbited to, so the frame shows what they set.
+  useEffect(() => {
+    localOffset.current = null;
+    lastKey.current = null;
+    needsFraming.current = true;
+    invalidate();
+  }, [heli, heliHeight, heliBack, heliLateral, invalidate]);
+
+  const getState = useThree((state) => state.get);
+  useEffect(() => {
+    const lens = getState().camera;
+    if (!(lens instanceof THREE.PerspectiveCamera)) return;
+    lens.fov = heli ? heliFov : CAMERA_FOV_DEG;
+    lens.updateProjectionMatrix();
+    invalidate();
+    return () => {
+      lens.fov = CAMERA_FOV_DEG;
+      lens.updateProjectionMatrix();
+    };
+  }, [getState, heli, heliFov, invalidate]);
+
   // Parked framing on the grid.
   useEffect(() => {
     const slot = slots[focusIndex];
     if (!slot || !controls || racing || !follow) return;
 
-    // Re-framing on every render would undo the user's own orbit.
-    const key = `${focusIndex}:${slot.position.toArray().join(",")}`;
+    // Re-framing on every render would undo the user's own orbit, and the editor
+    // rebuilds the grid with every drag of a slider.
+    const key = `${circuitId}:${focusIndex}`;
     if (lastKey.current === key) return;
     lastKey.current = key;
 
     // A different circuit is a different scene; the old framing means nothing in it.
-    if (knownSlots.current !== slots) {
-      knownSlots.current = slots;
+    // The editor rebuilds the centreline as it is dragged, and that is the same circuit.
+    if (knownCircuit.current !== circuitId) {
+      knownCircuit.current = circuitId;
       localOffset.current = null;
     }
 
@@ -209,7 +243,20 @@ export default function RaceCameraRig({
     controls.target.copy(target);
     controls.update();
     invalidate();
-  }, [slots, focusIndex, camera, controls, invalidate, racing, follow]);
+  }, [
+    slots,
+    circuitId,
+    focusIndex,
+    camera,
+    controls,
+    invalidate,
+    racing,
+    follow,
+    heli,
+    heliHeight,
+    heliBack,
+    heliLateral,
+  ]);
 
   useFrame((_, delta) => {
     if (!controls) return;

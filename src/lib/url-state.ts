@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { CameraPreset } from "@/components/track/track-viewer";
 import type { TrackViewMode } from "@/lib/track/track-markers";
 import { readPref, writePref } from "@/lib/local-pref";
+import { DEFAULT_HALF_WIDTH_M } from "@/lib/track/track-geometry";
 
 export type QualityMode = "auto" | "performance" | "quality";
 
@@ -58,6 +59,7 @@ function readUrlParams() {
     terrain: p.get("terrain"),
     realwidth: p.get("realwidth"),
     quality: p.get("quality"),
+    edit: p.get("edit"),
   };
 }
 
@@ -73,6 +75,8 @@ interface UrlState {
   environmentTerrain: boolean;
   realWidthEnabled: boolean;
   qualityMode: QualityMode;
+  /** The track editor, a local tool: `?edit=1`, honoured only under `next dev`. */
+  editMode: boolean;
   hydrated: boolean;
 
   setTrack: (id: string) => void;
@@ -95,7 +99,7 @@ interface UrlState {
 
 export const useUrlState = create<UrlState>((set, get) => ({
   track: null,
-  trackWidth: 7,
+  trackWidth: DEFAULT_HALF_WIDTH_M,
   elevationEnabled: true,
   cameraPreset: null,
   viewMode: "sectors",
@@ -104,6 +108,7 @@ export const useUrlState = create<UrlState>((set, get) => ({
   environmentTerrain: true,
   realWidthEnabled: false,
   qualityMode: "auto",
+  editMode: false,
   hydrated: false,
 
   setTrack: (id) => set({ track: id }),
@@ -203,6 +208,10 @@ export const useUrlState = create<UrlState>((set, get) => ({
       patch.qualityMode = url.quality;
     }
 
+    if (url.edit === "1") {
+      patch.editMode = true;
+    }
+
     set(patch);
   },
 
@@ -245,6 +254,12 @@ export const useUrlState = create<UrlState>((set, get) => ({
       params.set("realwidth", s.realWidthEnabled ? "1" : "0");
     } else {
       params.delete("realwidth");
+    }
+
+    if (s.editMode) {
+      params.set("edit", "1");
+    } else {
+      params.delete("edit");
     }
 
     if (s.qualityMode !== "auto") {

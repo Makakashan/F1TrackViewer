@@ -779,12 +779,20 @@ export default function GlobeEarth({
     if (!focusRegion) return;
     const key = `${focusRegion.lat.toFixed(2)},${focusRegion.lon.toFixed(2)}`;
     if (lastFocusRegionKeyRef.current === key) return;
+    const first = lastFocusRegionKeyRef.current === null;
     lastFocusRegionKeyRef.current = key;
 
     const direction = latLonToVector3(focusRegion.lat, focusRegion.lon, 1)
       .applyAxisAngle(new THREE.Vector3(0, 1, 0), GLOBE_ROTATION_Y)
       .normalize();
     const distance = camera.position.length();
+    // The page opens already facing the region; only later changes turn the globe.
+    if (first) {
+      camera.position.copy(direction.multiplyScalar(distance));
+      camera.lookAt(0, 0, 0);
+      controlsRef.current?.update();
+      return;
+    }
 
     focusStartRef.current = camera.position.clone().normalize();
     focusDistanceRef.current = distance;

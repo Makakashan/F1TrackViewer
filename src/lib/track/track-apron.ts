@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { sampleCurvature } from "@/lib/track/track-curvature";
 import { sampleCornerCoverage } from "@/lib/track/track-corners";
 import type { HalfWidth } from "@/lib/track/track-geometry";
+import { sampleReachLimit } from "@/lib/track/track-reach-limit";
 
 /** The apron — the paved strip just outside the white line, which the kerb is bolted to. */
 
@@ -20,6 +21,9 @@ export const APRON_GROUND_TOLERANCE_M = 1.6;
 
 /** Distance over which a blocked stretch fades back to full width. */
 const ROOM_SMOOTH_M = 12;
+
+/** Kept between the paving's edge and the reach limit, for the barrier standing on it. */
+const FOLD_MARGIN_M = 0.5;
 
 /** How much of the room left inside a corner the apron may take. */
 const CORNER_ROOM_SHARE = 0.7;
@@ -113,11 +117,19 @@ export function sampleApronRoom(
   }
 
   const spanSamples = Math.max(1, Math.round((ROOM_SMOOTH_M / total) * samples));
-  return {
-    widthMeters,
-    plus: smoothCircular(room.plus, spanSamples),
-    minus: smoothCircular(room.minus, spanSamples),
-  };
+  const plus = smoothCircular(room.plus, spanSamples);
+  const minus = smoothCircular(room.minus, spanSamples);
+
+  // Smoothing spreads room back into a pinch; the reach limit has the last word.
+  const reach = sampleReachLimit(curve, samples);
+  for (let i = 0; i < samples; i++) {
+    const edge = halfWidthAt(halfWidth, i / samples);
+    const fitPlus = Math.max(0, reach.plus[i] - edge - FOLD_MARGIN_M) / widthMeters;
+    const fitMinus = Math.max(0, reach.minus[i] - edge - FOLD_MARGIN_M) / widthMeters;
+    plus[i] = Math.min(plus[i], fitPlus);
+    minus[i] = Math.min(minus[i], fitMinus);
+  }
+  return { widthMeters, plus, minus };
 }
 
 /** Box blur over a closed loop — the lap has no ends to special-case. */
@@ -157,6 +169,8 @@ export function buildTrackApronGeometry(
   raise: number,
   samples: number,
   room: ApronRoom,
+  /** Stretches the ribbon is not drawn on; see `buildExtrudedTrack`. */
+  hiddenAt?: (s: number) => boolean,
 ): THREE.BufferGeometry | null {
   const n = samples;
   if (n < 8) return null;
@@ -188,6 +202,7 @@ export function buildTrackApronGeometry(
   let any = false;
   for (const sign of [1, -1] as const) {
     for (let i = 0; i < n; i++) {
+      if (hiddenAt?.((i + 0.5) / n)) continue;
       const j = i + 1;
       const s0 = i / n;
       const s1 = (j % n) / n;

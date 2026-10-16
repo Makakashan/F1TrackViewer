@@ -1,0 +1,219 @@
+"use client";
+
+/**
+ * Mounts the baked city (docs/city-generation.md D6, D14).
+ *
+ * The belts arrive far first, so the scene has a horizon before it has a
+ * skyline. Nothing is built here — the geometry comes off disk the shape it
+ * will be drawn in.
+ */
+
+import { useEffect, useRef, useState } from "react";
+import * as THREE from "three";
+import { useThree } from "@react-three/fiber";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.js";
+
+import { BAKED_MESH_COLORS, type BakedMeshKind } from "@/lib/env/diorama-palette";
+import {
+  CITY_BELT_ORDER,
+  cityBeltUrl,
+  type CityBelt,
+  type CityManifest,
+} from "@/lib/env/city-loader";
+
+export interface CityLayerProps {
+  manifest: CityManifest;
+  /** The theme the scene is drawn in. The bake ships the light one. */
+  resolvedTheme: "light" | "dark";
+  onBeltLoaded?: (belt: CityBelt) => void;
+  /** The look spike draws its own barrier along the track. */
+  hideBarrier?: boolean;
+  /** Admin only: draw the ground and nothing else, so its shading is its own. */
+  terrainOnly?: boolean;
+}
+
+/**
+ * Repaints a loaded belt for the theme.
+ *
+ * The bake writes one palette into the GLB's materials, so the dark theme used
+ * to get a white model in a black room. Each mesh is named for its kind, which
+ * is the material it was given, so the colour is a lookup rather than a guess —
+ * and setting it costs nothing per frame: the value lives in the material.
+ */
+function paintForTheme(group: THREE.Group, theme: "light" | "dark") {
+  const palette = BAKED_MESH_COLORS[theme];
+  group.traverse((node) => {
+    if (!(node instanceof THREE.Mesh)) return;
+    const color = palette[node.name as BakedMeshKind];
+    if (!color) return;
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      if ("color" in material) (material as THREE.MeshStandardMaterial).color.set(color);
+    }
+  });
+}
+
+/**
+ * Meshes that z-fight with the ground: the ones that lie *on* it, and the
+ * plinth's wall, which the seabed's edge meets in its own plane.
+ */
+const DECAL_MESHES = new Set(["park", "pool", "pitch", "plinth"]);
+
+/**
+ * Lifts these off the ground in the depth buffer.
+ *
+ * A park, a pool and a pitch are baked 0.12 m above the terrain, which is the
+ * depth buffer's whole precision at two kilometres — camera near is 2 m and far
+ * 20 km, so at that range a step of about 0.12 m is one unit of depth and the
+ * two surfaces flickered against each other across the city. Lifting the
+ * geometry instead would make a park float when the camera is on the street;
+ * `polygonOffset` biases the comparison rather than the model, which is what it
+ * is for.
+ */
+function liftDecals(group: THREE.Group) {
+  group.traverse((node) => {
+    if (!(node instanceof THREE.Mesh)) return;
+    if (!DECAL_MESHES.has(node.name.replace(/_\d+$/, ""))) return;
+    const materials = Array.isArray(node.material) ? node.material : [node.material];
+    for (const material of materials) {
+      material.polygonOffset = true;
+      material.polygonOffsetFactor = -2;
+      material.polygonOffsetUnits = -4;
+      material.needsUpdate = true;
+    }
+  });
+}
+
+/** The look spike draws its own barrier along the track; the baked one would stand beside it. */
+function setBarrierVisible(group: THREE.Object3D, visible: boolean) {
+  group.traverse((node) => {
+    if (node instanceof THREE.Mesh && node.name === "barrier") node.visible = visible;
+  });
+}
+
+/** Everything but the ground off, so a shadow on the terrain is the terrain's own. */
+const TERRAIN_TAB_KEEPS = new Set([
+  "terrain",
+  "water",
+  "pier",
+  "portal",
+  "tunnel",
+  "boreRoad",
+  "plinth",
+]);
+function setTerrainOnly(group: THREE.Object3D, only: boolean) {
+  group.traverse((node) => {
+    // Water, quays, decks and the portal's sleeve are ground: hidden, the tab
+    // shows pits the app never has. The loader numbers same-named meshes.
+    if (node instanceof THREE.Mesh) {
+      const kind = node.name.replace(/_\d+$/, "");
+      node.visible = !only || TERRAIN_TAB_KEEPS.has(kind);
+    }
+  });
+}
+
+function disposeGroup(group: THREE.Group) {
+  group.traverse((node) => {
+    if (!(node instanceof THREE.Mesh)) return;
+    node.geometry.dispose();
+    const material = node.material;
+    if (Array.isArray(material)) material.forEach((m) => m.dispose());
+    else material?.dispose();
+  });
+}
+
+export default function CityLayer({
+  manifest,
+  resolvedTheme,
+  onBeltLoaded,
+  hideBarrier = false,
+  terrainOnly = false,
+}: CityLayerProps) {
+  const invalidate = useThree((state) => state.invalidate);
+  const rootRef = useRef<THREE.Group>(null);
+  // A belt lands between renders and has to arrive already painted, so the
+  // loader reads the theme through a ref rather than depending on it — a
+  // dependency there would refetch every belt on a theme switch.
+  const themeRef = useRef(resolvedTheme);
+  const hideBarrierRef = useRef(hideBarrier);
+  const terrainOnlyRef = useRef(terrainOnly);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    const loader = new GLTFLoader().setMeshoptDecoder(MeshoptDecoder);
+    const loaded: THREE.Group[] = [];
+    let cancelled = false;
+
+    (async () => {
+      // Every device loads every belt: each belt owns its own blocks of ground, so
+      // a phone that skipped the core was left with the sea round the track.
+      for (const belt of CITY_BELT_ORDER) {
+        try {
+          const gltf = await loader.loadAsync(cityBeltUrl(manifest.circuitId, belt));
+          if (cancelled) {
+            disposeGroup(gltf.scene);
+            return;
+          }
+          gltf.scene.name = `city-${belt}`;
+          paintForTheme(gltf.scene, themeRef.current);
+          liftDecals(gltf.scene);
+          setBarrierVisible(gltf.scene, !hideBarrierRef.current);
+          setTerrainOnly(gltf.scene, terrainOnlyRef.current);
+          root.add(gltf.scene);
+          loaded.push(gltf.scene);
+          onBeltLoaded?.(belt);
+          // frameloop is "demand": a belt that arrives outside a render is a
+          // change nothing would otherwise draw.
+          invalidate();
+        } catch (err) {
+          if (!cancelled) setError(`${belt}: ${String(err)}`);
+          return;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      for (const group of loaded) {
+        root.remove(group);
+        disposeGroup(group);
+      }
+      invalidate();
+    };
+  }, [manifest.circuitId, invalidate, onBeltLoaded]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    themeRef.current = resolvedTheme;
+    paintForTheme(root, resolvedTheme);
+    invalidate();
+  }, [resolvedTheme, invalidate]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    hideBarrierRef.current = hideBarrier;
+    setBarrierVisible(root, !hideBarrier);
+    invalidate();
+  }, [hideBarrier, invalidate]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    terrainOnlyRef.current = terrainOnly;
+    setTerrainOnly(root, terrainOnly);
+    if (!terrainOnly) setBarrierVisible(root, !hideBarrierRef.current);
+    invalidate();
+  }, [terrainOnly, invalidate]);
+
+  useEffect(() => {
+    if (error) console.warn(`city layer: ${error}`);
+  }, [error]);
+
+  return <group ref={rootRef} name="city" />;
+}
