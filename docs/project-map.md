@@ -81,6 +81,8 @@ Other bake-time scripts (not environment): `generate-circuits.ts`,
   (the three belts, ~3.7 MB total, 12 draw calls), `city-manifest.json`,
   plus legacy-path JSON (`terrain`, `buildings`, `roads`, `water`, `landuse`, `surface`).
 - `cars/`, `textures/`, `track-turns/`.
+- `whats-new/` — the what's-new panel's before/after shots; taken by hand, so the
+  one directory here no script writes.
 
 ## Runtime (`src/`)
 

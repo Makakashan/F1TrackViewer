@@ -101,10 +101,14 @@ export function StartScreen({
   started,
   circuitCount,
   onStart,
+  whatsNewUnseen,
+  onWhatsNew,
 }: {
   started: boolean | null;
   circuitCount: number;
   onStart: () => void;
+  whatsNewUnseen: boolean;
+  onWhatsNew: () => void;
 }) {
   const { t } = useAppPref();
   const waiting = started === false;
@@ -119,6 +123,14 @@ export function StartScreen({
         waiting ? "opacity-100" : "pointer-events-none opacity-0"
       }`}
     >
+      <button
+        className={`${RISE} absolute right-5 top-5 flex items-center gap-2 rounded-full border border-foreground/15 bg-background/60 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-foreground/75 backdrop-blur transition hover:border-red-600/60 hover:text-foreground md:right-8 md:top-8`}
+        style={after(600)}
+        onClick={onWhatsNew}
+      >
+        {whatsNewUnseen && <span className="size-2 rounded-full bg-red-600" />}
+        {t.whatsNewButton}
+      </button>
       <div className="max-w-xl md:-mt-[10vh]">
         <div className={`${RISE} flex items-center gap-3`}>
           <span className="h-3 w-10 -skew-x-12 text-foreground/80" style={CHEQUER} />
