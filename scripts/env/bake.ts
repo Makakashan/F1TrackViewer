@@ -915,8 +915,8 @@ function bakeTerrain(
 
   for (const belt of BELT_ORDER) {
     const cell = BELT_CELL_M[belt];
-    const cols = Math.floor((maxX - minX) / cell);
-    const rows = Math.floor((maxZ - minZ) / cell);
+    const cols = Math.round((rimEnd(minX, maxX) - minX) / cell);
+    const rows = Math.round((rimEnd(minZ, maxZ) - minZ) / cell);
     const grid = new GridMesh();
 
     const ownHeightAt = (row: number, col: number): number => surfaceHeightOn(belt, row, col);
@@ -1263,11 +1263,8 @@ function bakeTerrain(
     litByBelt[belt] = lit;
     addVoidWalls(mesh, voidCells, built, hollow, surfaceHeightAt, minX, minZ, cell, cols);
     addTerrainSkirts(mesh, surfaceHeightAt, beltOfCell, belt, minX, minZ, cell, rows, cols);
-    // The bbox rim is the far belt's: the finer belts sit inside the track's
-    // radius and never reach it.
-    if (belt === "far") {
-      addPlinth(plinth, surfaceHeightAt, minX, minZ, cell, rows, cols);
-    }
+    addPlinth(plinth, surfaceHeightAt, (row, col) => beltOfCell(row, col, cell) === belt, minX, minZ, cell, rows, cols);
+    if (belt === "far") addPlinthFloor(plinth, minX, minZ, minX + cols * cell, minZ + rows * cell);
     meshes[belt] = mesh;
   }
   smoothLight(BELT_ORDER.map((belt) => [meshes[belt], litByBelt[belt]]));
@@ -1360,10 +1357,10 @@ function addVoidWalls(
 }
 
 /**
- * The block the landscape is cut from: a wall around the bbox down to one floor,
- * and the floor itself.
+ * One belt's stretch of the wall round the block the landscape is cut from,
+ * down to one floor.
  *
- * The top of the wall is the far belt's own rim vertex wherever the rim is land,
+ * The top of the wall is the rim vertex of whichever belt owns that stretch,
  * so the two meet exactly rather than nearly; where the rim is sea it is the
  * datum, which is where the water quad lies. Land that reads below the datum —
  * a metre of beach — takes the datum too, so the wall is never under the water
@@ -1372,6 +1369,8 @@ function addVoidWalls(
 function addPlinth(
   mesh: Mesh,
   surfaceHeightAt: (row: number, col: number) => number,
+  /** Whether a rim cell is this belt's: each belt walls its own stretch, from its own rim. */
+  owns: (row: number, col: number) => boolean,
   minX: number,
   minZ: number,
   cell: number,
@@ -1388,34 +1387,43 @@ function addPlinth(
     const x1 = xAt(col + 1);
     const north = zAt(0);
     const south = zAt(rows);
-    const n0 = top(0, col);
-    const n1 = top(0, col + 1);
-    addFlatQuad(mesh, x0, n0, north, x1, n1, north, x1, PLINTH_FLOOR_M, north, x0, PLINTH_FLOOR_M, north);
-    const s0 = top(rows, col);
-    const s1 = top(rows, col + 1);
-    addFlatQuad(mesh, x1, s1, south, x0, s0, south, x0, PLINTH_FLOOR_M, south, x1, PLINTH_FLOOR_M, south);
+    if (owns(0, col)) {
+      const n0 = top(0, col);
+      const n1 = top(0, col + 1);
+      addFlatQuad(mesh, x0, n0, north, x1, n1, north, x1, PLINTH_FLOOR_M, north, x0, PLINTH_FLOOR_M, north);
+    }
+    if (owns(rows - 1, col)) {
+      const s0 = top(rows, col);
+      const s1 = top(rows, col + 1);
+      addFlatQuad(mesh, x1, s1, south, x0, s0, south, x0, PLINTH_FLOOR_M, south, x1, PLINTH_FLOOR_M, south);
+    }
   }
   for (let row = 0; row < rows; row++) {
     const z0 = zAt(row);
     const z1 = zAt(row + 1);
     const west = xAt(0);
     const east = xAt(cols);
-    const w0 = top(row, 0);
-    const w1 = top(row + 1, 0);
-    addFlatQuad(mesh, west, w1, z1, west, w0, z0, west, PLINTH_FLOOR_M, z0, west, PLINTH_FLOOR_M, z1);
-    const e0 = top(row, cols);
-    const e1 = top(row + 1, cols);
-    addFlatQuad(mesh, east, e0, z0, east, e1, z1, east, PLINTH_FLOOR_M, z1, east, PLINTH_FLOOR_M, z0);
+    if (owns(row, 0)) {
+      const w0 = top(row, 0);
+      const w1 = top(row + 1, 0);
+      addFlatQuad(mesh, west, w1, z1, west, w0, z0, west, PLINTH_FLOOR_M, z0, west, PLINTH_FLOOR_M, z1);
+    }
+    if (owns(row, cols - 1)) {
+      const e0 = top(row, cols);
+      const e1 = top(row + 1, cols);
+      addFlatQuad(mesh, east, e0, z0, east, e1, z1, east, PLINTH_FLOOR_M, z1, east, PLINTH_FLOOR_M, z0);
+    }
   }
+}
 
-  // The floor is two triangles nobody sees — the camera stops at the horizon —
-  // but a block with an open bottom is not a block.
+/** The block's floor: two triangles nobody sees, but a block with an open bottom is not a block. */
+function addPlinthFloor(mesh: Mesh, minX: number, minZ: number, maxX: number, maxZ: number): void {
   addFlatQuad(
     mesh,
-    xAt(0), PLINTH_FLOOR_M, zAt(0),
-    xAt(cols), PLINTH_FLOOR_M, zAt(0),
-    xAt(cols), PLINTH_FLOOR_M, zAt(rows),
-    xAt(0), PLINTH_FLOOR_M, zAt(rows),
+    minX, PLINTH_FLOOR_M, minZ,
+    maxX, PLINTH_FLOOR_M, minZ,
+    maxX, PLINTH_FLOOR_M, maxZ,
+    minX, PLINTH_FLOOR_M, maxZ,
   );
 }
 
@@ -1432,14 +1440,10 @@ function addTerrainSkirts(
   rows: number,
   cols: number,
 ): void {
-  // Off the grid altogether is the outside of the model. For the far belt that
-  // edge is the plinth's, and a hem there would hang inside the block's own
-  // wall; the finer belts end on their own cell size — up to 12 m further out
-  // than the far belt does — so out there a hem is still all they have.
-  const rimIsPlinth = belt === "far";
+  // Off the grid altogether is the outside of the model, and that edge is the
+  // plinth's: a hem there would hang in the block's own wall and flicker with it.
   const offGrid = (row: number, col: number): boolean =>
     row < 0 || col < 0 || row >= rows || col >= cols;
-  const outside = (row: number, col: number): boolean => rimIsPlinth && offGrid(row, col);
 
   const built = (row: number, col: number): boolean =>
     !offGrid(row, col) && beltOfCell(row, col, cell) === belt;
@@ -1460,16 +1464,16 @@ function addTerrainSkirts(
       const h11 = surfaceHeightAt(row + 1, col + 1);
 
 
-      if (!built(row - 1, col) && !outside(row - 1, col)) {
+      if (!built(row - 1, col) && !offGrid(row - 1, col)) {
         addFlatQuad(mesh, x0, h00, z0, x1, h10, z0, x1, h10 - SKIRT_M, z0, x0, h00 - SKIRT_M, z0);
       }
-      if (!built(row + 1, col) && !outside(row + 1, col)) {
+      if (!built(row + 1, col) && !offGrid(row + 1, col)) {
         addFlatQuad(mesh, x1, h11, z1, x0, h01, z1, x0, h01 - SKIRT_M, z1, x1, h11 - SKIRT_M, z1);
       }
-      if (!built(row, col - 1) && !outside(row, col - 1)) {
+      if (!built(row, col - 1) && !offGrid(row, col - 1)) {
         addFlatQuad(mesh, x0, h01, z1, x0, h00, z0, x0, h00 - SKIRT_M, z0, x0, h01 - SKIRT_M, z1);
       }
-      if (!built(row, col + 1) && !outside(row, col + 1)) {
+      if (!built(row, col + 1) && !offGrid(row, col + 1)) {
         addFlatQuad(mesh, x1, h10, z0, x1, h11, z1, x1, h11 - SKIRT_M, z1, x1, h10 - SKIRT_M, z0);
       }
     }
@@ -1483,6 +1487,28 @@ function addTerrainSkirts(
   }
 }
 
+/**
+ * Where the model ends on its far sides: the far belt's last whole cell. Every
+ * belt and the sea stop there, at the plinth's wall — a finer belt run to its own
+ * last cell stood up to 12 m outside the wall, and the sea run to the bbox stuck
+ * out of it as a blue line.
+ */
+function rimEnd(start: number, end: number): number {
+  return start + Math.floor((end - start) / BELT_CELL_M.far) * BELT_CELL_M.far;
+}
+
+/** The ground the model covers: the bbox, cut back on its far sides to `rimEnd`. */
+function modelRim(field: HeightField, plane: ScenePlane): { minX: number; maxX: number; minZ: number; maxZ: number } {
+  const minX = plane.x(field.bbox.minLon);
+  const minZ = plane.z(field.bbox.maxLat);
+  return {
+    minX,
+    maxX: rimEnd(minX, plane.x(field.bbox.maxLon)),
+    minZ,
+    maxZ: rimEnd(minZ, plane.z(field.bbox.minLat)),
+  };
+}
+
 // ─── water ─────────────────────────────────────────────────────────────────
 
 /**
@@ -1493,10 +1519,7 @@ function addTerrainSkirts(
  */
 function bakeWater(field: HeightField, plane: ScenePlane): Mesh {
   const mesh = createMesh();
-  const x0 = plane.x(field.bbox.minLon);
-  const x1 = plane.x(field.bbox.maxLon);
-  const z0 = plane.z(field.bbox.maxLat);
-  const z1 = plane.z(field.bbox.minLat);
+  const { minX: x0, maxX: x1, minZ: z0, maxZ: z1 } = modelRim(field, plane);
   addFlatQuad(mesh, x0, 0, z0, x0, 0, z1, x1, 0, z1, x1, 0, z0);
   return mesh;
 }
@@ -1556,6 +1579,8 @@ interface BuildingResult {
   built: number;
   droppedOnTrack: number;
   droppedOverWater: number;
+  /** Footprints reaching past the plinth's wall, which would stand over nothing. */
+  droppedOffEdge: number;
   droppedTooLow: number;
   pushedOffTrack: number;
   /** Extra pieces a footprint was split into along its fall line. */
@@ -1793,7 +1818,9 @@ function prepareBuildings(
   measured: Map<string, { measured: number }>,
   result: BuildingResult,
   /** Pontoon decks: a harbour building's ground is its deck, water to the terrain. */
-  decks: PierDeck[] = [],
+  decks: PierDeck[],
+  /** The model's footprint on the ground; a building reaching past it is cut off by the wall. */
+  rim: { minX: number; maxX: number; minZ: number; maxZ: number },
 ): PreparedBuilding[] {
   const prepared: PreparedBuilding[] = [];
   const deckAt = (x: number, z: number): number | null => {
@@ -1827,6 +1854,10 @@ function prepareBuildings(
       ring.pop();
     }
     if (ring.length < 3) continue;
+    if (ring.some(({ x, z }) => x < rim.minX || x > rim.maxX || z < rim.minZ || z > rim.maxZ)) {
+      result.droppedOffEdge++;
+      continue;
+    }
 
     const pushed = pushOffTrack(ring, corridor);
     if (!pushed) {
@@ -1990,21 +2021,9 @@ function bakeBuildings(
   taken: Set<string>,
 ): void {
   const meshes = result.meshes;
-  // An edge two terraces of one building share at one roof height is inside
-  // the roof, and a rim along it drew a ridge across it.
-  const edgeKey = (top: number, a: { x: number; z: number }, b: { x: number; z: number }): string => {
-    const [p, q] = [`${a.x.toFixed(2)},${a.z.toFixed(2)}`, `${b.x.toFixed(2)},${b.z.toFixed(2)}`].sort();
-    return `${top.toFixed(2)}|${p}|${q}`;
-  };
-  const edges = new Map<string, number>();
-  for (const building of prepared) {
-    const { wallRing, base, heightM } = building;
-    for (let i = 0; i < wallRing.length; i++) {
-      const key = edgeKey(base + heightM, wallRing[i], wallRing[(i + 1) % wallRing.length]);
-      edges.set(key, (edges.get(key) ?? 0) + 1);
-    }
-  }
-  for (const building of prepared) {
+  const tops = prepared.map((building) => building.base + building.heightM);
+  const walls = new WallIndex(prepared);
+  for (const [index, building] of prepared.entries()) {
     if (taken.has(building.id)) continue;
     const { wallRing, footAt, base, heightM, belt } = building;
     // Every roof is flat. A pitch was built from the survey's `roof:shape` and
@@ -2017,14 +2036,80 @@ function bakeBuildings(
     // belt is silhouettes and gets none.
     const near = belt !== "far";
     const top = base + heightM;
-    const inside = wallRing.map((point, i) => (edges.get(edgeKey(top, point, wallRing[(i + 1) % wallRing.length])) ?? 0) > 1);
-    // Keyed on the building, not the terrace, so one block keeps one roof.
     const id = building.id.split("#")[0];
+    // No rim where a neighbour's wall stands on the same edge and rises past this
+    // roof: the rim's face lay in that wall and the two flickered. Nor where
+    // another terrace of this building carries the same roof on.
+    const inside = wallRing.map((point, i) =>
+      walls.sharing(index, point, wallRing[(i + 1) % wallRing.length]).some((other) =>
+        !taken.has(prepared[other].id) &&
+        (tops[other] > top + ROOF_SAME_M ||
+          (Math.abs(tops[other] - top) <= ROOF_SAME_M && prepared[other].id.split("#")[0] === id))));
+    // Keyed on the building, not the terrace, so one block keeps one roof.
     let seed = 0;
     for (let i = 0; i < id.length; i++) seed = (seed * 31 + id.charCodeAt(i)) % 1_000_003;
     const roofTone = ROOF_TONE.low + (ROOF_TONE.high - ROOF_TONE.low) * hashAt(seed, 0);
     extrude(meshes[belt], wallRing, footAt, top, near ? PARAPET_M : 0, roofTone, inside);
     result.built++;
+  }
+}
+
+/** Two roofs this close in height are one roof plane. */
+const ROOF_SAME_M = 0.01;
+/** How far apart two walls may lie and still be one wall. */
+const WALL_SHARED_M = 0.05;
+/** Bucket size of the wall index. */
+const WALL_BUCKET_M = 16;
+
+/** Every wall of every footprint, found by the edge another footprint shares with it. */
+class WallIndex {
+  private readonly buckets = new Map<string, { owner: number; a: { x: number; z: number }; b: { x: number; z: number } }[]>();
+
+  constructor(prepared: PreparedBuilding[]) {
+    for (const [owner, { wallRing }] of prepared.entries()) {
+      for (let i = 0; i < wallRing.length; i++) {
+        const a = wallRing[i];
+        const b = wallRing[(i + 1) % wallRing.length];
+        for (const key of this.keys(a, b)) {
+          let list = this.buckets.get(key);
+          if (!list) this.buckets.set(key, (list = []));
+          list.push({ owner, a, b });
+        }
+      }
+    }
+  }
+
+  /** Footprints other than `self` with a wall along most of the edge a–b. */
+  sharing(self: number, a: { x: number; z: number }, b: { x: number; z: number }): number[] {
+    const length = Math.hypot(b.x - a.x, b.z - a.z);
+    if (length < WALL_SHARED_M) return [];
+    const ux = (b.x - a.x) / length;
+    const uz = (b.z - a.z) / length;
+    const found = new Set<number>();
+    for (const key of this.keys(a, b)) {
+      for (const wall of this.buckets.get(key) ?? []) {
+        if (wall.owner === self || found.has(wall.owner)) continue;
+        // On the edge's line, both ends.
+        const off = (p: { x: number; z: number }) => Math.abs((p.x - a.x) * uz - (p.z - a.z) * ux);
+        if (off(wall.a) > WALL_SHARED_M || off(wall.b) > WALL_SHARED_M) continue;
+        // Covering most of it.
+        const along = (p: { x: number; z: number }) => (p.x - a.x) * ux + (p.z - a.z) * uz;
+        const lo = Math.max(0, Math.min(along(wall.a), along(wall.b)));
+        const hi = Math.min(length, Math.max(along(wall.a), along(wall.b)));
+        if (hi - lo >= 0.5 * length) found.add(wall.owner);
+      }
+    }
+    return [...found];
+  }
+
+  private keys(a: { x: number; z: number }, b: { x: number; z: number }): string[] {
+    const keys: string[] = [];
+    const c0 = Math.floor(Math.min(a.x, b.x) / WALL_BUCKET_M);
+    const c1 = Math.floor(Math.max(a.x, b.x) / WALL_BUCKET_M);
+    const r0 = Math.floor(Math.min(a.z, b.z) / WALL_BUCKET_M);
+    const r1 = Math.floor(Math.max(a.z, b.z) / WALL_BUCKET_M);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) keys.push(`${c},${r}`);
+    return keys;
   }
 }
 
@@ -2091,6 +2176,7 @@ function emptyBuildingResult(): BuildingResult {
     built: 0,
     droppedOnTrack: 0,
     droppedOverWater: 0,
+    droppedOffEdge: 0,
     droppedTooLow: 0,
     pushedOffTrack: 0,
     terraced: 0,
@@ -3773,7 +3859,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const greeneryStats = { ...greenery.stats };
 
   const prepared = prepareBuildings(
-    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings, piers.decks,
+    buildingsFile, standOn, plane, corridor, hollow, roadIndex, measured, buildings, piers.decks, modelRim(field, plane),
   );
 
   // The kit runs before the props are merged, because its houses are props: it
@@ -4056,7 +4142,7 @@ async function main() {
   console.log(`  total ${(total / 1_000_000).toFixed(2)} MB`);
   console.log(
     `  buildings ${b.built} built, ${b.pushedOffTrack} pushed off the track, ` +
-      `dropped: ${b.droppedOnTrack} on track, ${b.droppedOverWater} over water, ` +
+      `dropped: ${b.droppedOnTrack} on track, ${b.droppedOverWater} over water, ${b.droppedOffEdge} off the edge, ` +
       `${b.droppedTooLow} too low`
       + (b.terraced ? `, ${b.terraced} terraces split along the fall line` : "")
       + `, ${b.cliffHeights} on a cliff at their tagged height`,
