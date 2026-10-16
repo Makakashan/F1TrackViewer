@@ -25,6 +25,13 @@ const en = {
   // App header
   appName: "F1 Track Studio",
   appTagline: "Globe Circuit Viewer · MVP 4",
+  // Start screen
+  startKicker: "3D circuit viewer",
+  startTagline: "Every corner of every circuit, rendered in real-time 3D.",
+  startButton: "Start",
+  startFactCircuits: "circuits",
+  startFactTerrain: "real terrain",
+  startFactRace: "race mode",
   btnReload: "Reload",
   // Top bar toggles
   track: "Track",
@@ -187,6 +194,13 @@ type Dict = typeof en;
 const ru: Dict = {
   appName: "F1 Track Studio",
   appTagline: "Глобус выбора трасс · MVP 4",
+  // Стартовый экран
+  startKicker: "3D-просмотр трасс",
+  startTagline: "Каждый поворот каждой трассы — в 3D в реальном времени.",
+  startButton: "Старт",
+  startFactCircuits: "трасс",
+  startFactTerrain: "рельеф и город",
+  startFactRace: "режим гонки",
   btnReload: "Обновить",
   track: "Трасса",
   trackSettings: "Настройки трассы",

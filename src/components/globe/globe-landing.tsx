@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import GlobeEarth from "./globe-earth";
 import GlobeInfoCard from "./globe-info-card";
 import RaceModeBanner from "./race-mode-banner";
+import { GlobeStage, StartScreen, useStarted } from "./start-screen";
 import type { GlobeCircuit } from "./globe-marker";
 import { useAppPref } from "@/components/app-pref-provider";
 import { countryFlag, countryFromId } from "@/lib/f1-circuits";
@@ -71,6 +72,7 @@ function openCircuitSearch(circuit: GlobeCircuit) {
 
 export default function GlobeLanding() {
 	const { resolvedTheme } = useAppPref();
+	const [started, start] = useStarted();
 	const [circuits, setCircuits] = useState<GlobeCircuit[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [earthReady, setEarthReady] = useState(false);
@@ -167,7 +169,8 @@ export default function GlobeLanding() {
 		}
 		return sorted;
 	}, [circuits, query, filterChip, sortMode]);
-	const showLoading = loading || !earthReady;
+	// The start screen stands in for the loader until Start is pressed.
+	const showLoading = started === true && (loading || !earthReady);
 	const effectiveCardTop = activeCircuit && !mobileMenuOpen ? cardTopPx : 0;
 
 	const handleSelectCircuit = useCallback((circuit: GlobeCircuit | null) => {
@@ -184,6 +187,7 @@ export default function GlobeLanding() {
 			<div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_50%_45%,transparent_0%,rgba(3,5,10,0.08)_45%,rgba(3,5,10,0.72)_100%)]" />
 			{/* The globe runs edge to edge under the status bar; the chrome on
 			    top of it does not. */}
+			<div className={`transition-opacity duration-700 ${started ? "opacity-100" : "pointer-events-none opacity-0"}`}>
 			<header className="pointer-events-none absolute left-0 right-0 top-0 z-20 flex items-center justify-between px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] md:px-6">
 				<div className="flex items-center gap-3">
 					<div className="flex h-9 w-9 items-center justify-center rounded-md bg-linear-to-br from-red-600 to-orange-600 shadow-[0_0_24px_rgba(225,6,0,0.45)]">
@@ -202,6 +206,7 @@ export default function GlobeLanding() {
 					Drag to rotate
 				</div>
 			</header>
+			</div>
 
 			<Canvas
 				camera={{ position: [0, 0.8, 6.5], fov: 42 }}
@@ -225,7 +230,13 @@ export default function GlobeLanding() {
 					onClearHover={() => setHoveredCircuit(null)}
 					onEarthReady={() => setEarthReady(true)}
 				/>
+				<GlobeStage started={started} />
 			</Canvas>
+
+			<StartScreen started={started} circuitCount={circuits.length} onStart={start} />
+
+			{/* The chrome waits for Start: before it the screen is the title and the globe. */}
+			<div className={`transition-opacity duration-700 ${started ? "opacity-100" : "pointer-events-none opacity-0"}`}>
 
 			{sidebarOpen ? (
 				<aside className="absolute bottom-4 left-4 top-24 z-20 hidden w-75 flex-col overflow-hidden rounded-md border border-foreground/10 bg-background/58 shadow-2xl shadow-black/40 backdrop-blur-xl md:flex">
@@ -499,6 +510,8 @@ export default function GlobeLanding() {
 				</div>
 			)}
 
+			</div>
+
 			{showLoading && (
 				<div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/72 text-foreground backdrop-blur-sm">
 					<div className="relative flex h-48 w-48 items-center justify-center">
@@ -536,7 +549,7 @@ export default function GlobeLanding() {
 			)}
 
 			<GlobeInfoCard
-				circuit={mobileMenuOpen ? null : activeCircuit}
+				circuit={mobileMenuOpen || !started ? null : activeCircuit}
 				onOpen={handleOpenCircuit}
 				onRectChange={(rect) => {
 					setCardTopPx(rect.top);

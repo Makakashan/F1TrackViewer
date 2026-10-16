@@ -80,7 +80,7 @@ Other bake-time scripts (not environment): `generate-circuits.ts`,
 - `environments/<id>/` — the bake. For `mc-1929`: `core.glb`, `city.glb`, `far.glb`
   (the three belts, ~3.7 MB total, 12 draw calls), `city-manifest.json`,
   plus legacy-path JSON (`terrain`, `buildings`, `roads`, `water`, `landuse`, `surface`).
-- `cars/`, `textures/`, `intro/`, `track-turns/`.
+- `cars/`, `textures/`, `track-turns/`.
 
 ## Runtime (`src/`)
 
