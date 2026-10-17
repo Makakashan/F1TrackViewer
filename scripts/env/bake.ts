@@ -3279,10 +3279,15 @@ function bakeBarriers(
   plane: ScenePlane,
   tunnels: TunnelMask,
   halfWidthM: number,
+  /** Distance to the nearest stretch of the lap, whichever leg it is. */
+  fromTrack: (x: number, z: number) => number,
 ): Mesh {
   const mesh = createMesh();
   const { coords, elevations } = field.trackProfile;
   const offset = halfWidthM + BARRIER_OFFSET_M;
+  // On the inside of a hairpin, or beside a parallel leg, the offset lands on
+  // the road; that run of steel was drawn across the asphalt.
+  const onRoad = (x: number, z: number) => fromTrack(x, z) < offset - BARRIER_THICKNESS_M;
 
   for (let i = 0; i < coords.length; i++) {
     const next = (i + 1) % coords.length;
@@ -3311,6 +3316,7 @@ function bakeBarriers(
       const cz0 = az + nz * side;
       const cx1 = bx + nx * side;
       const cz1 = bz + nz * side;
+      if (onRoad(cx0, cz0) || onRoad(cx1, cz1) || onRoad((cx0 + cx1) / 2, (cz0 + cz1) / 2)) continue;
       const top0 = ay + BARRIER_HEIGHT_M;
       const top1 = by + BARRIER_HEIGHT_M;
 
@@ -3791,7 +3797,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const elevations = trackElevations(field, coords, plane);
   const portals = bakePortals(vaults, hill, plane);
   const bore = bakeTunnelBody(hill, plane, vaults, portalSection());
-  const barriers = bakeBarriers(field, plane, tunnels, DEFAULT_TRACK_HALF_WIDTH_M);
+  const barriers = bakeBarriers(field, plane, tunnels, DEFAULT_TRACK_HALF_WIDTH_M, (x, z) => corridor.distance(x, z));
   // The surveyed lines the belts' filter may not average across: cliffs and
   // retaining walls from their own query, quays and breakwaters from the shore.
   const breaklines = buildBreaklines(field, breaklineWays, shoreWays);
@@ -3855,7 +3861,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   );
   // After the terrain, because these lie on the ground that is drawn rather
   // than on the field the belts filtered.
-  const greenery = buildGreenery(greenWays, standOn, plane);
+  const greenery = buildGreenery(greenWays, standOn, plane, (x, z) => corridor.distance(x, z) >= TRACK_CLEARANCE_M);
   const greeneryStats = { ...greenery.stats };
 
   const prepared = prepareBuildings(

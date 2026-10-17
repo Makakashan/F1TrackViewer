@@ -133,13 +133,16 @@ function splitToGround(
   lift: number,
   step: number,
   depth: number,
+  keep: (x: number, z: number) => boolean,
 ): void {
   const ab = Math.hypot(a.x - b.x, a.z - b.z);
   const bc = Math.hypot(b.x - c.x, b.z - c.z);
   const ca = Math.hypot(c.x - a.x, c.z - a.z);
   const longest = Math.max(ab, bc, ca);
   if (depth >= LID_SPLIT_DEPTH || longest <= step) {
-    addFlatTriangle(mesh, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    if (keep((a.x + b.x + c.x) / 3, (a.z + b.z + c.z) / 3)) {
+      addFlatTriangle(mesh, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+    }
     return;
   }
   const cut = (from: LidPoint, to: LidPoint): LidPoint => {
@@ -150,19 +153,19 @@ function splitToGround(
   };
   if (longest === ab) {
     const m = cut(a, b);
-    splitToGround(mesh, a, m, c, groundAt, lift, step, depth + 1);
-    splitToGround(mesh, m, b, c, groundAt, lift, step, depth + 1);
+    splitToGround(mesh, a, m, c, groundAt, lift, step, depth + 1, keep);
+    splitToGround(mesh, m, b, c, groundAt, lift, step, depth + 1, keep);
     return;
   }
   if (longest === bc) {
     const m = cut(b, c);
-    splitToGround(mesh, a, b, m, groundAt, lift, step, depth + 1);
-    splitToGround(mesh, a, m, c, groundAt, lift, step, depth + 1);
+    splitToGround(mesh, a, b, m, groundAt, lift, step, depth + 1, keep);
+    splitToGround(mesh, a, m, c, groundAt, lift, step, depth + 1, keep);
     return;
   }
   const m = cut(c, a);
-  splitToGround(mesh, a, b, m, groundAt, lift, step, depth + 1);
-  splitToGround(mesh, m, b, c, groundAt, lift, step, depth + 1);
+  splitToGround(mesh, a, b, m, groundAt, lift, step, depth + 1, keep);
+  splitToGround(mesh, m, b, c, groundAt, lift, step, depth + 1, keep);
 }
 
 /** A repeatable ±14 % from a point, with no pattern the eye can find. */
@@ -259,6 +262,8 @@ export function buildGreenery(
    */
   groundAt: (x: number, z: number) => number,
   plane: ScenePlane,
+  /** False on the road: a lawn mapped up to the kerb is drawn over the ribbon, and its depth bias wins. */
+  offTrack: (x: number, z: number) => boolean,
 ): GreeneryResult {
   const stats: GreeneryResult["stats"] = { pools: 0, pitches: 0, parks: 0 };
 
@@ -318,6 +323,7 @@ export function buildGreenery(
         lift,
         step,
         0,
+        offTrack,
       );
       // Per triangle, not per park: a hectare of one green is the paint the
       // ground tint was, and the triangulation's own patches are the shape the

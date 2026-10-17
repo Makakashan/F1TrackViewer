@@ -97,6 +97,8 @@ import {
   getSceneColors,
 } from "@/lib/scene-config";
 
+/** The map view's markings lie on the sector band, not under it, or they showed through it in shards. */
+const MAP_PAINT_RAISE = TRACK_OVERLAY_RAISE + 0.02;
 /** Asphalt in race view. Warm-neutral rather than pure grey, which reads blue. */
 const ASPHALT_COLOR = "#3a3a3d";
 
@@ -618,7 +620,7 @@ export default function TrackMesh({
             curve,
             startFinishPlacement.s,
             markerHalfWidth,
-            TRACK_PAINT_RAISE,
+            MAP_PAINT_RAISE,
           ),
     [raceView, curve, startFinishPlacement.s, halfWidth, markerHalfWidth],
   );
@@ -629,10 +631,10 @@ export default function TrackMesh({
         curve,
         startFinishPlacement.s,
         halfWidth,
-        TRACK_PAINT_RAISE,
+        raceView ? TRACK_PAINT_RAISE : MAP_PAINT_RAISE,
         markers?.directionSign ?? 1,
       ),
-    [curve, startFinishPlacement.s, halfWidth, markers?.directionSign],
+    [raceView, curve, startFinishPlacement.s, halfWidth, markers?.directionSign],
   );
 
   // One source for the cars and for the camera that follows them.
@@ -1018,13 +1020,16 @@ export default function TrackMesh({
         </>
       )}
 
-      <mesh
-        geometry={edgeLineGeometry}
-        renderOrder={TRACK_OVERLAY_RENDER_ORDER}
-        receiveShadow={newLook}
-      >
-        <RoadMaterial lit={newLook} color="#f2f4f7" />
-      </mesh>
+      {/* Under the sector band the lines only showed through it in slivers. */}
+      {!showSectors && (
+        <mesh
+          geometry={edgeLineGeometry}
+          renderOrder={TRACK_OVERLAY_RENDER_ORDER}
+          receiveShadow={newLook}
+        >
+          <RoadMaterial lit={newLook} color="#f2f4f7" />
+        </mesh>
+      )}
 
       {/* Paved verge and kerbs belong to the race view. The map view is a
           schematic — there the ribbon is the circuit's shape, and a second

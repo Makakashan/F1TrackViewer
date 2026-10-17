@@ -114,6 +114,8 @@ const TRACK_SAMPLE_M = 3;
  * smoothing to kill cell steps and no more — 120 m would flatten the climb to
  * Casino into a ramp.
  */
+/** Lowest a road outside a tunnel is laid: clear of the land held 0.25 m over the sea plane. */
+const ROAD_FLOOR_M = 0.5;
 const TRACK_SMOOTH_RADIUS_M = 25;
 
 const METERS_PER_DEG_LAT = 111_320;
@@ -190,6 +192,12 @@ function trackElevationProfile(
       const t = (i - before) / (after - before);
       filled[i] = raw[before] + (raw[after] - raw[before]) * t;
     }
+  }
+
+  // A road in the open is above the sea. The DEM over a lagoon reads metres
+  // under it, and at Jeddah the ribbon sank under the water and the ground.
+  for (let i = 0; i < filled.length; i++) {
+    if (!buried?.(coords[i][0], coords[i][1])) filled[i] = Math.max(filled[i], ROAD_FLOOR_M);
   }
 
   return smoothTerrainTrackProfile(filled, coords, TRACK_SMOOTH_RADIUS_M);
