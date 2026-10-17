@@ -32,7 +32,7 @@ interface GlobeEarthProps {
 
 const SPACE_PALETTE = {
   dark: {
-    void: "#03050a",
+    void: "#0a0a0a",
     grid: "#d9f6ff",
     gridOpacity: 0.16,
     dot: "#ffffff",
@@ -40,7 +40,7 @@ const SPACE_PALETTE = {
     blending: THREE.AdditiveBlending,
   },
   light: {
-    void: "#eef3f8",
+    void: "#fafafa",
     grid: "#3a4d5f",
     gridOpacity: 0.24,
     dot: "#3a4d5f",

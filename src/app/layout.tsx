@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Titillium_Web } from "next/font/google";
+import { Inter, Titillium_Web } from "next/font/google";
 import "./globals.css";
 
 /** The timing overlay's typeface, and only its typeface — the rest of the app keeps the system stack. */
@@ -9,22 +9,27 @@ const timingFont = Titillium_Web({
   variable: "--font-timing",
   display: "swap",
 });
+/** The interface typeface. */
+const interFont = Inter({ subsets: ["latin", "latin-ext", "cyrillic"], variable: "--font-inter", display: "swap" });
 import { Toaster } from "@/components/ui/toaster";
 import { AppPrefProvider } from "@/components/app-pref-provider";
 
 const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const faviconUrl = `${basePath}/favicon.svg`;
+const faviconLightUrl = `${basePath}/favicon-light.svg`;
 
 export const metadata: Metadata = {
-  title: "F1 Track Studio — 3D Circuit Viewer",
+  title: "Boxlane — every F1 circuit in 3D",
   description:
     "Interactive 3D viewer for Formula 1 circuit configurations, built with Next.js + Three.js. Unofficial, non-commercial.",
   keywords: ["F1", "Formula 1", "Three.js", "3D", "circuits", "tracks"],
   authors: [{ name: "Makakashan" }],
   icons: {
-    icon: [{ url: faviconUrl, type: "image/svg+xml" }],
-    shortcut: faviconUrl,
-    apple: faviconUrl,
+    icon: [
+      { url: faviconLightUrl, type: "image/svg+xml", media: "(prefers-color-scheme: light)" },
+      { url: faviconUrl, type: "image/svg+xml", media: "(prefers-color-scheme: dark)" },
+    ],
+    apple: `${basePath}/apple-touch-icon.png`,
   },
 };
 
@@ -49,7 +54,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${timingFont.variable}`}
+      className={`dark ${timingFont.variable} ${interFont.variable}`}
       suppressHydrationWarning
     >
       <body className="antialiased bg-background text-foreground">

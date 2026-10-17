@@ -2,7 +2,7 @@
 
 <img src="./public/favicon.svg" alt="" width="64" height="64">
 
-<h1>F1 Track Studio</h1>
+<h1>Boxlane</h1>
 
 <p align="center">
   <a href="https://makakashan.github.io/F1TrackViewer/">Live demo</a>
@@ -60,7 +60,7 @@ then start a race and watch twenty cars drive the lap — all in the **browser**
 
 ## Features
 
-- **31 circuits** on a textured globe, with search, filters and a preview card — no runtime map APIs
+- **31 circuits** on a textured globe, with a searchable grid of outlines and a preview card — no runtime map APIs
 - **Real elevation**, sector splits from session telemetry, and real per-point width where it is measured
 - **A baked city** around the track: terrain, buildings at their surveyed heights, water, quays, parks and trees
 - **Race mode**: kerbs from the centreline's curvature, painted grid, start lights and twenty cars on a deterministic simulation
@@ -125,7 +125,7 @@ src/
   app/                       Next.js routes: / and /admin
   components/
     globe/                   start screen, Earth, markers, circuit preview, what's new
-    track/                   viewer UI — panels, sheets, settings, circuit list
+    track/                   viewer UI — the scene's floating cards and dock, settings
     race/                    race HUD — timing tower, controls, results, lights
     three/                   every R3F component: track mesh, cars, camera rig,
                              baked city, environment layer, studio stage

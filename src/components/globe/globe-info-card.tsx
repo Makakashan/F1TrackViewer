@@ -1,8 +1,9 @@
 "use client";
 
-import { ExternalLink, Map, Mountain, Route, Trees } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useEffect, useRef } from "react";
-import { Button } from "@/components/ui/button";
+import { useAppPref } from "@/components/app-pref-provider";
+import { buttons } from "@/components/site-header";
 import type { GlobeCircuit } from "./globe-marker";
 
 interface GlobeInfoCardProps {
@@ -18,51 +19,12 @@ function formatType(type: string) {
     .join(" ");
 }
 
-function StatusChip({
-  active,
-  children,
-}: {
-  active?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <span
-      className={`rounded-full border px-2 py-1 text-[10px] font-medium leading-none ${
-        active
-          ? "border-red-500/40 bg-red-500/15 text-red-700 dark:text-red-300 shadow-[0_0_18px_rgba(225,6,0,0.12)]"
-          : "border-foreground/10 bg-foreground/4 text-foreground/42"
-      }`}
-    >
-      {children}
-    </span>
-  );
-}
-
-function InfoRow({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-lg border border-foreground/10 bg-foreground/[0.035] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/38">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-1 text-sm font-semibold text-foreground/82">{value}</div>
-    </div>
-  );
-}
-
 export default function GlobeInfoCard({
   circuit,
   onOpen,
   onRectChange,
 }: GlobeInfoCardProps) {
+  const { t } = useAppPref();
   const ref = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
@@ -88,63 +50,31 @@ export default function GlobeInfoCard({
 
   if (!circuit) return null;
 
+  const rows = [
+    [t.circuitType, formatType(circuit.type)],
+    [t.city, circuit.hasEnvironment ? t.ready : t.notYet],
+    [t.terrain, circuit.hasTerrain ? t.ready : t.notYet],
+  ];
   return (
     <aside
       ref={ref}
-      className="pointer-events-auto fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] right-[calc(0.75rem+env(safe-area-inset-right))] z-20 md:inset-x-auto md:bottom-auto md:right-6 md:top-24 md:w-90"
+      className="pointer-events-auto fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] right-[calc(0.75rem+env(safe-area-inset-right))] z-20 md:inset-x-auto md:bottom-auto md:right-4 md:top-[73px] md:w-80"
     >
-      <div className="space-y-3 rounded-2xl border border-foreground/10 bg-background/58 p-3 shadow-2xl shadow-black/40 backdrop-blur-xl">
-        <div className="rounded-2xl border border-foreground/10 bg-background/20 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_18px_50px_rgba(0,0,0,0.18)]">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-red-400">
-              <Route className="h-3.5 w-3.5" />
-              Circuit
+      <div className="rounded-[14px] border border-border bg-background/90 p-4 backdrop-blur-md">
+        <div className="text-[13px] text-muted-foreground">{circuit.country}</div>
+        <h2 className="mt-0.5 text-xl font-semibold tracking-[-0.02em]">{circuit.shortName}</h2>
+        <p className="mt-0.5 truncate text-[13px] text-muted-foreground">{circuit.name}</p>
+        <dl className="mt-4 divide-y divide-border border-y border-border text-[13px]">
+          {rows.map(([label, value]) => (
+            <div key={label} className="flex items-baseline justify-between py-2">
+              <dt className="text-muted-foreground">{label}</dt>
+              <dd>{value}</dd>
             </div>
-            <h2 className="text-2xl font-bold leading-tight text-foreground">
-              {circuit.shortName}
-            </h2>
-            <p className="text-sm text-foreground/52">
-              {circuit.name} · {circuit.country}
-            </p>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-1.5">
-            <StatusChip active>{formatType(circuit.type)}</StatusChip>
-            <StatusChip active={circuit.hasEnvironment}>Environment</StatusChip>
-            <StatusChip active={circuit.hasTerrain}>Terrain</StatusChip>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <InfoRow
-            icon={<Map className="h-3.5 w-3.5" />}
-            label="Country"
-            value={circuit.country}
-          />
-          <InfoRow
-            icon={<Route className="h-3.5 w-3.5" />}
-            label="Type"
-            value={formatType(circuit.type)}
-          />
-          <InfoRow
-            icon={<Trees className="h-3.5 w-3.5" />}
-            label="Env"
-            value={circuit.hasEnvironment ? "Ready" : "Basic"}
-          />
-          <InfoRow
-            icon={<Mountain className="h-3.5 w-3.5" />}
-            label="Terrain"
-            value={circuit.hasTerrain ? "Ready" : "Flat"}
-          />
-        </div>
-
-        <Button
-          className="h-11 w-full gap-2 rounded-lg bg-red-600 text-sm font-semibold text-white shadow-[0_0_18px_rgba(225,6,0,0.18)] hover:bg-red-500"
-          onClick={() => onOpen(circuit)}
-        >
-          <ExternalLink className="h-4 w-4" />
-          Open Circuit
-        </Button>
+          ))}
+        </dl>
+        <button onClick={() => onOpen(circuit)} className={`${buttons.primary} mt-4 h-10 w-full text-sm font-semibold`}>
+          {t.openCircuit} <ArrowRight className="h-4 w-4" />
+        </button>
       </div>
     </aside>
   );

@@ -33,13 +33,11 @@
     "widths:generate": "bun scripts/generate-track-widths.ts"
   },
   "dependencies": {
-    "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-popover": "^1.1.14",
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
     "@radix-ui/react-switch": "^1.2.5",
-    "@radix-ui/react-tabs": "^1.1.12",
     "@radix-ui/react-toast": "^1.2.14",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
@@ -52,7 +50,6 @@
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.3.1",
     "three": "^0.184.0",
-    "vaul": "^1.1.2",
     "zustand": "^5.0.6"
   },
   "devDependencies": {
