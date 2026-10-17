@@ -186,7 +186,8 @@ export default function GlobeLanding() {
 
 	return (
 		<main className="relative h-dvh w-screen overflow-hidden bg-background text-foreground">
-			<div className="pointer-events-none absolute inset-0 z-10 bg-[radial-gradient(circle_at_50%_45%,transparent_0%,rgba(3,5,10,0.08)_45%,rgba(3,5,10,0.72)_100%)]" />
+			{/* Night only: on the light theme the dark rim left a bright spot in the middle of the page. */}
+			<div className="pointer-events-none absolute inset-0 z-10 hidden bg-[radial-gradient(circle_at_50%_45%,transparent_0%,rgba(3,5,10,0.08)_45%,rgba(3,5,10,0.72)_100%)] dark:block" />
 			{/* The globe runs edge to edge under the status bar; the chrome on
 			    top of it does not. */}
 			<div className={`transition-opacity duration-700 ${started ? "opacity-100" : "pointer-events-none opacity-0"}`}>
