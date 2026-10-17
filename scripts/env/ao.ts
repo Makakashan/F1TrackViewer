@@ -89,6 +89,11 @@ export function buildOccluders(
       const rowTo = Math.min(height - 1, Math.ceil((Math.max(mesh.positions[a + 2], mesh.positions[b + 2], mesh.positions[c + 2]) - minZ) / CELL_M));
       for (let row = rowFrom; row <= rowTo; row++) {
         for (let col = colFrom; col <= colTo; col++) {
+          // Only the cells the triangle reaches: its bounding box stamped a
+          // diagonal wall's whole rectangle, and the open ground beside it went grey.
+          const x = minX + (col + 0.5) * CELL_M;
+          const z = minZ + (row + 0.5) * CELL_M;
+          if (planDistance(x, z, mesh.positions, a, b, c) > CELL_REACH_M) continue;
           const index = row * width + col;
           if (top > heights[index]) heights[index] = top;
         }
@@ -97,6 +102,35 @@ export function buildOccluders(
   }
 
   return { heights, width, height, minX, minZ, cellM: CELL_M };
+}
+
+/** A cell is touched by a triangle that comes within its half-diagonal of its centre. */
+const CELL_REACH_M = CELL_M * Math.SQRT1_2;
+
+/** Distance in plan from (x, z) to triangle a, b, c; zero inside it. A wall's triangle is a line in plan. */
+function planDistance(x: number, z: number, positions: number[], a: number, b: number, c: number): number {
+  const ax = positions[a], az = positions[a + 2];
+  const bx = positions[b], bz = positions[b + 2];
+  const cx = positions[c], cz = positions[c + 2];
+  const side = (px: number, pz: number, qx: number, qz: number) => (qx - px) * (z - pz) - (qz - pz) * (x - px);
+  const d1 = side(ax, az, bx, bz);
+  const d2 = side(bx, bz, cx, cz);
+  const d3 = side(cx, cz, ax, az);
+  const area = (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+  if (area !== 0 && ((d1 >= 0 && d2 >= 0 && d3 >= 0) || (d1 <= 0 && d2 <= 0 && d3 <= 0))) return 0;
+  return Math.min(
+    segmentDistance(x, z, ax, az, bx, bz),
+    segmentDistance(x, z, bx, bz, cx, cz),
+    segmentDistance(x, z, cx, cz, ax, az),
+  );
+}
+
+function segmentDistance(x: number, z: number, ax: number, az: number, bx: number, bz: number): number {
+  const dx = bx - ax;
+  const dz = bz - az;
+  const length2 = dx * dx + dz * dz;
+  const t = length2 > 0 ? Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / length2)) : 0;
+  return Math.hypot(x - ax - t * dx, z - az - t * dz);
 }
 
 /**

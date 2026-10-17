@@ -47,23 +47,23 @@ export default function RaceModeBanner({
       onClick={openRandom}
       className={cn(
         // Fixed, not absolute: on a phone the page box outgrows the visible viewport.
-        "fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 z-30 flex max-w-[calc(100vw-1.5rem)] -translate-x-1/2 items-center gap-3 rounded-md border border-red-500/25 bg-background/70 px-3 py-2 text-left shadow-2xl shadow-black/40 backdrop-blur-xl transition-colors hover:border-red-500/50 hover:bg-background/85 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60",
+        "fixed bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-1/2 z-30 flex max-w-[calc(100vw-1.5rem)] -translate-x-1/2 items-center gap-3 rounded-[14px] border border-border bg-background/90 py-2 pl-2 pr-4 text-left backdrop-blur-md transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         stacked && "hidden md:flex",
       )}
     >
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-linear-to-br from-red-600 to-orange-600 shadow-[0_0_18px_rgba(225,6,0,0.45)]">
-        <Flag className="h-4 w-4 text-white" />
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-border">
+        <Flag className="h-4 w-4 text-red-600" />
       </span>
       <span className="leading-tight">
         <span className="flex items-center gap-2">
           <span className="whitespace-nowrap text-sm font-semibold">
             {t.raceModeTitle}
           </span>
-          <span className="rounded bg-[#e10600]/15 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-[#e10600]">
+          <span className="rounded-md border border-border px-1.5 py-px text-[10px] font-medium text-muted-foreground">
             {t.raceBeta}
           </span>
         </span>
-        <span className="block text-[11px] text-foreground/55">
+        <span className="block text-xs text-muted-foreground">
           {t.raceBannerCta}
         </span>
       </span>

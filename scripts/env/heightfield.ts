@@ -114,6 +114,8 @@ const TRACK_SAMPLE_M = 3;
  * smoothing to kill cell steps and no more — 120 m would flatten the climb to
  * Casino into a ramp.
  */
+/** Lowest a road outside a tunnel is laid: clear of the land held 0.25 m over the sea plane. */
+const ROAD_FLOOR_M = 0.5;
 const TRACK_SMOOTH_RADIUS_M = 25;
 
 const METERS_PER_DEG_LAT = 111_320;
@@ -192,7 +194,38 @@ function trackElevationProfile(
     }
   }
 
+  // A road in the open is above the sea. The DEM over a lagoon reads metres
+  // under it, and at Jeddah the ribbon sank under the water and the ground.
+  for (let i = 0; i < filled.length; i++) {
+    if (!buried?.(coords[i][0], coords[i][1])) filled[i] = Math.max(filled[i], ROAD_FLOOR_M);
+  }
+
   return smoothTerrainTrackProfile(filled, coords, TRACK_SMOOTH_RADIUS_M);
+}
+
+/**
+ * The profile as the app draws it: the manifest carries a height per centreline
+ * vertex and the ribbon runs straight between them, so the ground is burned to
+ * that line. Burned to the dense samples instead, a 500 m straight sagged under
+ * a hump of ground the ribbon then passed beneath.
+ */
+function alongChords(
+  elevations: number[],
+  vertices: [number, number][],
+  dense: [number, number][],
+): number[] {
+  const out = elevations.slice();
+  let from = 0;
+  for (let v = 1; v < vertices.length; v++) {
+    let to = from + 1;
+    while (to < dense.length - 1 && (dense[to][0] !== vertices[v][0] || dense[to][1] !== vertices[v][1])) to++;
+    for (let i = from + 1; i < to; i++) {
+      const t = (i - from) / (to - from);
+      out[i] = elevations[from] + (elevations[to] - elevations[from]) * t;
+    }
+    from = to;
+  }
+  return out;
 }
 
 // ─── burn-in ───────────────────────────────────────────────────────────────
@@ -433,7 +466,7 @@ export function buildHeightField(options: BuildHeightFieldOptions): HeightField 
 
   const data = new Float32Array(dtm.data); // the raster stays untouched
   const coords = densify(track.coords, TRACK_SAMPLE_M, plane);
-  const elevations = trackElevationProfile(dtm, coords, track.buried);
+  const elevations = alongChords(trackElevationProfile(dtm, coords, track.buried), track.coords, coords);
   const stats = burnTrack(
     data,
     width,
