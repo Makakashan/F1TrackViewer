@@ -3,10 +3,10 @@
  *
  * Trees were built here once, a canopy and a trunk each, and read as one
  * six-sided shape repeated a thousand times. They are gone and are not coming
- * back: `natural=tree`, `tree_row`, woods and lawns are fetched and ignored.
+ * back: woods are drawn as the ground they cover, not as the trees on it.
  *
  * What is drawn is areas somebody surveyed as a thing rather than as ground —
- * a park, a garden, a fountain, a swimming pool, a pitch. Each is a lid over
+ * a park, a lawn, a wood, a fountain, a swimming pool, a pitch. Each is a lid over
  * the terrain that follows it vertex by vertex, so a park on a hillside is a
  * park on a hillside rather than a plate cut into one.
  */
@@ -42,14 +42,19 @@ const SURFACE_LIFT_M = 0.35;
  * costs nothing to look at because what a pitch's rim stands over is the park,
  * not the ground.
  */
-const LID_FLOOR_M: Record<string, number> = { park: 0, pitch: 0.5, pool: 0.8 };
+const LID_FLOOR_M: Record<string, number> = { grass: -0.2, scrub: -0.2, wood: -0.2, park: 0, pitch: 0.5, pool: 0.8 };
+/** A lawn or a wood runs to hectares; split as finely as a park, one wood blew the belt's budget. */
+const OPEN_LID_STEP_M = 8;
+/** A wood is darker than the lawn beside it. */
+const WOOD_SHADE = 0.86;
+const OPEN_GREEN = new Set(["grass", "scrub", "wood"]);
 
 export interface GreeneryResult {
   /** Water surfaces at ground level: swimming pools and fountains. */
   pools: Mesh;
   /** Playing surfaces: pitches and courts. */
   pitches: Mesh;
-  /** Parks and gardens, as the ground they cover. */
+  /** Parks, gardens, lawns and woods, as the ground they cover. */
   parks: Mesh;
   stats: {
     pools: number;
@@ -269,7 +274,7 @@ export function buildGreenery(
         ? pools
         : way.kind === "pitch"
           ? pitches
-          : way.kind === "park"
+          : way.kind === "park" || OPEN_GREEN.has(way.kind)
             ? parks
             : null;
     if (!target || way.points.length < 4) continue;
@@ -303,7 +308,7 @@ export function buildGreenery(
       const from = target.positions.length / 3;
       // A pool is a few metres of flat water and its edges are already shorter
       // than the step; splitting it would spend triangles on nothing.
-      const step = way.kind === "pool" ? Infinity : LID_STEP_M;
+      const step = way.kind === "pool" ? Infinity : OPEN_GREEN.has(way.kind) ? OPEN_LID_STEP_M : LID_STEP_M;
       splitToGround(
         target,
         { x: ring[a].x, z: ring[a].z, y: heights[a] + lift },
@@ -317,13 +322,18 @@ export function buildGreenery(
       // Per triangle, not per park: a hectare of one green is the paint the
       // ground tint was, and the triangulation's own patches are the shape the
       // variation wants anyway.
-      if (way.kind === "park") {
-        paint(target, from, dapple((ring[a].x + ring[b].x + ring[c].x) / 3, (ring[a].z + ring[b].z + ring[c].z) / 3));
+      // A lawn or a wood takes one shade from its first node: its ear-clipped
+      // triangles are long slivers, and dappled one by one they read as shards.
+      if (target === parks) {
+        const shade = OPEN_GREEN.has(way.kind)
+          ? dapple(ring[0].x, ring[0].z) * (way.kind === "wood" ? WOOD_SHADE : 1)
+          : dapple((ring[a].x + ring[b].x + ring[c].x) / 3, (ring[a].z + ring[b].z + ring[c].z) / 3);
+        paint(target, from, shade);
       }
     }
 
     if (way.kind === "pitch") stats.pitches++;
-    else if (way.kind === "park") stats.parks++;
+    else if (target === parks) stats.parks++;
     else stats.pools++;
   }
 

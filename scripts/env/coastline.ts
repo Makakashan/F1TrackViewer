@@ -261,8 +261,13 @@ function wetInside(
   // points around it are tried before giving up on the ring.
   const cx = sumX / count;
   const cz = sumZ / count;
+  const { minLon, maxLon, minLat, maxLat } = field.bbox;
   for (const [dx, dz] of [[0, 0], [8, 0], [-8, 0], [0, 8], [0, -8]] as const) {
-    if (Number.isNaN(field.heightAt(plane.lon(cx + dx), plane.lat(cz + dz)))) return true;
+    const lon = plane.lon(cx + dx);
+    const lat = plane.lat(cz + dz);
+    // Past the field's edge reads as no ground too, and a pond on the rim opened a hole.
+    if (lon < minLon || lon > maxLon || lat < minLat || lat > maxLat) continue;
+    if (Number.isNaN(field.heightAt(lon, lat))) return true;
   }
   return false;
 }

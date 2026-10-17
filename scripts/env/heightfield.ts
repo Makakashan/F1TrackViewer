@@ -195,6 +195,31 @@ function trackElevationProfile(
   return smoothTerrainTrackProfile(filled, coords, TRACK_SMOOTH_RADIUS_M);
 }
 
+/**
+ * The profile as the app draws it: the manifest carries a height per centreline
+ * vertex and the ribbon runs straight between them, so the ground is burned to
+ * that line. Burned to the dense samples instead, a 500 m straight sagged under
+ * a hump of ground the ribbon then passed beneath.
+ */
+function alongChords(
+  elevations: number[],
+  vertices: [number, number][],
+  dense: [number, number][],
+): number[] {
+  const out = elevations.slice();
+  let from = 0;
+  for (let v = 1; v < vertices.length; v++) {
+    let to = from + 1;
+    while (to < dense.length - 1 && (dense[to][0] !== vertices[v][0] || dense[to][1] !== vertices[v][1])) to++;
+    for (let i = from + 1; i < to; i++) {
+      const t = (i - from) / (to - from);
+      out[i] = elevations[from] + (elevations[to] - elevations[from]) * t;
+    }
+    from = to;
+  }
+  return out;
+}
+
 // ─── burn-in ───────────────────────────────────────────────────────────────
 
 function smoothstep(t: number): number {
@@ -433,7 +458,7 @@ export function buildHeightField(options: BuildHeightFieldOptions): HeightField 
 
   const data = new Float32Array(dtm.data); // the raster stays untouched
   const coords = densify(track.coords, TRACK_SAMPLE_M, plane);
-  const elevations = trackElevationProfile(dtm, coords, track.buried);
+  const elevations = alongChords(trackElevationProfile(dtm, coords, track.buried), track.coords, coords);
   const stats = burnTrack(
     data,
     width,
