@@ -1,13 +1,6 @@
 /**
- * Audits a baked city against the height field it claims to sit on.
- *
- * docs/city-generation.md §4. "Floating building" and "track through a wall" are
- * bugs the eye finds by accident and a number finds every time, so every check
- * here reports what it measured and fails on a threshold rather than on a
- * judgement.
- *
- * The geometry checks read the shipped GLB, not the bake's own report: what is
- * on disk is what the browser draws.
+ * Audits a baked city against the height field it sits on. Every check reports a
+ * number and fails on a threshold. It reads the shipped GLB, since that is what the browser draws.
  */
 
 import { readFile } from "node:fs/promises";
@@ -59,12 +52,8 @@ const CITY_DRAW_CALL_BUDGET = 75;
 /** Quantisation moves a vertex by up to half a step; beyond this something else did. */
 const TERRAIN_TOLERANCE_M = 0.6;
 /**
- * The track's own profile is what the ground was burned to, so it should be
- * exact — but the burn sets grid *nodes*, and a reading between them is a
- * bilinear of a surface that curves where the road does. The error therefore
- * scales with the cell: 0.05 m against IGN's 3.9 m is 1.3% of a cell, and
- * 0.235 m against SRTM's 30 m is 0.8%. A fraction of the cell is the honest
- * shape of the limit; the floor keeps the fine circuits held to what they met.
+ * The burn sets grid nodes and a read between them is bilinear, so the error scales
+ * with the cell. The floor keeps fine circuits to what they met.
  */
 function trackToleranceM(cellM: number): number {
   return Math.max(0.05, cellM * 0.012);
@@ -75,11 +64,7 @@ const BURIED_LIMIT_M = 1.5;
 export const FLOATING_LIMIT_M = 0.15;
 /** Ground the corridor owns, matching the bake. */
 const TRACK_CLEARANCE_M = 8;
-/**
- * Position quantisation moves a baked vertex by up to a tenth of a metre, so a
- * wall standing exactly on the clearance line reads as just inside it. Anything
- * past this is a footprint the push did not move.
- */
+/** Quantisation moves a vertex up to a tenth of a metre; past this the push missed it. */
 const QUANTISATION_SLACK_M = 0.5;
 /** Above the ground by this much, geometry over the road is an eave, not a wall. */
 const EAVE_CLEARANCE_M = 3;
@@ -93,44 +78,22 @@ interface Check {
   fatal: boolean;
 }
 
-/** How far apart two belts may claim the ground is, where they share a point (I3). */
+/** How far apart two belts may claim the ground is, where they share a point . */
 export const SEAM_TOLERANCE_M = 0.15;
 
-/** The raw step across a breakline that is a wall rather than ripple (I7). */
+/** The raw step across a breakline that is a wall rather than ripple. */
 const BREAKLINE_STEP_M = 2;
 
 /**
- * I7's three limits, on the city belt.
- *
- * The kink ceiling sits between what point sampling gives (2.36 m on Monaco)
- * and what the box filter gives (1.55 m): the filter has to be doing real work
- * and is allowed to give some of it back at a wall. The slope band is the
- * relief the filter may not flatten. The step floor is what a surveyed wall
- * keeps — the box filter alone manages 85%, and cutting the window at the line
- * overshoots past 100%, because the raster smeared the wall in the first place.
+ * Relief limits on the city belt: kink ceiling between point-sampled and filtered,
+ * slope the filter may not flatten, and how much of a wall's step survives.
  */
 export const RELIEF_KINK_M = 2;
-/**
- * The filter must never add ripple of its own.
- *
- * An absolute metre count was the proxy for that while every node was measured.
- * Now the town's own levels are counted apart and what is left is the open
- * hillside, where the belt's window is stopped by cliffs and the filter has
- * little room to average: measured on the plain filter, with no street levels
- * anywhere, the ratio there is 0.98 — so the honest statement is that the
- * surface is no rougher than the field it came from, not a fraction of it.
- */
+/** The filter must not add ripple: open hillside may be no rougher than the field. */
 const RELIEF_KINK_RATIO = 1;
 /**
- * How far the mean slope may drift from the field's own.
- *
- * The surface is deliberately smoothed past what the belt's window does — a
- * rock face meshed at four metres still reads rough without it — and smoothing
- * costs slope: measured over Monaco, three passes cost 0.39°, and 0.65° inside
- * the harbour fixture, which is steeper than the circuit as a whole. The guard
- * is here to catch a filter that flattens the hill, not to forbid the
- * smoothing, so it sits above what the smoothing measures and below what
- * flattening would.
+ * How far mean slope may drift from the field's. Above what smoothing costs, below
+ * what flattening the hill would.
  */
 export const RELIEF_SLOPE_DEG = 1;
 export const RELIEF_STEP_KEPT = 0.95;
@@ -148,18 +111,13 @@ function check(name: string, measured: string, limit: string, ok: boolean, fatal
 const LIGHT_BEND_DEG = 15;
 /** The share of gentle-ground edges allowed past it, on each belt. */
 const LIGHT_BEND_SHARE = 0.01;
-/**
- * Gentle: under this slope over `GENTLE_WINDOW_M`. There a 15° turn per cell can
- * only be ripple; on steeper ground it can be the relief itself.
- */
+/** Gentle ground: under this slope, a 15° turn per cell can only be ripple. */
 const GENTLE_GROUND_DEG = 25;
 const GENTLE_WINDOW_M = 20;
 
 /**
- * Where the light breaks across the shipped ground: edges between two ground
- * faces whose normals disagree past `LIGHT_BEND_DEG`, split at either end or
- * turning along it. Asked of gentle ground, where the bake evens the light out;
- * steep ground keeps its creases on purpose and is reported beside it.
+ * Edges where the light breaks on gentle ground. Steep ground keeps its creases and
+ * is reported beside it.
  */
 function checkLight(
   meshes: BakedMesh[],
@@ -274,9 +232,8 @@ const OVER_RIBBON_M = 0.3;
 const OVER_RIBBON_SHARE = 0.005;
 
 /**
- * Does the drawn ground stay under the ribbon the viewer draws? Sampled across
- * its width, the ribbon built by the bake's own helper, so the two cannot
- * disagree about where the road is.
+ * Does the ground stay under the ribbon? Built with the bake's own helper, so both
+ * agree where the road is.
  */
 function checkRibbon(
   ribbon: ReturnType<typeof buildRibbon>,
@@ -314,13 +271,8 @@ function checkRibbon(
 
 /** Does the shipped terrain still sit where the field says the ground is? */
 /**
- * How close to the cut a vertex has to be before it is measured as coast rather
- * than as ground. The shoreline is cut against the surveyed line, not the
- * raster (P4.0), so along that line the two are meant to differ: the cut holds
- * the quay's height out to the line instead of ramping down to whatever the
- * raster says half a cell inland. One far-belt cell is the widest a cut vertex
- * can sit from the line it was placed on. Past it the terrain is the raster's,
- * and any disagreement is a bug.
+ * Vertices this close to the cut count as coast. The cut follows the surveyed line,
+ * not the raster, so the two differ there on purpose.
  */
 const SHORE_EXEMPT_M = 16;
 
@@ -363,23 +315,13 @@ function checkTerrain(
     return !Number.isNaN(surveyed) && surveyed > 0 !== raster > 0;
   };
 
-
-
   for (const mesh of meshes) {
     if (mesh.name !== "terrain") continue;
     const count = mesh.positions.length / 3;
 
     /**
-     * The highest vertex standing at each footprint.
-     *
-     * Skirts share a mesh with the surface they hang from, and they are not a
-     * surface: measuring one against the ground below it reports the skirt's
-     * own depth as drift. They used to be filtered by dropping anything more
-     * than 2.5 m off the field, which works only where the ground is flat —
-     * on the 4:1 face below Le Rocher the ground under a skirt's foot is
-     * metres below the ground under its top, so the foot came in at 2.47 m and
-     * passed for surface. A skirt vertex is instead recognised for what it is:
-     * something standing directly beneath another vertex of the same mesh.
+     * The highest vertex at each footprint. A vertex directly under another of the same
+     * mesh is skirt, not surface.
      */
     const topAt = new Map<number, number>();
     const footprint = (x: number, z: number): number =>
@@ -399,19 +341,13 @@ function checkTerrain(
       const z = mesh.positions[i * 3 + 2];
       // Standing under another vertex: a skirt, not the surface.
       if (y < (topAt.get(footprint(x, z)) ?? y) - 0.05) continue;
-      // Against the surface the belt was meshed from — `ground.ts` — not
-      // against the field behind it. A coarse belt averages the field over its
-      // own cell on purpose, so measuring it against a point sample of the
-      // field measures the filter and calls it drift.
+      // Measured against the belt's own filtered surface, not the raw field.
       const ground = surface.at(x, z, belt);
       if (Number.isNaN(ground)) continue;
       // The surface is held clear of the sea plane, so that is the height it is
       // meant to have where the raster reads at or below the datum.
       const delta = Math.abs(y - Math.max(ground, WATER_CLEARANCE_M));
-      // A cut vertex below the ground behind it sits either on the cap or a
-      // full `MAX_COAST_DROP_M` under the brow: the signature of the cut and of
-      // nothing else, however far the line has drifted from it. The cap itself
-      // is read after quantisation, which moves a vertex a tenth either way.
+      // A cut vertex on the cap or a full coast drop under the brow is the cut, not drift.
       const capped = ground > y + 0.1
         && (y <= SHORE_EDGE_MAX_M + 0.2 || ground - y >= MAX_COAST_DROP_M - 0.5);
       if (onCut(x, z) || capped) {
@@ -450,14 +386,7 @@ export interface Seam {
   worstAt: { x: number; z: number } | null;
 }
 
-/**
- * I3: where two belts meet, they draw the same ground.
- *
- * Measured between the two surfaces, not between their vertices: a belt hems its
- * edge with a vertical skirt, and counting a skirt's foot as a disagreement
- * reports metres of trouble that nobody can see. Both indexes drop the skirts,
- * so what is left is the ground each belt claims at a point they share.
- */
+/** Where two belts meet, they draw the same ground. Skirts are dropped from both sides. */
 export function checkSeams(
   belts: { belt: Belt; meshes: BakedMesh[] }[],
   tolerance: number,
@@ -521,17 +450,8 @@ export interface Relief {
 }
 
 /**
- * I7: the filter takes the ripple out and leaves the relief in.
- *
- * Three numbers, on the belt the filter first bites: how much a node disagrees
- * with the line between its neighbours (the aliasing the filter is for), what
- * the mean slope does (the relief it must not flatten), and how much of a
- * surveyed wall's step survives (the edge it must not ramp).
- *
- * The first two are asked of open ground only. Under the town the surface is
- * not the filter's output: it is the level the streets are built to
- * (`streets.ts`), and a flat block or a step at a retaining wall there is the
- * point rather than a filter misbehaving. Those nodes are counted and reported.
+ * The filter removes ripple and keeps relief: kink, mean slope, and surviving wall
+ * steps. Town nodes sit at street levels and are reported apart.
  */
 export function checkRelief(
   surface: Ground,
@@ -607,10 +527,7 @@ export function checkRelief(
       const lon0 = plane.lon(grid.minX + col * grid.cell);
       const lon1 = plane.lon(grid.minX + (col + 1) * grid.cell);
       const lat = plane.lat(grid.minZ + row * grid.cell);
-      // Built lines only — a retaining wall, a quay, a breakwater. A natural
-      // cliff is not a step between two flats but the rock itself, and the
-      // surface is deliberately smoothed along one (`ground.ts`), so counting
-      // those edges here would measure that smoothing and call it a failure.
+      // Built lines only. A cliff is smoothed on purpose, so counting it would flag that.
       if (!breaklines.crossesWallLonLat(lon0, lat, lon1, lat)) continue;
       rawSum += rawStep;
       keptSum += step;
@@ -639,11 +556,7 @@ interface BuildingFit {
   worstCrossingM: number;
 }
 
-/**
- * Measures the boxes against the ground independently of the bake: sample the
- * field under every footprint corner, and see how a flat-based prism actually
- * fits the slope it stands on.
- */
+/** Sample the field under every footprint corner and see how a flat-based prism fits. */
 function checkBuildings(
   buildings: BuildingsFile,
   field: HeightField,
@@ -694,14 +607,8 @@ function checkBuildings(
 }
 
 /**
- * How a piece of the shipped city meets the shipped ground.
- *
- * The old check for this read the height field under a footprint's corners and
- * compared that set's own minimum against its own maximum, which cannot be
- * true — it reported zero on every run while buildings visibly hung in the air.
- * The mistake was not the comparison but the evidence: the field is not the
- * surface the browser draws. This measures the mesh that ships against the
- * terrain triangle beneath it.
+ * How a piece of the shipped city meets the shipped ground: the mesh against the
+ * terrain triangle under it, not against the field.
  */
 export interface Standing {
   pieces: number;
@@ -718,12 +625,7 @@ export interface Standing {
 const BUILT_CELL_M = 1;
 
 /**
- * The highest built surface in each plan cell.
- *
- * A kit house on a hillside stands on the plinth the bake walls up for it, not
- * on the terrain, so measured against the ground alone it reads as floating by
- * the height of its own terrace. What it stands on is geometry that ships, and
- * this is where that geometry is.
+ * The highest built surface in each plan cell. A kit house stands on its plinth, not the terrain.
  */
 function builtSurface(meshes: BakedMesh[], names: string[]): Map<number, number> {
   const top = new Map<number, number>();
@@ -741,11 +643,7 @@ function builtSurface(meshes: BakedMesh[], names: string[]): Map<number, number>
   return top;
 }
 
-/**
- * The built surface under a point, read from the cell it stands in and the ring
- * around it. A model fitted to its plot has vertices on the plot's own edge,
- * and on the edge the cell the vertex falls in can be the one past the terrace.
- */
+/** Read the cell and its ring: a vertex on the plot edge can fall in the cell past the terrace. */
 function builtAt(built: Map<number, number>, x: number, z: number): number {
   const col = Math.round(x / BUILT_CELL_M);
   const row = Math.round(z / BUILT_CELL_M);
@@ -856,7 +754,7 @@ async function audit(circuitId: string): Promise<Check[]> {
   };
   // The same source the bake used, not the old pipeline's file.
   const buildings = fromOverpass(await fetchBuildingWays(circuitId, field.bbox));
-  // The line the terrain was cut against, rebuilt the same way (P4.0).
+  // The line the terrain was cut against, rebuilt the same way.
   const rasterShore = buildShoreDistance(field);
   const shoreWays = await fetchShoreWays(circuitId, field.bbox);
   const cutLine = buildCoastline(shoreWays, field, plane);
@@ -1015,8 +913,7 @@ async function audit(circuitId: string): Promise<Check[]> {
       }
     }
 
-    // A hull below the datum has to be over water. The berths are picked from
-    // the field (P4.2), so a boat on the quay means the two have drifted apart.
+    // A hull below the datum has to be over water, or berths and field have drifted apart.
     for (const mesh of meshes) {
       if (mesh.name !== "prop" && mesh.name !== "propDark") continue;
       for (let i = 0; i < mesh.positions.length / 3; i++) {
@@ -1089,8 +986,7 @@ async function audit(circuitId: string): Promise<Check[]> {
     ),
   );
 
-  // I7, on the city belt: the first one the filter touches, and the one the
-  // eye is closest to.
+  // Relief on the city belt: the first one the filter touches.
   const underRibbon = checkRibbon(ribbon, ground, hidden);
   checks.push(
     check(
@@ -1270,8 +1166,8 @@ const USAGE = `Usage:
   bun run env:audit <circuitId>
   bun run env:audit --all
 
-Checks a baked city against its height field and against the budgets in
-docs/city-generation.md. Exits non-zero when a fatal check fails.`;
+Checks a baked city against its height field and against each belt's
+budget. Exits non-zero when a fatal check fails.`;
 
 async function report(circuitId: string): Promise<number> {
   const checks = await audit(circuitId);
@@ -1285,13 +1181,7 @@ async function report(circuitId: string): Promise<number> {
   return failed;
 }
 
-/**
- * Every baked circuit, one line each (P4.4).
- *
- * A migration is not thirty-one separate questions. What matters is which
- * circuits fail and on what, so the sweep prints a line per circuit and the
- * failing checks under it, and comes back with the total.
- */
+/** Every baked circuit, one line each, with failing checks under it. */
 async function reportAll(): Promise<number> {
   const raw = await readFile(join(REPO_ROOT, "public", "circuits", "index.json"), "utf8");
   const parsed = JSON.parse(raw) as { id: string }[] | { circuits: { id: string }[] };

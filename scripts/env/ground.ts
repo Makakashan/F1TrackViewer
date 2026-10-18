@@ -1,28 +1,7 @@
 /**
- * The ground, as one surface — the answer to "how high is it here" that every
- * other part of the bake is required to use.
- *
- * Before this module there were two answers. The terrain meshed a belt by
- * point-sampling the height field at the belt's own step, and everything that
- * stands on the ground — buildings, kit models, props — read the field directly
- * at 3.9 m. On smooth ground the two agree. On Monaco they do not: the field's
- * high-frequency content has an RMS of 0.93 m at its own cell, and sampling
- * that at 8 m turns ±1 m of ripple into random tilt. Measured on the shipped
- * bake, 269 of 3,286 buildings stood clear of the terrain drawn under them,
- * the worst by 11.16 m, and `MAX_UNDERCUT_M` existed to hide the rest.
- *
- * Two things follow from having one surface:
- *
- * 1. **A belt averages the field rather than sampling it.** A coarse mesh that
- *    point-samples a fine field is aliasing, plainly: the kink between
- *    neighbouring faces measures 3.76 m at 8 m and 7.70 m at 16 m, against
- *    2.55 m and 4.97 m for the same nodes box-averaged, while the mean slope
- *    moves 16.6° → 16.3°. The noise goes and the relief stays. The window stops
- *    at a surveyed cliff, wall or quay (`breaklines.ts`), which is what keeps the
- *    averaging from turning one into a ramp.
- * 2. **`at()` interpolates the way the mesh triangulates.** Not bilinear — the
- *    terrain splits each cell across one diagonal (`splitsOnMain`), so a query
- *    has to pick the same triangle or it answers about a surface nobody drew.
+ * The ground as one surface that every part of the bake asks for heights. A belt
+ * box-averages the field (stopping at surveyed walls) instead of point-sampling it,
+ * and `at()` picks the same triangle the mesh draws.
  */
 
 import type { Breaklines } from "./breaklines";
@@ -51,33 +30,16 @@ export interface Ground {
   ceilingAt(belt: Belt, row: number, col: number): number;
 }
 
-/**
- * How wide a belt's filter window is, in field nodes either side.
- *
- * A belt cell that is the field's own cell needs no filter — there is nothing
- * between its samples to alias — so the core belt, at 4 m against 3.9 m, keeps
- * reading the field exactly as it did.
- */
+/** Filter window width in field nodes. A belt at the field's own cell needs none. */
 function radiusFor(cellM: number, fieldCellM: number): number {
   return Math.max(0, Math.round(cellM / fieldCellM / 2 - 0.5));
 }
 
-/**
- * Smoothing passes over a belt's own nodes, and how far each moves toward its
- * neighbours' mean. Two gentle passes rather than one hard one: the same
- * smoothing, with a wider reach and no risk of a node overshooting its own
- * neighbourhood.
- */
+/** Smoothing passes over a belt's nodes. Many gentle passes, so no node overshoots. */
 export const SMOOTH_PASSES = 16;
 /**
- * How far a node moves toward its neighbours' mean in one pass, on ground that
- * is flat and on a face.
- *
- * A DTM sees a cliff badly: a laser scan from above gets few returns off a
- * vertical face, and what it interpolates between them comes out as spikes.
- * Meshed at four metres those are drawn as a row of teeth down the rock. The
- * face's own drop survives any amount of averaging — it is the noise on top of
- * it that goes — so the steeper the ground, the harder this pulls.
+ * Pull toward neighbours per pass, flat and on a face. A DTM draws cliffs as spikes,
+ * so steeper ground pulls harder.
  */
 const FLAT_STRENGTH = 0.09;
 const FACE_STRENGTH = 0.55;
@@ -93,21 +55,12 @@ export const MAX_SLOPE_DEG = 55;
 /** Highest the ground stands where it meets the water: a quay's lip, not a cliff's brow. */
 export const SHORE_LIP_M = 3;
 
-/**
- * Highest the ground may stand `land` metres in from the shoreline: the lip,
- * then no steeper than the limit. A cliff a metre from the water drew a sliver
- * from its brow down to it.
- */
+/** Highest the ground may stand this far from the shore: the lip, then capped slope. */
 export function shoreCeiling(land: number): number {
   return land > 0 ? SHORE_LIP_M + land * Math.tan((MAX_SLOPE_DEG * Math.PI) / 180) : Infinity;
 }
 
-/**
- * Metres from each node of a grid to the nearest point where `land` changes
- * sign along a grid edge, interpolated the way the mesher cuts the shore. Each
- * node carries its nearest crossing forward and back over the grid, a sweep
- * each way, twice.
- */
+/** Metres from each node to the nearest shore crossing, swept both ways twice. */
 export function distanceToShore(land: Float32Array, width: number, height: number, cell: number): Float32Array {
   const crossX: number[] = [];
   const crossZ: number[] = [];
@@ -157,23 +110,14 @@ const SLOPE_PASSES = 64;
 /** Rounds of smoothing and limiting again after the first limit. */
 export const SETTLE_ROUNDS = 12;
 
-/**
- * Whether a cell splits across its main diagonal, (row, col) to (row + 1,
- * col + 1), given its corners in walk order. The diagonal runs along the ground
- * rather than across it: a ridge at forty-five degrees to the grid, split the
- * other way, is drawn as a saw. A corner with no height keeps the main one.
- */
+/** Split the cell along the ground, not across it, or a diagonal ridge draws as a saw. */
 export function splitsOnMain(h00: number, h01: number, h11: number, h10: number): boolean {
   return !(Math.abs(h01 - h10) < Math.abs(h00 - h11));
 }
 /** Four neighbours, not eight: a diagonal is a cell and a half away. */
 const NEIGHBOURS = 4;
 
-/**
- * Summed-area tables over the field, one for the values and one for the count
- * of valid nodes, so a window average costs four lookups regardless of its size
- * and nodata never drags a mean toward the datum.
- */
+/** Summed-area tables: a window average in four lookups, ignoring nodata. */
 function summedArea(field: HeightField): { sums: Float64Array; counts: Uint32Array } {
   const { width, height, data } = field;
   const stride = width + 1;
@@ -197,11 +141,7 @@ export function buildGround(
   breaklines?: Breaklines,
   /** The level the town is built to, where there is a town; see `streets.ts`. */
   streets?: StreetGround,
-  /**
-   * The road's level at a node, NaN off it; a node on it is held there.
-   * Averaged with the hillside beside it, the racing surface came out two
-   * metres under the ground along the harbour.
-   */
+  /** The road's level at a node, NaN off it. A node on the road is held there. */
   roadAt?: (x: number, z: number) => number,
   /** Metres from the shoreline, positive on land. */
   landAt?: (x: number, z: number) => number,
@@ -225,11 +165,8 @@ export function buildGround(
     const colFrom = clampCol(col - radius);
     const colTo = clampCol(col + radius);
 
-    // The window is walked node by node only where a surveyed line runs through
-    // it. Everywhere else — nearly everywhere — the summed-area tables answer in
-    // four lookups, so the breaklines cost the bake nothing away from a wall.
-    // The question is whether a line is *in* the window, not whether it crosses
-    // the window's diagonal: a wall clipping a corner still splits the average.
+    // Walk the window node by node only when a surveyed line is in it; elsewhere the
+    // tables answer.
     if (breaklines?.count && breaklines.near(colFrom, rowFrom, colTo, rowTo)) {
       let sum = 0;
       let count = 0;
@@ -278,14 +215,7 @@ export function buildGround(
     return grid;
   };
 
-  /**
-   * A belt's nodes, computed once. The mesher walks every node several times
-   * and the placement pass walks them again, so the table is cheaper than the
-   * window it replaces — and it is the table that makes the two agree.
-   *
-   * One node of margin on each side: the mesher asks for the ring outside the
-   * grid when it looks for solid ground beside a wet node.
-   */
+  /** A belt's nodes computed once, with a margin ring for the mesher's neighbour lookups. */
   const nodesFor = (belt: Belt): Float32Array => {
     const existing = nodes[belt];
     if (existing) return existing;
@@ -322,17 +252,8 @@ export function buildGround(
       }
     }
 
-    // A pass or two of smoothing over the belt's own nodes, on top of the
-    // filter's window over the field. The window can only average what fits
-    // inside one cell; the ripple left over is between the cells, and on a rock
-    // face meshed at four metres that is what reads as a rough surface.
-    //
-    // It lets go at a surveyed wall, and it does so gradually. Refusing to
-    // average across the line outright was tried first: the line meanders
-    // between nodes, so which neighbours a node kept flipped from node to node,
-    // and the result measured rougher than no smoothing at all — kink 3.24 m
-    // against 2.55 m. Fading the smoothing out as the wall comes near keeps the
-    // step and adds no ripple of its own.
+    // Extra smoothing between cells, fading out near a surveyed wall. A hard cut at
+    // the wall flipped neighbours node to node and came out rougher.
     const wallAway = new Float32Array(width * height).fill(FAR_FROM_WALL);
     if (breaklines?.count) {
       for (let row = -1; row <= grid.rows + 1; row++) {
@@ -447,10 +368,7 @@ export function buildGround(
                 && breaklines.crossesLonLat(lon, lat, neighbourLon, neighbourLat))
             );
           };
-          // One axis at a time, with the sea mirrored rather than read, so the
-          // axis along the shore still averages. Dropping the node instead left
-          // the brow the coast's wall hangs from unsmoothed: 31 m to 39 m
-          // between neighbours on Le Rocher.
+          // One axis at a time, mirroring the sea, so the brow along the shore still smooths.
           let sum = 0;
           let blocked = false;
           for (const [dr, dc] of [[-1, 0], [0, -1]] as const) {
@@ -471,16 +389,9 @@ export function buildGround(
     };
     for (let pass = 0; pass < SMOOTH_PASSES; pass++) smoothPass();
 
-    // No face steeper than the limit between two nodes. The DTM drops a cliff
-    // in one cell where it can, and a face that sheer, a cell wide, drew as a
-    // shard however it was lit. The excess is shared between the two nodes and
-    // spreads over a few cells; the road holds. A built wall is let through: one
-    // taller than the limit allows in a cell is a cliff's brow, not a street's.
+    // No face steeper than the limit between two nodes; built walls excepted.
     const maxRise = grid.cell * Math.tan((MAX_SLOPE_DEG * Math.PI) / 180);
-    // Off the shoreline too (`shoreCeiling`), measured to where the mesh puts
-    // the line: between two nodes either side of it. The scalar alone jumps where
-    // the surveyed line hands over to the raster, and a node it put 11 m inland
-    // stood 2 m from the lip, a 16 m wall over it.
+    // Cap height near the shore, measured to where the mesh puts the line.
     const shoreCap = new Float32Array(width * height).fill(Infinity);
     if (landAt) {
       const land = new Float32Array(width * height);

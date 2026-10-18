@@ -1,12 +1,4 @@
-/**
- * Hand corrections, versioned in git (docs/city-generation.md D1, D10).
- *
- * The generator is one recipe for every circuit; a handful of circuits need a
- * human to say what the data got wrong. Those corrections live beside the baked
- * files as `overrides.json`, they are read by the bake rather than applied to
- * its output, and every one of them is counted in the bake's report — an
- * override nobody can see applied is worse than none.
- */
+/** Hand corrections in `overrides.json`, read by the bake and counted in its report. */
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -47,11 +39,8 @@ export interface CityOverrides {
     note?: string;
   }[];
   /**
-   * Things that are there because somebody says they are: a named building the
-   * survey has no shape for, a crane, a temporary grandstand (P4.2). Either a
-   * parametric `kind` or a `model` naming a `.glb` under the repo root.
-   *
-   * Yachts are not written here — they are berthed from the harbour survey.
+   * Hand-placed props: a parametric `kind` or a `.glb` under the repo root. Yachts
+   * come from the harbour survey instead.
    */
   props?: PropPlacement[];
 }
@@ -112,10 +101,7 @@ export function pointInPolygon(lon: number, lat: number, polygon: [number, numbe
 }
 
 // application
-/**
- * Terrain edits, applied to the field after the track was burned into it: a
- * hand-set height wins over both the raster and the road.
- */
+/** Terrain edits applied after the track burn; a hand-set height wins over both. */
 export function applyTerrainOverrides(
   field: HeightField,
   overrides: CityOverrides | null,

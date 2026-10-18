@@ -1,14 +1,6 @@
 /**
- * Ambient occlusion, baked into vertex colours (docs/city-generation.md D9).
- *
- * The city and the sun are both static, so paying for occlusion once at
- * generation time and never again per frame is the only trade that makes sense
- * here — AGENTS.md puts frame rate first, and a screen-space pass costs a full
- * pass over every frame to compute something that never changes.
- *
- * What is computed is sky visibility: from each vertex, how much of the sky is
- * blocked by what stands around it. That is what darkens a courtyard, a street
- * canyon and the foot of a wall, which is the whole of the effect worth having.
+ * Ambient occlusion baked into vertex colours: the city and sun are static, so pay
+ * once at bake time instead of a screen-space pass every frame.
  */
 
 import type { HeightField } from "./heightfield";
@@ -18,24 +10,13 @@ import type { ScenePlane } from "./plane";
 /** Resolution of the occluder height map. Fine enough for a street, coarse
  *  enough to sweep in a second. */
 const CELL_M = 4;
-/**
- * Directions sampled around each vertex, and how far out along each.
- *
- * Sixteen rather than eight, and off the axes by half a step: with eight, four
- * of them ran along the occluder grid's own rows and columns, and a building's
- * shade came out as a square with its corners on the compass points.
- */
+/** Sixteen directions, offset half a step, or shade comes out square on the grid axes. */
 const AZIMUTHS = 16;
 const AZIMUTH_OFFSET = Math.PI / AZIMUTHS;
 const RANGES_M = [2, 3, 5, 8, 12, 18, 26, 38];
 /** Full shade never goes below this: an unlit crevice is a hole, not a shadow. */
 const FLOOR = 0.62;
-/**
- * Physical sky visibility is a gentle thing — a street with towers on two sides
- * still sees three quarters of the sky — and reads as no shading at all. The
- * curve keeps the open ground open and deepens the enclosed places, which is
- * what the effect is for.
- */
+/** Raw sky visibility barely shades a street, so a curve deepens enclosed places. */
 const CONTRAST = 1.7;
 
 export interface Occluders {
@@ -47,11 +28,7 @@ export interface Occluders {
   cellM: number;
 }
 
-/**
- * The skyline as a grid: the terrain, with whatever stands on it stamped on
- * top. Buildings come from the meshes that were just built, so nothing has to
- * agree twice about how tall they are.
- */
+/** The skyline as a grid: terrain plus the buildings just built. */
 export function buildOccluders(
   field: HeightField,
   plane: ScenePlane,
@@ -133,13 +110,7 @@ function segmentDistance(x: number, z: number, ax: number, az: number, bx: numbe
   return Math.hypot(x - ax - t * dx, z - az - t * dz);
 }
 
-/**
- * The skyline between the cells, not the cell the point lands in.
- *
- * Read cell by cell, the horizon a vertex sees changes in four metre jumps and
- * the shade under a building steps along the grid — square shadows on ground
- * that has none.
- */
+/** Interpolate the skyline between cells, or shadows step along the grid. */
 function heightAt(occluders: Occluders, x: number, z: number): number {
   const { heights, width, height, minX, minZ, cellM } = occluders;
   const fx = (x - minX) / cellM - 0.5;
@@ -179,11 +150,7 @@ function openSky(occluders: Occluders, x: number, y: number, z: number): number 
   return FLOOR + (1 - FLOOR) * Math.max(0, Math.min(1, openness)) ** CONTRAST;
 }
 
-/**
- * Writes a grey per vertex: 1 where the sky is open, `FLOOR` where it is walled
- * in. glTF multiplies vertex colour into the base colour, so the palette stays
- * the palette and this only shades it.
- */
+/** A grey per vertex, 1 for open sky down to `FLOOR`. glTF multiplies it into the base colour. */
 export function applyAmbientOcclusion(mesh: Mesh, occluders: Occluders): void {
   const count = mesh.positions.length / 3;
   const colors = new Array<number>(count * 3);
@@ -215,12 +182,7 @@ const ROCK_TINT: [number, number, number] = [1, 0.985, 0.96];
 const SHADE_BLUR_PASSES = 3;
 const SHADE_BLUR_STRENGTH = 0.7;
 
-/**
- * The grey the sky gives, darkened and warmed by how steep the ground is: an
- * open hillside sees the whole sky, so slope is what is left to read relief by.
- * Only where there is light left to take — what AO already darkened, slope
- * leaves alone, or the terraces' cut faces came out as soot.
- */
+/** Slope darkens and warms what AO left lit, so open hillside still shows relief. */
 function slopeShade(grey: number, slopeDeg: number): [number, number, number] {
   const flat = Math.cos((FLAT_DEG * Math.PI) / 180);
   const steep = Math.cos((STEEP_DEG * Math.PI) / 180);
@@ -234,23 +196,15 @@ function slopeShade(grey: number, slopeDeg: number): [number, number, number] {
 }
 
 export interface GroundShade {
-  /**
-   * The ground's colour at a scene point, blurred to a mesh of `cell` metres so
-   * a coarse vertex does not pick one fine detail out of many. Null where no
-   * ground was shaded near it.
-   */
+  /** The ground's colour at a point, blurred to the mesh's cell. Null if no ground is near. */
   at(x: number, z: number, cell: number): [number, number, number] | null;
   /** Lattice nodes the slope darkened, for the report. */
   sloped: number;
 }
 
 /**
- * The ground's shade as one field, whatever belt draws it.
- *
- * Read at each vertex's own height and blurred over its own mesh, a coarse belt
- * came out a different grey from the fine one beside it, and every seam showed
- * as a patch. So it is worked out once on a lattice — the sky at the shared
- * surface's height, the slope, the blur in metres — and every belt reads it.
+ * Ground shade worked out once on a lattice and read by every belt, so seams don't show as
+ * patches.
  */
 export function buildGroundShade(
   occluders: Occluders,
@@ -344,10 +298,7 @@ export function buildGroundShade(
   return { at, sloped };
 }
 
-/**
- * Paints a belt's ground from the shared field. A vertex out of the field's
- * reach — past the last node of land at the cut — works its own shade out.
- */
+/** Paint a belt's ground from the shared field; vertices beyond it shade themselves. */
 export function paintGround(
   mesh: Mesh,
   shade: GroundShade,
@@ -370,13 +321,7 @@ export function paintGround(
   mesh.colors = colors;
 }
 
-/**
- * Multiplies a merged model's own colour into the shade AO wrote.
- *
- * The occlusion pass writes `colors` from scratch, so a model's palette cannot
- * live there until after it has run. Its material is white, and this is what
- * puts the colour back.
- */
+/** Multiply a model's own colour back in after AO, which writes `colors` from scratch. */
 export function applyAlbedo(mesh: Mesh, tone: [number, number, number]): number {
   if (!mesh.colors || !mesh.albedo) return 0;
   const count = Math.min(mesh.colors.length, mesh.albedo.length) / 3;
@@ -384,11 +329,7 @@ export function applyAlbedo(mesh: Mesh, tone: [number, number, number]): number 
     const r = mesh.albedo[i * 3];
     const g = mesh.albedo[i * 3 + 1];
     const b = mesh.albedo[i * 3 + 2];
-    // A kit is painted for a toy town and the diorama is not. What is worth
-    // keeping is which part of the model this is — roof, wall, window — not the
-    // author's palette, so most of the chroma comes out and what is left is
-    // pulled toward the city's own hue. The luminance is untouched: that is the
-    // part that says roof from wall.
+    // Keep the tone (roof versus wall), drop most of the kit's chroma toward the city's hue.
     const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
     mesh.colors[i * 3] *= (grey + (r - grey) * CHROMA_KEPT) * tone[0];
     mesh.colors[i * 3 + 1] *= (grey + (g - grey) * CHROMA_KEPT) * tone[1];

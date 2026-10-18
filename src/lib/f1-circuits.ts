@@ -1,12 +1,4 @@
-/**
- * Helpers for the bacinger/f1-circuits GeoJSON dataset.
- *
- * The files are copied into `public/circuits/` by `bun run circuits:generate`
- * rather than read from GitHub at run time: a page view should not depend on a
- * third party's rate limit, and raw.githubusercontent.com answers 429 once a
- * machine has pulled enough for the day, which leaves the app with no circuits
- * and nothing the user can do about it.
- */
+/** Helpers for the bacinger/f1-circuits GeoJSON, copied into `public/circuits/` at build time. */
 
 const BASE = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/circuits`;
 const LOCATIONS_URL = `${BASE}/index.json`;

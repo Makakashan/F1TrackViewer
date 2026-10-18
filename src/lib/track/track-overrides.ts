@@ -141,11 +141,8 @@ export function withBarrierOverrides(
 }
 
 /**
- * Averages the centreline's own points where the editor asked for it. The survey's
- * wobble shows as kinked edges on a straight, and every edge is built off this line,
- * so smoothing it is the only place the kink can be taken out. Points outside the
- * edited stretch are handed back untouched: rebuilding the whole line from fresh
- * samples moved it by up to 6 cm everywhere, which is more than a kerb's tolerance.
+ * Average the centreline where the editor asked; it is the only place a kink can be
+ * taken out. Points outside the stretch stay untouched.
  */
 export function withCentrelineOverrides(
   curve: THREE.CatmullRomCurve3,

@@ -1,22 +1,6 @@
 /**
- * Props placed by coordinate (docs/city-generation.md D10, D16, P4.2).
- *
- * Everything else in the bake is derived from a measurement: the terrain from
- * the raster, the buildings from their footprints, the coast from a surveyed
- * line. A prop is the opposite — it is there because somebody says it is, and
- * the whole question is where.
- *
- * So there are two ways in and one way out. A placement either comes from the
- * overrides file, where a human wrote the coordinate down, or it is derived
- * from geometry the bake already trusts — the yachts are berthed along the
- * pontoons the harbour survey gave us, not typed in one by one. Both end up as
- * the same record, and the same builder turns it into triangles.
- *
- * The geometry is parametric rather than modelled. A prop that reads correctly
- * at 100 m is a silhouette, and a silhouette costs about seventy triangles;
- * modelling it would cost an asset pipeline, a licence and a megabyte. Where a
- * real model is wanted, a placement may name a `.glb` instead and it is merged
- * in as it stands.
+ * Props placed by coordinate: from the overrides file, or derived from trusted
+ * geometry (yachts along surveyed pontoons). Parametric shapes, or a named `.glb`.
  */
 
 import { readFile } from "node:fs/promises";
@@ -44,34 +28,19 @@ export interface PropPlacement {
   /** Overall length along the heading. Each kind has its own default. */
   lengthM?: number;
   /**
-   * Multiplier on a model's own units. glTF says metres and files disagree —
-   * the repo's own car is authored 6 cm long — so the placement says what one
-   * unit of this file is worth. Ignored by the parametric kinds, which take
-   * `lengthM` instead.
+   * Multiplier on a model's units; files disagree on what a unit is. Parametric kinds use
+   * `lengthM`.
    */
   scale?: number;
-  /**
-   * Scale the model so its longest horizontal side is this many metres. A kit
-   * is authored to its own grid — a Kenney house is 1.3 units wide — and what
-   * a placement knows is the size of the thing on the ground, not the size of
-   * somebody's unit. Wins over `scale` when both are given.
-   */
+  /** Scale so the longest horizontal side is this many metres. Wins over `scale`. */
   fitLengthM?: number;
   /**
-   * Fit the short horizontal side and the height too, in metres. A model
-   * placed by its length alone stands to its own proportion, which is the
-   * author's rather than the survey's: measured over Monaco's modelled
-   * buildings, that came out 10 % off the surveyed height at the median and
-   * covered anywhere from half to three times the plot's width.
+   * Also fit the short side and height, so a building matches its plot instead of
+   * the author's proportions.
    */
   fitWidthM?: number;
   fitHeightM?: number;
-  /**
-   * Where the model's floor goes, in scene metres. The default is the ground
-   * under the placement, which is right for a thing standing on its own plot
-   * and wrong for one covering several metres of slope — a caller that has
-   * already worked out which corner the building stands on says so here.
-   */
+  /** Floor height in scene metres. Defaults to the ground under the placement. */
   groundY?: number;
   note?: string;
 }
@@ -81,11 +50,7 @@ export interface PropResult {
   dark: Mesh;
   /** Above it: superstructure, jibs, seating decks. */
   light: Mesh;
-  /**
-   * Merged `.glb` models. Their own colour rides in `albedo` and the mesh takes
-   * a white material, so a kit keeps its palette instead of being flattened to
-   * one prop grey.
-   */
+  /** Merged `.glb` models. Their colour rides in `albedo` so a kit keeps its palette. */
   models: Mesh;
   stats: {
     placed: number;
@@ -141,12 +106,8 @@ interface Hull {
 }
 
 /**
- * Do two moored hulls occupy the same water?
- *
- * Separating axes, over the four edge normals of two rectangles. A stern-only
- * distance test — which is what the first version did — cannot see this: boats
- * berthed on facing pontoons have their sterns twenty metres apart and their
- * bows in each other, which is exactly what the harbour came out looking like.
+ * Do two moored hulls overlap? Separating axes on two rectangles: boats on facing
+ * pontoons have sterns apart and bows crossed.
  */
 function hullsOverlap(a: Hull, b: Hull): boolean {
   const axes = [
@@ -188,33 +149,10 @@ function openWaterAhead(
 }
 
 /**
- * Yachts moored stern-to along the pontoons, the way the Mediterranean does it.
- *
- * Berthed **edge by edge**, not along the deck's principal axis. The axis was
- * the first attempt and it is wrong for the shape it has to handle: a surveyed
- * pier way is often a comb — several catwalks in one ring — or an L, or a quay
- * head barely longer than it is wide, and one axis through the middle of that
- * points nowhere in particular. What it produced was a fan: boats radiating from
- * a point and crossing each other, which is what the harbour actually looked
- * like from above.
- *
- * A boat ties to the side of the pontoon it is on, so the side is what decides.
- * Every edge long enough to berth against gets a row perpendicular to itself,
- * facing away from the deck, and a straight edge therefore gives a parallel row
- * whatever the rest of the ring is doing.
- *
- * Nothing here is typed in. The decks come from the harbour survey (P4.0d) and a
- * boat is only placed where the field agrees there is water under it, which is
- * what keeps them off the quay behind the pontoon and off the moles.
+ * Yachts moored stern-to, a row per pontoon edge facing away from the deck, so a
+ * comb or L-shaped pier does not fan boats out. Placed only over water.
  */
-/**
- * Under this a berth gets a modelled boat rather than a parametric hull.
- *
- * The parametric hull is a superyacht's shape and it is right for a superyacht:
- * it takes whatever length the water in front of the berth allows. At twenty
- * metres it is the same shape shrunk, which is not what a twenty-metre boat
- * looks like — and a kit has forty of those, drawn.
- */
+/** Shorter berths get a modelled boat: a superyacht hull shrunk to 20 m looks wrong. */
 const KIT_BOAT_MAX_M = 22;
 
 export function berthYachts(
@@ -258,11 +196,7 @@ export function berthYachts(
         const sternX = a.x + ux * along + nx * BERTH_CLEAR_M;
         const sternZ = a.z + uz * along + nz * BERTH_CLEAR_M;
 
-        // A berth is as long as the water in front of it, and no longer. This
-        // is what stops the collisions: Port Hercule's pontoons stand twenty
-        // metres apart and an unclamped forty-six metre hull crossed the gap
-        // into the row facing it. Where the probe finds the far side, the gap
-        // belongs to both rows and each takes half of it.
+        // A berth is as long as the water in front of it. Facing rows split the gap.
         const room = openWaterAhead(sternX, sternZ, nx, nz, field, plane);
         const berthLength = room.hitsLand
           ? room.metres / 2 - BOW_CLEAR_M
@@ -276,10 +210,7 @@ export function berthYachts(
         const beam = lengthM / 4.6;
         along += beam + BERTH_GAP_M;
 
-        // Water under the whole hull, or the boat is sitting on the quay behind
-        // the pontoon. Checked across the beam as well as along the keel: a
-        // centreline test passed boats whose shoulder was over the rocks, and
-        // the audit counted them.
+        // Water under the whole hull, checked across the beam as well as along the keel.
         let afloat = true;
         for (let t = 0; t <= 1.0001 && afloat; t += 0.125) {
           for (const across of [-beam / 2, 0, beam / 2]) {
@@ -399,11 +330,7 @@ function facing(
   }
 }
 
-/**
- * Half-beam along the hull, stern to bow: a square transom, the full beam
- * held through the middle, and a fine raked bow. The ratios are a displacement
- * motor yacht's, which is what fills Port Hercule.
- */
+/** Half-beam stern to bow: square transom, full middle, fine raked bow. */
 const HULL_STATIONS: [number, number][] = [
   [0.0, 0.43],
   [0.1, 0.48],
@@ -418,12 +345,7 @@ const BOW_RAKE = 0.07;
 /** One deck of superstructure, in metres: a real one, whatever the boat's size. */
 const DECK_M = 2.4;
 
-/**
- * A motor yacht: a white hull with sheer and a raked bow, and one to three
- * decks of superstructure stepping back as they rise, each with a dark band of
- * glass. Every boat in the harbour is this one shape at its own length, so
- * Port Hercule reads as one fleet rather than a kit's toys among wedges.
- */
+/** A motor yacht: white hull, raked bow, one to three stepped decks with dark glass. */
 function yacht(dark: Mesh, light: Mesh, frame: Frame, lengthM: number) {
   const beam = lengthM / 4.8;
   const freeboard = 0.6 + lengthM * 0.06;
@@ -543,13 +465,8 @@ const DEFAULT_LENGTH_M: Record<PropKind, number> = {
 
 // models
 /**
- * A `.glb` merged in where it is placed.
- *
- * The parametric kinds cover what can be described in a sentence. Anything with
- * a name — the Casino, a particular sculpture — is a model somebody drew, and
- * this is the door for it. Its own transforms are baked down first, so what
- * arrives is triangles in the file's own metres, and only the placement moves
- * them.
+ * A `.glb` merged in where it is placed, for anything with a name. Its transforms
+ * are baked down first.
  */
 /** A texture, decoded once and sampled per vertex. */
 interface Texel {
@@ -578,11 +495,8 @@ function sample(texture: Texel, u: number, v: number): [number, number, number] 
 }
 
 /**
- * Reads a `.glb` and normalises it: centred on its own footprint, standing on
- * y = 0. A kit is authored to whatever origin its author liked — one boat sits
- * on the waterline, the next is centred on its hull — and a placement that has
- * to know which is which is a placement that will be wrong. After this, a
- * placement's point is always the middle of the thing and its y is the ground.
+ * Read a `.glb`, centre it on its footprint and stand it on y = 0, since authors
+ * pick any origin.
  */
 export async function readModel(path: string): Promise<Mesh> {
   const io = new NodeIO()
@@ -697,13 +611,7 @@ export function modelSize(mesh: Mesh): ModelSize {
   };
 }
 
-/**
- * How much the model is stretched on each of its own axes.
- *
- * One number for all three is a kit placed by its own proportion; three is a
- * kit fitted to a measurement. A building has a surveyed footprint and a
- * measured height and no reason to disagree with any of them.
- */
+/** Stretch per axis. Three values fit a kit to a surveyed footprint and measured height. */
 export interface ModelScale {
   x: number;
   y: number;
@@ -746,11 +654,7 @@ export async function buildProps(
   groundAt: (x: number, z: number) => number,
   plane: ScenePlane,
   repoRoot: string,
-  /**
-   * A last word on a model's own paint, by the path it was loaded from. A kit
-   * is authored in its author's palette, and some of them do not belong in
-   * this one; what to do about that is the caller's business, not the loader's.
-   */
+  /** Caller's hook to repaint a model by path, for kits in palettes that do not fit. */
   recolour?: (path: string, mesh: Mesh) => void,
 ): Promise<PropResult> {
   const dark = createMesh();

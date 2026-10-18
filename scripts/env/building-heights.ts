@@ -1,11 +1,6 @@
 /**
- * Building heights measured from the ground up (docs/city-generation.md D8).
- *
- * `building:levels` is missing or wrong across much of Monaco, and multiplying
- * a guessed level count by three gives the flat grey block model the rebuild
- * exists to replace. IGN publishes MNH — height above ground, already the
- * difference between the surface and the terrain — so a roof's height is a
- * measurement rather than an inference.
+ * Building heights from IGN's MNH (height above ground), since OSM's
+ * `building:levels` is missing or wrong across much of Monaco.
  */
 
 import type { BuildingFeature } from "../../src/lib/env/environment-types";
@@ -18,10 +13,7 @@ const MIN_MEASURED_M = 2.5;
 const MAX_MEASURED_M = 200;
 /** Fewer readings than this and the footprint is too small to trust a shape. */
 const MIN_SAMPLES = 3;
-/**
- * The roof, not the aerial. A block reads as its main mass, so the height comes
- * from the upper middle of the readings rather than the tallest one.
- */
+/** The roof, not the aerial: upper-middle of the readings, not the max. */
 const ROOF_PERCENTILE = 0.75;
 
 export interface HeightMeasurement {
@@ -38,18 +30,14 @@ export interface HeightStats {
   tallest: number;
 }
 
-/**
- * Samples MNH on the raster's own grid inside each footprint. Sampling the
- * outline instead would read the street the building stands beside.
- */
+/** Sample MNH inside each footprint; the outline would read the street. */
 export function measureBuildingHeights(
   buildings: BuildingFeature[],
   mnh: Raster | null,
   stats: { value: HeightStats },
 ): Map<string, HeightMeasurement> {
   const heights = new Map<string, HeightMeasurement>();
-  // Outside France there is no surface model, so every height is the tag the
-  // mapper wrote (P4.4). Saying so once here beats a branch at every call site.
+  // Outside France there is no surface model, so every height is the OSM tag.
   if (!mnh) {
     stats.value = { measured: 0, fellBack: buildings.length, medianDeltaM: 0, tallest: 0 };
     return heights;

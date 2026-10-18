@@ -1,14 +1,6 @@
 /**
- * Surveyed surfaces that are neither ground nor building (docs/city-generation.md P4.3).
- *
- * Trees were built here once, a canopy and a trunk each, and read as one
- * six-sided shape repeated a thousand times. They are gone and are not coming
- * back: woods are drawn as the ground they cover, not as the trees on it.
- *
- * What is drawn is areas somebody surveyed as a thing rather than as ground —
- * a park, a lawn, a wood, a fountain, a swimming pool, a pitch. Each is a lid over
- * the terrain that follows it vertex by vertex, so a park on a hillside is a
- * park on a hillside rather than a plate cut into one.
+ * Surveyed areas that are neither ground nor building: parks, lawns, woods, pools,
+ * pitches. Each is a lid following the terrain vertex by vertex.
  */
 
 import { ShapeUtils, Vector2 } from "three";
@@ -18,29 +10,11 @@ import type { GreenWay } from "./overpass";
 import type { PropPlacement } from "./props";
 import type { ScenePlane } from "./plane";
 
-/**
- * A surveyed area that is neither ground nor building: a pool, a pitch.
- *
- * Drawn as a flat lid a hair above the terrain, triangulated by fanning from
- * the centroid — these are simple convex-ish rings and a fan holds them.
- */
+/** How far a lid floats over the terrain. */
 const SURFACE_LIFT_M = 0.35;
 /**
- * Each kind on its own floor, most specific highest.
- *
- * A pitch is inside a park and a pool is inside a pitch, and once every lid sat
- * on the ground's upper envelope they landed on the same height: measured, 23
- * of 48 pitch points over a park were within 5 cm of it, and the park stood as
- * much as 0.29 m above the pitch it contains — so the football field came out in
- * shreds. Stacking them settles the argument once, in the geometry, rather than
- * per pixel in the depth buffer.
- *
- * The step has to beat the two lids' disagreement about the ground, not just be
- * positive: they sample the same envelope at different vertices, so between a
- * park's vertices its surface runs above a pitch vertex by up to 0.097 m of the
- * 4,671 measured. Half a metre carries that with a quarter of a metre spare, and
- * costs nothing to look at because what a pitch's rim stands over is the park,
- * not the ground.
+ * Each kind on its own floor, most specific highest: a pool inside a pitch inside a
+ * park. Half a metre beats the lids' disagreement about the ground.
  */
 const LID_FLOOR_M: Record<string, number> = { grass: -0.2, scrub: -0.2, wood: -0.2, park: 0, pitch: 0.5, pool: 0.8 };
 /** A lawn or a wood runs to hectares; split as finely as a park, one wood blew the belt's budget. */
@@ -64,13 +38,8 @@ export interface GreeneryResult {
 }
 
 /**
- * A shade per vertex for the triangles just added.
- *
- * One flat green over a hectare reads as paint whatever its colour, so the
- * planting is broken up by a hash of where each triangle sits — a few per cent
- * either way, invisible as a pattern and enough to stop the mass reading as one
- * poured shape. The rim takes a darker one, because a wall in daylight is
- * darker than the ground it holds up.
+ * Per-triangle shade from a hash of position, so a hectare of green is not flat paint.
+ * The rim is darker.
  */
 function paint(mesh: Mesh, from: number, shade: number): void {
   mesh.colors ??= [];
@@ -78,28 +47,12 @@ function paint(mesh: Mesh, from: number, shade: number): void {
   for (let i = from; i < vertices; i++) mesh.colors.push(shade, shade, shade);
 }
 
-/**
- * Longest edge a lid may have before it is split.
- *
- * A surface drawn as one triangle over its whole polygon is a plane, and the
- * ground under it is not: measured over Monaco's parks and pitches, the terrain
- * stood *above* the lid at 44 % of the points sampled, by up to 12 m. No depth
- * bias fixes that — the two shapes genuinely cross — so the lid is cut down to
- * something that can follow the belt's own 8 m cell.
- */
+/** Longest lid edge before it is split; one big triangle crosses the hill under it. */
 const LID_STEP_M = 3;
 /** Cap on the splitting, so a park the size of a hillside cannot run away. */
 const LID_SPLIT_DEPTH = 7;
 
-/**
- * The highest ground within half a step of a point.
- *
- * A vertex that takes the reading directly under it leaves the lid free to dip
- * below the terrain on the way to the next vertex, which is the grey stitching
- * that showed through Monaco's gardens after the split. Reading the
- * neighbourhood instead makes every vertex sit on the upper envelope of the
- * ground it spans, so the surface between them cannot go under it.
- */
+/** The highest ground within half a step, so the lid between vertices stays above the terrain. */
 function groundTop(groundAt: (x: number, z: number) => number, x: number, z: number): number {
   const reach = LID_STEP_M / 2;
   let top = Number.NaN;
@@ -117,13 +70,7 @@ interface LidPoint {
   y: number;
 }
 
-/**
- * A triangle of the lid, split until it follows the ground under it.
- *
- * The midpoint of a split edge takes the ground's own height there rather than
- * the average of its ends, which is the whole point: the average is the plane
- * that was crossing the hill in the first place.
- */
+/** Split a lid triangle until it follows the ground; the midpoint takes the ground's height. */
 function splitToGround(
   mesh: Mesh,
   a: LidPoint,
@@ -191,24 +138,12 @@ const TREE_HEIGHT_M = 7;
 /** Spacing along a surveyed tree row, which OSM gives as a line and not as trees. */
 const TREE_ROW_STEP_M = 9;
 
-/**
- * The survey's own trees, as kit models.
- *
- * Trees were built here once from a canopy and a trunk and read as one shape
- * repeated a thousand times; these are somebody else's models, and there are
- * enough of them in the kit to alternate. The positions are not scattered
- * either: OSM has 662 of Monaco's trees as nodes, which is where they are.
- */
+/** OSM's surveyed trees, placed as kit models alternating between several. */
 export function plantTrees(
   ways: GreenWay[],
   models: string[],
   plane: ScenePlane,
-  /**
-   * False where the corridor owns the ground. Monaco's street trees are mapped
-   * at the kerb, which on a race weekend is behind the barrier and in our
-   * geometry is inside the racing surface — `env:audit` counted 417 vertices of
-   * planting standing in the corridor.
-   */
+  /** False where the corridor owns the ground; street trees are mapped at the kerb. */
   clear: (x: number, z: number) => boolean,
 ): PropPlacement[] {
   if (!models.length) return [];
@@ -254,11 +189,7 @@ export function plantTrees(
 
 export function buildGreenery(
   ways: GreenWay[],
-  /**
-   * The height of the ground as it is *drawn*, not as the field reads it. A
-   * belt filters the field over its own cell, so on a slope the two differ by
-   * up to a metre — enough to sink a park under the hill it lies on.
-   */
+  /** The height of the ground as drawn, not as the field reads it. */
   groundAt: (x: number, z: number) => number,
   plane: ScenePlane,
   /** False on the road: a lawn mapped up to the kerb is drawn over the ribbon, and its depth bias wins. */
@@ -300,13 +231,8 @@ export function buildGreenery(
     const heights = ring.map((point) => groundTop(groundAt, point.x, point.z));
     if (heights.some((height) => Number.isNaN(height))) continue;
 
-    // Triangulated as the polygon it is, rather than fanned from the middle:
-    // a garden is concave often enough that a fan spills over its own edge.
-    //
-    // The contour is built in (x, −z) so that the triangulator's own winding
-    // comes out facing the sky here; taking it the other way round drew every
-    // park face-down, which is invisible and was only found by a ray that went
-    // straight through one.
+    // Triangulated, not fanned: gardens are often concave. Built in (x, -z) so the
+    // winding faces the sky.
     const contour = ring.map((point) => new Vector2(point.x, -point.z));
     for (const [a, b, c] of ShapeUtils.triangulateShape(contour, [])) {
       const from = target.positions.length / 3;
@@ -324,11 +250,7 @@ export function buildGreenery(
         0,
         offTrack,
       );
-      // Per triangle, not per park: a hectare of one green is the paint the
-      // ground tint was, and the triangulation's own patches are the shape the
-      // variation wants anyway.
-      // A lawn or a wood takes one shade from its first node: its ear-clipped
-      // triangles are long slivers, and dappled one by one they read as shards.
+      // Parks vary per triangle. A lawn or wood takes one shade: its slivers look like shards.
       if (target === parks) {
         const shade = OPEN_GREEN.has(way.kind)
           ? dapple(ring[0].x, ring[0].z) * (way.kind === "wood" ? WOOD_SHADE : 1)

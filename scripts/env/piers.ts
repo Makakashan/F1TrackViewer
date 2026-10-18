@@ -1,39 +1,17 @@
 /**
- * Port Hercule's pontoons and the breakwaters, as decks rather than as terrain.
- *
- * A pontoon in the harbour is 4–5 m wide. The core belt's cell is 4 m, so the
- * shape is narrower than two samples and no marching-squares reconstruction of
- * it can be right: cutting the terrain against the pier rings produced rounded
- * blobs the size of the influence radius, not jetties. The raster agrees it
- * cannot hold them — after the opening, only 12% of the area inside the mapped
- * rings is still land.
- *
- * So the deck is not sampled at all. The ring OSM surveyed is the outline, and
- * it is extruded directly, the way a building footprint is. A grid does not get
- * a say in a shape it cannot represent.
+ * Pontoons and breakwaters as extruded decks. At 4-5 m wide they are narrower than
+ * two grid samples, so the mapped ring is extruded instead of cut into terrain.
  */
 
 import type { HeightField } from "./heightfield";
 import type { ShoreWay } from "./overpass";
 import type { ScenePlane } from "./plane";
 
-/**
- * Smallest ring taken as a deck. Below it the ring is a mooring bollard or the
- * nose of a slipway — real, but nothing a viewer would miss.
- */
+/** Smaller rings are bollards or slipway noses. */
 const MIN_PIER_M2 = 40;
-/**
- * Above this share of raster land inside it, the ring may be a mole rather than
- * a pontoon — but only if it is also wide enough for the grid to draw, which is
- * the condition that actually matters. Port Hercule's north mole is 66% land
- * and 9 m across, and the terrain's version of it was a torn comb: how much
- * land the raster kept says nothing about whether it can hold the shape.
- */
+/** Above this raster-land share a ring may be a mole, but only if wide enough to draw. */
 const MAX_RASTER_LAND = 0.6;
-/**
- * And this is what decides it: a ring narrower than three cells of the finest
- * belt is below what marching squares can express, however solid it is.
- */
+/** Narrower than three finest cells is below what marching squares can draw. */
 const MIN_SOLID_WIDTH_M = 12;
 /** Freeboard for a deck the raster has nothing to say about — a floating pontoon. */
 const DEFAULT_DECK_M = 0.8;
@@ -42,22 +20,11 @@ const MIN_DECK_M = 0.6;
 const MAX_DECK_M = 3;
 /** Sampling step inside a ring, in metres. Finer than the narrowest deck. */
 const SAMPLE_STEP_M = 1.5;
-/**
- * How far around a deck the raster's own version of it is cleared away.
- *
- * The LiDAR sees the pontoons and the boats moored along them, and its version
- * sits a few metres off the mapped ring — so the deck and a torn strip of
- * terrain were drawn side by side down the whole of Port Hercule.
- */
+/** Clear the raster's offset copy of a deck within this distance. */
 const DECK_CLEAR_M = 8;
 /**
- * And only where the deck is the nearer of the two.
- *
- * A fixed distance to the shore does not work: the mapped coastline sits
- * several metres off the raster's own quay edge in places, so any threshold
- * generous enough to protect the quay leaves the debris and any threshold tight
- * enough to clear the debris bites notches out of the harbour wall. Which line
- * is closer does not care how far either of them is.
+ * ...and only where the deck is nearer than any shore line. A fixed shore distance
+ * either leaves debris or notches the harbour wall.
  */
 const QUAY_SEARCH_M = 24;
 
@@ -70,12 +37,7 @@ export interface PierDeck {
 
 export interface PierResult {
   decks: PierDeck[];
-  /**
-   * Is this the raster's own copy of a deck, standing next to the real one?
-   *
-   * True near a deck and away from every surveyed shore line. The terrain reads
-   * it as water so the deck is the only thing drawn there.
-   */
+  /** Is this the raster's copy of a deck? The terrain treats it as water so only the deck draws. */
   clearsTerrain(x: number, z: number): boolean;
   /** Rings that were not decked, by the reason they were not. */
   skippedOpen: number;
@@ -93,10 +55,7 @@ function ringArea(ring: { x: number; z: number }[]): number {
   return Math.abs(twice) / 2;
 }
 
-/**
- * Roughly how wide the ring is: its area over its longer side. A jetty 100 m
- * long and 5 m across comes out at 5, which is the number that matters.
- */
+/** Rough width: area over the longer side. */
 function meanWidth(ring: { x: number; z: number }[]): number {
   let minX = Infinity;
   let maxX = -Infinity;
@@ -124,13 +83,7 @@ function pointInRing(ring: { x: number; z: number }[], x: number, z: number): bo
   return inside;
 }
 
-/**
- * How high the deck sits, and how solid the ground under it is.
- *
- * The deck has to clear whatever the raster did keep, or the remnant pokes
- * through it — so this is a high percentile of the readings inside the ring
- * rather than their middle.
- */
+/** Deck height: a high percentile of the readings inside, so no remnant pokes through. */
 function deckHeight(
   ring: { x: number; z: number }[],
   field: HeightField,
@@ -222,11 +175,8 @@ export function buildPiers(
   }
 
   /**
-   * Nearest segment distance, from a uniform hash so a lookup only tests its
-   * own neighbourhood. `clearsTerrain` is asked for every node of every belt's
-   * grid — a few hundred thousand times — and a linear scan over the shore
-   * would take longer than the rest of the bake put together. Distances beyond
-   * one cell are reported as Infinity, which is all the comparison needs.
+   * Nearest segment from a spatial hash: asked for every node of every belt, so a
+   * linear scan would dominate the bake.
    */
   const index = (
     segments: { ax: number; az: number; bx: number; bz: number }[],

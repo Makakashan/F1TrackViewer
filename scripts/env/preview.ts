@@ -1,12 +1,5 @@
 /// <reference types="bun-types" />
-/**
- * Serves the baked GLBs to a bare three.js page, so a bake can be looked at
- * without waiting for the app to load it.
- *
- * The app is the real target, but a bake fails in ways a number does not show —
- * a hole in the terrain, a building through the road, a belt seam. This puts the
- * result on screen in one command.
- */
+/** Serves the baked GLBs to a bare three.js page to look at a bake in one command. */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";

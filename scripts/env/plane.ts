@@ -1,10 +1,6 @@
 /**
- * The scene's metric plane.
- *
- * Baked geometry has to land where the runtime expects it, so this mirrors
- * `src/lib/geo-utils.ts` exactly: the origin is the centre of the circuit's own
- * bounding box — not the padded environment bbox — X runs east, Z runs south,
- * and Y is the height field's metres above sea level.
+ * The scene's metric plane, mirroring `src/lib/geo-utils.ts`: origin at the circuit
+ * bbox centre, X east, Z south, Y metres above sea level.
  */
 
 const METERS_PER_DEG_LAT = 111_320;

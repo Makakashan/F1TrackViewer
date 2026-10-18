@@ -4,22 +4,8 @@ import type { ScenePlane } from "./plane";
 import type { StreetWay } from "./overpass";
 
 /**
- * The level the town is built to, read off its streets.
- *
- * A DTM is bare earth, and in a town almost none of it is ever seen: what the
- * eye reads as ground is the streets, the squares and the courtyards between
- * the blocks. Monaco's bare earth climbs fifteen metres from the quay to
- * Avenue d'Ostende, and every one of them is buildings and retaining walls —
- * meshed as a height field it comes out as a hillock standing between the
- * blocks, which is what made the city read as a snowdrift.
- *
- * So the streets are laid into a raster of their own, every cell holding the
- * level of the street that runs through it; the gaps between them — the blocks
- * — are filled by letting those levels diffuse into the empty cells, and the
- * result is smoothed. That is a surface with no ridge or spike of its own: away
- * from a street it is the average of the streets around it, which is the level
- * a block is built to, and beyond the network's reach it fades out and the bare
- * field comes back, which is the open hillside above the town.
+ * The level the town is built to, read off its streets. Bare earth between blocks
+ * is never seen, so street levels diffuse into the blocks and fade out on open hillside.
  */
 
 /** Anchors this far apart along a way. Finer than the raster, so no cell is missed. */
@@ -31,36 +17,18 @@ const FULL_M = 35;
 /** Past this the field is on its own again. */
 const REACH_M = 90;
 /**
- * A correction of this much is a block's ground being levelled, which is what
- * the streets are for. Past `STEEP_M` it is not a block at all — it is a cliff
- * or a retaining wall the network happens to run along the top of, and rewriting
- * that is how the coast came out shredded. Between the two the town lets go.
+ * Corrections up to this level a block. Past `STEEP_M` it is a cliff or wall, and
+ * the town lets go in between.
  */
 const GENTLE_M = 4;
 const STEEP_M = 12;
-/**
- * A correction under this is not worth making. The raster is eight metres and
- * the core belt four, so a half-metre nudge lands as a facet per raster cell —
- * visible as blotches on ground that was already right.
- */
+/** Smaller corrections draw as blotches per raster cell. */
 const DEAD_M = 0.4;
 const ALIVE_M = 0.9;
-/**
- * Slope, in degrees, at which the town stops speaking. A street's level says
- * what the block beside it is built to; it says nothing about the cliff the
- * block stands on, and laying it over one carved the coast into steps.
- */
+/** Slope where the town stops correcting; a street says nothing about the cliff below. */
 const FLAT_DEG = 15;
 const CLIFF_DEG = 28;
-/**
- * How far a surveyed wall or cliff holds the town off.
- *
- * The level does not spread across a wall, so the two sides settle at different
- * heights — and the boundary between them is a raster edge, which drew the step
- * as a staircase of eight-metre treads along the quays. The field already holds
- * that step itself (the filter's window stops at the line), so the town simply
- * lets go as it comes near one.
- */
+/** How far a surveyed wall holds the town off; the field already keeps that step. */
 const WALL_CLEAR_M = 6;
 const WALL_FULL_M = 20;
 /** Diffusion passes: enough to cross a block, cheap enough to run every bake. */
@@ -69,20 +37,11 @@ const FILL_PASSES = 60;
 const BLUR_PASSES = 2;
 /** Smoothing passes over how much say the town has, so it fades in over cells. */
 const WEIGHT_BLUR_PASSES = 3;
-/**
- * Below this the town is not speaking, it is whispering: the smoothing leaves a
- * long tail of hundredths over open ground, and a correction that small is
- * ripple added to hillside the filter has already settled.
- */
+/** Ignore smaller corrections: they are ripple added to settled hillside. */
 const MIN_SAY = 0.05;
 /** Where the circuit's own level is laid, measured from its centreline. */
 const TRACK_OFFSETS_M = [-7, -3.5, 0, 3.5, 7];
-/**
- * The track's own ground: the field is burned to its profile out to here
- * (`heightfield.ts`, half width and verge), and the town lets go of it over
- * `TRACK_FADE_M` beyond. Read off an eight-metre raster, a street beside the
- * road lifted the racing surface by up to a metre along the harbour.
- */
+/** The track's own ground; the town lets go of it over `TRACK_FADE_M` beyond. */
 const TRACK_OWN_M = 8;
 const TRACK_FADE_M = 8;
 /** The classes that are ground a car or a crowd stands on. */
@@ -160,11 +119,7 @@ export function buildStreetGround(
     }
   }
 
-  // Across the road, not along its middle: the corridor is fourteen metres and a
-  // street one cell off it would otherwise own the ground the cars drive on. At
-  // the centreline's height all the way across — a road is level from kerb to
-  // kerb, and seven metres out the field is the slope beside it, which lifted
-  // the racing surface by a metre along the harbour.
+  // Across the road at the centreline's height: a road is level kerb to kerb.
   for (let i = 1; i < track.length; i++) {
     const ax = plane.x(track[i - 1][0]);
     const az = plane.z(track[i - 1][1]);
@@ -313,10 +268,7 @@ export function buildStreetGround(
 
   let next = new Float64Array(level.length);
   for (let pass = 0; pass < FILL_PASSES + BLUR_PASSES; pass++) {
-    // The last passes smooth the ordinary streets too: a street held hard
-    // against a settled block is a ridge along its kerb, drawn as an eight
-    // metre step. The circuit's own cells are never smoothed — the road is
-    // drawn at its own level and the ground has to meet it there.
+    // The last passes smooth ordinary streets too. The circuit's own cells never are.
     const hold = pass < FILL_PASSES;
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
@@ -339,12 +291,7 @@ export function buildStreetGround(
     next = swap;
   }
 
-  // The bare field at the raster's own resolution, and from it the two things
-  // the town is judged by: how steep the ground is, and how far the town is
-  // asking it to move. Both are read off the raster rather than per query — on
-  // a DTM as rough as this one, gating on a point sample makes the correction
-  // flicker from node to node, and a flickering correction is drawn as a
-  // staircase of cells.
+  // Steepness and requested correction read off the raster, not per query, or it flickers.
   const bare = new Float64Array(rows * cols);
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {

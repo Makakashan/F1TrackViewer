@@ -1,9 +1,6 @@
 /**
- * Bakes a circuit's city into GLB (docs/city-generation.md D6, D13, D14).
- *
- * Everything here reads the one height field, so the terrain, the buildings,
- * the water and the track ribbon cannot disagree about where the ground is.
- * The browser loads the result; it does not build it.
+ * Bakes a circuit's city into GLB. Everything reads one height field, so terrain,
+ * buildings, water and the track agree on where the ground is.
  */
 
 import { mkdir, writeFile, readFile } from "node:fs/promises";
@@ -105,62 +102,32 @@ const DEFAULT_TRACK_HALF_WIDTH_M = 6;
 /** Ground the track corridor owns; a footprint inside it is pushed out. */
 const TRACK_CLEARANCE_M = 8;
 /**
- * How far a tree stands from the racing line.
- *
- * Wider than the corridor: a kit tree is a canopy on a trunk, and its branches
- * reach past the point it is planted at. Monaco's street trees are mapped at
- * the kerb, so without this the lap ran through the planting — `env:audit`
- * counted 417 vertices of it inside the corridor.
+ * Wider than the corridor: a tree's canopy reaches past its trunk, and Monaco's
+ * street trees are mapped right at the kerb.
  */
 const TREE_CLEARANCE_M = 11;
 /** How far a terrain edge drops where its neighbour is missing, to hide the seam. */
 const SKIRT_M = 3;
 /**
- * The bottom of the block the landscape is cut from.
- *
- * A skirt is the wrong answer at the edge of the bbox: three metres of hem under
- * a hill that stands 452 m up reads as a sheet of paper, not as ground. The rim
- * goes to one flat floor instead, deep enough to look like rock and shallow
- * enough that the model does not become a column — the terrain's own relief is
- * 455 m, so a 60 m block is under a seventh of it.
+ * Bottom of the block the landscape is cut from. A thin skirt under a tall hill
+ * reads as paper, so the rim drops to one flat floor instead.
  */
 const PLINTH_FLOOR_M = -60;
 /** Where the step at the shoreline and a pontoon deck's walls end, under the sea plane. */
 const SHORE_FOOT_M = -3;
 /**
- * Highest the land is allowed to be at the water's edge itself.
- *
- * The cut vertex used to inherit the height of the dry node behind it, which is
- * right for a quay — a 5 m wall stays 5 m to its lip — and wrong for a cliff:
- * Le Rocher rises 40 m within one cell of the sea, so its edge inherited the
- * clifftop and the shoreline came out as a palisade of slabs, neighbouring
- * vertices 30 m apart. Capping the edge low puts the waterline at the water and
- * leaves the rise to the ground behind it, which is where the cliff belongs.
- * A quay is barely affected: 3 m of its own height it keeps.
+ * Highest the land may be at the water's edge. Without the cap a cliff's edge took
+ * the clifftop height and the shore came out as a palisade of slabs.
  */
 export const SHORE_EDGE_MAX_M = 3;
 /**
- * How far the land is held above the sea plane.
- *
- * The water is one quad at the datum (`bakeWater`), so any ground the DTM reads
- * at y = 0 is co-planar with it and the depth buffer decides per pixel which of
- * the two is in front. That decision moves with the camera, so the waterline
- * changed shape as the view pulled back: 7,625 m2 of Larvotto's beach and the
- * Monte-Carlo Bay foreshore sit within 15 cm of the datum. Holding the surface
- * a fixed step above the plane costs nothing at any other height and leaves the
- * coast where the cut put it, which is the only thing that should decide it.
+ * Land held this far above the sea quad, so a beach at y = 0 does not z-fight
+ * with the water as the camera moves.
  */
 export const WATER_CLEARANCE_M = 0.25;
 /**
- * How far the surveyed line may say "water" before the raster stops overruling
- * it, and how far inland the raster has to be to do the overruling.
- *
- * The signed distance is to the *nearest* segment, so at a concave corner — a
- * pier meeting its quay — that segment's wet side sweeps back over ground
- * behind it and punches a hole. At the root of Port Hercule's T pier the line
- * reads -1.8 m with +2.4 and +1.0 either side of it, while the raster has it
- * 9.6 m inland. A hole a metre or two deep in ground the raster is confident
- * about is a corner artefact, not a coastline.
+ * How far the surveyed line may say "water" before the raster overrules it. A pier
+ * meeting its quay punches a shallow false hole at the corner.
  */
 const SURVEYED_HOLE_M = 2.5;
 const RASTER_CONFIDENT_M = 8;
@@ -177,16 +144,12 @@ const SEABED_HIDDEN_M = -2;
 const MIN_BUILDING_HEIGHT_M = 2;
 
 /**
- * How far the cut may sit below the land behind it. Capping a cliff at
- * `SHORE_EDGE_MAX_M` hung its whole face on one row of triangles, which drew
- * the coast as a fan of slabs; the drop belongs to the skirt instead.
+ * How far the cut may sit below the land behind it; the rest of the drop goes to
+ * the skirt, or a cliff face hangs on one row of triangles.
  */
 export const MAX_COAST_DROP_M = 6;
 
-/**
- * The hue a merged model's colour is pulled toward: the palette's building
- * colour, divided by its own luminance so only its hue survives.
- */
+/** The palette's building hue, luminance divided out, that merged models are pulled toward. */
 const MODEL_TONE: [number, number, number] = (() => {
   const hex = DIORAMA_COLORS.building.replace("#", "");
   const rgb = [0, 2, 4].map((at) => Number.parseInt(hex.slice(at, at + 2), 16) / 255);
@@ -218,37 +181,17 @@ interface TerrainResult {
 
 /** The finest lattice any belt samples, so every belt sees the same fill. */
 const POND_CELL_M = BELT_CELL_M.core;
-/**
- * Largest patch of water enclosed by land that is taken for a hole rather than
- * a basin. Port Hercule's is about 60 m2; the smallest thing here that is
- * really water is the marina, and that reaches the sea.
- */
+/** Enclosed water smaller than this is a hole to fill, not a basin. */
 const MIN_POND_M2 = 400;
 /** How much land a filled hole reports. Enough that no cell edge crosses zero inside it. */
 const POND_FILLED_SCALAR_M = 2;
-/**
- * Water with high land this many lattice nodes away on both sides is narrower
- * than the grid can draw. Between a mole and Le Rocher it came out as a slot
- * eight metres wide and thirty deep, the cut raised with the cliff on either
- * side. Only where it is raised: between two pontoons the cut stays at the cap
- * and the gap is water.
- */
+/** Water with high land this many nodes away on both sides is too narrow to draw. */
 const PINCH_NODES = 2;
 const PINCH_LAND_M = SHORE_EDGE_MAX_M + MAX_COAST_DROP_M;
 
 /**
- * Water that never reaches the open sea, and is small.
- *
- * The signed distance is to the *nearest* segment, so where a pier meets its
- * quay that segment's wet side sweeps back over the ground behind it and opens
- * a hole. Overruling it by asking the raster works only in a band tight enough
- * to miss the deepest part of the hole, and a looser band hands the shoreline
- * back to the grid — the quay came back as a sawtooth twice that way.
- *
- * Enclosure settles it without a threshold on depth at all. A patch of water
- * ringed by land is either a basin or an artefact, and the real basins all
- * reach the sea, so a small one that does not is an artefact. The shoreline
- * itself is connected to the sea by construction and cannot be touched by this.
+ * Small water that never reaches the open sea. Real basins all reach the sea, so
+ * these are artefacts of the cut at pier corners and get filled.
  */
 function findEnclosedWater(
   scalarAt: (x: number, z: number) => number,
@@ -367,50 +310,25 @@ export interface BeltBlocks {
   blockBelt: Uint8Array;
   beltOfCell(row: number, col: number, cell: number): Belt;
   /**
-   * Is this position a node the fine belt gave up to the coarse one?
-   *
-   * True on a block boundary the two sides disagree about, and only between the
-   * coarse lattice's own nodes — those it shares outright. The audit asks the
-   * same question the bake did, from the same map, rather than keeping a second
-   * copy of the rule.
+   * Is this a node the fine belt gave up to the coarse one? Shared with the audit so
+   * the rule lives in one place.
    */
   conformsAt(x: number, z: number): boolean;
   /**
-   * The coarsest cell among the blocks a point touches. Two belts sharing a
-   * seam point touch the same blocks, so anything scaled by it agrees there.
+   * The coarsest cell among the blocks a point touches. Both sides of a seam see the same value.
    */
   coarsestCellAt(x: number, z: number): number;
 }
 
 /**
- * Which belt owns which patch of ground.
- *
- * Decided once, on the coarsest grid, so the finer grids divide into it exactly.
- * Deciding per cell instead leaves a strip that no belt claims — the 8 m cell is
- * outside its belt by its own centre while the 16 m cell covering it is inside
- * by its own, and the gap shows as a hairline of sea along the boundary.
- *
- * Blocks the water's edge runs through are grown by one block in every
- * direction and the whole band is drawn at the finest cell. Both halves matter.
- * The cut is only as fine as the grid it is sampled on, so a 16 m cell leaves
- * the coast in 16 m steps however smooth the line behind it. And the growing is
- * what closes the coast: two belts cut the same waterline from their own nodes,
- * so their cut polylines meet the shared block edge at different points and
- * leave a sliver of open water between them, which the grid skirt does not
- * close because it only fires on a dry rim. Larvotto's breakwaters came out as
- * torn crescents for exactly this reason. Grown by a block, the boundary lies
- * either wholly at sea, where neither side draws anything, or wholly on dry
- * ground, where the skirt hides it as it hides every other boundary.
+ * Which belt owns which patch of ground, decided on the coarsest grid so the finer
+ * ones divide into it exactly. Coast blocks grow by one and use the finest cell.
  */
 export function buildBeltBlocks(
   field: HeightField,
   plane: ScenePlane,
   corridor: Corridor,
-  /**
-   * Metres from the shoreline the mesh cuts along, positive on land. The raster
-   * alone missed shore the surveyed line draws — a breakwater it saw as sea —
-   * and two belts cut that shore each from their own grid, in teeth.
-   */
+  /** Metres from the shoreline, positive on land. The raster alone misses breakwaters. */
   landAt?: (x: number, z: number) => number,
 ): BeltBlocks {
   const minX = plane.x(field.bbox.minLon);
@@ -430,12 +348,7 @@ export function buildBeltBlocks(
       if (straddlesWater(field, plane, x, z, blockM, landAt)) straddles[row * blockCols + col] = 1;
     }
   }
-  // A rock face is the other place a coarse cell cannot hold the ground. At
-  // sixty degrees a 16 m cell drops fourteen metres in one step, and a row of
-  // them along a headland reads as sawteeth rather than a cliff; measured on
-  // the shipped bake, 1,000 of far's 5,465 terrain triangles fell that steeply.
-  // So a steep block is meshed at the fine cell too, grown by a ring like the
-  // coast so the face and its brow are one piece.
+  // Steep blocks get the fine cell too: a coarse cell on a cliff reads as sawteeth.
   const steep = new Uint8Array(blockRows * blockCols);
   for (let row = 0; row < blockRows; row++) {
     for (let col = 0; col < blockCols; col++) {
@@ -545,10 +458,7 @@ export function buildBeltBlocks(
         if (cell < finest) finest = cell;
       }
     }
-    // Every node along the boundary takes the coarse belt's chord, the nodes of
-    // the coarse lattice included: those sit at t = 0 or t = 1 and so take one
-    // of its endpoints outright, which is still the coarse belt's height and
-    // not this belt's own.
+    // Boundary nodes take the coarse belt's chord, so the two sides cannot split.
     return coarsest > finest;
   };
 
@@ -587,21 +497,12 @@ function straddlesWater(
   return false;
 }
 
-/**
- * How far two terrain faces may disagree before their corner splits. The ground
- * then takes the faces' smoothed light (`smoothLight`), so the split survives
- * only at a retaining wall's foot, where a built step keeps its edge.
- */
+/** Faces disagreeing by more than this split their corner. Only a wall's foot keeps the edge. */
 const TERRAIN_CREASE_DEG = 15;
-/**
- * The road's own ground: within the burned half width of the centreline, and
- * level with it across — which a tunnel's hill is not, so the vault is left out.
- */
+/** The road's own ground. A tunnel's hill is not level across, so the vault is left out. */
 const ROAD_HELD_M = DEFAULT_TRACK_HALF_WIDTH_M + DEFAULT_VERGE_M;
 /**
- * The level a node on the road is held at, or NaN off it. Under the ribbon the
- * level is the road's whether or not the field was burned that wide: a cutting's
- * bank left there came up through the tarmac as shards by the tunnel's mouth.
+ * The road level at a node, or NaN off it. Banks left under the ribbon poked through the tarmac.
  */
 export function roadLevel(
   corridor: Corridor,
@@ -619,11 +520,7 @@ export function roadLevel(
   };
 }
 
-/**
- * Within a cell of a retaining wall the crease stays: that step is built and
- * sharp. A cliff is the ground itself and shades as it does — creased along its
- * surveyed line, the brow drew a zigzag — and a quay's edge is the cut's.
- */
+/** Within a cell of a retaining wall the crease stays sharp; a cliff shades like ground. */
 export function atSurveyedWall(
   breaklines: Breaklines,
   plane: ScenePlane,
@@ -644,12 +541,7 @@ const LIT_FACE_MIN_NY = 0.3;
 /** Passes of averaging each lit place's normal with its neighbours'. */
 const LIGHT_SMOOTH_PASSES = 3;
 
-/**
- * Each lit vertex takes the area-weighted normal of the dry, unwalled faces
- * around its place, summed over every belt so both sides of a seam read the
- * same. Read off a filtered copy of the ground instead, the light disagreed
- * with the faces it fell on and a cliff came out a chequerboard.
- */
+/** Area-weighted normals summed across belts, so both sides of a seam light the same. */
 function smoothLight(parts: [Mesh, Uint8Array][]): void {
   const key = (x: number, z: number) => `${Math.round(x * 100)},${Math.round(z * 100)}`;
   const sums = new Map<string, [number, number, number]>();
@@ -714,10 +606,8 @@ function smoothLight(parts: [Mesh, Uint8Array][]): void {
 const ROAD_VERTEX_KEY = 1e12;
 
 /**
- * How much land there is at a point: metres from the surveyed shoreline where
- * there is one, and otherwise the smoothed raster distance — where no surveyed
- * line reaches, a third of a kilometre of Larvotto among others. The ground and
- * its mesh both read this, so they agree on where the sea starts.
+ * Land at a point: distance to the surveyed shore where there is one, otherwise the
+ * smoothed raster distance. Ground and mesh both read this.
  */
 export function buildLandAt(
   field: HeightField,
@@ -727,10 +617,8 @@ export function buildLandAt(
 ): (x: number, z: number) => number {
   const rasterShore = buildShoreDistance(field);
   return (x, z) => {
-    // The raster's own copy of a deck is not land: the LiDAR saw the pontoon and
-    // the boats tied to it, a few metres off where the ring is mapped, so the
-    // deck and a torn strip of terrain were drawn side by side. The deck is the
-    // better answer and it is the only one kept.
+    // The raster's copy of a deck is not land: it saw the pontoon and the boats, off
+    // from where the ring is mapped. Keep only the deck.
     if (piers.clearsTerrain(x, z)) return -DECK_CLEARED_SCALAR_M;
     const surveyed = coast.signedDistance(x, z);
     const raster = rasterShore.at(plane.lon(x), plane.lat(z));
@@ -780,19 +668,8 @@ function bakeTerrain(
   const { blockM, blockRows, blockCols, blockBelt, beltOfCell } = blocks;
 
   /**
-   * A height for a node the terrain is going to stand on, on any belt's grid.
-   *
-   * The raster and the surveyed line disagree by a few metres in places, so a
-   * node the line puts on land can be one the raster calls sea and has no
-   * height for. Rather than drop it to the datum — which ramps the quay into
-   * the water like a beach — it takes the nearest dry reading, widening until
-   * it finds one.
-   *
-   * It takes the belt rather than closing over one because a seam node has to
-   * ask what the *coarser* belt thinks the ground is: each belt averages the
-   * field over its own cell (`ground.ts`), so the same place has a different
-   * height on each, and a chord drawn from the wrong belt's numbers is a chord
-   * the other side never drew.
+   * A height for a node the terrain stands on. Where the raster says sea but the line
+   * says land, take the nearest dry reading rather than ramping into the water.
    */
   const solidHeightOn = (belt: Belt, row: number, col: number): number => {
     const own = ground.nodeAt(belt, row, col);
@@ -830,8 +707,7 @@ function bakeTerrain(
   };
 
   /**
-   * The ground carries on under the water instead of ending at it, so there is
-   * no edge to fall through: past the shoreline it is a seabed falling away.
+   * The ground continues under the water as a falling seabed, so there is no edge to fall through.
    */
   const surfaceHeightOn = (belt: Belt, row: number, col: number): number => {
     const land = landOn(belt, row, col);
@@ -861,22 +737,8 @@ function bakeTerrain(
   };
 
   /**
-   * The height a belt actually draws at one of its own nodes.
-   *
-   * Away from a boundary that is the belt's own reading of the surface. On a
-   * boundary with a coarser belt it is the coarse belt's — its node outright at
-   * a block corner, the chord between two of its nodes anywhere else along the
-   * line. Read the coarse belt's *drawn* height rather than its raw one, so a
-   * node where three belts meet resolves through the coarsest of them: a chord
-   * to a point the other side never draws is how the two part company.
-   *
-   * A belt boundary is a T-junction: the coarse side draws one straight chord
-   * across 8 or 16 m while the fine side follows the ground every 4 m. On
-   * Monaco the two disagree by metres, and the skirt that stops it being a hole
-   * leaves it a ledge instead — a step through the middle of flat ground. So on
-   * a shared boundary the fine side gives up its own readings and takes the
-   * coarse one's. Every cell size divides every coarser one, so the coarse node
-   * a chord runs between is always a node of the fine grid too.
+   * The height a belt draws at its own node. On a boundary with a coarser belt it takes
+   * the coarse belt's chord, or the seam becomes a step on flat ground.
    */
   const drawnHeightOn = (belt: Belt, row: number, col: number): number => {
     const cell = BELT_CELL_M[belt];
@@ -920,10 +782,7 @@ function bakeTerrain(
 
     const ownHeightAt = (row: number, col: number): number => surfaceHeightOn(belt, row, col);
 
-    /**
-     * The height this belt draws at one of its nodes, and the record of what
-     * the boundary cost. `drawnHeightOn` holds the rule; this counts.
-     */
+    /** This belt's drawn height, plus a count of what the boundary cost. */
     const surfaceHeightAt = (row: number, col: number): number => {
       const drawn = drawnHeightOn(belt, row, col);
       const own = ownHeightAt(row, col);
@@ -1061,9 +920,8 @@ function bakeTerrain(
     /** How far in from its cell's edges a corner has to be: one on an edge would leave the neighbour's edge straight. */
     const CORNER_MARGIN_M = 0.25;
     /**
-     * The surveyed corner nearest a cell's lip, as a lip vertex and its foot.
-     * Without it the lip takes the shortcut across the turn and the leftover
-     * wedge reads as a tooth.
+     * The surveyed corner nearest a cell's lip. Without it the lip cuts the corner and leaves a
+     * tooth.
      */
     const shoreCorner = (row: number, col: number, inTop: number, outTop: number): [number, number] | null => {
       const p = grid.mesh.positions;
@@ -1094,8 +952,8 @@ function bakeTerrain(
     };
 
     /**
-     * Where the shoreline crosses a cell edge: the ground's lip, and the foot of
-     * the step under it. Both cells either side share them, so the step cannot part.
+     * Where the shore crosses a cell edge. Both neighbouring cells share it, so the step cannot
+     * part.
      */
     const shoreVertices = (rowA: number, colA: number, sA: number, rowB: number, colB: number, sB: number): [number, number] => {
       const key =
@@ -1113,11 +971,8 @@ function bakeTerrain(
     };
 
     /**
-     * A cell the shoreline crosses, drawn as its land side, a step down at the
-     * line and its seabed side, so the waterline is the shore's own line rather
-     * than wherever a slope across the cell met the sea plane. A saddle — land on
-     * two opposite corners — is two corners of land with the sea between them:
-     * drawn whole, it was a face from the clifftop to the seabed across the water.
+     * A cell the shore crosses: land side, a step down at the line, then seabed, so the
+     * waterline follows the shore instead of wherever a slope met the sea plane.
      */
     const splitByShore = (row: number, col: number, lands: number[]): void => {
       const dryAt = (i: number) => lands[i % 4] > 0;
@@ -1287,19 +1142,8 @@ function bakeTerrain(
 }
 
 /**
- * The pit a portal takes out of the hillside, walled along its own rim.
- *
- * The terrain drops the cells whose centre falls in a mouth's void, and what
- * that leaves is a hole whose edge is the grid's, not the void's: a cell is in
- * or out by its centre, so the rim runs up to half a cell past the nominal
- * width and follows the belt's own lattice. Closing it with a rectangle sized
- * from the void's numbers is what left daylight either side of the arch — the
- * rim was two metres wider than the wall built to cover it.
- *
- * So the wall is built from the rim itself: every edge where a dropped cell
- * meets a built one gets a vertical quad, from the ground the built side draws
- * down to the cutting's floor. Nothing to keep in step with, and it cannot be
- * short.
+ * Walls round the pit a portal cuts out of the hillside, built from the dropped
+ * cells' own rim, so they cannot come out shorter than the hole.
  */
 function addVoidWalls(
   mesh: Mesh,
@@ -1321,10 +1165,8 @@ function addVoidWalls(
     const floor = hollow.floorAt(centreX, centreZ);
     for (const [dr, dc] of [[0, 1], [0, -1], [1, 0], [-1, 0]] as const) {
       if (!built.has((row + dr) * stride + col + dc)) continue;
-      // The two grid nodes the dropped cell and its neighbour share.
-      // A rim that crosses the bore is a wall across the road: the sleeve
-      // covers that stretch, and what shows through the arch has to be the
-      // tunnel rather than the far side of the excavation.
+      // The two grid nodes the dropped cell and its neighbour share. A rim across the
+      // bore would wall off the road, and the sleeve covers that stretch.
       const edgeX = minX + (col + 0.5 + dc * 0.5) * cell;
       const edgeZ = minZ + (row + 0.5 + dr * 0.5) * cell;
       if (hollow.boreAt(edgeX, edgeZ)) continue;
@@ -1356,14 +1198,8 @@ function addVoidWalls(
 }
 
 /**
- * One belt's stretch of the wall round the block the landscape is cut from,
- * down to one floor.
- *
- * The top of the wall is the rim vertex of whichever belt owns that stretch,
- * so the two meet exactly rather than nearly; where the rim is sea it is the
- * datum, which is where the water quad lies. Land that reads below the datum —
- * a metre of beach — takes the datum too, so the wall is never under the water
- * it is supposed to hold in.
+ * One belt's stretch of the wall round the block, down to the floor. The top is
+ * that belt's rim vertex, or the datum where the rim is sea.
  */
 function addPlinth(
   mesh: Mesh,
@@ -1462,7 +1298,6 @@ function addTerrainSkirts(
       const h01 = surfaceHeightAt(row + 1, col);
       const h11 = surfaceHeightAt(row + 1, col + 1);
 
-
       if (!built(row - 1, col) && !offGrid(row - 1, col)) {
         addFlatQuad(mesh, x0, h00, z0, x1, h10, z0, x1, h10 - SKIRT_M, z0, x0, h00 - SKIRT_M, z0);
       }
@@ -1487,10 +1322,8 @@ function addTerrainSkirts(
 }
 
 /**
- * Where the model ends on its far sides: the far belt's last whole cell. Every
- * belt and the sea stop there, at the plinth's wall — a finer belt run to its own
- * last cell stood up to 12 m outside the wall, and the sea run to the bbox stuck
- * out of it as a blue line.
+ * Where the model ends on its far sides: the far belt's last whole cell. Every belt
+ * and the sea stop there, at the plinth.
  */
 function rimEnd(start: number, end: number): number {
   return start + Math.floor((end - start) / BELT_CELL_M.far) * BELT_CELL_M.far;
@@ -1509,12 +1342,7 @@ function modelRim(field: HeightField, plane: ScenePlane): { minX: number; maxX: 
 }
 
 // water
-/**
- * One quad at the datum. D15 puts sea level at y = 0 everywhere, and the ground
- * only dips below it in a handful of cells, so a plane under the whole bbox
- * costs two triangles and needs no coastline of its own — the terrain's edge is
- * the coastline.
- */
+/** One quad at sea level. The terrain's edge is the coastline, so the water needs none. */
 function bakeWater(field: HeightField, plane: ScenePlane): Mesh {
   const mesh = createMesh();
   const { minX: x0, maxX: x1, minZ: z0, maxZ: z1 } = modelRim(field, plane);
@@ -1522,13 +1350,7 @@ function bakeWater(field: HeightField, plane: ScenePlane): Mesh {
   return mesh;
 }
 
-/**
- * The pontoon decks, extruded from their mapped rings.
- *
- * The walls go to the same foot the coast's skirt uses, so a deck meets the sea
- * plane in a wall rather than in a torn edge, and the little the raster kept of
- * the pontoon stays buried under the deck it belongs to.
- */
+/** Pontoon decks extruded from their mapped rings, walled down to the skirt's foot. */
 function bakePierDecks(piers: PierResult): Mesh {
   const mesh = createMesh();
   for (const deck of piers.decks) {
@@ -1545,9 +1367,8 @@ const STOREY_M = 3.1;
 const DEFAULT_HEIGHT_M = 9;
 
 /**
- * OSM ways as the bake wants them. The tag height is only a fallback — MNH
- * measures the real one (D8) — but it has to be there for the handful of
- * footprints the raster cannot see.
+ * OSM ways as the bake wants them. The tag height is a fallback for footprints the raster cannot
+ * see.
  */
 export function fromOverpass(ways: BuildingWay[]): BuildingsFile {
   return {
@@ -1587,29 +1408,15 @@ interface BuildingResult {
 }
 
 /**
- * Flat-topped extrusions for now: roof archetypes and real ridge heights arrive
- * with P3.1 and P3.2. The base is the lowest ground under the footprint, so a
- * building on a slope digs into the hill rather than floating off it.
- */
-/**
- * A footprint worked out to the point where it could be built, but not built.
- *
- * The kit pass (P4.5) has to decide which footprints become models before the
- * props are merged, and it needs the ring after it was pushed off the track,
- * the ground it stands on and the height that was measured — all of which is
- * the first half of what the extrusion does. So the two halves are separate:
- * this settles where the building is, and `bakeBuildings` draws whatever the
- * kit did not take.
+ * A footprint placed but not yet built. The kit pass picks which ones become
+ * models first; `bakeBuildings` draws the rest.
  */
 interface PreparedBuilding {
   id: string;
   ring: { x: number; z: number }[];
   /**
-   * The ring the walls are built from: the footprint, with a vertex added
-   * wherever the ground under an edge leaves the straight line between its
-   * corners. A footprint that bridges a gully has corners on the lip and
-   * nothing under its middle, which is the shape of every "building floating
-   * over a ravine" in Monaco.
+   * The footprint with extra vertices where the ground leaves the line between
+   * corners, so a block over a gully does not float.
    */
   wallRing: { x: number; z: number }[];
   /** Where each wall vertex meets the ground, one per `wallRing` point. */
@@ -1622,23 +1429,14 @@ interface PreparedBuilding {
   belt: Belt;
 }
 
-/**
- * How far the ground under an edge may stray from the straight line between its
- * corners before the wall gains a vertex there. Half a metre is under the eye's
- * threshold for a gap at street distance and well over the quantisation step.
- */
+/** How far the ground under an edge may stray from the straight wall before it gains a vertex. */
 const WALL_FOLLOW_TOLERANCE_M = 0.5;
 /** No segment is worth splitting below this: nothing shows in a 1 m gap. */
 const WALL_FOLLOW_MIN_M = 1;
 
 /**
- * A footprint ring, resampled so its walls follow the ground under them.
- *
- * Corners alone are enough on a plane and on an even slope. They are not enough
- * where the ground drops between two of them: the wall spans the drop as one
- * quad and the building reads as floating over it, which on Monaco's hillside
- * is 271 of 3,742 pieces. Only the edges that need it gain vertices, so a block
- * on flat ground still costs four.
+ * A ring resampled so its walls follow the ground. Only edges over a dip gain
+ * vertices, so a block on flat ground still costs four.
  */
 function followGround(
   ring: { x: number; z: number }[],
@@ -1684,9 +1482,8 @@ function splitEdge(
 }
 
 /**
- * A piece still spanning more than this is split along its fall line. At 4 m a
- * hillside block came apart into a dozen roofs a storey apart, and the city
- * read as a heap of steps rather than as buildings.
+ * Pieces spanning more than this get split along the fall line. At 4 m the hillside
+ * became a heap of steps.
  */
 const TERRACE_STEP_M = 8;
 /** Terraces of one building whose roofs are closer than a storey share the higher roof. */
@@ -1730,11 +1527,8 @@ function clipHalf(
 }
 
 /**
- * One footprint, one floor: on Monaco's slopes that is a tall blind plinth
- * downhill and a block dug to its neck uphill. Split along the fall line, each
- * terrace stands on its own middle and the block steps down the slope as the
- * real ones do. A retaining wall runs along a contour, so the same cut puts a
- * wall-crossing footprint's halves on their own sides of it.
+ * One footprint as one floor gives a blind plinth downhill and a buried block uphill.
+ * Split along the fall line, it steps down the slope like the real ones.
  */
 export function splitTerraces(
   ring: { x: number; z: number }[],
@@ -1837,7 +1631,7 @@ function prepareBuildings(
   };
 
   for (const building of buildings.buildings) {
-    // The measurement wins where there is one; the tag is the fallback (D8).
+    // The measurement wins where there is one; the tag is the fallback.
     const height = measured.get(building.id)?.measured ?? building.height;
     if (height < MIN_BUILDING_HEIGHT_M) {
       result.droppedTooLow++;
@@ -1894,10 +1688,8 @@ function prepareBuildings(
       for (const shape of terraces) {
         const piece = emitted++;
 
-      // Fontvieille stands on reclaimed land and Monaco's quays are built to the
-      // water, so a footprint with a corner over a water cell is normal. Only a
-      // footprint with no ground under it at all is not a building we can place —
-      // unless it stands on a pontoon deck, which is water to the terrain.
+      // Quays and reclaimed land put corners over water normally. Only a footprint with
+      // no ground at all is skipped, unless it stands on a pontoon.
       const grounds: number[] = [];
       for (const point of shape) {
         const h = groundAt(point.x, point.z);
@@ -1918,22 +1710,10 @@ function prepareBuildings(
         grounds.push(deck);
       }
       grounds.sort((a, b) => a - b);
-      // The floor sits at the middle of the ground it covers and the walls run
-      // down to the lowest corner. Standing everything on its lowest corner turns
-      // a terraced block on a Monaco hillside into a cliff of wall, and standing
-      // it on the middle alone would leave the downhill side in the air.
+      // Floor at the middle of the ground it covers, walls down to the lowest corner.
       const base = grounds[Math.floor(grounds.length / 2)];
-      // Each wall vertex meets the ground where it stands, so a block on a slope
-      // is neither buried on its uphill side nor left on stilts downhill. There
-      // is no floor under how far it may dig: the clamp that used to be here
-      // existed because the wall read one surface and the terrain drew another,
-      // and a wall that stopped at the clamp stopped in mid-air. It now reads the
-      // surface that is drawn, so where it reaches is where the ground is.
-      // The corners were pushed clear of the track; a vertex added between two of
-      // them lands on the chord, and a chord across a corner can cut inside the
-      // corridor the push exists to keep clear. Where the denser ring cannot be
-      // pushed clear, the corner ring stands: a wall that follows the ground into
-      // the road is worse than one that spans a dip.
+      // Each wall vertex meets the drawn ground where it stands. If the denser ring cannot
+      // be pushed clear of the track, keep the corner ring.
       const followed = followGround(shape, groundAt, (x, z) =>
         corridor.distance(x, z) >= TRACK_CLEARANCE_M);
       const wallRing = pushOffTrack(followed, corridor)?.ring ?? shape;
@@ -1994,9 +1774,8 @@ function onCliff(
 }
 
 /**
- * Terraces whose roofs are within a storey of each other take the highest of
- * them, so a block on a slope steps where its floors do rather than at every
- * terrace the split made.
+ * Terraces within a storey of each other share the highest roof, so the block steps where its
+ * floors do.
  */
 function levelRoofs(terraces: PreparedBuilding[]): void {
   const byTop = terraces.slice().sort((a, b) => a.base + a.heightM - (b.base + b.heightM));
@@ -2023,14 +1802,8 @@ function bakeBuildings(
   for (const [index, building] of prepared.entries()) {
     if (taken.has(building.id)) continue;
     const { wallRing, footAt, base, heightM, belt } = building;
-    // Every roof is flat. A pitch was built from the survey's `roof:shape` and
-    // from an oriented box round the footprint, and on a plan that is not a
-    // rectangle the box is not the building: the ridge sat across the wrong
-    // axis and the eaves hung over the street.
-    //
-    // The rim is what makes a flat roof read as a roof rather than a lid, so
-    // the walls run past the roof plane and turn back down inside it. The far
-    // belt is silhouettes and gets none.
+    // Every roof is flat: pitches from an oriented box put ridges on the wrong axis.
+    // The rim makes it read as a roof, and the far belt skips it.
     const near = belt !== "far";
     const top = base + heightM;
     const id = building.id.split("#")[0];
@@ -2110,11 +1883,7 @@ class WallIndex {
   }
 }
 
-/**
- * What a roof multiplies the wall's colour by, picked per building between the
- * two. One tone for every roof and the walls drew the city from above as one
- * white mass; a step darker and a little apart, each block reads as itself.
- */
+/** Per-building roof tint. One tone made the city a white mass from above. */
 const ROOF_TONE = { low: 0.78, high: 0.92 };
 
 /** The rim round a flat roof: what makes it read as a roof and not a lid. */
@@ -2122,24 +1891,12 @@ const PARAPET_M = 0.9;
 
 /** Below this the plinth is a lid on the ground rather than a terrace. */
 const KIT_PLINTH_MIN_M = 0.2;
-/**
- * How far its walls go under the ground they read.
- *
- * A vertex reads the ground at its own point and the terrain between two of
- * them can sit lower; without the dig the audit reads the difference as a house
- * on stilts.
- */
+/** Kit plinth walls dig this far into the ground, or the terrain between vertices shows a gap. */
 const KIT_PLINTH_DIG_M = 0.3;
 
 /**
- * The terrace a modelled house stands on.
- *
- * A kit house stands on the floor an extrusion would have used — the middle of
- * the ground under its plot — and this is what holds it up on the downhill
- * side: the fitted rectangle walled from the ground to that floor. Standing the
- * model on the plot's lowest corner instead buried it, half its height and more
- * on 12 of the 75 plots. The rectangle rather than the surveyed ring, because
- * the rectangle is what the model covers.
+ * The terrace a modelled house stands on: its fitted rectangle walled from the ground
+ * up to the floor an extrusion would use.
  */
 function bakeKitPlinths(
   kit: KitResult,
@@ -2182,9 +1939,8 @@ function emptyBuildingResult(): BuildingResult {
 }
 
 /**
- * The corridor owns its ground. A footprint reaching into it has those vertices
- * moved to its edge; one that is mostly inside it is not a building we can keep,
- * because what is left would be a sliver against the barrier.
+ * The corridor owns its ground. Vertices inside move to its edge; a footprint mostly
+ * inside is dropped.
  */
 function pushOffTrack(
   ring: { x: number; z: number }[],
@@ -2198,19 +1954,11 @@ function pushOffTrack(
   ).length;
   if (insideAsMapped >= ring.length * 0.6) return null;
 
-  // A wall can cross the corridor between two vertices that are both well
-  // outside it — three of Monaco's footprints do, and one of them is the block
-  // the tunnel's inland mouth sits under, so the road ran into its side with
-  // nowhere to go. Pushing vertices cannot help a footprint with no vertex to
-  // push, so an edge that crosses is given some: sampled every metre while it
-  // is inside, they are pushed out like any other and the building closes
-  // around the road rather than over it.
+  // An edge can cross the corridor with both ends outside, so give it vertices every
+  // metre while inside and push those out too.
   const dense = densifyAcrossCorridor(ring, corridor);
   let moved = false;
-  // Which side of the road the wall was last seen on. A vertex landing dead on
-  // the centreline has no side of its own — the old code left it there, and
-  // after densification that put wall vertices 8 m inside the corridor, which
-  // the audit reads as a wall on the track. It takes the side its neighbour had.
+  // Last side of the road the wall was on. A vertex on the centreline takes its neighbour's side.
   let side: { x: number; z: number } | null = null;
   const out: { x: number; z: number }[] = [];
   for (const point of dense) {
@@ -2235,14 +1983,8 @@ function pushOffTrack(
 }
 
 /**
- * The road, taken out of a footprint that stands over it.
- *
- * `pushOffTrack` moves vertices and the points where an edge crosses; neither
- * exists when a small block sits astride the road with its corners well clear —
- * way/1470365896 by the harbour is one, and the lap ran straight through it.
- * The band around the local centreline is subtracted instead, which leaves the
- * building either side of the road and a gap between: the opening a road makes
- * through a building.
+ * Cut the road band out of a footprint that sits astride it with no vertex inside
+ * the corridor to push.
  */
 function carveOffRoad(
   ring: { x: number; z: number }[],
@@ -2314,15 +2056,8 @@ function buildRoadIndex(points: { x: number; z: number }[]): RoadIndex {
 }
 
 /**
- * The cutting, taken out of a footprint that stands over it.
- *
- * `pushOffTrack` slides vertices out of the corridor, which cannot help here:
- * Monaco's inland mouth is under a block whose footprint *contains* the whole
- * cutting, so there is neither a vertex nor an edge inside it to move. The
- * rectangle is subtracted instead, as three half-plane clips that do not
- * overlap — everything left of it, everything right of it, and whatever lies
- * beyond its far end between the two. The front is open because that is where
- * the road comes in.
+ * Cut the tunnel cutting out of a footprint that contains it whole, as three
+ * non-overlapping half-plane clips. The front stays open for the road.
  */
 function carveOutOfCut(
   ring: { x: number; z: number }[],
@@ -2449,10 +2184,8 @@ function extrude(
   mesh: Mesh,
   ring: { x: number; z: number }[],
   /**
-   * Where each wall vertex meets the ground, one per ring point. A single
-   * base plane either buries the uphill side or leaves the downhill side on
-   * stilts — on the lip of Le Rocher that was a row of slabs hanging over the
-   * bay. Following the ground per vertex does neither.
+   * Where each wall vertex meets the ground. One base plane buries uphill or leaves
+   * stilts downhill.
    */
   baseAt: number[],
   top: number,
@@ -2487,11 +2220,8 @@ function extrude(
     }
   }
 
-  // `triangulateShape` works in the contour's own plane, which is (x, -z); read
-  // back in scene axes that winding already faces the sky, so it is kept as it
-  // comes. Reversing it here is what made every flat roof invisible from above.
-  // One shade over the whole roof (`flats`): read per corner, a dark corner by
-  // a taller neighbour drew a streak across every long triangle of it.
+  // `triangulateShape` already winds (x, -z) to face the sky, so keep it. One shade
+  // per roof, or a dark corner streaks long triangles.
   mesh.tone = roofTone;
   const roofStart = mesh.positions.length / 3;
   for (const [i, j, k] of ShapeUtils.triangulateShape(orderedContour, [])) {
@@ -2515,13 +2245,8 @@ const PORTAL_ARCH_M = 3.5;
  *  portal — and how far it may grow looking for the ground to meet. */
 const PORTAL_SURROUND_M = 2.5;
 /**
- * Half width of the void the terrain leaves at a mouth, and of the face that
- * closes it.
- *
- * The face has to be the larger of the two, and by a clear margin: the void is
- * decided per cell on the cell's own centre, so the hole it actually leaves
- * runs half a cell — two metres in the core belt — past the nominal edge. A
- * face cut to the nominal size leaves daylight showing around it.
+ * Half width of the void at a mouth and the face that closes it. The real hole runs
+ * half a cell wider, so the face must be bigger.
  */
 const PORTAL_VOID_HALF_M = PORTAL_HALF_WIDTH_M;
 const PORTAL_FACE_HALF_M = PORTAL_HALF_WIDTH_M + 5;
@@ -2529,34 +2254,23 @@ const PORTAL_FACE_HALF_M = PORTAL_HALF_WIDTH_M + 5;
  *  before the back one. */
 const PORTAL_VOID_PAD_M = 3;
 /**
- * How far the cutting runs out in front of a mouth.
- *
- * Without one the ground outside the portal stands at hill level — measured at
- * the seaward mouth, about two metres above the road — so it buried the arch's
- * lower half and the opening read as a crescent with the road nowhere in sight.
- * A tunnel has an approach cut; this is it, at the road's own level.
+ * How far the cutting runs out in front of a mouth, at road level. Without it the
+ * hill buries the arch's lower half.
  */
 const PORTAL_APPROACH_M = 16;
 /** How far the cutting's floor reaches past the void it fills — half a core cell,
  *  plus a little, since a cell is dropped on its centre. */
 const PORTAL_CUT_MARGIN_M = 2.5;
 /**
- * How far the sleeve stands out of the face, and how far it reaches in.
- *
- * Three metres out, not one: the cut floor meets the hill somewhere inside the
- * cell that straddles the mouth, so the ramp between them can start up to a
- * cell early. The collar stands in front of all of it.
+ * How far the sleeve stands out of the face. The ramp to the hill can start up to
+ * a cell early, so the collar covers it.
  */
 const PORTAL_OUT_M = 5;
 /** Wall thickness of the sleeve — what the ring at the mouth shows of itself. */
 const PORTAL_RING_M = 0.8;
 /**
- * The sleeve reaches past the pit it stands in.
- *
- * At 8 m it ended exactly where the excavation does, so looking into the mouth
- * showed the pit's own far wall — lit terrain, square across the road. Six
- * metres further in is buried in solid hill, costs no triangles (the tube is
- * two rings either way) and puts dark sleeve where the eye follows the road.
+ * The sleeve reaches past the pit it stands in, so the mouth shows dark tube
+ * instead of the pit's lit far wall.
  */
 const PORTAL_IN_M = 14;
 const PORTAL_ARCH_SEGMENTS = 8;
@@ -2564,11 +2278,8 @@ const PORTAL_ARCH_SEGMENTS = 8;
 const PORTAL_LID_STEPS = 4;
 
 /**
- * A portal is a short arched sleeve standing out of the hillside at each mouth
- * (D4). The hill itself is untouched — a height field cannot hold a cavity — so
- * what sells the tunnel is the opening: the sleeve's faces point inward, which
- * leaves the near side invisible and the dark far side facing the camera.
- * Excavating the hill properly is P4.1.
+ * A portal is a short arched sleeve at each mouth. A height field cannot hold a
+ * cavity, so the opening is what sells the tunnel.
  */
 /** Half an arch section: up the wall, then over the crown. Shared with the bore
  *  so the mouth and what is behind it are the same shape. */
@@ -2589,19 +2300,8 @@ function portalSection(): { offset: number; height: number }[] {
 }
 
 /**
- * The cells the terrain must not fill: the arch's own footprint at each mouth.
- *
- * This is the one place a height field genuinely cannot answer. The cut floor
- * and the untouched hill are neighbouring nodes 3 m apart with 8.6 m between
- * them, and the surface drawn across that pair is a ramp — measured, it rises
- * from the road to 8.60 m and is drawn straight through the opening, so the
- * mouth showed a slope where the bore should be. No wall in front helps: the
- * ramp is *inside* the hole, not outside it.
- *
- * So the ground is removed over the arch, from the headwall to just past where
- * the ramp lands, and the sleeve — which runs further in than the void does —
- * is what covers the gap. That is D4's boolean cut, reduced to the only shape
- * the field has to lose.
+ * Cells the terrain must not fill over the arch. The ground between the cut floor and
+ * the hill is drawn as a ramp through the opening, so it has to go.
  */
 const PORTAL_VOID_IN_M = 8;
 
@@ -2621,13 +2321,7 @@ export interface PortalHollow {
   at(x: number, z: number): boolean;
   /** Where the sleeve runs: ground walled across here would stand in the bore. */
   boreAt(x: number, z: number): boolean;
-  /**
-   * The cuttings a portal needs kept clear of buildings.
-   *
-   * A 36 m block stands over Monaco's inland mouth — measured straight down at
-   * the mouth — so the arch was built inside a building and none of it could be
-   * seen. A footprint over a cutting has the cutting taken out of it.
-   */
+  /** Cuttings that buildings must stay out of. A block stands over Monaco's inland mouth. */
   cuts: PortalCut[];
   /** The cutting's floor — the road at the nearest mouth. */
   floorAt(x: number, z: number): number;
@@ -2748,18 +2442,8 @@ function bakePortals(
       const roadY = elevations[end.index];
       if (Number.isNaN(roadY)) continue;
 
-      // The arch ducks under its own hillside. A mouth stands where the cover
-      // first reaches the bore's headroom, which is less than the arch plus its
-      // headwall needs, so a full-height portal pushed its crown and surround
-      // out through the slope — from above, two bright slivers lying in the
-      // hill. Scaled to fit, the opening stays a hole in something.
-      // The lowest ground the sleeve passes under, not just the ground at the
-      // mouth: the sleeve runs 8 m into the slope and the hill is still rising
-      // over that, so the mouth's own reading is the optimistic one.
-      //
-      // Inward from the face only. The ground outside it is the cutting's
-      // floor, at the road's own level, so including it would read no cover at
-      // all and shrink every arch to its floor.
+      // Scale the arch to fit under the lowest cover the sleeve passes, measured inward
+      // from the face only, or the crown pokes out of the slope.
       const crown = PORTAL_WALL_M + PORTAL_ARCH_M;
       let cover = Infinity;
       for (let along = 0; along <= PORTAL_IN_M; along += 2) {
@@ -2800,16 +2484,10 @@ function bakePortals(
         addFlatQuad(mesh, a.x, a.y, a.z, d.x, d.y, d.z, c.x, c.y, c.z, b.x, b.y, b.z);
       }
 
-      // The road the sleeve stands over. The bore has its own floor, but it
-      // starts further in than the sleeve does, so without this the first
-      // metres of the opening show nothing at all and the mouth reads as a
-      // patch of black rather than as somewhere a road goes.
+      // Road under the sleeve. The bore's floor starts further in, so the mouth was black.
       {
-        // As wide as the cutting, not just as the arch: the approach the void
-        // takes out of the hill has no bottom of its own, and without one the
-        // trench shows the sea through it. Wider than the void's nominal half,
-        // for the same reason the face is (D21): a cell is dropped on its own
-        // centre, so the hole runs up to half a cell past where it was asked to.
+        // As wide as the cutting, or the trench shows the sea. Wider than nominal because
+        // cells drop by their centre.
         const left = -PORTAL_VOID_HALF_M - PORTAL_CUT_MARGIN_M;
         const right = PORTAL_VOID_HALF_M + PORTAL_CUT_MARGIN_M;
         const floor = (offset: number, along: number) => ({
@@ -2824,15 +2502,8 @@ function bakePortals(
         addFlatQuad(road, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, d.x, d.y, d.z);
       }
 
-      // The ring that makes it a mouth rather than a hole.
-      //
-      // A sleeve whose faces all point inward is invisible from outside: the
-      // camera looks straight through the near wall at the lit far one, and the
-      // opening reads as a film stretched over the cutting rather than as a way
-      // in. So the tube carries a second skin, `PORTAL_RING_M` thick, wound
-      // outward, and the two are joined by a flat annulus at the front. What
-      // stands in the cutting is then a length of concrete tube with a dark
-      // hole in it, which is what a portal is.
+      // A second, outward skin joined by a flat ring at the front, so from outside the
+      // portal reads as a tube with a hole instead of an invisible film.
       const ringAt = (index: number, along: number) => {
         const point = profile[index];
         const outward = point.offset === 0 ? 0 : Math.sign(point.offset);
@@ -2843,11 +2514,7 @@ function bakePortals(
           z: mouth.z + nz * spread + mouth.uz * along,
         };
       };
-      // The skin runs the sleeve's whole length, not just the collar at its
-      // mouth. Inward-facing walls are culled from outside, so through the
-      // opening the eye went past the tube and landed on the pit's own far
-      // wall — lit terrain, square across the road. With an outside all the way
-      // in, what stands there is the tube.
+      // The outer skin runs the sleeve's whole length, so the eye does not land on the pit wall.
       const ringBack = inside;
       for (let i = 0; i < profile.length - 1; i++) {
         const a = ringAt(i, outside);
@@ -2871,16 +2538,8 @@ function bakePortals(
         );
       }
 
-      // The headwall closes the cutting, and the void behind it.
-      //
-      // The cut floor and the untouched hill are neighbouring nodes with 8.6 m
-      // between them, and the surface drawn across that pair is a ramp — one
-      // cell long, steeper than the arch, drawn straight through the opening.
-      // No wall in front of it helps: the ramp is *inside* the hole. So the
-      // ground over the arch is removed (`portalVoids`) and the portal closes
-      // what that leaves: a face at each end of the void with the arch cut out
-      // of it, and a wall down each side. The sleeve runs further in than the
-      // void does, so the bore is what shows through both openings.
+      // The headwall closes the cutting and the void behind it: a face at each end with
+      // the arch cut out, and a wall down each side.
       const archCentreHeight = PORTAL_WALL_M * scale;
       const groundOver = (offset: number, along: number) => {
         const fx = mouth.x + nx * offset + mouth.ux * along;
@@ -2944,16 +2603,8 @@ function bakePortals(
       facePlane(surround, front, false);
       facePlane(surround, back, true);
 
-      // A lid over the void. The sleeve's back is 6.5 m below the hilltop, so
-      // without one the excavation reads from above as a black rectangle cut
-      // into the slope — the hole is closed at the road's level and open at the
-      // sky's.
-      //
-      // It follows the hill rather than spanning it flat. One quad corner to
-      // corner read as a grey plate laid on the slope, because the ground it
-      // stands in for falls across its width as well as along it; a grid of
-      // them, each node taking the hill's own height wherever that is above the
-      // arch, reads as ground.
+      // A lid over the void that follows the hill, so from above the excavation is not a
+      // black rectangle or a flat grey plate.
       {
         // The two end rows take the faces' own top, so lid and face meet along
         // one line: a face is flat-topped and the hill is not, and the gap that
@@ -2980,13 +2631,7 @@ function bakePortals(
         }
       }
 
-      // The sleeve is capped at its far end, in its own dark material.
-      //
-      // Open, it looked through the hill: the ground's back faces are culled,
-      // so past the tube's end the eye ran out the other side of the slope and
-      // found the sky — a bright patch sitting where the tunnel should be
-      // going. The cap is what the road disappears into until the bore, which
-      // only exists where the hill genuinely covers it, takes over.
+      // Cap the sleeve's far end, or the eye runs through the culled hill to the sky.
       {
         const capAt = (index: number) => at(index, inside);
         const centre = {
@@ -3007,18 +2652,8 @@ function bakePortals(
 }
 
 /**
- * The buried stretch that actually has a hill over it.
- *
- * OSM marks the whole 455 m as a tunnel, and it is one — but under the Fairmont
- * and under the waterfront the thing overhead is a building, and a DTM measures
- * the ground beneath a building rather than its roof. So over the first 85 m and
- * the last 27 the field says there is no cover at all, and a bore built there
- * stood on the surface as a black strip: the mouth painted on a hillside, again.
- *
- * Geometry therefore follows the cover, not the tag: the bore is built where the
- * ground is genuinely above it, and its mouths sit where that cover begins. The
- * lap is still buried for the whole tagged length — that is what the profile and
- * the audit read — it simply has no vault where nothing is holding one up.
+ * The buried stretch with real hill over it. Under buildings the DTM reads the ground,
+ * not the roof, so the vault follows cover instead of the OSM tag.
  */
 function coveredRuns(
   field: HeightField,
@@ -3058,18 +2693,8 @@ export interface VaultedRuns {
 }
 
 /**
- * Where the vault goes, and therefore where the ground is left alone (P4.1).
- *
- * A tagged tunnel is longer than the hill it runs under. `coveredRuns` already
- * finds the stretch with real cover, but the terrain was still the raw hill for
- * the whole tag, so the approaches kept a lip of ground rising over the road:
- * the ribbon dived under it, and it cut across the arch in front of the mouth.
- * What is actually there is a cutting, and a cutting is what the burn-in makes.
- *
- * The mouths are then pushed inward to where the hill is tall enough for a
- * full-height portal, up to `PORTAL_SEEK_M`. Selecting the run at that depth
- * instead would break it in two — Monaco thins to 6.6 m of cover halfway
- * through — and put two more mouths in the middle of the hill.
+ * Where the vault goes and the ground is left alone. Mouths move inward to where the
+ * hill fits a full portal, without splitting the run in two.
  */
 function vaultedRuns(
   field: HeightField,
@@ -3137,13 +2762,8 @@ const BORE_COVER_M = 0.5;
 const BORE_MIN_HEIGHT_M = 3.2;
 
 /**
- * The bore itself: floor, walls and vault along the buried stretch of the lap.
- *
- * Without it a portal is a black rectangle on a hillside — the mouth opens into
- * nothing, which is exactly what it looks like. The bore is only ever seen down
- * its own axis through a mouth, so it is a swept section rather than anything
- * excavated: cheap, and enough to read as a tunnel with daylight at the far end.
- * Cutting the hill open for real is still P4.1.
+ * The bore: floor, walls and vault along the buried lap, swept along its axis since
+ * it is only ever seen through a mouth.
  */
 function bakeTunnelBody(
   field: HeightField,
@@ -3185,12 +2805,8 @@ function bakeTunnelBody(
       if (length < 1e-6) continue;
       ux /= length;
       uz /= length;
-      // The section ducks under whatever cover there is. Monaco's tunnel runs
-      // under the Fairmont for its first 85 m and under the waterfront for its
-      // last 27, and a DTM reads the ground beneath a building, not its roof —
-      // so a fixed 6.5 m crown stood proud of the terrain over a quarter of the
-      // length. Since the bore is only ever seen along its axis, losing a metre
-      // of headroom costs nothing and keeps it underground.
+      // The section ducks under whatever cover there is; a lower crown costs nothing seen
+      // along the axis.
       const ground = field.heightAt(coords[i][0], coords[i][1]);
       const available = Number.isNaN(ground)
         ? Infinity
@@ -3262,13 +2878,7 @@ const BARRIER_OFFSET_M = 1.2;
 const BARRIER_HEIGHT_M = 1.05;
 const BARRIER_THICKNESS_M = 0.3;
 
-/**
- * The steel that lines a street circuit (D16). Absence of it reads as a bug —
- * a road through a city with nothing between it and the buildings — so it ships
- * in the core belt, as one mesh rather than one object per panel.
- *
- * Nothing is built through the tunnel: the barrier there is inside the hill.
- */
+/** Barriers along a street circuit, one mesh in the core belt. None inside the tunnel. */
 function bakeBarriers(
   field: HeightField,
   plane: ScenePlane,
@@ -3345,46 +2955,24 @@ function bakeBarriers(
 
 // track
 /**
- * The track's height along its own centreline, in the field's datum.
- *
- * The ribbon itself is not baked yet. The runtime still owns the whole track
- * visual — ribbon, kerbs, apron, markings — and splitting it would put two
- * ribbons in the same place fighting over depth. What the runtime cannot know
- * is where the ground ended up, so it gets that here and builds its curve on
- * it; D13 moves the geometry across once the joint has proven itself.
- *
- * One value per centreline vertex, with the closing duplicate dropped, which is
- * what `buildTrackCurveWithY` indexes against.
+ * The track's height along its centreline, one value per vertex. The runtime still
+ * builds the ribbon and needs to know where the ground ended up.
  */
 /**
- * Which stretches of the stripped centreline run under the ground, as index
- * spans into the manifest's own elevation array.
- *
- * The runtime draws the ribbon along the whole lap, and under a hill that puts
- * a red band inside the terrain. Near the car the depth buffer hides it; from
- * a long way off its precision runs out and the ribbon shows through the hill
- * in patches. Rather than fight the depth test, the runtime is told where the
- * road is not to be drawn — under a hill there is a bore to see instead.
+ * Index spans of the centreline that run underground, so the runtime skips drawing
+ * the ribbon there instead of fighting the depth buffer.
  */
 function buriedSpans(
   plane: ScenePlane,
   field: HeightField,
   vaults: VaultedRuns,
 ): [number, number][] {
-  // Walked along the field's own densified profile, not the drawn centreline.
-  // Both describe the same polyline, so a distance fraction means the same
-  // thing on either — but the drawn one carries a vertex every 30 to 70 m
-  // through the tunnel, and a span can only begin at a vertex. Snapping to
-  // those left 51 m of ribbon drawn inside the hill at the entry. The profile
-  // is sampled every 3 m.
+  // Walk the 3 m profile, not the drawn centreline: its sparse tunnel vertices left
+  // 51 m of ribbon inside the hill.
   const points = field.trackProfile.coords;
   if (points.length < 2) return [];
 
-  // Fractions of lap length, not of vertex count. The runtime samples its curve
-  // evenly by distance while the centreline's own vertices are spaced by
-  // whoever drew it — on Monaco the hairpins carry vertices every few metres and
-  // the straights every twenty, so an index fraction points somewhere else
-  // entirely and the ribbon vanishes well past the tunnel.
+  // Fractions of lap length, not vertex count; vertex spacing varies by who drew it.
   const distances = [0];
   for (let i = 1; i < points.length; i++) {
     distances.push(
@@ -3406,15 +2994,8 @@ function buriedSpans(
       );
   if (total <= 0) return [];
 
-  // Hidden exactly where the vault covers the road, and nowhere else.
-  //
-  // Not the tag: OSM marks the whole 455 m, but at both ends the thing overhead
-  // is a building or nothing at all, and hiding by the tag took the ribbon away
-  // while the car was still in the open. Measuring the ground instead was
-  // closer but still early — the mouth is pushed inland to where the hill is
-  // deep enough for a full-height portal, so between the first centimetre of
-  // cover and the portal itself the road went missing with nothing to go into.
-  // The vault knows where its own mouths are; the ribbon stops at them.
+  // Hide the ribbon exactly where the vault covers the road. The tag and raw cover
+  // both hid it while the car was still in the open.
   const spans: [number, number][] = [];
   let start = -1;
   for (let i = 0; i < points.length; i++) {
@@ -3467,11 +3048,7 @@ function srgbToLinear(hex: string): [number, number, number, number] {
   return [channel(16), channel(8), channel(0), 1];
 }
 
-/**
- * Meshes whose edges meet another file's. Each mesh is quantised on its own box,
- * so two belts snap a shared seam vertex to lattices a few centimetres apart and
- * the sea shows through the crack; these share one lattice instead.
- */
+/** Meshes whose edges meet another file's share one quantisation lattice, or seams crack. */
 const SEAMED_KINDS: ReadonlySet<MeshKind> = new Set(["terrain", "plinth"]);
 
 /** The box every seamed mesh is quantised on: its centre and half its widest side. */
@@ -3606,10 +3183,8 @@ export interface BakeReport {
 }
 
 /**
- * Everything the bake reads from outside itself: the network, the caches on
- * disk, the asset packs. Nothing below this point fetches anything, so the same
- * pipeline runs over a circuit and over a committed fixture — which is what
- * makes layer B of `docs/scene-goals.md` §3 possible at all.
+ * Everything the bake reads from outside. Nothing below fetches, so the same pipeline
+ * runs on a circuit and on a committed fixture.
  */
 export interface BakeInputs {
   circuitId: string;
@@ -3640,11 +3215,8 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
   const coords = await loadCircuitCoords(circuitId);
   const bbox = circuitBBox(coords);
   const dtm = await fetchElevationRaster({ kind: "dtm", bbox, refresh });
-  // A surface model where one exists. Skadi has no layer for it at all, and
-  // IGN's box reaches into countries it holds nothing for, so the test is
-  // whether the raster came back with any data — not whether a provider claimed
-  // the ground. A circuit without measured heights is not a circuit without
-  // buildings; the tags carry it.
+  // Use a surface model only if the raster came back with data; providers claim boxes
+  // they hold nothing for.
   const surface = providerFor(bbox)?.layerFor("mnh")
     ? await fetchElevationRaster({ kind: "mnh", bbox, refresh })
     : null;
@@ -3662,10 +3234,8 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
     breaklineWays: await fetchBreaklineWays(circuitId, bbox, refresh),
     streetWays: await fetchStreetWays(circuitId, bbox, refresh),
     overrides: await loadOverrides(circuitId),
-    // Downloaded packs, if this checkout has them (`bun run assets:fetch`).
-    // Switched off: a modelled building is somebody else's house stretched onto
-    // a Monaco plot, and it reads as a different city dropped into this one.
-    // The list is the switch — the loader and the placement pass stay.
+    // Kit house packs, switched off: a stretched model reads as a different city. The
+    // list is the switch.
     kitHouses: await loadKitHouses(REPO_ROOT, []),
     kitTrees: await loadKitPaths(REPO_ROOT, "assets/models/kenney-city-suburban", ["tree-"]),
     // Switched off for the same reason: a kit's painted speedboat among the
@@ -3676,9 +3246,8 @@ export async function loadBakeInputs(circuitId: string, refresh = false): Promis
 }
 
 /**
- * Everything the bake and the audit both need, built once from one recipe.
- * Two callers building the field with different inputs is the bug this whole
- * document exists to stop, so neither of them builds it alone.
+ * Everything the bake and the audit both need, built once from one recipe so they
+ * cannot disagree.
  */
 export interface CircuitGround {
   circuitId: string;
@@ -3688,11 +3257,7 @@ export interface CircuitGround {
   bbox: ReturnType<typeof circuitBBox>;
   plane: ScenePlane;
   field: HeightField;
-  /**
-   * The ground before the cuttings were burned into it. The tunnel's own
-   * geometry is sized against this: the cut at a mouth is there because the
-   * portal is, so reading it back would shrink the arch to nothing.
-   */
+  /** The ground before cuttings were burned in. The portal is sized against this. */
   hill: HeightField;
   corridor: ReturnType<typeof buildCorridor>;
   tunnels: TunnelMask;
@@ -3723,11 +3288,8 @@ export function buildCircuitGround(inputs: BakeInputs): CircuitGround {
       }
     : found;
 
-  // Two passes, because where a vault goes cannot be known until the ground is
-  // known (P4.1). The first keeps every tagged metre of tunnel unburned, which
-  // is the only way to read how much hill there is over the road; the second
-  // holds back only the stretch that turned out to have a hill, so the
-  // approaches are burned in as the cuttings they are.
+  // Two passes: the first keeps the whole tagged tunnel unburned to measure the hill,
+  // the second burns in the approaches as cuttings.
   const survey = buildHeightField({
     dtm,
     track: {
@@ -3833,11 +3395,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   const heightStats = { value: { measured: 0, fellBack: 0, medianDeltaM: 0, tallest: 0 } };
   const measured = measureBuildingHeights(buildingsFile.buildings, mnh, heightStats);
   const buildings = emptyBuildingResult();
-  // The one surface, and it is the drawn one. The mesher's own node table would
-  // be a second derivation: the coast is cut inside a cell, a seam node is
-  // conformed to the coarser belt's chord, and a vertex is clamped to the
-  // surface band — all after the nodes were read. A wall asking where the
-  // ground is gets the triangle it will stand on.
+  // The drawn surface is the one truth: walls ask for the triangle they will stand on.
   const drawnGround = buildSurfaceIndex(BELT_ORDER.map((belt) => [terrain.meshes[belt]]));
   // The seabed is drawn but is no ground: nothing is built or planted on it.
   const standOn = (x: number, z: number): number => {
@@ -3936,10 +3494,7 @@ export async function bakeFrom(inputs: BakeInputs, options: BakeOptions = {}): P
   ]) {
     applyAmbientOcclusion(mesh, occluders);
   }
-  // Same reason as the slope pass: AO owns `colors` and writes it from nothing,
-  // so a model's own palette can only be multiplied in once it has run.
-  // The tone is the city's own building colour normalised to its brightness, so
-  // it shifts hue without lightening what it touches.
+  // AO writes `colors` from nothing, so a model's palette is multiplied in after it.
   applyAlbedo(props.models, MODEL_TONE);
   // The walls' own bands, over the occlusion that shares the array. Neutral
   // tone: a band is a shade of the colour the building already is.

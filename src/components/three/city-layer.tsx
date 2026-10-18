@@ -1,12 +1,6 @@
 "use client";
 
-/**
- * Mounts the baked city (docs/city-generation.md D6, D14).
- *
- * The belts arrive far first, so the scene has a horizon before it has a
- * skyline. Nothing is built here — the geometry comes off disk the shape it
- * will be drawn in.
- */
+/** Mounts the baked city. Belts arrive far first, so there is a horizon before a skyline. */
 
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
@@ -33,14 +27,7 @@ export interface CityLayerProps {
   terrainOnly?: boolean;
 }
 
-/**
- * Repaints a loaded belt for the theme.
- *
- * The bake writes one palette into the GLB's materials, so the dark theme used
- * to get a white model in a black room. Each mesh is named for its kind, which
- * is the material it was given, so the colour is a lookup rather than a guess —
- * and setting it costs nothing per frame: the value lives in the material.
- */
+/** Repaint a belt for the theme by mesh name; the GLB carries only the light palette. */
 function paintForTheme(group: THREE.Group, theme: "light" | "dark") {
   const palette = BAKED_MESH_COLORS[theme];
   group.traverse((node) => {
@@ -61,15 +48,8 @@ function paintForTheme(group: THREE.Group, theme: "light" | "dark") {
 const DECAL_MESHES = new Set(["park", "pool", "pitch", "plinth"]);
 
 /**
- * Lifts these off the ground in the depth buffer.
- *
- * A park, a pool and a pitch are baked 0.12 m above the terrain, which is the
- * depth buffer's whole precision at two kilometres — camera near is 2 m and far
- * 20 km, so at that range a step of about 0.12 m is one unit of depth and the
- * two surfaces flickered against each other across the city. Lifting the
- * geometry instead would make a park float when the camera is on the street;
- * `polygonOffset` biases the comparison rather than the model, which is what it
- * is for.
+ * `polygonOffset` instead of lifting the geometry: decals sit 0.12 m up, under the
+ * depth precision at range, and a real lift would float them up close.
  */
 function liftDecals(group: THREE.Group) {
   group.traverse((node) => {

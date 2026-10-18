@@ -1,9 +1,6 @@
 /**
- * Detail belts, measured from the track centreline (docs/city-generation.md D7).
- *
- * Distance to the racing surface — not to the middle of the bbox — is what
- * decides how finely a thing is built, so the harbour and Le Rocher land in the
- * detailed belts on their own and the housing up the hill honestly does not.
+ * Detail belts by distance to the racing surface, so the harbour gets detail and
+ * the hillside housing does not.
  */
 
 import type { ScenePlane } from "./plane";
@@ -18,7 +15,7 @@ export const BELT_RADIUS_M: Record<Exclude<Belt, "far">, number> = {
   city: 600,
 };
 
-/** Terrain cell each belt is meshed at. D3, after P0.1 put the floor at 4 m. */
+/** Terrain cell each belt is meshed at. */
 export const BELT_CELL_M: Record<Belt, number> = {
   core: 4,
   city: 8,
@@ -26,9 +23,7 @@ export const BELT_CELL_M: Record<Belt, number> = {
 };
 
 /**
- * What each belt may ship (D5, D14). Lives here rather than in the audit
- * because the bake now spends against it too — the kit pass takes a share of a
- * belt's triangles — and two files holding the same budget is how they drift.
+ * What each belt may ship. Here rather than in the audit because the bake spends against it too.
  */
 export const BELT_BUDGET: Record<Belt, { bytes: number; triangles: number }> = {
   core: { bytes: 6_000_000, triangles: 450_000 },
@@ -61,12 +56,7 @@ export interface Corridor {
 /** Step the centreline is resampled to before distances are measured. */
 const SAMPLE_M = 10;
 
-/**
- * Distances are asked for once per terrain cell and once per building vertex,
- * which is hundreds of thousands of queries against thousands of samples — so
- * the samples go in a uniform hash keyed by the widest belt, and a query only
- * looks at its own cell and the ring around it.
- */
+/** Distances go through a spatial hash: hundreds of thousands of queries per bake. */
 export function buildCorridor(
   coords: [number, number][],
   plane: ScenePlane,

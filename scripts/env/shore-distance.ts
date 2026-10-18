@@ -1,27 +1,11 @@
 /**
- * A smooth stand-in for the shoreline where no survey line covers it.
- *
- * The cut in `bake.ts` needs a scalar whose zero crossing is the water's edge.
- * The OSM line gives one, but it does not reach everywhere: around Larvotto the
- * raster's water starts as much as 160 m from the nearest mapped way, and there
- * the cut falls back on the land/water flag — which is boolean, so its edge is
- * the grid again and the coast comes out as 16 m steps.
- *
- * A signed distance to the water fixes that without any new data. Land counts
- * metres to the nearest wet node, water counts metres to the nearest dry one,
- * and the zero crossing lands between them rather than on a grid line. Blurring
- * it takes the last of the staircase out of the diagonals: the distances
- * themselves are quantised to the field's own cells, and a mean over the
- * neighbourhood turns those terraces into a slope.
+ * A smooth signed distance to water where no surveyed line covers the shore, so the
+ * cut does not fall back to grid steps. Blurred to remove the last terraces.
  */
 
 import type { HeightField } from "./heightfield";
 
-/**
- * Passes of the 3×3 mean. Two rounds a cell-sized corner; four also takes out
- * the run of cell-sized steps a rocky shore leaves behind, which is what the
- * unmapped stretches read as.
- */
+/** Passes of the 3×3 mean; four also smooths rocky shore steps. */
 const SMOOTHING_PASSES = 4;
 
 export interface ShoreDistance {
@@ -29,11 +13,7 @@ export interface ShoreDistance {
   at(lon: number, lat: number): number;
 }
 
-/**
- * Chamfer distance transform, forward then backward. Exact Euclidean distance
- * is not worth its cost here — the answer is smoothed anyway, and the error of
- * the 3-4 kernel is a few percent over the handful of cells that matter.
- */
+/** Chamfer distance, forward then backward; exact Euclidean is not worth it here. */
 function distanceToMask(
   mask: Uint8Array,
   width: number,

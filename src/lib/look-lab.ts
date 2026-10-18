@@ -1,10 +1,7 @@
 import { create } from "zustand";
 import { readPref, writePref } from "@/lib/local-pref";
 
-/**
- * Knobs for the race view's look (docs/scene-look-plan.md). The new look is the
- * default everywhere; only the panel that turns the knobs is development-only.
- */
+/** Knobs for the race view's look. The look is the default; only the panel is dev-only. */
 export interface LookSettings {
   /** The A/B switch: the new look, or the scene as it was. */
   enabled: boolean;

@@ -1,11 +1,4 @@
-/**
- * The two questions asked of a shipped mesh: how high is the ground under a
- * point (I1), and which of these triangles are one building (I2).
- *
- * Both are pure functions over geometry, so the meshes here are written by
- * hand — a slab, a box, a roof on it — and the expected answers are the
- * geometry's own.
- */
+/** Ground height under a point and which triangles form one building, on hand-built meshes. */
 
 import { describe, expect, test } from "bun:test";
 import { buildSurfaceIndex, buildingPieces, connectedComponents, type BakedMesh } from "./baked-scene";
@@ -70,7 +63,7 @@ function merge(meshes: BakedMesh[]): BakedMesh {
   };
 }
 
-describe("the ground as drawn (I1)", () => {
+describe("the ground as drawn", () => {
   const plane = (x: number, z: number) => 10 + x * 0.25 - z * 0.1;
   const index = buildSurfaceIndex([[slab(64, plane)]]);
 
@@ -103,7 +96,7 @@ describe("the ground as drawn (I1)", () => {
   });
 });
 
-describe("buildings out of one merged mesh (I2)", () => {
+describe("buildings out of one merged mesh", () => {
   test("a flat-shaded box is one piece, not twelve faces", () => {
     expect(connectedComponents(box([0, 0, 0], [10, 12, 10])).count).toBe(1);
   });
@@ -127,9 +120,7 @@ describe("buildings out of one merged mesh (I2)", () => {
   });
 
   test("a slab hanging inside a tower's plan is missed, and that is known", () => {
-    // The documented hole in the rule (scene-goals.md §2): overlapping in plan
-    // and meeting in height is enough to weld, so a balcony with nothing under
-    // it joins the tower and never reports as floating. §4's cameras cover it.
+    // Known gap: a balcony with nothing under it welds to the tower and never floats.
     const mesh = merge([box([0, 0, 0], [10, 40, 10]), box([2, 20, 2], [8, 20.5, 8])]);
     expect(buildingPieces(mesh).count).toBe(1);
   });
