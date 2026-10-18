@@ -6,7 +6,7 @@ import { useAppPref } from "@/components/app-pref-provider";
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 /** Bumped with each release the panel describes, so a returning visitor sees the next one once. */
-const RELEASE = "2026-10-monaco";
+const RELEASE = "2026-10-boxlane";
 const SEEN_KEY = "f1tv-whats-new";
 
 const noSubscription = () => () => {};
@@ -30,13 +30,54 @@ export function useWhatsNew(): { open: boolean; show: () => void; close: () => v
   };
 }
 
-const VIEWS = ["iso", "top"] as const;
-type View = (typeof VIEWS)[number];
+type Strings = ReturnType<typeof useAppPref>["t"];
 
-/** Monaco on `main` beside Monaco now, from one camera preset, and what else changed. */
+/** One release: two views to flip between, each a before/after pair, and what changed. */
+type Release = {
+  id: string;
+  title: string;
+  lead: string;
+  views: { key: string; label: string }[];
+  changes: [string, string][];
+};
+
+/** Newest first; the panel opens on the first and keeps the rest under "Earlier". */
+const releases = (t: Strings): Release[] => [
+  {
+    id: "boxlane",
+    title: t.whatsNewBoxlaneTitle,
+    lead: t.whatsNewBoxlaneLead,
+    views: [
+      { key: "start", label: t.whatsNewViewStart },
+      { key: "track", label: t.whatsNewViewTrack },
+    ],
+    changes: [
+      [t.whatsNewNameTitle, t.whatsNewNameText],
+      [t.whatsNewChromeTitle, t.whatsNewChromeText],
+      [t.whatsNewPickerTitle, t.whatsNewPickerText],
+      [t.whatsNewCitiesTitle, t.whatsNewCitiesText],
+    ],
+  },
+  {
+    id: "monaco",
+    title: t.whatsNewMonacoTitle,
+    lead: t.whatsNewMonacoLead,
+    views: [
+      { key: "iso", label: t.whatsNewViewIso },
+      { key: "top", label: t.whatsNewViewTop },
+    ],
+    changes: [
+      [t.whatsNewCityTitle, t.whatsNewCityText],
+      [t.whatsNewHarbourTitle, t.whatsNewHarbourText],
+      [t.whatsNewStartTitle, t.whatsNewStartText],
+      [t.whatsNewPhonesTitle, t.whatsNewPhonesText],
+    ],
+  },
+];
+
+/** What each release changed, newest on top, with before/after shots to flip between. */
 export function WhatsNew({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useAppPref();
-  const [view, setView] = useState<View>("iso");
 
   useEffect(() => {
     if (!open) return;
@@ -48,17 +89,7 @@ export function WhatsNew({ open, onClose }: { open: boolean; onClose: () => void
   }, [open, onClose]);
 
   if (!open) return null;
-
-  const shots = [
-    { label: t.whatsNewBefore, src: `${PUBLIC_BASE_PATH}/whats-new/monaco-${view}-before.webp`, after: false },
-    { label: t.whatsNewAfter, src: `${PUBLIC_BASE_PATH}/whats-new/monaco-${view}-after.webp`, after: true },
-  ];
-  const changes = [
-    [t.whatsNewCityTitle, t.whatsNewCityText],
-    [t.whatsNewHarbourTitle, t.whatsNewHarbourText],
-    [t.whatsNewStartTitle, t.whatsNewStartText],
-    [t.whatsNewPhonesTitle, t.whatsNewPhonesText],
-  ];
+  const [latest, ...earlier] = releases(t);
 
   return (
     <div
@@ -69,90 +100,97 @@ export function WhatsNew({ open, onClose }: { open: boolean; onClose: () => void
         role="dialog"
         aria-modal="true"
         aria-labelledby="whats-new-title"
-        className="relative max-h-full w-full max-w-5xl overflow-y-auto rounded-2xl border border-foreground/10 bg-background shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-500"
+        className="relative max-h-full w-full max-w-5xl overflow-y-auto rounded-[14px] border border-border bg-background animate-in zoom-in-95 slide-in-from-bottom-4 duration-500"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="h-1.5 w-full bg-red-600" />
         <button
           aria-label={t.whatsNewClose}
-          className="absolute right-4 top-5 rounded-full p-2 text-foreground/50 transition hover:bg-foreground/10 hover:text-foreground"
+          className="absolute right-4 top-4 rounded-[10px] p-2 text-muted-foreground transition hover:bg-secondary hover:text-foreground"
           onClick={onClose}
         >
-          <X className="size-5" />
+          <X className="size-4" />
         </button>
 
-        <div className="px-5 pb-5 pt-5 md:px-8">
-          <div className="flex items-center gap-3">
-            <span
-              className="h-3 w-10 -skew-x-12 text-foreground/80"
-              style={{
-                backgroundImage: "repeating-conic-gradient(currentColor 0 25%, transparent 0 50%)",
-                backgroundSize: "8px 8px",
-              }}
-            />
-            <span className="font-mono text-[11px] uppercase tracking-[0.35em] text-red-600">{t.whatsNewKicker}</span>
-          </div>
-          <h2
-            id="whats-new-title"
-            className="mt-3 text-3xl font-black italic tracking-tight md:text-5xl"
-          >
-            {t.whatsNewTitle}
-          </h2>
-          <p className="mt-3 max-w-2xl text-sm text-foreground/65 md:text-base">{t.whatsNewLead}</p>
+        <div className="px-5 pb-5 pt-5 md:px-8 md:pt-7">
+          <div className="text-[13px] text-muted-foreground">{t.whatsNewKicker}</div>
+          <ReleaseBlock release={latest} headingId="whats-new-title" />
 
-          <div className="mt-5 flex gap-1 rounded-lg bg-foreground/5 p-1 text-xs font-semibold uppercase tracking-[0.15em] md:w-fit">
-            {VIEWS.map((key) => (
-              <button
-                key={key}
-                className={`flex-1 rounded-md px-4 py-2 transition md:flex-none ${
-                  view === key ? "bg-background text-foreground shadow-sm" : "text-foreground/50 hover:text-foreground"
-                }`}
-                onClick={() => setView(key)}
-              >
-                {key === "iso" ? t.whatsNewViewIso : t.whatsNewViewTop}
-              </button>
-            ))}
-          </div>
+          {earlier.map((release) => (
+            <section key={release.id} className="mt-8 border-t border-border pt-6">
+              <div className="text-[13px] text-muted-foreground">{t.whatsNewEarlier}</div>
+              <ReleaseBlock release={release} />
+            </section>
+          ))}
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {shots.map((shot) => (
-              <figure
-                key={shot.label}
-                className={`relative overflow-hidden rounded-xl border ${
-                  shot.after ? "border-red-600/60 shadow-[0_10px_40px_rgba(225,6,0,0.18)]" : "border-foreground/10"
-                }`}
-              >
-                <img src={shot.src} alt={`Monaco — ${shot.label}`} className="aspect-[16/10] w-full object-cover" />
-                <figcaption
-                  className={`absolute left-3 top-3 -skew-x-12 px-3 py-1 text-[11px] font-black uppercase italic tracking-[0.2em] ${
-                    shot.after ? "bg-red-600 text-white" : "bg-background/85 text-foreground/70"
-                  }`}
-                >
-                  <span className="inline-block skew-x-12">{shot.label}</span>
-                </figcaption>
-              </figure>
-            ))}
-          </div>
-
-          <ul className="mt-5 grid gap-x-8 gap-y-3 md:grid-cols-2">
-            {changes.map(([title, text]) => (
-              <li key={title} className="border-l-2 border-red-600/70 pl-3">
-                <div className="text-sm font-bold">{title}</div>
-                <div className="mt-0.5 text-sm text-foreground/60">{text}</div>
-              </li>
-            ))}
-          </ul>
-
-          <div className="mt-5 flex justify-end">
+          <div className="mt-6 flex justify-end">
             <button
-              className="flex -skew-x-12 items-center gap-3 bg-red-600 px-7 py-3 text-white shadow-[0_10px_30px_rgba(225,6,0,0.3)] transition hover:bg-red-500 active:scale-[0.98]"
+              className="inline-flex h-10 items-center rounded-[10px] bg-primary px-[18px] text-sm font-semibold text-primary-foreground hover:opacity-90"
               onClick={onClose}
             >
-              <span className="skew-x-12 text-sm font-black uppercase italic tracking-[0.2em]">{t.whatsNewDone}</span>
+              {t.whatsNewDone}
             </button>
           </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function ReleaseBlock({ release, headingId }: { release: Release; headingId?: string }) {
+  const { t } = useAppPref();
+  const [view, setView] = useState(release.views[0].key);
+  const shots = [
+    { label: t.whatsNewBefore, after: false },
+    { label: t.whatsNewAfter, after: true },
+  ];
+  return (
+    <>
+      <h2 id={headingId} className="mt-1 text-2xl font-semibold tracking-[-0.03em] md:text-4xl">
+        {release.title}
+      </h2>
+      <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground md:text-[15px]">{release.lead}</p>
+
+      <div className="mt-5 flex w-full gap-1 rounded-[10px] border border-border p-1 text-[13px] md:w-fit">
+        {release.views.map(({ key, label }) => (
+          <button
+            key={key}
+            className={`flex-1 rounded-[7px] px-3 py-1.5 transition md:flex-none ${
+              view === key ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setView(key)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {shots.map((shot) => (
+          <figure key={shot.label} className="relative overflow-hidden rounded-[10px] border border-border">
+            <img
+              src={`${PUBLIC_BASE_PATH}/whats-new/${release.id}-${view}-${shot.after ? "after" : "before"}.webp`}
+              alt={`${release.title} — ${shot.label}`}
+              className="aspect-[16/10] w-full object-cover"
+            />
+            <figcaption
+              className={`absolute left-2.5 top-2.5 rounded-md px-2 py-0.5 text-xs font-medium ${
+                shot.after ? "bg-primary text-primary-foreground" : "border border-border bg-background/90 text-muted-foreground"
+              }`}
+            >
+              {shot.label}
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+
+      <dl className="mt-5 grid gap-x-8 md:grid-cols-2">
+        {release.changes.map(([title, text]) => (
+          <div key={title} className="border-t border-border py-3">
+            <dt className="text-sm font-medium">{title}</dt>
+            <dd className="mt-0.5 text-sm text-muted-foreground">{text}</dd>
+          </div>
+        ))}
+      </dl>
+    </>
   );
 }
