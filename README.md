@@ -8,10 +8,6 @@
   <a href="https://makakashan.github.io/F1TrackViewer/">Live demo</a>
   ·
   <a href="./docs/architecture.md">Architecture</a>
-  ·
-  <a href="./docs/city-generation.md">How the city is baked</a>
-  ·
-  <a href="./docs/roadmap.md">Roadmap</a>
 </p>
 
 [![Deploy](https://img.shields.io/github/actions/workflow/status/Makakashan/F1TrackViewer/deploy.yml?branch=main&style=flat-square&label=deploy)](https://github.com/Makakashan/F1TrackViewer/actions/workflows/deploy.yml)
@@ -152,11 +148,7 @@ public/
   whats-new/                 screenshots for the what's-new panel
 docs/
   architecture.md            how the app runs
-  project-map.md             where things live, by symptom
-  city-generation.md         why the bake is shaped this way, decision by decision
-  scene-goals.md             what the baked scene must be, and its invariants
-  roadmap.md                 what is next, in priority order
-  history/                   what was already built, phase by phase
+  monaco-sources.md          where Monaco's details come from
 ```
 
 ## Data sources

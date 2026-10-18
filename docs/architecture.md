@@ -1,4 +1,4 @@
-# F1 Track Studio — Architecture
+# Boxlane — Architecture
 
 3D viewer and race simulation for Formula 1 circuits. Next.js, React Three Fiber,
 Tailwind.
