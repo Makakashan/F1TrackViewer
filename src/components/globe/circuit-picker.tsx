@@ -92,8 +92,8 @@ export function CircuitPicker({
     <aside
       className={
         sheet
-          ? "absolute inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] top-[calc(69px+env(safe-area-inset-top))] z-40 flex flex-col overflow-hidden rounded-[14px] border border-border bg-background/95 md:hidden"
-          : "absolute bottom-4 left-4 top-[73px] z-20 hidden w-(--picker-width) flex-col overflow-hidden rounded-[14px] border border-border bg-background/90 md:flex"
+          ? "absolute inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] top-[calc(69px+env(safe-area-inset-top))] z-40 flex flex-col overflow-hidden rounded-[14px] border border-border bg-background/80 backdrop-blur-xl md:hidden"
+          : "absolute bottom-4 left-4 top-[73px] z-20 hidden w-(--picker-width) flex-col overflow-hidden rounded-[14px] border border-border bg-background/80 backdrop-blur-xl md:flex"
       }
     >
       <div className="flex items-center gap-3 border-b border-border px-4 py-3">
