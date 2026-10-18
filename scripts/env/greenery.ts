@@ -185,8 +185,7 @@ function ringArea(ring: { x: number; z: number }[], signed = false): number {
   return signed ? sum / 2 : Math.abs(sum) / 2;
 }
 
-// ─── build ─────────────────────────────────────────────────────────────────
-
+// build
 /** How tall a kit tree is planted. Monaco's street planting is a small tree. */
 const TREE_HEIGHT_M = 7;
 /** Spacing along a surveyed tree row, which OSM gives as a line and not as trees. */

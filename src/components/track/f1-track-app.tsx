@@ -107,7 +107,7 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, []);
 
-  // ─── Hydrate URL state on mount ──────────────────────────────────
+  // Hydrate URL state on mount
   const didHydrate = useRef(false);
   useEffect(() => {
     if (didHydrate.current) return;
@@ -115,7 +115,7 @@ export default function F1TrackApp({
     hydrate(circuits);
   }, [circuits, hydrate]);
 
-  // ─── Sync URL when state changes (after hydration) ───────────────
+  // Sync URL when state changes (after hydration)
   useEffect(() => {
     if (!hydrated || !selectedId) return;
     syncUrl({
@@ -138,7 +138,7 @@ export default function F1TrackApp({
     syncUrl,
   ]);
 
-  // ─── Apply URL track selection to useCircuits ────────────────────
+  // Apply URL track selection to useCircuits
   const didApplyUrlTrack = useRef(false);
   useEffect(() => {
     if (didApplyUrlTrack.current) return;
@@ -150,7 +150,7 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, [circuits, hydrated, onSelect, selectedId, urlTrack]);
 
-  // ─── Auto-disable environment when the selected circuit has no bundle ─
+  // Auto-disable environment when the selected circuit has no bundle
   useEffect(() => {
     if (selectedId && environmentAvailable === false && environmentEnabled) {
       const timer = window.setTimeout(() => setUrlEnvironmentEnabled(false), 0);
@@ -158,7 +158,7 @@ export default function F1TrackApp({
     }
   }, [environmentAvailable, environmentEnabled, selectedId, setUrlEnvironmentEnabled]);
 
-  // ─── Reset view mode when markers confirm no sectors ─────────────
+  // Reset view mode when markers confirm no sectors
   useEffect(() => {
     if (
       viewMode === "sectors" &&
@@ -170,7 +170,7 @@ export default function F1TrackApp({
     }
   }, [markers, viewMode, setUrlViewMode]);
 
-  // ─── Mutual exclusion: sectors ↔ real width ──────────────────────
+  // Mutual exclusion: sectors ↔ real width
   const handleViewModeChange = useCallback(
     (next: TrackViewMode) => {
       setUrlViewMode(next);

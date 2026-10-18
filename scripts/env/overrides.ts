@@ -98,8 +98,7 @@ export async function loadOverrides(circuitId: string): Promise<CityOverrides | 
   }
 }
 
-// ─── geometry ──────────────────────────────────────────────────────────────
-
+// geometry
 export function pointInPolygon(lon: number, lat: number, polygon: [number, number][]): boolean {
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
@@ -112,8 +111,7 @@ export function pointInPolygon(lon: number, lat: number, polygon: [number, numbe
   return inside;
 }
 
-// ─── application ───────────────────────────────────────────────────────────
-
+// application
 /**
  * Terrain edits, applied to the field after the track was burned into it: a
  * hand-set height wins over both the raster and the road.

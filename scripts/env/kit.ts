@@ -148,8 +148,7 @@ export async function loadKitHouses(repoRoot: string, sources: KitSource[]): Pro
   return models;
 }
 
-// ─── paint ─────────────────────────────────────────────────────────────────
-
+// paint
 /**
  * The two ends of the kit's own range, in this diorama's paint: a wall in
  * daylight and the darkest thing on a house.
@@ -224,8 +223,7 @@ export function repaintKitHouse(mesh: Mesh): void {
   }
 }
 
-// ─── footprint shape ───────────────────────────────────────────────────────
-
+// footprint shape
 export interface Footprint {
   id: string;
   ring: { x: number; z: number }[];
@@ -354,8 +352,7 @@ function hashed(x: number, z: number): number {
   return value - Math.floor(value);
 }
 
-// ─── selection ─────────────────────────────────────────────────────────────
-
+// selection
 /** The terrace a modelled house stands on, in scene metres. */
 export interface KitPlinth {
   /** The fitted rectangle, which is what the model covers. */

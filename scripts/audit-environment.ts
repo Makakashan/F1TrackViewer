@@ -52,8 +52,7 @@ import type { ScenePlane } from "./env/plane";
 const REPO_ROOT = new URL("..", import.meta.url).pathname;
 const ENVIRONMENTS = join(REPO_ROOT, "public", "environments");
 
-// ─── budgets (D5, D14) ─────────────────────────────────────────────────────
-
+// budgets
 /** The city's share. The car fleet and the rest of the scene own the other 45. */
 const CITY_DRAW_CALL_BUDGET = 75;
 
@@ -85,8 +84,7 @@ const QUANTISATION_SLACK_M = 0.5;
 /** Above the ground by this much, geometry over the road is an eave, not a wall. */
 const EAVE_CLEARANCE_M = 3;
 
-// ─── checks ────────────────────────────────────────────────────────────────
-
+// checks
 interface Check {
   name: string;
   measured: string;
@@ -847,8 +845,7 @@ function checkCoastline(water: WaterFile, field: HeightField): { agree: number; 
   return { agree, total };
 }
 
-// ─── run ───────────────────────────────────────────────────────────────────
-
+// run
 async function audit(circuitId: string): Promise<Check[]> {
   // The same recipe the bake used, so a disagreement here is a real one.
   const { coords, plane, field, corridor, tunnels } = buildCircuitGround(await loadBakeInputs(circuitId));

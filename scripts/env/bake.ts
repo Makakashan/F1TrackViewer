@@ -199,8 +199,7 @@ type MeshKind = BakedMeshKind;
 /** The light set is what the bake writes; the dark one is the runtime's. */
 const MESH_COLOR = BAKED_MESH_COLORS.light;
 
-// ─── terrain ───────────────────────────────────────────────────────────────
-
+// terrain
 interface TerrainResult {
   meshes: Record<Belt, Mesh>;
   blocks: BeltBlocks;
@@ -1509,8 +1508,7 @@ function modelRim(field: HeightField, plane: ScenePlane): { minX: number; maxX: 
   };
 }
 
-// ─── water ─────────────────────────────────────────────────────────────────
-
+// water
 /**
  * One quad at the datum. D15 puts sea level at y = 0 everywhere, and the ground
  * only dips below it in a handful of cells, so a plane under the whole bbox
@@ -1540,8 +1538,7 @@ function bakePierDecks(piers: PierResult): Mesh {
   return mesh;
 }
 
-// ─── buildings ─────────────────────────────────────────────────────────────
-
+// buildings
 /** Fallback storey height where a building says how many it has but not how tall. */
 const STOREY_M = 3.1;
 /** Last resort: a building that says nothing about its height at all. */
@@ -2508,8 +2505,7 @@ function extrude(
   (mesh.flats ??= []).push(roofStart, mesh.positions.length / 3);
 }
 
-// ─── tunnel portals ────────────────────────────────────────────────────────
-
+// tunnel portals
 /** Half the opening. Wider than the road, the way a real portal is. */
 const PORTAL_HALF_WIDTH_M = 7;
 /** Springing height of the arch, and the crown above it. */
@@ -3260,8 +3256,7 @@ function trackHeightNear(field: HeightField, plane: ScenePlane, x: number, z: nu
   return best;
 }
 
-// ─── barriers ──────────────────────────────────────────────────────────────
-
+// barriers
 /** Clear of the racing surface, where a barrier actually stands. */
 const BARRIER_OFFSET_M = 1.2;
 const BARRIER_HEIGHT_M = 1.05;
@@ -3348,8 +3343,7 @@ function bakeBarriers(
   return mesh;
 }
 
-// ─── track ─────────────────────────────────────────────────────────────────
-
+// track
 /**
  * The track's height along its own centreline, in the field's datum.
  *
@@ -3462,8 +3456,7 @@ function trackElevations(field: HeightField, coords: [number, number][], plane: 
   });
 }
 
-// ─── GLB ───────────────────────────────────────────────────────────────────
-
+// GLB
 /** glTF base colour is linear; the palette is written the way CSS reads it. */
 function srgbToLinear(hex: string): [number, number, number, number] {
   const value = Number.parseInt(hex.slice(1), 16);
@@ -3587,8 +3580,7 @@ async function writeGlb(
   return glb.byteLength;
 }
 
-// ─── run ───────────────────────────────────────────────────────────────────
-
+// run
 export interface BakeReport {
   circuitId: string;
   belts: Record<Belt, { bytes: number; triangles: number; drawCalls: number }>;

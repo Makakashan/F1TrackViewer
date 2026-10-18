@@ -137,7 +137,7 @@ export default function RaceApp() {
     Math.max(totalLaps, 1),
   );
 
-  // ─── URL state, same contract as the viewer shell ────────────────
+  // URL state, same contract as the viewer shell
   const didHydrate = useRef(false);
   useEffect(() => {
     if (didHydrate.current) return;

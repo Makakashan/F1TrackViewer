@@ -129,8 +129,7 @@ export async function readBakedCircuit(
   return belts;
 }
 
-// ─── the ground, as drawn ──────────────────────────────────────────────────
-
+// the ground, as drawn
 /**
  * Bucket size for the triangle index. A far-belt cell is 16 m and its triangles
  * are the largest here, so a bucket that size holds a handful each.
@@ -306,8 +305,7 @@ export function buildGroundIndex(belts: BakedBelt[]): GroundIndex {
   );
 }
 
-// ─── one merged mesh, many buildings ───────────────────────────────────────
-
+// one merged mesh, many buildings
 /**
  * Labels every vertex with the piece it belongs to. A belt ships one merged
  * mesh per kind, so "does this building float" is a question about a connected

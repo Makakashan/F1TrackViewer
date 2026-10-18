@@ -229,8 +229,7 @@ export function buildTrackOutline(
   return outlineGeo;
 }
 
-// ─── Sector-colored track mesh ────────────────────────────────────────
-
+// Sector-colored track mesh
 function wrap01(value: number): number {
   return ((value % 1) + 1) % 1;
 }

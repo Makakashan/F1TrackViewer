@@ -97,8 +97,7 @@ export interface PropResult {
   };
 }
 
-// ─── berthing ──────────────────────────────────────────────────────────────
-
+// berthing
 /** Least edge a boat is worth berthing against. Shorter is a pontoon's end. */
 const MIN_BERTH_EDGE_M = 14;
 /** Clear water a hull needs, measured from the pontoon it is tied to. */
@@ -332,8 +331,7 @@ export function berthYachts(
   return berths;
 }
 
-// ─── parametric shapes ─────────────────────────────────────────────────────
-
+// parametric shapes
 interface Frame {
   /** Origin, at the stern for a boat and at the centre for anything else. */
   x: number;
@@ -543,8 +541,7 @@ const DEFAULT_LENGTH_M: Record<PropKind, number> = {
   grandstand: 40,
 };
 
-// ─── models ────────────────────────────────────────────────────────────────
-
+// models
 /**
  * A `.glb` merged in where it is placed.
  *
@@ -742,8 +739,7 @@ function placeModel(target: Mesh, source: Mesh, frame: Frame, scale: ModelScale)
   }
 }
 
-// ─── build ─────────────────────────────────────────────────────────────────
-
+// build
 export async function buildProps(
   placements: PropPlacement[],
   /** The drawn ground, by the same rule the terrain was meshed with. */

@@ -479,8 +479,7 @@ export default function EnvironmentLayer({
   );
 }
 
-// ─── DioramaBase ────────────────────────────────────────────────────────────
-
+// DioramaBase
 function DioramaBase({
   bbox,
   originLon,
@@ -731,8 +730,7 @@ function TerrainMesh({
   );
 }
 
-// ─── RoadLinesMesh ──────────────────────────────────────────────────────────
-
+// RoadLinesMesh
 function RoadLinesMesh({
   roads,
   originLon,
@@ -831,8 +829,7 @@ function RoadLinesMesh({
   );
 }
 
-// ─── BuildingExtrusions ─────────────────────────────────────────────────────
-
+// BuildingExtrusions
 function BuildingExtrusions({
   buildings,
   originLon,

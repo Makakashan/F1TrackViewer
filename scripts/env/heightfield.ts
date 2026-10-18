@@ -27,8 +27,7 @@ import {
   type RasterBBox,
 } from "./raster";
 
-// ─── types ─────────────────────────────────────────────────────────────────
-
+// types
 export interface TrackConstraint {
   /** Centreline in lon/lat, densified by the builder. */
   coords: [number, number][];
@@ -90,8 +89,7 @@ export interface HeightField {
   isWater(lon: number, lat: number): boolean;
 }
 
-// ─── constants ─────────────────────────────────────────────────────────────
-
+// constants
 /**
  * Paved shoulder the ground has to meet flush before it is allowed to rise.
  * One terrain cell: the ground is meshed at four metres, and with less the
@@ -120,8 +118,7 @@ const TRACK_SMOOTH_RADIUS_M = 25;
 
 const METERS_PER_DEG_LAT = 111_320;
 
-// ─── local metric plane ────────────────────────────────────────────────────
-
+// local metric plane
 interface Plane {
   toX(lon: number): number;
   toZ(lat: number): number;
@@ -138,8 +135,7 @@ function makePlane(bbox: RasterBBox): Plane {
   };
 }
 
-// ─── centreline ────────────────────────────────────────────────────────────
-
+// centreline
 /** Split every segment so no step exceeds `stepM`. GeoJSON straights run 400 m. */
 function densify(coords: [number, number][], stepM: number, plane: Plane): [number, number][] {
   const out: [number, number][] = [];
@@ -228,8 +224,7 @@ function alongChords(
   return out;
 }
 
-// ─── burn-in ───────────────────────────────────────────────────────────────
-
+// burn-in
 function smoothstep(t: number): number {
   const c = Math.min(1, Math.max(0, t));
   return c * c * (3 - 2 * c);
@@ -441,8 +436,7 @@ function burnTrack(
   };
 }
 
-// ─── build ─────────────────────────────────────────────────────────────────
-
+// build
 /** What a field carries when nothing was burned into it — a synthetic one. */
 const EMPTY_STATS: HeightFieldStats = {
   vaultedSamples: 0,
@@ -575,8 +569,7 @@ export function heightFieldFrom(parts: HeightFieldParts): HeightField {
   };
 }
 
-// ─── cache ─────────────────────────────────────────────────────────────────
-
+// cache
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 const CACHE_DIR = join(REPO_ROOT, "data", "cache", "heightfield");
 
@@ -619,8 +612,7 @@ export async function readHeightFieldHeader(
   }
 }
 
-// ─── CLI ───────────────────────────────────────────────────────────────────
-
+// CLI
 const USAGE = `Usage:
   bun scripts/env/heightfield.ts <circuitId> [--half-width=6] [--refresh]
 

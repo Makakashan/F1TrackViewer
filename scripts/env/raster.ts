@@ -13,8 +13,7 @@ import { join } from "node:path";
 
 import { SKADI_PROVIDER } from "./skadi";
 
-// ─── types ─────────────────────────────────────────────────────────────────
-
+// types
 export interface RasterBBox {
   minLon: number;
   minLat: number;
@@ -79,8 +78,7 @@ export interface ElevationProvider {
   ): Promise<Float32Array>;
 }
 
-// ─── geometry ──────────────────────────────────────────────────────────────
-
+// geometry
 const METERS_PER_DEG_LAT = 111_320;
 
 function metersPerDegLon(lat: number): number {
@@ -111,8 +109,7 @@ export function nativeGridSize(
   };
 }
 
-// ─── IGN Géoplateforme ─────────────────────────────────────────────────────
-
+// IGN Géoplateforme
 const IGN_LAYERS: Record<RasterKind, string> = {
   dtm: "ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES",
   dsm: "ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES.MNS",
@@ -164,8 +161,7 @@ export function providerFor(bbox: RasterBBox): ElevationProvider | null {
   return PROVIDERS.find((p) => p.covers(bbox)) ?? null;
 }
 
-// ─── nodata ────────────────────────────────────────────────────────────────
-
+// nodata
 /**
  * Nothing in a circuit bbox is real below this. The service blends its -99999
  * sentinel into neighbouring pixels, so the shoreline arrives carrying values
@@ -561,8 +557,7 @@ function summarise(values: Float32Array): {
   };
 }
 
-// ─── cache ─────────────────────────────────────────────────────────────────
-
+// cache
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 const CACHE_DIR = join(REPO_ROOT, "data", "cache", "elevation-raster");
 
@@ -621,8 +616,7 @@ async function writeCachedRaster(key: string, raster: Raster): Promise<void> {
   await writeFile(join(CACHE_DIR, `${key}.f32`), Buffer.from(raster.data.buffer));
 }
 
-// ─── fetch ─────────────────────────────────────────────────────────────────
-
+// fetch
 let lastRequestAt = 0;
 
 async function throttle(intervalMs: number): Promise<void> {
@@ -809,8 +803,7 @@ async function fetchFromProvider(
   return raster;
 }
 
-// ─── sampling ──────────────────────────────────────────────────────────────
-
+// sampling
 /** Nearest-neighbour, because interpolating across a nodata edge re-creates §5.5. */
 export function sampleRaster(raster: Raster, lon: number, lat: number): number {
   const { bbox, width, height } = raster.header;
@@ -822,8 +815,7 @@ export function sampleRaster(raster: Raster, lon: number, lat: number): number {
   return raster.data[row * width + col];
 }
 
-// ─── CLI ───────────────────────────────────────────────────────────────────
-
+// CLI
 const USAGE = `Usage:
   bun scripts/env/raster.ts --bbox=minLon,minLat,maxLon,maxLat [--kind=dtm|dsm|mnh] [--refresh]
 
