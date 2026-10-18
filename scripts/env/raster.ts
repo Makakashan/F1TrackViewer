@@ -1,11 +1,6 @@
 /**
- * Elevation rasters for the city generator: fetch, clean, cache.
- *
- * See docs/city-generation.md §5. The provider returns a raw little-endian
- * float32 grid, so there is nothing to decode — the response body *is* the
- * raster. Nodata arrives as -99999 and, because the service resamples, as
- * anything between that and real ground along a nodata edge; §5.5 covers why
- * both have to go.
+ * Elevation rasters for the city generator: fetch, clean, cache. The body is a raw
+ * little-endian float32 grid; nodata comes as -99999 and bleeds into its neighbours.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -13,8 +8,7 @@ import { join } from "node:path";
 
 import { SKADI_PROVIDER } from "./skadi";
 
-// ─── types ─────────────────────────────────────────────────────────────────
-
+// types
 export interface RasterBBox {
   minLon: number;
   minLat: number;
@@ -64,13 +58,7 @@ export interface ElevationProvider {
   covers(bbox: RasterBBox): boolean;
   /** A service that renders a raster per request answers with a URL. */
   url?(layer: string, bbox: RasterBBox, width: number, height: number): string;
-  /**
-   * A service that ships fixed tiles answers with the grid itself.
-   *
-   * One of `url` and `grid` has to be there. The split is not decoration: a WMS
-   * is asked for the exact window wanted and a tiled archive is not, so the
-   * resampling has to live on the provider that needs it.
-   */
+  /** A tiled archive answers with the grid itself; a WMS is asked for the exact window. */
   grid?(
     layer: string,
     bbox: RasterBBox,
@@ -79,8 +67,7 @@ export interface ElevationProvider {
   ): Promise<Float32Array>;
 }
 
-// ─── geometry ──────────────────────────────────────────────────────────────
-
+// geometry
 const METERS_PER_DEG_LAT = 111_320;
 
 function metersPerDegLon(lat: number): number {
@@ -95,10 +82,7 @@ export function bboxSizeMeters(bbox: RasterBBox): { width: number; height: numbe
   };
 }
 
-/**
- * Pixel count that lands one pixel on one source cell. Anything finer is the
- * service interpolating; anything coarser throws away data we already paid for.
- */
+/** Pixel count that puts one pixel on one source cell. Finer is the service interpolating. */
 export function nativeGridSize(
   bbox: RasterBBox,
   cellM: number,
@@ -111,8 +95,7 @@ export function nativeGridSize(
   };
 }
 
-// ─── IGN Géoplateforme ─────────────────────────────────────────────────────
-
+// IGN Géoplateforme
 const IGN_LAYERS: Record<RasterKind, string> = {
   dtm: "ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES",
   dsm: "ELEVATION.ELEVATIONGRIDCOVERAGE.HIGHRES.MNS",
@@ -121,8 +104,7 @@ const IGN_LAYERS: Record<RasterKind, string> = {
 
 export const IGN_PROVIDER: ElevationProvider = {
   id: "ign-geoplateforme",
-  // Measured, not documented: a 250 m bbox at 0.98 m/px repeats each value for
-  // four pixels. docs/city-generation.md §5.2.
+  // Measured, not documented: at 0.98 m/px each value repeats for four pixels.
   nativeCellM: 3.9,
   maxPixels: 5010,
   minRequestIntervalMs: 1_100, // x-ratelimit-limit-second: 1
@@ -153,62 +135,34 @@ export const IGN_PROVIDER: ElevationProvider = {
   },
 };
 
-/**
- * In order of how good the data is, not of how convenient it is. IGN is 3.9 m
- * over France; Skadi is 30 m over the world. A circuit takes the first that
- * covers it, so Monaco keeps the LiDAR and everything else still gets ground.
- */
+/** Best data first: IGN is 3.9 m over France, Skadi 30 m worldwide. */
 const PROVIDERS: ElevationProvider[] = [IGN_PROVIDER, SKADI_PROVIDER];
 
 export function providerFor(bbox: RasterBBox): ElevationProvider | null {
   return PROVIDERS.find((p) => p.covers(bbox)) ?? null;
 }
 
-// ─── nodata ────────────────────────────────────────────────────────────────
-
-/**
- * Nothing in a circuit bbox is real below this. The service blends its -99999
- * sentinel into neighbouring pixels, so the shoreline arrives carrying values
- * of -974 m sitting next to 2 m of quay.
- */
+// nodata
+/** Nothing in a circuit is real below this; the nodata sentinel blends into the shore. */
 const NODATA_FLOOR_M = -20;
 
 /**
- * Two source pixels per output pixel per axis. Enough to break the beat in §5.7
- * at four times the bytes, all of which stay in the cache.
+ * Two source pixels per output pixel per axis, to break the beat of the service's
+ * non-square grid.
  */
 const DEFAULT_SUPERSAMPLE = 2;
 
 /** Smallest constant-value region taken for water: 0.46 ha at a 3.9 m cell. */
 const FLAT_WATER_MIN_CELLS = 300;
-/**
- * Safety valve on the flat-water rule, not a statement about water: above this
- * a constant plateau is more likely a man-made surface than a basin.
- */
+/** Above this a constant plateau is more likely a built surface than water. */
 const FLAT_WATER_MAX_ELEVATION_M = 50;
-/**
- * Smallest patch of land allowed to sit in open water. Below a small building's
- * footprint it is a boat or a buoy in the LiDAR, not an island.
- */
+/** Smaller land in open water is a boat or a buoy in the LiDAR, not an island. */
 const MIN_ISLAND_M2 = 150;
-/**
- * Smallest enclosed patch of nodata kept as water.
- *
- * The DTM has holes: a boat shadow, a crane, a gap in the flight lines. Ringed
- * by ground, one of those is not a pond — it is a hole punched through the quay,
- * and the terrain cuts a coastline around it. The one at the root of Port
- * Hercule's T pier is 24 m2. Kept the same size as an islet, because the two
- * questions are the same one turned over.
- */
+/** Smaller enclosed nodata is a hole in the survey (a boat shadow, a crane), not a pond. */
 const MIN_POND_M2 = 150;
 /**
- * Half the narrowest strip of land kept, in metres.
- *
- * Measured, not guessed: a marina pontoon is 3–4 m across and Monaco's quays
- * are 10–20 m, so the cut has to fall between them. Set at 5 m it took the
- * quays with it — erosion by three cells leaves nothing of a five-cell jetty
- * but a chewed remnant — so it sits at one cell instead, which deletes strips
- * up to about 4 m wide and leaves anything wider untouched.
+ * Half the narrowest strip of land kept. Pontoons are 3-4 m, quays 10-20 m; one cell
+ * sits between them.
  */
 const MIN_LAND_HALF_WIDTH_M = 2;
 
@@ -220,13 +174,8 @@ function maskNodata(values: Float32Array): void {
 }
 
 /**
- * Average `factor`×`factor` blocks down to the target grid, ignoring nodata.
- *
- * The service's grid is 3.90 m across and 4.35 m down — not square, and not
- * aligned to anything we can ask for. Sampling it at one pixel per cell beats
- * against that mismatch and lays periodic ridges across the raster every fourth
- * row, which would read as terraces on a hillside. Fetching at twice the pitch
- * and averaging removes the beat without touching real relief.
+ * Average blocks down to the target grid, skipping nodata. The service grid is not
+ * square, and sampling it directly lays ridges every fourth row.
  */
 function downsample(
   values: Float32Array,
@@ -251,8 +200,7 @@ function downsample(
           n++;
         }
       }
-      // A block that is mostly sea stays sea: half-covered cells on the
-      // shoreline are the ones §5.5 says not to trust.
+      // A block that is mostly sea stays sea; half-covered shore cells are not trustworthy.
       out[row * outWidth + col] = n * 2 >= factor * factor ? sum / n : Number.NaN;
     }
   }
@@ -260,13 +208,8 @@ function downsample(
 }
 
 /**
- * Enclosed water — a harbour, a marina, a sheltered bay — does not arrive as
- * nodata the way the open sea does. The service stamps it with a single
- * constant: Port Hercule is 22.5 ha of exactly 1.20 m, Fontvieille 7.0 ha of
- * 0.61 m, Larvotto 4.3 ha of -0.23 m. Ground is never bit-identical over
- * hectares, so a large connected run of one value is the source telling us it
- * filled water, and marking it NaN keeps the coastline decided by the DEM alone
- * (D15) instead of borrowing an OSM polygon that would not line up.
+ * Enclosed water arrives as one constant value over hectares, never real ground.
+ * Marking it NaN lets the DEM decide the coast instead of an OSM polygon.
  */
 function markFlatWater(
   values: Float32Array,
@@ -317,31 +260,8 @@ function markFlatWater(
 }
 
 /**
- * Erode the valid mask, one cell per pass: a pixel touching nodata was averaged
- * with it, whatever it now claims. Runs at the fetched pitch, so two passes cost
- * one output cell of open coast and leave harbour edges — which are not nodata
- * at this point — untouched.
- */
-/**
- * Land too small to be land. A LiDAR return off a moored boat, a buoy or a
- * pontoon leaves a handful of dry cells sitting in the middle of a basin, and
- * the terrain dutifully builds an islet there — from any distance the harbour
- * reads as a speckled edge rather than as water.
- *
- * Anything enclosed by water and smaller than a building's footprint goes back
- * to being water. A component touching the raster's edge is left alone: it runs
- * out of the frame and its real size is not knowable here.
- */
-/**
- * Land narrower than it is long is not land here.
- *
- * A marina reads back as a comb: pontoons, moored hulls and the odd crane leave
- * strips of dry cells one or two wide running out into the basin, and the
- * shoreline grows tongues and detached flakes that no amount of smoothing the
- * edge can fix, because the mask itself says they are there. A morphological
- * opening — erode the land, then dilate what survives — deletes anything
- * thinner than twice the radius while leaving a real quay, which is tens of
- * metres across, exactly where it was.
+ * Morphological opening: delete land thinner than twice the radius (pontoons, hulls)
+ * while a real quay stays where it was.
  */
 function openLand(
   data: Float32Array,
@@ -389,6 +309,7 @@ function openLand(
   return removed;
 }
 
+/** Land smaller than a building inside water is a boat or buoy in the LiDAR; make it water. */
 function despeckleLand(
   data: Float32Array,
   width: number,
@@ -433,14 +354,7 @@ function despeckleLand(
   return removed;
 }
 
-/**
- * Fills small enclosed patches of nodata, the mirror of `despeckleLand`.
- *
- * A nodata component that never reaches the edge of the raster is surrounded by
- * ground, so it is either a real pond or a hole in the survey. Below a pond's
- * size it is a hole, and it is filled from the ring of ground around it rather
- * than left for the terrain to cut a coastline through.
- */
+/** Fill small enclosed nodata from the ground around it, the mirror of `despeckleLand`. */
 function fillPonds(
   data: Float32Array,
   width: number,
@@ -505,6 +419,7 @@ function fillPonds(
   return filled;
 }
 
+/** Erode the valid mask one cell per pass: a pixel touching nodata was averaged with it. */
 function erodeNodata(
   values: Float32Array,
   width: number,
@@ -561,8 +476,7 @@ function summarise(values: Float32Array): {
   };
 }
 
-// ─── cache ─────────────────────────────────────────────────────────────────
-
+// cache
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 const CACHE_DIR = join(REPO_ROOT, "data", "cache", "elevation-raster");
 
@@ -594,16 +508,7 @@ async function readCachedRaster(key: string): Promise<Raster | null> {
   }
 }
 
-/**
- * The last of the water cleanup, applied to the finished grid rather than to
- * the fetched one.
- *
- * The cache holds the processed raster, not the tiles behind it, so a change
- * anywhere earlier in the pipeline can only be made by refetching every tile
- * from the IGN. This step reads the same as it would there — a hole in the quay
- * is smaller than a pond at any cell size — so it runs here, on whatever the
- * cache hands back, and costs nobody a download.
- */
+/** Water cleanup on the cached grid, so changing it never forces a refetch of every tile. */
 function cleanWater(raster: Raster, kind: RasterKind): void {
   if (kind === "mnh") return;
   const cellAreaM2 = raster.header.pixelSizeM.x * raster.header.pixelSizeM.y;
@@ -621,8 +526,7 @@ async function writeCachedRaster(key: string, raster: Raster): Promise<void> {
   await writeFile(join(CACHE_DIR, `${key}.f32`), Buffer.from(raster.data.buffer));
 }
 
-// ─── fetch ─────────────────────────────────────────────────────────────────
-
+// fetch
 let lastRequestAt = 0;
 
 async function throttle(intervalMs: number): Promise<void> {
@@ -676,17 +580,8 @@ async function fetchBil(
 }
 
 /**
- * The raster, from the best provider that actually has data there.
- *
- * `covers` is a bounding box and a country is not. IGN's box has to hold France,
- * which means it also holds Belgium, Luxembourg, the Rhineland, Piedmont and
- * Catalonia — and IGN has nothing in any of them. Spa came out of P4.4's sweep
- * with a raster of **875 280 nodata and no valid pixel**, a city belt of zero
- * triangles, and no error anywhere: the coverage test said yes and the service
- * said nothing, which is not the same as the service saying nothing is there.
- *
- * So coverage is claimed by the box and confirmed by the answer. A provider that
- * returns an empty raster hands the circuit to the next one that covers it.
+ * The raster from the best provider that actually has data. IGN's box covers
+ * neighbouring countries it has nothing for, so an empty answer passes to the next.
  */
 export async function fetchElevationRaster(options: FetchRasterOptions): Promise<Raster> {
   const { bbox } = options;
@@ -695,7 +590,7 @@ export async function fetchElevationRaster(options: FetchRasterOptions): Promise
   const candidates = PROVIDERS.filter((candidate) => candidate.covers(bbox));
   if (!candidates.length) {
     throw new Error(
-      `no elevation provider covers ${JSON.stringify(bbox)} — see docs/city-generation.md §5.1`,
+      `no elevation provider covers ${JSON.stringify(bbox)}`,
     );
   }
   let last: Raster | null = null;
@@ -747,19 +642,11 @@ async function fetchFromProvider(
     ? await provider.grid(layer, bbox, fetchWidth, fetchHeight)
     : await fetchBil(provider, layer, kind, bbox, fetchWidth, fetchHeight);
   maskNodata(fetched);
-  // Erode at the fetched pitch first: a contaminated pixel that survives into a
-  // block average drags the whole output cell below sea level, and the coast is
-  // where that shows.
-  // Two passes: the sentinel bleeds two pixels deep in places, and what the
-  // first pass leaves behind is what dragged the coast to -13 m when the
-  // output-pitch erosion was dropped.
+  // Erode at the fetched pitch first, twice: the sentinel bleeds two pixels deep and
+  // drags the coast below sea level.
   erodeNodata(fetched, fetchWidth, fetchHeight, 2);
-  // Order matters at the shore. Water is marked at the fetched pitch, before
-  // any averaging: a block straddling the quay would otherwise mix the basin's
-  // fill into the wall and leave a low ramp where a vertical face belongs.
-  // Averaging then skips those cells, so a half-water block takes the quay's
-  // own height. One erosion, at the fetched pitch, is enough — the second at
-  // the output pitch only ate another 3.9 m of coast.
+  // Mark water before averaging, or a block on the quay mixes the basin into the wall
+  // and leaves a ramp.
   const flatWaterFetched =
     kind === "mnh" || options.flatWater === false
       ? 0
@@ -809,9 +696,8 @@ async function fetchFromProvider(
   return raster;
 }
 
-// ─── sampling ──────────────────────────────────────────────────────────────
-
-/** Nearest-neighbour, because interpolating across a nodata edge re-creates §5.5. */
+// sampling
+/** Nearest-neighbour, because interpolating across a nodata edge brings the sentinel back. */
 export function sampleRaster(raster: Raster, lon: number, lat: number): number {
   const { bbox, width, height } = raster.header;
   const u = (lon - bbox.minLon) / (bbox.maxLon - bbox.minLon);
@@ -822,8 +708,7 @@ export function sampleRaster(raster: Raster, lon: number, lat: number): number {
   return raster.data[row * width + col];
 }
 
-// ─── CLI ───────────────────────────────────────────────────────────────────
-
+// CLI
 const USAGE = `Usage:
   bun scripts/env/raster.ts --bbox=minLon,minLat,maxLon,maxLat [--kind=dtm|dsm|mnh] [--refresh]
 

@@ -1,8 +1,4 @@
-/**
- * The track ribbon as the viewer draws it: the same curve through the same
- * heights, at the same half width. The ground is met to this, not to a width
- * of its own, or the two disagree about where the road stops.
- */
+/** The ribbon as the viewer draws it, so ground and road agree where the road stops. */
 
 import * as THREE from "three";
 

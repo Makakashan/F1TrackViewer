@@ -1,18 +1,6 @@
 /**
- * Layer B of `docs/scene-goals.md` §3: the committed slice of Monaco, through
- * the real pipeline.
- *
- * Synthetic ground says the arithmetic is right. This says the arithmetic
- * survives contact with a harbour — a quay, a cliff, a tunnel mouth, water in
- * frame, and buildings on ground that falls 20 m under their own walls. It
- * bakes in under a second and reads the GLB back with the reader the audit
- * uses, so the numbers here and the numbers `env:audit` prints are the same
- * measurements over the same file.
- *
- * What it does not cover: the city/far boundary — the window sits inside 600 m
- * of the centreline, so the far belt ships water and nothing else — and the
- * asset kit, which is left empty so a checkout without `bun run assets:fetch`
- * gets the same answer as one with it.
+ * A committed slice of Monaco through the real pipeline: quay, cliff, tunnel mouth,
+ * steep ground. Reads the GLB back with the audit's own reader.
  */
 
 import { afterAll, describe, expect, test } from "bun:test";
@@ -66,7 +54,7 @@ describe("the slice bakes", () => {
     expect(report.buildings.droppedTooLow).toBe(0);
   });
 
-  test("inside every belt's budget (I6)", () => {
+  test("inside every belt's budget", () => {
     for (const belt of baked) {
       const budget = BELT_BUDGET[belt.belt];
       const triangles = belt.meshes.reduce((sum, mesh) => sum + mesh.triangles, 0);
@@ -77,7 +65,7 @@ describe("the slice bakes", () => {
 });
 
 describe("what the shipped GLB has to hold", () => {
-  test("no building floats, and none is buried whole (I2)", () => {
+  test("no building floats, and none is buried whole", () => {
     const standing: Standing = {
       pieces: 0,
       overWater: 0,
@@ -97,7 +85,7 @@ describe("what the shipped GLB has to hold", () => {
     expect(standing.deepestDigM).toBeLessThan(30);
   });
 
-  test("the belts agree where they meet (I3)", () => {
+  test("the belts agree where they meet", () => {
     const seam = checkSeams(baked, SEAM_TOLERANCE_M);
     expect(seam.points).toBeGreaterThan(100);
     // Monaco whole still carries 28 points over the limit; this window carries
@@ -133,13 +121,13 @@ describe("the filter, on ground that was surveyed rather than written", () => {
   const surface = buildGround(field, plane, breaklines, streets);
   const relief = checkRelief(surface, field, plane, breaklines, "city", streets);
 
-  test("takes the ripple out and leaves the relief in (I7)", () => {
+  test("takes the ripple out and leaves the relief in", () => {
     expect(relief.kinkM).toBeLessThanOrEqual(RELIEF_KINK_M);
     expect(relief.kinkM).toBeLessThan(relief.rawKinkM);
     expect(Math.abs(relief.meanSlopeDeg - relief.rawSlopeDeg)).toBeLessThanOrEqual(RELIEF_SLOPE_DEG);
   });
 
-  test("and keeps the step across a surveyed wall (I7)", () => {
+  test("and keeps the step across a surveyed wall", () => {
     // Nine breaklines run through this window — a real cliff and real quay
     // walls, not a line drawn to be found.
     expect(relief.stepEdges).toBeGreaterThan(5);

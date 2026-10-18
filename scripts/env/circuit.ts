@@ -1,10 +1,4 @@
-/**
- * Circuit centreline and bbox for the city generator.
- *
- * The old `generate-environment.ts` carries its own copy of this; it is on the
- * way out (docs/city-generation.md D17) and is left alone rather than made to
- * depend on the new path.
- */
+/** Circuit centreline and bbox for the city generator. */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -46,10 +40,7 @@ export async function loadCircuitCoords(circuitId: string): Promise<[number, num
   return line.geometry.coordinates;
 }
 
-/**
- * The length the viewer reads off its own copy of the circuit, which is what it
- * sizes the ribbon's sampling by. Null where the app ships no copy (a fixture).
- */
+/** The lap length the viewer uses for ribbon sampling. Null for a fixture. */
 export async function circuitLengthM(circuitId: string): Promise<number | null> {
   try {
     const text = await readFile(join(REPO_ROOT, "public", "circuits", `${circuitId}.geojson`), "utf8");

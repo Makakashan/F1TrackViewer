@@ -1,4 +1,4 @@
-/** Browser-side loader for the baked city (docs/city-generation.md D14). */
+/** Browser-side loader for the baked city. */
 
 export type CityBelt = "far" | "city" | "core";
 
@@ -45,10 +45,7 @@ export function cityBeltUrl(circuitId: string, belt: CityBelt): string {
   return `${cityBaseUrl(circuitId)}/${belt}.glb`;
 }
 
-/**
- * The manifest is the gate: a circuit with one is baked and takes the new path,
- * a circuit without one keeps the runtime diorama (D17).
- */
+/** A circuit with a manifest takes the baked path; without one, the runtime diorama. */
 export async function fetchCityManifest(circuitId: string): Promise<CityManifest | null> {
   try {
     const res = await fetch(`${cityBaseUrl(circuitId)}/city-manifest.json`, {

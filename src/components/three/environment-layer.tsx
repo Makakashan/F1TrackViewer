@@ -234,7 +234,6 @@ function polygonArea2D(points: { x: number; y: number }[]): number {
   return Math.abs(area) / 2;
 }
 
-
 type XY = { x: number; y: number };
 
 interface TrackCorridor {
@@ -479,8 +478,7 @@ export default function EnvironmentLayer({
   );
 }
 
-// ─── DioramaBase ────────────────────────────────────────────────────────────
-
+// DioramaBase
 function DioramaBase({
   bbox,
   originLon,
@@ -731,8 +729,7 @@ function TerrainMesh({
   );
 }
 
-// ─── RoadLinesMesh ──────────────────────────────────────────────────────────
-
+// RoadLinesMesh
 function RoadLinesMesh({
   roads,
   originLon,
@@ -831,8 +828,7 @@ function RoadLinesMesh({
   );
 }
 
-// ─── BuildingExtrusions ─────────────────────────────────────────────────────
-
+// BuildingExtrusions
 function BuildingExtrusions({
   buildings,
   originLon,
@@ -943,10 +939,8 @@ function BuildingExtrusions({
       const groundY = terrainSampler
         ? baseY + terrainSampler.heightAt(centroidLon, centroidLat) + drapeY
         : baseY + flatY;
-      // Clamped so no single tower pokes through the ribbon above the city.
-      // The centimetres on the end break the tie between overlapping buildings
-      // filed at the same OSM height, whose roofs otherwise z-fight. Keyed on
-      // where the building is, so two that overlap cannot draw the same lift.
+      // Clamped below the ribbon. The position-keyed centimetres stop overlapping
+      // roofs at the same height from z-fighting.
       const roofY =
         groundY +
         Math.min(Math.max(2, b.height), 34) +

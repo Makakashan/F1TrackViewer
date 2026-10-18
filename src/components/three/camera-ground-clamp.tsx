@@ -1,18 +1,8 @@
 "use client";
 
 /**
- * Keeps the camera out of the hill.
- *
- * Terrain is a surface with its back faces culled, so a camera inside it sees
- * the city from underneath: the road through the rock, the sea through the
- * ground. `maxPolarAngle` stops that happening by going under the model; this
- * stops it happening by flying into it.
- *
- * The ground is read once off the loaded belts into a coarse max-height grid —
- * the meshes are on the GPU either way, and a raycast against 400k triangles on
- * every camera move is not a trade this scene makes. Each triangle writes its
- * highest corner into every cell its footprint covers, so the grid is never
- * lower than the ground it stands for and the clamp errs upwards.
+ * Keeps the camera out of the hill. Ground is read once into a coarse max-height grid
+ * instead of raycasting 400k triangles per move, so it errs upwards.
  */
 
 import { useEffect, useRef } from "react";

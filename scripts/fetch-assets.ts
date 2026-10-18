@@ -1,14 +1,6 @@
 /**
- * Downloads the model packs the bake merges from, and writes their credits.
- *
- * The packs are not committed — a city kit is four megabytes of things the
- * bake never places — so `assets/assets.json` records where each one came
- * from, under what licence, and which folder inside the archive is wanted.
- * Running this fills `assets/models/<pack>/` and rewrites `assets/CREDITS.md`.
- *
- * A CC-BY pack is allowed here as long as its line lands in CREDITS.md, which
- * is the whole reason the licence and author are part of the manifest rather
- * than something remembered.
+ * Downloads the model packs and writes `assets/CREDITS.md` from the manifest, so
+ * every CC-BY credit is recorded.
  */
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";

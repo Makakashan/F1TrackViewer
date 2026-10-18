@@ -1,9 +1,4 @@
-/**
- * The index that tells the ground filter where it may not average across.
- *
- * Everything here is geometry in field-node coordinates, so the answers are
- * the ones a pencil gives.
- */
+/** The index that tells the ground filter where not to average. */
 
 import { describe, expect, test } from "bun:test";
 import type { ShoreWay } from "./overpass";

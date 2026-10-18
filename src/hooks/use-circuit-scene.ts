@@ -14,7 +14,7 @@ export interface CircuitScene {
   widthProfile: TrackWidthProfile | null | undefined;
   environmentBundle: EnvironmentBundle | null | undefined;
   environmentAvailable: boolean | undefined;
-  /** Present when the circuit has a baked city; it replaces the diorama (D17). */
+  /** Present when the circuit has a baked city; it replaces the diorama. */
   cityManifest: CityManifest | null | undefined;
 }
 
@@ -84,7 +84,7 @@ export function useCircuitScene(
 
   // Manifest-only check (~1 KB).
   useEffect(() => {
-    // A baked city makes the diorama's 2 MB of JSON dead weight (D17).
+    // A baked city makes the diorama's 2 MB of JSON dead weight.
     if (cityManifest) {
       const timer = window.setTimeout(() => setEnvironmentAvailable(false), 0);
       return () => window.clearTimeout(timer);

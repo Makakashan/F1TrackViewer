@@ -1,19 +1,6 @@
 /**
- * The height field: the one source of truth for ground level.
- *
- * docs/city-generation.md D2, D3, D15. Terrain, buildings, roads, water and the
- * track ribbon all read this, so none of them can disagree about where the
- * ground is — which is what made buildings float and the track cut through
- * hills when each of them sampled its own grid.
- *
- * Heights are metres above sea level, unshifted. `NaN` means no data, which at
- * a coastal circuit means the sea: the provider carries no bathymetry, so the
- * coastline is the nodata boundary rather than a second opinion from OSM.
- *
- * Storage is uniform at the provider's native cell, not the adaptive quadtree
- * §3.3 sketched. Monaco is 2 MB at 3.9 m — a build-time array, never shipped.
- * The belts in D3/D7 decide how finely each part of the *mesh* is built; making
- * the field itself adaptive would buy nothing and cost a lookup per sample.
+ * The height field: the one source of truth for ground level. Metres above sea, NaN
+ * for no data, which at the coast is the sea. Build-time only, never shipped.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -27,8 +14,7 @@ import {
   type RasterBBox,
 } from "./raster";
 
-// ─── types ─────────────────────────────────────────────────────────────────
-
+// types
 export interface TrackConstraint {
   /** Centreline in lon/lat, densified by the builder. */
   coords: [number, number][];
@@ -38,28 +24,15 @@ export interface TrackConstraint {
   vergeM?: number;
   /** Distance over which the ground eases back to its own level. */
   blendM?: number;
-  /**
-   * A surveyed wall or cliff between two points. The verge stops at one: the
-   * step beside the road is the wall's, and flattening across it ramped the
-   * retaining walls along Monaco's streets.
-   */
+  /** A surveyed wall or cliff between two points. The verge stops at it. */
   walls?(lon0: number, lat0: number, lon1: number, lat1: number): boolean;
   /**
-   * Where the track runs under the ground rather than on it — the Monaco
-   * tunnel. The raster there describes the hill, not the road beneath it, so
-   * these samples take an interpolated elevation instead of a measured one.
+   * Where the track runs underground. The raster sees the hill, so these heights are interpolated.
    */
   buried?(lon: number, lat: number): boolean;
   /**
-   * Where a vault is holding the hill up, and the ground must therefore keep
-   * its own height. Burning those stretches in would carve a canyon through
-   * the hill the road passes under.
-   *
-   * Narrower than `buried`, and deliberately so. A tagged tunnel reaches
-   * beyond the stretch that has a hill over it — under a building the ground
-   * is at road level and the bake builds no vault — and where nothing is
-   * holding the hill up, the road is in a cutting and the ground belongs at
-   * the road's level. Defaults to `buried`, which is the old behaviour.
+   * Where a vault holds the hill up, so the ground keeps its height. Narrower than
+   * `buried`: past the vault the road is in a cutting. Defaults to `buried`.
    */
   vaulted?(lon: number, lat: number): boolean;
 }
@@ -90,38 +63,27 @@ export interface HeightField {
   isWater(lon: number, lat: number): boolean;
 }
 
-// ─── constants ─────────────────────────────────────────────────────────────
-
+// constants
 /**
- * Paved shoulder the ground has to meet flush before it is allowed to rise.
- * One terrain cell: the ground is meshed at four metres, and with less the
- * triangle that climbs away from the road started inside the ribbon — up to
- * 2.5 m of hillside over the tarmac past the tunnel. No wider, or it flattens
- * the hillside the buildings stand on.
+ * Paved shoulder the ground meets flush: one terrain cell, so the slope starts
+ * outside the ribbon.
  */
 export const DEFAULT_VERGE_M = 4;
 /**
- * Over this distance the ground eases from the track's level back to its own.
- * Short for the same reason — a 25 m ramp turns Monaco's retaining walls into
- * embankments and moved cells by up to 24 m when measured. Long enough only to
- * stop a one-cell cliff at the corridor edge.
+ * Distance the ground eases back from track level. Longer turns retaining walls
+ * into embankments.
  */
 const DEFAULT_BLEND_M = 6;
 /** Centreline step for the burn-in. Below the 3.9 m cell, so no cell is skipped. */
 const TRACK_SAMPLE_M = 3;
-/**
- * The DEM cell is now 3.9 m rather than 43 m, so the profile needs enough
- * smoothing to kill cell steps and no more — 120 m would flatten the climb to
- * Casino into a ramp.
- */
+/** Profile smoothing: enough to remove DEM cell steps, not enough to flatten the climb. */
 /** Lowest a road outside a tunnel is laid: clear of the land held 0.25 m over the sea plane. */
 const ROAD_FLOOR_M = 0.5;
 const TRACK_SMOOTH_RADIUS_M = 25;
 
 const METERS_PER_DEG_LAT = 111_320;
 
-// ─── local metric plane ────────────────────────────────────────────────────
-
+// local metric plane
 interface Plane {
   toX(lon: number): number;
   toZ(lat: number): number;
@@ -138,8 +100,7 @@ function makePlane(bbox: RasterBBox): Plane {
   };
 }
 
-// ─── centreline ────────────────────────────────────────────────────────────
-
+// centreline
 /** Split every segment so no step exceeds `stepM`. GeoJSON straights run 400 m. */
 function densify(coords: [number, number][], stepM: number, plane: Plane): [number, number][] {
   const out: [number, number][] = [];
@@ -158,11 +119,7 @@ function densify(coords: [number, number][], stepM: number, plane: Plane): [numb
   return out;
 }
 
-/**
- * The track's own elevation, read from the same raster as the ground and then
- * put through the scene's existing profile cleanup, so the constraint the field
- * relaxes to is a drivable line rather than raw DEM noise.
- */
+/** The track's elevation from the same raster, cleaned into a drivable line. */
 function trackElevationProfile(
   dtm: Raster,
   coords: [number, number][],
@@ -203,12 +160,7 @@ function trackElevationProfile(
   return smoothTerrainTrackProfile(filled, coords, TRACK_SMOOTH_RADIUS_M);
 }
 
-/**
- * The profile as the app draws it: the manifest carries a height per centreline
- * vertex and the ribbon runs straight between them, so the ground is burned to
- * that line. Burned to the dense samples instead, a 500 m straight sagged under
- * a hump of ground the ribbon then passed beneath.
- */
+/** Burn to the chords the app draws between vertices, not the dense samples. */
 function alongChords(
   elevations: number[],
   vertices: [number, number][],
@@ -228,18 +180,15 @@ function alongChords(
   return out;
 }
 
-// ─── burn-in ───────────────────────────────────────────────────────────────
-
+// burn-in
 function smoothstep(t: number): number {
   const c = Math.min(1, Math.max(0, t));
   return c * c * (3 - 2 * c);
 }
 
 /**
- * Sets the field to the track's level inside the corridor and eases back to the
- * ground over `BLEND_M`. The ease never invents land where the raster says sea:
- * only the corridor itself may create ground, because the road is demonstrably
- * there.
+ * Set the field to track level in the corridor, easing back over `BLEND_M`. Only
+ * the corridor itself may turn sea into ground.
  */
 function burnTrack(
   data: Float32Array,
@@ -257,12 +206,7 @@ function burnTrack(
 ): HeightFieldStats {
   const cellX = bboxSizeMeters(bbox).width / (width - 1);
   const cellZ = bboxSizeMeters(bbox).height / (height - 1);
-  // The corridor has to be wider than the grid it is burned into, or it lands
-  // between nodes and nothing is written at all. Over France the cell is 3.9 m
-  // and a 16 m corridor covers four of them; over SRTM it is 30 m and the road
-  // fell straight through the gap — measured, the shipped profile stood 0.73 m
-  // off ground the burn was supposed to have set, on a stretch with a 0.2%
-  // gradient, which is not a slope problem but a resolution one.
+  // The corridor must be wider than the grid cell, or on a 30 m grid it falls between nodes.
   const cell = Math.max(cellX, cellZ);
   const hard = Math.max(halfWidthM + vergeM, cell * 1.2);
   const reach = hard + Math.max(blendM, cell * 1.5);
@@ -287,18 +231,8 @@ function burnTrack(
   }
   const lap = arcAt[arcAt.length - 1];
 
-  // Where the burn meets a vault it stops square, not round. The corridor is a
-  // distance to a polyline, so every segment carries a round end cap reaching a
-  // full `reach` beyond itself — which is straight through the tunnel mouth and
-  // on into the hill, flattening the very ground the portal has to be a hole in.
-  // Clipping the last segment alone is not enough: the one before it reaches
-  // just as far. Measured, terrain nodes 6 m inside the vault were still being
-  // pulled down to the road, and the ramp back up to the hill was drawn across
-  // the opening.
-  //
-  // So the clip is a plane at the mouth rather than a rule about segments. It
-  // only holds near the mouth — a half-space over the whole map would refuse to
-  // burn every other part of the lap that happens to lie beyond it.
+  // Stop the burn square at a vault's mouth with a plane, or the round end caps
+  // flatten the hill the portal sits in.
   const clipRadius = reach + Math.hypot(cellX, cellZ);
   const mouths: { x: number; z: number; ux: number; uz: number }[] = [];
   if (vaulted) {
@@ -373,11 +307,7 @@ function burnTrack(
         const arc = arcAt[i] + t * (arcAt[i + 1] - arcAt[i]);
         const apart = Math.abs(arc - bestArc[idx]);
         const otherLeg = Number.isFinite(bestDist[idx]) && Math.min(apart, lap - apart) > 3 * reach;
-        // Two legs of the lap that close contest the verge between them, and
-        // the lower road keeps it: the step is then a wall past its kerb, and
-        // the upper road's edge overhangs it. Nearest wins, and the step fell
-        // inside the lower road — ten metres of it at Beau Rivage. The tarmac
-        // itself is always its own road's.
+        // Where two legs of the lap meet, the lower road keeps the verge.
         const verge = (d: number) => d > halfWidthM - 4 && d <= hard;
         if (otherLeg && verge(dist) && verge(bestDist[idx])) {
           if (elevation >= bestElev[idx]) continue;
@@ -441,8 +371,7 @@ function burnTrack(
   };
 }
 
-// ─── build ─────────────────────────────────────────────────────────────────
-
+// build
 /** What a field carries when nothing was burned into it — a synthetic one. */
 const EMPTY_STATS: HeightFieldStats = {
   vaultedSamples: 0,
@@ -502,11 +431,7 @@ export interface HeightFieldParts {
   stats?: HeightFieldStats;
 }
 
-/**
- * A field over a grid that is already final. The bake reaches it through
- * `buildHeightField`, which burns the track first; a test's synthetic ground
- * comes straight in here, so both read heights through the same interpolation.
- */
+/** A field over a final grid. Tests come in here directly; the bake via `buildHeightField`. */
 export function heightFieldFrom(parts: HeightFieldParts): HeightField {
   const { bbox, width, height, data } = parts;
   const cellSizeM = {
@@ -520,8 +445,10 @@ export function heightFieldFrom(parts: HeightFieldParts): HeightField {
     return data[r * width + c];
   }
 
-  /** Bilinear where the cell is whole; nearest valid corner where it straddles
-   *  the shore, because averaging across nodata is what §5.5 warns about. */
+  /**
+   * Bilinear where the cell is whole; nearest valid corner at the shore, so nodata
+   * never averages in.
+   */
   function heightAt(lon: number, lat: number): number {
     const u = (lon - bbox.minLon) / (bbox.maxLon - bbox.minLon);
     const v = (bbox.maxLat - lat) / (bbox.maxLat - bbox.minLat);
@@ -575,8 +502,7 @@ export function heightFieldFrom(parts: HeightFieldParts): HeightField {
   };
 }
 
-// ─── cache ─────────────────────────────────────────────────────────────────
-
+// cache
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
 const CACHE_DIR = join(REPO_ROOT, "data", "cache", "heightfield");
 
@@ -619,8 +545,7 @@ export async function readHeightFieldHeader(
   }
 }
 
-// ─── CLI ───────────────────────────────────────────────────────────────────
-
+// CLI
 const USAGE = `Usage:
   bun scripts/env/heightfield.ts <circuitId> [--half-width=6] [--refresh]
 

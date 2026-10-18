@@ -27,12 +27,7 @@ export function buildExtrudedTrack(
   samples: number,
   bottomYAt?: TrackBottomYAt,
   colorAt?: TrackColorAt,
-  /**
-   * Where along the lap the ribbon is not to be drawn at all. Under a hill the
-   * road is inside the terrain, and no depth offset hides it once the camera is
-   * far enough for depth precision to run out — the ribbon shows through the
-   * hillside in patches. The bake says which stretches those are.
-   */
+  /** Where the ribbon is not drawn at all: underground, where depth precision runs out at range. */
   hiddenAt?: (s: number) => boolean,
 ): THREE.BufferGeometry {
   const N = samples;
@@ -229,8 +224,7 @@ export function buildTrackOutline(
   return outlineGeo;
 }
 
-// ─── Sector-colored track mesh ────────────────────────────────────────
-
+// Sector-colored track mesh
 function wrap01(value: number): number {
   return ((value % 1) + 1) % 1;
 }

@@ -1,31 +1,19 @@
 /**
- * Geometry accumulation for the bake.
- *
- * Two shapes of surface come out of the generator and they want different
- * treatment: terrain is a grid whose vertices are shared and whose normals are
- * averaged, while a wall or a roof reads better with a hard edge. So a mesh
- * takes triangles either way and the caller picks.
+ * Geometry accumulation for the bake: shared-vertex grids for terrain, hard-edged
+ * triangles for walls and roofs.
  */
 
 export interface Mesh {
   positions: number[];
   normals: number[];
   indices: number[];
-  /** Baked shade per vertex, written by the AO pass (D9). */
+  /** Baked shade per vertex, written by the AO pass. */
   colors?: number[];
-  /**
-   * A merged model's own colour per vertex, read off its material or its
-   * texture. Kept apart from `colors` because the AO pass writes that array
-   * from scratch; the two are multiplied together after it runs.
-   */
+  /** A model's own colour per vertex, kept apart from `colors` because AO overwrites that. */
   albedo?: number[];
   /**
-   * The tone every triangle added from now on is painted with, into `albedo`.
-   *
-   * Set by the caller around a run of geometry — a band of wall, a box on a
-   * roof — so the colour follows the triangle rather than a count of them.
-   * Counting is what a parallel array cannot survive: a degenerate triangle is
-   * dropped, and from there the two arrays are one wall apart for good.
+   * Tone painted into `albedo` for triangles added from now on, so the colour follows
+   * the triangle even when degenerate ones are dropped.
    */
   tone?: number;
   /** Vertex ranges, as start and end pairs, that the AO pass shades as one: a flat roof. */
@@ -44,12 +32,7 @@ export function triangleCount(mesh: Mesh): number {
   return mesh.indices.length / 3;
 }
 
-/**
- * A triangle with its own three vertices, so the face keeps a hard edge.
- *
- * Returns whether it was kept: a degenerate triangle is dropped, and a caller
- * writing a parallel per-vertex array has to know that to stay in step.
- */
+/** A triangle with its own vertices for a hard edge. Returns false if it was degenerate. */
 export function addFlatTriangle(
   mesh: Mesh,
   ax: number, ay: number, az: number,
@@ -95,11 +78,7 @@ export function addFlatQuad(
   addFlatTriangle(mesh, ax, ay, az, cx, cy, cz, dx, dy, dz);
 }
 
-/**
- * A grid surface: vertices are added once and reused, and normals accumulate
- * across the faces that touch them, so a hillside shades as one surface rather
- * than as a field of facets.
- */
+/** A grid surface: shared vertices and accumulated normals, so a hillside shades smoothly. */
 export class GridMesh {
   readonly mesh = createMesh();
   private readonly index = new Map<number, number>();
@@ -131,13 +110,8 @@ export class GridMesh {
   }
 
   /**
-   * Call once, after every triangle: face normals were summed, not averaged.
-   *
-   * `creaseDeg` splits a vertex whose faces disagree by more than that angle,
-   * so a hillside still shades as one surface while a cliff edge, a quay top
-   * and a terrace riser keep their edge. Averaging across those is what makes a
-   * 8 m belt read as poured wax: the cliff face and the ground above it share a
-   * vertex, and the normal that comes out points at neither.
+   * Call once at the end. `creaseDeg` splits vertices across sharp edges so cliffs and
+   * quays keep them.
    */
   finish(creaseDeg = 0): Mesh {
     if (creaseDeg > 0) this.splitCreases(Math.cos((creaseDeg * Math.PI) / 180));
@@ -155,14 +129,7 @@ export class GridMesh {
     return this.mesh;
   }
 
-  /**
-   * One vertex per group of faces that agree, rather than one per position.
-   *
-   * The faces at a vertex are gathered into groups whose normals are within the
-   * crease angle of the group's first face; the first group keeps the vertex
-   * and the rest get a copy of it at the same position. Nothing moves and no
-   * triangle is added — only how many normals a corner is allowed to have.
-   */
+  /** One vertex per group of faces that agree within the crease angle. Nothing moves. */
   private splitCreases(cosCrease: number): void {
     const { positions, normals, indices } = this.mesh;
     const faces = indices.length / 3;

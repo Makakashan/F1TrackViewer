@@ -1,16 +1,7 @@
 /// <reference types="bun-types" />
 /**
- * The fixed cameras of `docs/scene-goals.md` §4, and the runner that takes them.
- *
- * Some judgements about a bake stay visual — a hillside reads as a smear or it
- * does not — and a judgement made from a different angle every time is not a
- * comparison. These are the same ten frames every bake, written to `images/`
- * for a person to look at. No pixel diff: every bake moves every vertex a
- * little, so a strict comparison would fail always and be switched off within a
- * week.
- *
- * The cameras are polar around a scene-space target, which is what
- * `preview.html` already takes; this file is the list and the driver.
+ * Ten fixed camera shots per bake, written to `images/` for a person to compare.
+ * No pixel diff: every bake moves every vertex a little.
  */
 
 import { chromium } from "playwright-core";
@@ -34,10 +25,7 @@ export interface Shot {
   shading?: "ao";
 }
 
-/**
- * Monaco's ten. The targets are scene metres from the circuit's own centre,
- * which is the middle of the harbour; X runs east and Z runs south.
- */
+/** Monaco's ten, in scene metres from the circuit centre; X east, Z south. */
 export const SHOTS: Record<string, Shot[]> = {
   "mc-1929": [
     {
@@ -87,10 +75,7 @@ export const SHOTS: Record<string, Shot[]> = {
     {
       name: "tunnel-west",
       watch: "the other mouth: headwall, lid, the road going in",
-      // The inland portal, square on to its own bore: the mouth stands at
-      // (188.6, -119.7) and the bore heads inland along (0.898, -0.441). From
-      // further out and higher than the seaward one, because the buildings of
-      // the Fairmont stand over this mouth — which is the point of the frame.
+      // Inland portal, square to its bore, from higher up so the Fairmont over it shows.
       target: { x: 189, z: -120, y: 9.5 },
       azimuthDeg: 296,
       elevationDeg: 20,
@@ -109,7 +94,7 @@ export const SHOTS: Record<string, Shot[]> = {
     },
     {
       name: "seam-core-city",
-      watch: "I3 by eye — the 150 m boundary, where 4 m meets 8 m",
+      watch: "belt seam by eye: the 150 m boundary, where 4 m meets 8 m",
       // Raking, from outside the boundary looking in: a tear shows against the
       // slope, and this is the steepest ground the boundary crosses.
       target: { x: -460, z: -120, y: 30 },

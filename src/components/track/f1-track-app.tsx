@@ -86,10 +86,8 @@ export default function F1TrackApp({
   const { markers, widthProfile, environmentBundle, environmentAvailable, cityManifest } =
     useCircuitScene(selectedId, environmentEnabled);
 
-  // The panel shows the profile the scene is standing on. Where a city is baked
-  // that is the ground the bake drew, not the elevation API's reading of it —
-  // the two differ by metres in a tunnel, and the number under the sparkline
-  // was describing a track the app no longer draws.
+  // Where a city is baked, show the ground the bake drew; the elevation API is metres off in the
+  // tunnel.
   const bakedProfile = cityManifest?.track?.elevations ?? null;
   const panelElevations = bakedProfile?.length ? bakedProfile : elevations;
 
@@ -107,7 +105,7 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, []);
 
-  // ─── Hydrate URL state on mount ──────────────────────────────────
+  // Hydrate URL state on mount
   const didHydrate = useRef(false);
   useEffect(() => {
     if (didHydrate.current) return;
@@ -115,7 +113,7 @@ export default function F1TrackApp({
     hydrate(circuits);
   }, [circuits, hydrate]);
 
-  // ─── Sync URL when state changes (after hydration) ───────────────
+  // Sync URL when state changes (after hydration)
   useEffect(() => {
     if (!hydrated || !selectedId) return;
     syncUrl({
@@ -138,7 +136,7 @@ export default function F1TrackApp({
     syncUrl,
   ]);
 
-  // ─── Apply URL track selection to useCircuits ────────────────────
+  // Apply URL track selection to useCircuits
   const didApplyUrlTrack = useRef(false);
   useEffect(() => {
     if (didApplyUrlTrack.current) return;
@@ -150,7 +148,7 @@ export default function F1TrackApp({
     return () => window.clearTimeout(timer);
   }, [circuits, hydrated, onSelect, selectedId, urlTrack]);
 
-  // ─── Auto-disable environment when the selected circuit has no bundle ─
+  // Auto-disable environment when the selected circuit has no bundle
   useEffect(() => {
     if (selectedId && environmentAvailable === false && environmentEnabled) {
       const timer = window.setTimeout(() => setUrlEnvironmentEnabled(false), 0);
@@ -158,7 +156,7 @@ export default function F1TrackApp({
     }
   }, [environmentAvailable, environmentEnabled, selectedId, setUrlEnvironmentEnabled]);
 
-  // ─── Reset view mode when markers confirm no sectors ─────────────
+  // Reset view mode when markers confirm no sectors
   useEffect(() => {
     if (
       viewMode === "sectors" &&
@@ -170,7 +168,7 @@ export default function F1TrackApp({
     }
   }, [markers, viewMode, setUrlViewMode]);
 
-  // ─── Mutual exclusion: sectors ↔ real width ──────────────────────
+  // Mutual exclusion: sectors ↔ real width
   const handleViewModeChange = useCallback(
     (next: TrackViewMode) => {
       setUrlViewMode(next);
@@ -295,7 +293,6 @@ export default function F1TrackApp({
             />
 
         </main>
-
 
       {!footerDismissed && (
         <footer className="shrink-0 border-t border-border bg-background/80 text-[10px] text-muted-foreground backdrop-blur">

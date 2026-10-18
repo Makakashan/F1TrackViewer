@@ -1,62 +1,31 @@
 /**
- * The shoreline as a line, not as a staircase (docs/city-generation.md P4.0).
- *
- * The height field only knows land from water per raster node, so every water
- * edge it can draw runs along the grid — teeth 4 m across in the core belt and
- * 16 m out in the far one, which is what a breakwater looked like. OSM carries
- * the same edge as a polyline surveyed to about a metre, and a line has no
- * grain, so the terrain is cut against that instead.
- *
- * The line says where the edge is; something still has to say which side of it
- * is dry, and the raster's own boundary is the staircase being replaced.
- *
- * `natural=coastline` answers it by definition: OSM orients it with the land on
- * the left, and across Monaco's 25 coastline ways the raster agrees with that
- * on every single segment it has an opinion about. So the coastline is taken at
- * its word. A quay or a breakwater carries no such promise, so those are
- * oriented by asking the field along their length and taking the majority.
+ * The shoreline as a surveyed line instead of the raster's staircase. A coastline
+ * has land on its left by OSM convention; quays and breakwaters are oriented by
+ * asking the field along their length.
  */
 
 import type { HeightField } from "./heightfield";
 import type { ShoreWay } from "./overpass";
 import type { ScenePlane } from "./plane";
 
-/**
- * How far from the line the line is trusted. Beyond this the raster mask is
- * the answer, which is right: away from the coast the two agree, and the only
- * place the grain shows is within a cell or two of the water.
- */
+/** How far from the line it is trusted; beyond this the raster mask decides. */
 const INFLUENCE_M = 26;
 /**
- * Perpendicular offsets used to ask the field which side of an unoriented way
- * is dry. It widens because OSM's line and the raster's edge come from
- * different surveys and rarely land on the same metre.
+ * Offsets for asking the field which side of a way is dry; widening because the
+ * line and the raster edge come from different surveys.
  */
 const PROBE_STEPS_M = [3, 5, 8, 12, 18, 26];
 /** Fewer readings than this and the majority is not a majority. */
 const MIN_ORIENTATION_VOTES = 2;
 /** And they have to agree this strongly, or the line straddles the water. */
 const MIN_ORIENTATION_AGREEMENT = 0.75;
-/**
- * Smallest water area taken as a piece of sea. Below it a `natural=water` ring
- * is a swimming pool or a fountain — real water, but not the coast, and cutting
- * the terrain open around it would drop a courtyard to the sea floor.
- */
+/** Smaller water is a pool or fountain, not sea. */
 const MIN_BASIN_M2 = 2_000;
-/**
- * How far to each side a segment is checked for the raster's own edge. Wide
- * enough to cover the usual few metres between two surveys, tight enough that a
- * line left over from before a district was reclaimed finds no water at all.
- */
+/** How far each side a segment looks for the raster's edge. */
 const AGREEMENT_STEPS_M = [3, 6, 10, 15];
 /**
- * How far beyond a segment's own span its endpoint's side-vote is trusted.
- * Farther than this the answer is NaN and the raster's smoothed edge takes
- * over: two segments whose nearest points are both endpoints — the last leg of
- * one way's line and the first of another's, with the segment between them
- * dropped — each vote their side across the whole influence radius, and the
- * votes meet along a curve that is no shoreline at all. The mesh cut along it
- * and drew a strip of land out into the harbour.
+ * How far past a segment's span its endpoint vote counts. Further, two endpoint
+ * votes meet on a curve that is no shoreline.
  */
 const ENDPOINT_TRUST_M = 6;
 
@@ -80,15 +49,11 @@ export interface CoastlineStats {
 }
 
 export interface Coastline {
-  /**
-   * Metres to the nearest shoreline, positive on the land side and negative on
-   * the water side. NaN where no line is close enough to have an opinion.
-   */
+  /** Metres to the nearest shoreline, positive on land. NaN where no line is near. */
   signedDistance(x: number, z: number): number;
   /**
-   * Sharp turns of the surveyed line both of whose legs survived. The cut
-   * routes its lip through these instead of staircasing around them: at 4 m a
-   * 90° quay corner drawn through grid corners reads as a lone diamond.
+   * Sharp turns of the line with both legs kept. The cut routes through them, or a
+   * quay corner draws as a diamond.
    */
   corners: { x: number; z: number }[];
   stats: CoastlineStats;
@@ -104,14 +69,8 @@ export function emptyCoastline(): Coastline {
 }
 
 /**
- * Does the raster see an edge where this segment claims one is?
- *
- * It has to, or the two sources fight. Larvotto is the case that proves it: the
- * mapped line there is up to 160 m from where the LiDAR puts the water, and a
- * segment cutting on one side of that gap while the raster decides the other
- * side flips the scalar back and forth across zero — the shore comes out as a
- * band of loose triangles rather than as a line. A segment the raster cannot
- * confirm is dropped, and the smoothed raster distance takes that stretch.
+ * Drop a segment the raster sees no edge for; the line and the raster fighting
+ * turns the shore into loose triangles.
  */
 function agreesWithRaster(
   segment: Segment,
@@ -130,16 +89,8 @@ function agreesWithRaster(
       plane.lat(midZ - segment.nz * probe),
     );
     if (!Number.isNaN(onLand) && Number.isNaN(onWater)) return true;
-    // The raster reading the two sides the *other* way round is not a reason to
-    // drop the line. A coastline is oriented by definition — OSM puts the land
-    // on its left — so the line already knows which side is which, and what the
-    // raster is calling ground on the wet side of it is the boats moored along
-    // a pontoon. Ten segments in Monaco read like this, two of them the outline
-    // of Port Hercule's pier fingers, which came out as torn slabs offset from
-    // where they are mapped for want of them. What the confirmation is really
-    // for is a line the raster has nothing to say about on either side, which
-    // is the Larvotto case: mapped up to 160 m from where the LiDAR puts the
-    // water, with sea on both sides of it.
+    // The raster seeing the sides reversed is not a reason to drop a coastline: that
+    // is boats along a pontoon. Only drop lines with no raster edge on either side.
     if (Number.isNaN(onLand) && !Number.isNaN(onWater)) return true;
   }
   return false;
@@ -178,10 +129,7 @@ function pushSegments(
     kept.push(true);
     segments.push(segment);
   }
-  // A sharp joint both of whose legs survived is a corner the cut must honour:
-  // routed through grid corners, the lip takes the shortcut and the leftover
-  // wedge reads as a tooth. A dropped leg breaks the chain, so only joints of
-  // two kept legs count.
+  // A sharp joint between two kept legs is a corner the cut must honour.
   const turnAt = (i: number): void => {
     if (!kept[i - 1] || !kept[i]) return;
     const [px, pz] = points[i - 1];
@@ -221,8 +169,7 @@ function pushSegments(
 }
 
 /**
- * A closed ring's area and the sign that turns its segment normals outward.
- * Which winding a mapper used is arbitrary, so it is read rather than assumed.
+ * A closed ring's area and the sign that turns its normals outward; winding is read, not assumed.
  */
 function ringOrientation(
   points: readonly (readonly [number, number])[],
@@ -299,10 +246,8 @@ export function buildCoastline(
 
     const points = way.points.map(([lon, lat]) => [plane.x(lon), plane.z(lat)] as const);
 
-    // A basin is an area, so its own winding says which side is wet: the land
-    // is outside the ring. It has to be big enough to be sea, and the raster
-    // has to agree there is water inside it, or a pool on a roof would open a
-    // hole in the terrain.
+    // A basin's winding says which side is wet. It must be sea-sized with water inside,
+    // or a rooftop pool opens a hole.
     if (way.kind === "water") {
       const ring = ringOrientation(points);
       if (!ring || ring.areaM2 < MIN_BASIN_M2 || !wetInside(points, field, plane)) {
@@ -314,12 +259,7 @@ export function buildCoastline(
       continue;
     }
 
-    // OSM puts the land on a coastline's left, which in scene axes — x east,
-    // z south — is the side opposite the normal below. That needs no vote, and
-    // the raster agrees with it on every segment of every coastline way in
-    // Monaco it has an opinion about. Taking the tag at its word rescues the
-    // long, mostly-inland ways whose handful of testable segments would never
-    // reach a quorum on their own.
+    // OSM puts land on a coastline's left, so no vote is needed.
     let sign: number;
     if (way.kind === "coastline") {
       sign = -1;

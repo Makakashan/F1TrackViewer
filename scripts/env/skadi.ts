@@ -1,22 +1,6 @@
 /**
- * A global elevation provider (docs/city-generation.md §5.1, D12, P4.4).
- *
- * IGN covers France and Monaco, which is one circuit of thirty-one. The other
- * thirty need a source that covers the world, and the constraint that decides
- * which one is that this pipeline reads binary and nothing else: no GDAL, no
- * PNG decoder, no image library. Terrarium and the GeoTIFF pyramid both need
- * one. The same archive also ships **Skadi** — SRTM void-filled, one file per
- * degree, 3601 x 3601 big-endian int16, gzipped — which is a `gunzip` and a
- * `DataView`.
- *
- * The cost is honest and worth writing down: one arc-second is about **30 m**,
- * where IGN gives 3.9. The core belt's 4 m cell is therefore interpolation
- * outside France, and no amount of it invents a quay. What it does hold is the
- * shape of a landscape — Spa's hills, Interlagos's bowl, the flat of Bahrain —
- * which is what the terrain is for.
- *
- * There is no surface model, so nothing outside France gets measured building
- * heights; the bake already falls back to OSM tags for those.
+ * Global elevation from Skadi (SRTM, one gzipped int16 file per degree), readable
+ * without GDAL. About 30 m per cell, enough for landscape shape but no quays.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -44,13 +28,7 @@ function tileName(latDeg: number, lonDeg: number): { dir: string; file: string }
 
 const loaded = new Map<string, Int16Array | null>();
 
-/**
- * One degree of ground, cached on disk as the raw `.hgt` it decompresses to.
- *
- * A missing tile is not an error: the archive has no file where there is only
- * ocean, and a circuit's bbox can easily reach into one. It is remembered as a
- * miss so a bake does not ask the network for it once per pixel.
- */
+/** One degree tile, cached raw. Ocean has no file, so a miss is cached too. */
 async function tile(latDeg: number, lonDeg: number): Promise<Int16Array | null> {
   const { dir, file } = tileName(latDeg, lonDeg);
   const cached = loaded.get(file);

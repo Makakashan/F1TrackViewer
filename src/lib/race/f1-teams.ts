@@ -29,14 +29,7 @@ export interface Team {
   /** Three-letter code, for standings and timing-style labels. */
   code: string;
   livery: Livery;
-  /**
-   * The car number, in the team's own colour. It is the livery colour taken
-   * to the lightness a small glyph needs on a dark timing row — Ferrari's
-   * number is red, not the red the bodywork is painted, which at this size
-   * on this background is a smudge. Every one of these clears 4.5:1 against
-   * the row, and the numbers carry a dark keyline for the selected row,
-   * which is lighter than the rest.
-   */
+  /** Car number in the team colour, lightened to clear 4.5:1 against the timing row. */
   numberColour: string;
 }
 

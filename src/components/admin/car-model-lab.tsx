@@ -49,8 +49,7 @@ function formatUnit(value: number): string {
   return value.toExponential(2);
 }
 
-// ── Small presentational pieces ─────────────────────────────────────
-
+// Small presentational pieces
 function SectionHeading({
   icon,
   children,
@@ -134,8 +133,7 @@ function ToolbarToggle({
   );
 }
 
-// ── Stats panel ─────────────────────────────────────────────────────
-
+// Stats panel
 function StatsPanel({
   entry,
   stats,
@@ -336,8 +334,7 @@ function StatsPanel({
   );
 }
 
-// ── Screen ──────────────────────────────────────────────────────────
-
+// Screen
 export default function CarModelLab() {
   const [models, setModels] = useState<CarModelEntry[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);

@@ -1,14 +1,6 @@
 /**
- * Synthetic ground for the invariant tests (`scene-goals.md` §3, layer A).
- *
- * A plane, a slope, a cut, a terrace, a ravine — grids small enough that the
- * expected answer is arithmetic rather than a previous run's output. The field
- * is built through `heightFieldFrom`, so a test reads heights through the same
- * interpolation the bake does; nothing here reimplements what it checks.
- *
- * The grid is placed on the equator with the field's own centre as the scene
- * origin, so one field cell is `cellM` metres in both axes exactly and scene X
- * and Z are metres east and south of the middle node.
+ * Synthetic grids for the invariant tests, built through `heightFieldFrom` so heights
+ * read the same way as in the bake. On the equator so a cell is square.
  */
 
 import { heightFieldFrom, type HeightField } from "./heightfield";
