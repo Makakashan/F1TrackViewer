@@ -18,11 +18,23 @@ const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const faviconUrl = `${basePath}/favicon.svg`;
 const faviconLightUrl = `${basePath}/favicon-light.svg`;
 
+const DESCRIPTION =
+  "Every Formula 1 circuit in 3D in the browser: real terrain, the city around the track, and a race on top. Unofficial, non-commercial.";
+
 export const metadata: Metadata = {
+  // Link previews (Telegram, Discord, X) need absolute URLs; src/app/opengraph-image.png is the picture.
+  metadataBase: new URL("https://makakashan.github.io"),
   title: "Boxlane — every F1 circuit in 3D",
-  description:
-    "Interactive 3D viewer for Formula 1 circuit configurations, built with Next.js + Three.js. Unofficial, non-commercial.",
-  keywords: ["F1", "Formula 1", "Three.js", "3D", "circuits", "tracks"],
+  description: DESCRIPTION,
+  openGraph: {
+    type: "website",
+    siteName: "Boxlane",
+    title: "Boxlane — every F1 circuit in 3D",
+    description: DESCRIPTION,
+    url: `${basePath}/`,
+  },
+  twitter: { card: "summary_large_image" },
+  keywords: ["Boxlane", "F1", "Formula 1", "Three.js", "3D", "circuits", "tracks"],
   authors: [{ name: "Makakashan" }],
   icons: {
     icon: [
