@@ -7,19 +7,18 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { BuildingsFile, WaterFile } from "../src/lib/env/environment-types";
+import { buildCircuitGround, loadBakeInputs } from "./env/bake";
+import { fromOverpass } from "./env/buildings";
 import {
+  atSurveyedWall,
   buildBeltBlocks,
   buildLandAt,
-  buildCircuitGround,
-  loadBakeInputs,
-  fromOverpass,
-  atSurveyedWall,
   MAX_COAST_DROP_M,
   roadLevel,
   SHORE_EDGE_MAX_M,
   WATER_CLEARANCE_M,
   type BeltBlocks,
-} from "./env/bake";
+} from "./env/terrain";
 import {
   buildGroundIndex,
   buildSurfaceIndex,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { splitTerraces } from "./bake";
+import { splitTerraces } from "./buildings";
 
 const rect = (x0: number, z0: number, x1: number, z1: number) => [
   { x: x0, z: z0 },
