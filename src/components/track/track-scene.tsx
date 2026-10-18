@@ -27,7 +27,7 @@ type SceneProps = {
   settings: ReactNode;
 };
 
-const card = "rounded-[14px] border border-border bg-background/90";
+const card = "rounded-[14px] border border-border bg-background/80 backdrop-blur-xl";
 
 /** The scene edge to edge, and everything else floating on it as small cards and one dock. */
 export function TrackScene({
