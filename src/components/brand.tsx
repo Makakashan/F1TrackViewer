@@ -5,7 +5,7 @@ import { useId } from "react";
 export const REPO_URL = "https://github.com/Makakashan/F1TrackViewer";
 
 /** Boxlane: a front tyre rolling out of the box, its marks trailing behind. Light tile on the light theme, dark on the dark one. */
-export function BrandMark({ className = "h-7 w-7" }: { className?: string }) {
+export function BrandMark({ className = "h-7 w-7", tile = true }: { className?: string; tile?: boolean }) {
   const clip = useId();
   return (
     <svg viewBox="0 0 64 64" className={className} aria-hidden>
@@ -14,7 +14,7 @@ export function BrandMark({ className = "h-7 w-7" }: { className?: string }) {
           <rect width="64" height="64" rx="15" />
         </clipPath>
       </defs>
-      <rect width="64" height="64" rx="15" className="fill-background"/>
+      {tile && <rect width="64" height="64" rx="15" className="fill-background"/>}
       <g clipPath={`url(#${clip})`} strokeLinecap="round" strokeLinejoin="round">
       <path d="M27.00 50.80 C41.00 49.80 52.00 44.00 66 42.00 L66 44.40 C52.00 46.60 41.00 54.00 27.00 54.00 Z" className="fill-foreground"/>
       <path d="M27.00 45.00 C41.00 44.00 52.00 36.50 66 34.50 L66 36.60 C52.00 38.80 41.00 47.60 27.00 47.60 Z" className="fill-foreground"/>

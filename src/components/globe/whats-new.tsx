@@ -5,7 +5,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { useAppPref } from "@/components/app-pref-provider";
 
 /** Bumped with each release the panel describes, so a returning visitor sees the next one once. */
-const RELEASE = "2026-10-boxlane";
+const RELEASE = "2026-10-race-screen";
 const SEEN_KEY = "f1tv-whats-new";
 
 const noSubscription = () => () => {};
@@ -42,6 +42,23 @@ type Release = {
 
 /** Newest first; the panel opens on the first and keeps the rest under "Earlier". */
 const releases = (t: Strings): Release[] => [
+  {
+    id: "race",
+    title: t.whatsNewRaceTitle,
+    lead: t.whatsNewRaceLead,
+    views: [
+      { key: "tower", label: t.whatsNewViewTower },
+      { key: "editor", label: t.whatsNewViewEditor },
+    ],
+    changes: [
+      [t.whatsNewTowerTitle, t.whatsNewTowerText],
+      [t.whatsNewEditorTitle, t.whatsNewEditorText],
+      [t.whatsNewMovesTitle, t.whatsNewMovesText],
+      [t.whatsNewSpaceTitle, t.whatsNewSpaceText],
+      [t.whatsNewTunnelTitle, t.whatsNewTunnelText],
+      [t.whatsNewAddressTitle, t.whatsNewAddressText],
+    ],
+  },
   {
     id: "boxlane",
     title: t.whatsNewBoxlaneTitle,
