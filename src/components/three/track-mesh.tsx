@@ -166,7 +166,7 @@ export interface TrackMeshProps {
   markers?: TrackMarkers | null;
   environmentBundle?: EnvironmentBundle | null;
   environmentTerrain?: boolean;
-  /** A baked city replaces the runtime diorama for this circuit (D17). */
+  /** A baked city replaces the runtime diorama for this circuit. */
   cityManifest?: CityManifest | null;
   widthProfile?: TrackWidthProfile | null;
   realWidthEnabled?: boolean;
@@ -242,7 +242,7 @@ export default function TrackMesh({
   // Race view is the "what it actually looks like" mode.
   const raceView = viewMode === "realistic";
 
-  // The scene-look spike, switched from the look lab (docs/scene-look-plan.md).
+  // The scene-look spike, switched from the look lab.
   const lookEnabled = useLookLab((s) => s.enabled);
   const lookAsphalt = useLookLab((s) => s.asphalt);
   const lookRubber = useLookLab((s) => s.rubber);

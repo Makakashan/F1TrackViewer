@@ -1,16 +1,6 @@
 /**
- * Reads a baked circuit back — the GLBs as the browser gets them.
- *
- * Every check that asks "does this stand on the ground" has to ask it of the
- * geometry that ships, not of the field the bake read on the way there. The two
- * are not the same surface: the field is sampled at 3.9 m and the belts mesh it
- * at 4, 8 and 16, so a wall placed from the field can miss the triangle drawn
- * under it by metres. An audit that reads the field is measuring the bake's
- * intention; this reads its result.
- *
- * The reader is shared rather than living inside the audit, because the tests
- * have to see exactly what the audit sees or they are two opinions about one
- * file.
+ * Reads a baked circuit's GLBs as the browser gets them. Checks run on what ships,
+ * not on the field; tests and audit share this reader.
  */
 
 import { readFile } from "node:fs/promises";
@@ -129,18 +119,10 @@ export async function readBakedCircuit(
   return belts;
 }
 
-// ─── the ground, as drawn ──────────────────────────────────────────────────
-
-/**
- * Bucket size for the triangle index. A far-belt cell is 16 m and its triangles
- * are the largest here, so a bucket that size holds a handful each.
- */
+// the ground, as drawn
+/** Triangle index bucket: a far-belt cell, so each holds a handful. */
 const BUCKET_M = 16;
-/**
- * A triangle whose footprint is thinner than this is a skirt hanging off an
- * edge, not ground: it is vertical, so nothing stands on it and asking it for a
- * height is asking which of two answers a wall has.
- */
+/** Thinner footprints are vertical skirts, not ground. */
 const MIN_FOOTPRINT_M2 = 0.05;
 
 export interface GroundIndex {
@@ -264,14 +246,8 @@ function heightIn(bucketed: Bucketed, x: number, z: number): number {
 }
 
 /**
- * The ground as drawn, from surfaces given finest first. Where two answer — a
- * belt seam is a strip where both do — the finer one wins, because that is the
- * one the camera sees there.
- *
- * The bake indexes the terrain it has just built with this, so that a wall
- * asking where the ground is gets the triangle it will be standing on rather
- * than the field the triangle was derived from. Two derivations of one surface
- * is how a building ends up in the air.
+ * The drawn ground, finest surface first. The bake uses it so walls stand on the
+ * triangle that is actually drawn.
  */
 export function buildSurfaceIndex(finestFirst: SurfaceMesh[][]): GroundIndex {
   const ordered: Bucketed[] = [];
@@ -306,17 +282,10 @@ export function buildGroundIndex(belts: BakedBelt[]): GroundIndex {
   );
 }
 
-// ─── one merged mesh, many buildings ───────────────────────────────────────
-
+// one merged mesh, many buildings
 /**
- * Labels every vertex with the piece it belongs to. A belt ships one merged
- * mesh per kind, so "does this building float" is a question about a connected
- * component of that mesh rather than about the mesh.
- *
- * Vertices at the same position are welded first. The meshes are flat-shaded,
- * so every face carries its own copy of each corner and walking the indices
- * alone finds 61,358 pieces in a belt that holds about 1,200 buildings — one
- * per face, and a roof face measures as a building floating twelve storeys up.
+ * Label each vertex with its connected piece, welding equal positions first since
+ * flat-shaded faces carry their own corners.
  */
 export function connectedComponents(mesh: BakedMesh): { labels: Int32Array; count: number } {
   const vertices = mesh.positions.length / 3;
@@ -369,21 +338,12 @@ export function connectedComponents(mesh: BakedMesh): { labels: Int32Array; coun
   return { labels, count };
 }
 
-/**
- * How close a piece's underside has to be to another piece's top before it
- * counts as resting on it rather than hovering over it.
- */
+/** How close an underside must be to a top to count as resting on it. */
 const STACK_TOLERANCE_M = 0.5;
 
 /**
- * Buildings, recovered from a merged mesh.
- *
- * `connectedComponents` finds the pieces a mesh is made of, which is not the
- * same as the things it depicts: a roof carries its own eaves and shares no
- * vertex with the walls under it, so a block comes back as two pieces and the
- * roof measures as a building floating at its own storey height. Pieces that
- * overlap in plan and meet within a step in height are one thing — the roof
- * rests on the walls — and the walls are what has to reach the ground.
+ * Buildings from a merged mesh: pieces that overlap in plan and meet in height are
+ * one (a roof on its walls), and the walls must reach the ground.
  */
 export function buildingPieces(mesh: BakedMesh): { labels: Int32Array; count: number } {
   const { labels, count } = connectedComponents(mesh);
@@ -441,13 +401,8 @@ export function buildingPieces(mesh: BakedMesh): { labels: Int32Array; count: nu
         if (rootA === rootB) continue;
         if (maxX[a] < minX[b] || maxX[b] < minX[a]) continue;
         if (maxZ[a] < minZ[b] || maxZ[b] < minZ[a]) continue;
-        // Overlapping in plan and meeting in height: a roof on its walls, a
-        // parapet on its roof, a terrace of houses sharing a party wall. The
-        // rule is deliberately loose, because the cost of splitting a building
-        // is a false floater at its own storey height, while the cost of
-        // merging two is that a slab hanging beside a tower — at the tower's
-        // own height, in its plan — is missed. The fixed camera shots in
-        // docs/scene-goals.md are what covers the second.
+        // Loose on purpose: splitting a building makes a false floater. A slab beside a
+        // tower is missed, and the fixed camera shots catch that.
         const meets = minY[a] <= maxY[b] + STACK_TOLERANCE_M && minY[b] <= maxY[a] + STACK_TOLERANCE_M;
         if (!meets) continue;
         parent[rootB] = rootA;

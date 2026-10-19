@@ -1,11 +1,6 @@
 /**
- * Where the circuit runs under the ground rather than on it.
- *
- * Monaco has 333 tunnelled ways and the circuit uses one of them, so a tunnel
- * only counts here if the racing line actually follows it. What this produces
- * is a predicate the height field asks before burning the track into the
- * ground: burning a tunnel in would carve a canyon through the hill the road
- * passes under (docs/city-generation.md D4).
+ * Where the circuit runs underground: only tunnels the racing line actually follows.
+ * The height field must not burn the track through the hill above them.
  */
 
 import type { StructureWay } from "./overpass";
@@ -13,22 +8,13 @@ import type { ScenePlane } from "./plane";
 
 /** How close a tagged way has to run to the centreline to be the same road. */
 const MATCH_DISTANCE_M = 12;
-/**
- * Monaco is stacked: tunnels run beneath the streets the circuit uses, and by
- * horizontal distance alone the track appears to be inside all of them. A way
- * two levels down is under the road, not the road.
- */
+/** Ways two levels down run under the road, not as the road. */
 const MIN_LAYER = -1;
 /** The road the track follows runs along it; a tunnel crossing beneath does not. */
 const MIN_DIRECTION_AGREEMENT = 0.8;
 /** Portals are placed this far back from the first buried sample. */
 const PORTAL_SETBACK_M = 4;
-/**
- * A tunnel has something over it. Where the ground along a candidate run is no
- * higher than the ground at its mouths, nothing covers the road and the tag
- * describes a short underpass or a neighbouring bore, not a tunnel the circuit
- * drives through.
- */
+/** A tunnel has ground over it; otherwise the tag is an underpass or a neighbouring bore. */
 const MIN_COVER_M = 4;
 
 export interface TunnelRun {
@@ -99,11 +85,7 @@ function hasCover(
   return covers[Math.floor(covers.length / 2)] >= MIN_COVER_M;
 }
 
-/**
- * Walks the centreline and asks, at each step, whether a tunnelled way runs
- * along it. Consecutive hits become a run, which is what the portals are built
- * from.
- */
+/** Walk the centreline and collect runs where a tunnelled way follows it. */
 export function buildTunnelMask(
   coords: [number, number][],
   ways: StructureWay[],
@@ -121,8 +103,7 @@ export function buildTunnelMask(
   const segments: Segment[] = [];
   for (const way of ways) {
     if (!way.tunnel) continue;
-    // A run the matcher found that a human says is not a tunnel the circuit
-    // drives through (D10).
+    // A run a human marked as not the circuit's tunnel.
     if (ignored.has(way.id)) continue;
     // A building passage is a road running through a building, not under a
     // hill: the ground above it is the building, which is already modelled.

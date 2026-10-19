@@ -133,8 +133,7 @@ Generates static environment JSON in public/environments/{circuitId}/.
   --provider=opentopodata  Use OpenTopoData (default; slower but reliable).
   --provider=open-meteo    Use Open-Meteo Elevation API (faster but daily quota).`;
 
-// ─── geometry helpers ────────────────────────────────────────────────────
-
+// geometry helpers
 function getTrackBBox(coords: [number, number][]): BBox {
   return coords.reduce<BBox>(
     (acc, [lon, lat]) => ({
@@ -167,8 +166,7 @@ function padBBox(bbox: BBox, meters: number): BBox {
   };
 }
 
-// ─── HTTP helpers ─────────────────────────────────────────────────────────
-
+// HTTP helpers
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
@@ -189,8 +187,7 @@ async function postForm(url: string, body: string): Promise<Response> {
   });
 }
 
-// ─── on-disk cache ─────────────────────────────────────────────────────────
-
+// on-disk cache
 async function readCache<T>(path: string): Promise<T | null> {
   try {
     const raw = await readFile(path, "utf8");
@@ -214,8 +211,7 @@ async function fileExists(path: string): Promise<boolean> {
   }
 }
 
-// ─── Overpass ──────────────────────────────────────────────────────────────
-
+// Overpass
 interface OverpassNode {
   type: "node";
   id: number;
@@ -301,8 +297,7 @@ function bboxFragment(bbox: BBox): string {
   return `(${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon})`;
 }
 
-// ─── main ────────────────────────────────────────────────────────────────
-
+// main
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (!args.all && !args.circuitIds.length) {
@@ -489,8 +484,7 @@ function formatError(error: unknown): string {
   return String(error);
 }
 
-// ─── per-source generators (filled in subsequent commits) ────────────────
-
+// per-source generators
 async function generateBuildings(
   circuitId: string,
   bbox: BBox,
@@ -1111,8 +1105,7 @@ async function fetchOpenTopoDataBatch(
   return { kind: "err", error: String(lastErr) };
 }
 
-// ─── Overpass post-processing helpers ────────────────────────────────────
-
+// Overpass post-processing helpers
 interface OverpassIndex {
   nodes: Map<number, OverpassNode>;
   ways: OverpassWay[];
@@ -1228,8 +1221,7 @@ function distanceToSegmentMetersSq(
   return dx * dx + dy * dy;
 }
 
-// ─── IO helpers ───────────────────────────────────────────────────────────
-
+// IO helpers
 async function readJsonIfExists<T>(path: string): Promise<T | null> {
   try {
     return JSON.parse(await readFile(path, "utf8")) as T;

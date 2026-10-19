@@ -5,27 +5,20 @@
 <h1>Boxlane</h1>
 
 <p align="center">
-  <a href="https://makakashan.github.io/F1TrackViewer/">Live demo</a>
+  <a href="https://boxlane.pages.dev">Live demo</a>
   ·
   <a href="./docs/architecture.md">Architecture</a>
-  ·
-  <a href="./docs/city-generation.md">How the city is baked</a>
-  ·
-  <a href="./docs/roadmap.md">Roadmap</a>
 </p>
 
-[![Deploy](https://img.shields.io/github/actions/workflow/status/Makakashan/F1TrackViewer/deploy.yml?branch=main&style=flat-square&label=deploy)](https://github.com/Makakashan/F1TrackViewer/actions/workflows/deploy.yml)
 [![License](https://img.shields.io/github/license/Makakashan/F1TrackViewer?style=flat-square&label=license)](./LICENSE)
-![Circuits](https://img.shields.io/badge/circuits-31-e10600?style=flat-square)
 \
 ![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
 ![Three.js](https://img.shields.io/badge/Three.js-000000?style=for-the-badge&logo=threedotjs&logoColor=white)
 ![Bun](https://img.shields.io/badge/Bun-000000?style=for-the-badge&logo=bun&logoColor=white)
 
-### Every Formula 1 circuit, in real-time 3D
+### Formula 1 circuits in real-time 3D
 
-Pick a circuit on the globe, walk round it on its real ground and among its real buildings,
-then start a race and watch twenty cars drive the lap — all in the **browser**.
+Pick a circuit on the globe and look around it on its real ground — all in the **browser**.
 </div>
 
 <div align="center">
@@ -62,11 +55,17 @@ then start a race and watch twenty cars drive the lap — all in the **browser**
 
 - **31 circuits** on a textured globe, with a searchable grid of outlines and a preview card — no runtime map APIs
 - **Real elevation**, sector splits from session telemetry, and real per-point width where it is measured
-- **A baked city** around the track: terrain, buildings at their surveyed heights, water, quays, parks and trees
-- **Race mode**: kerbs from the centreline's curvature, painted grid, start lights and twenty cars on a deterministic simulation
+- **A baked city** around Monaco: terrain, buildings at their surveyed heights, water, quays and parks
+- **Race mode** (beta): kerbs, painted grid, start lights and twenty cars on a deterministic simulation
 - **A timing tower** with the running order, gaps, laps and fastest lap; 1x to 16x, or straight to the flag
 - **Everything is a URL** — the same link shows the same circuit, the same camera and the same race
 - Light and dark themes, English and Russian, and a quality setting that keeps phones at frame rate
+
+## Status
+
+Monaco is the reference circuit: the whole city is baked around it. The other circuits have real
+elevation and a simpler environment, and are being brought up to the same level one by one. Race
+mode works but is still in beta.
 
 ## Quick start
 
@@ -97,7 +96,7 @@ fleet.
 |---|---|
 | `bun run dev` | Dev server on port 4000 |
 | `bun run build` | Production build |
-| `bun run build:pages` | Static export for GitHub Pages |
+| `bun run build:static` | Static export for Cloudflare Pages |
 | `bun run typecheck` | TypeScript, no emit |
 | `bun run lint` | ESLint |
 | `bun run test` | Invariant tests on synthetic ground — no network, milliseconds |
@@ -152,12 +151,14 @@ public/
   whats-new/                 screenshots for the what's-new panel
 docs/
   architecture.md            how the app runs
-  project-map.md             where things live, by symptom
-  city-generation.md         why the bake is shaped this way, decision by decision
-  scene-goals.md             what the baked scene must be, and its invariants
-  roadmap.md                 what is next, in priority order
-  history/                   what was already built, phase by phase
+  monaco-sources.md          where Monaco's details come from
 ```
+
+## AI policy
+
+AI tools were used heavily while building Boxlane, and we have nothing against them. They are not
+an excuse for code nobody understands, though: every change is read, tested and checked against
+the audits before it lands. Issues and pull requests should be written by a person.
 
 ## Data sources
 

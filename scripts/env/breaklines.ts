@@ -1,24 +1,6 @@
 /**
- * The lines the ground is allowed to break along — breaklines, in the surveying
- * sense: a line a surface is not interpolated across.
- *
- * A belt coarser than the height field has to average it or it aliases
- * (`ground.ts`), and averaging is indiscriminate: a 6 m quay wall inside the
- * window comes out as a ramp across it. Measured on Monaco's city belt, the box
- * filter keeps 85% of the step across a surveyed cliff or retaining wall — a
- * 10 m drop arrives 1.5 m short, twice, once on each side.
- *
- * Softer kernels do not fix this. A bilateral weighted against the raw centre
- * keeps the centre's own noise and filters nothing; weighted against the local
- * mean it lands on the same noise-against-edges curve the box is already on —
- * at equal kink the two keep the same fraction of the step. The DTM smears a
- * wall over two or three of its own cells, so at a window of two or three cells
- * there is no height gap left to separate.
- *
- * What works is knowing where the wall is. OSM surveyed these lines; a window
- * that refuses to reach across one averages each side against itself, and the
- * step comes back — to 125% of what the raw samples show, because the samples
- * were smeared too.
+ * Lines the ground may break along. Averaging ramps a 6 m quay wall and softer
+ * kernels don't help; refusing to reach across a surveyed wall keeps the step.
  */
 
 import type { BreaklineWay, ShoreWay } from "./overpass";
@@ -41,21 +23,11 @@ export interface Breaklines {
   crosses(col0: number, row0: number, col1: number, row1: number): boolean;
   /** The same question asked in degrees, for callers that hold no field index. */
   crossesLonLat(lon0: number, lat0: number, lon1: number, lat1: number): boolean;
-  /**
-   * The same, counting built lines only — a retaining wall, a quay, a
-   * breakwater — and not a natural cliff.
-   *
-   * A wall has flat ground on both sides and the step between them is the whole
-   * point of it. A cliff *is* the ground: the line marks where the rock falls
-   * away, and on a face there is no step to keep, only the scan's noise on it.
-   */
+  /** Built lines only: walls, quays, breakwaters. A cliff is the ground itself. */
   crossesWallLonLat(lon0: number, lat0: number, lon1: number, lat1: number): boolean;
   /** The same, counting built lines inside the land only: a retaining wall, not a quay or a cliff. */
   crossesRetainingLonLat(lon0: number, lat0: number, lon1: number, lat1: number): boolean;
-  /**
-   * Is any surveyed line inside this box of field nodes? Answered from the
-   * index alone, so a filter can ask before it decides how hard to work.
-   */
+  /** Is any surveyed line inside this box? Answered from the index alone. */
   near(col0: number, row0: number, col1: number, row1: number): boolean;
   /** How many segments were indexed. Zero means the filter behaves as a box. */
   readonly count: number;
@@ -68,14 +40,7 @@ function orient(ax: number, ay: number, bx: number, by: number, px: number, py: 
   return (bx - ax) * (py - ay) - (by - ay) * (px - ax);
 }
 
-/**
- * Which shore lines are walls rather than water.
- *
- * A coastline is the edge of the sea and the terrain is already cut against it,
- * so averaging across it reaches into nodata and is handled by the valid-node
- * count. A quay or a breakwater is a built vertical face with ground on both
- * sides, which is exactly what the filter must not smooth away.
- */
+/** Quays and breakwaters are walls with ground on both sides; a coastline is the sea's edge. */
 const SHORE_BREAKLINES = new Set<ShoreWay["kind"]>(["quay", "breakwater"]);
 
 export function buildBreaklines(

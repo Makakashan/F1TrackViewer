@@ -84,7 +84,7 @@ export default function RaceResults({
               <span
                 aria-hidden
                 className="mr-2 h-4 w-[3px] shrink-0 rounded-sm"
-                style={{ backgroundColor: driver.team.livery.body }}
+                style={{ backgroundColor: driver.team.timingColour }}
               />
               <span className="shrink-0 text-xs font-extrabold tracking-wider">
                 {driver.code}

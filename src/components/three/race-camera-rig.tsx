@@ -47,10 +47,8 @@ const VELOCITY_RATE = 9;
 const ERROR_RATE = 7;
 
 /**
- * Free-camera pan speed, in meters per second, and the Shift multiplier.
- * Flat rather than a share of the orbit distance: in free flight the target
- * rides along with the camera, so that distance is a leftover of the last
- * zoom, and scaling by it made WASD crawl the moment the user zoomed in.
+ * Free-camera pan speed in m/s and the Shift multiplier. Flat, since orbit
+ * distance in free flight is a leftover of the last zoom.
  */
 const PAN_M_S = 30;
 const PAN_BOOST = 5;

@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { Globe2, LogOut, RefreshCw } from "lucide-react";
+import { Globe2, LayoutDashboard, LogOut, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import BrandMark from "@/components/brand-mark";
+import { BrandMark } from "@/components/brand";
 import ErrorBanner from "@/components/error-banner";
 import SettingsMenu from "@/components/settings-menu";
 import { useAppPref } from "@/components/app-pref-provider";
@@ -30,6 +30,9 @@ import { useLookLab } from "@/lib/look-lab";
 import TrackEditorPanel from "@/components/race/track-editor-panel";
 import { useTrackEditor } from "@/lib/track/track-editor-store";
 import { TRACK_OVERRIDES } from "@/data/track-overrides";
+import { HudEditOverlay, HudSlot } from "@/components/race/hud-editor";
+import { HudEditToolbar, HudListPanel } from "@/components/race/hud-edit-panels";
+import { anchorOrigin, useHudLayout } from "@/lib/race/hud-layout";
 
 const TrackViewer = dynamic(() => import("@/components/track/track-viewer"), {
   ssr: false,
@@ -87,6 +90,23 @@ export default function RaceApp() {
   const race = useRaceSimulation(qualityMode === "performance");
   const lookCity = useLookLab((s) => s.city);
 
+  const hud = useHudLayout((s) => s.layout);
+  const hudEditing = useHudLayout((s) => s.before !== null);
+  const hudView = useHudLayout((s) => s.view);
+  const loadHud = useHudLayout((s) => s.load);
+  const beginHudEdit = useHudLayout((s) => s.begin);
+  const toggleTowerPart = useHudLayout((s) => s.toggleTowerPart);
+  useEffect(loadHud, [loadHud]);
+  const hudForm = isMobile ? "mobile" : "desktop";
+  const hudPlacement = hud.placement[hudForm];
+  // Dragging is for a mouse on a desktop-sized screen; a phone edits through the list.
+  const hudVisual = hudEditing && !isMobile && hudView === "visual";
+  const hudStage = useRef<HTMLDivElement>(null);
+  const editHud = useCallback(
+    () => beginHudEdit(isMobile ? "list" : "visual"),
+    [beginHudEdit, isMobile],
+  );
+
   // The track editor is a local tool: `?edit=1` does nothing outside `next dev`.
   const editing = process.env.NODE_ENV === "development" && editMode;
   const editorOverrides = useTrackEditor((s) => s.overrides);
@@ -137,7 +157,7 @@ export default function RaceApp() {
     Math.max(totalLaps, 1),
   );
 
-  // ─── URL state, same contract as the viewer shell ────────────────
+  // URL state, same contract as the viewer shell
   const didHydrate = useRef(false);
   useEffect(() => {
     if (didHydrate.current) return;
@@ -206,6 +226,10 @@ export default function RaceApp() {
     setShowResults(complete);
   }, [complete]);
 
+  const racePhase = race.phase;
+  const startRace = race.start;
+  const toggleRacePause = race.togglePause;
+
   // Escape leaves the mode — the reflex out of anything that fills the screen.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -214,12 +238,27 @@ export default function RaceApp() {
         if (document.querySelector("[data-radix-popper-content-wrapper]")) {
           return;
         }
+        // Inside the HUD editor the reflex backs out of the edit, not the race.
+        const hudState = useHudLayout.getState();
+        if (hudState.before) {
+          hudState.cancel();
+          return;
+        }
         exitRace();
         return;
       }
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       const target = event.target as HTMLElement | null;
       if (target?.tagName === "INPUT" || target?.isContentEditable) return;
+      if (event.code === "Space") {
+        // Space starts the race from the grid and pauses it after, wherever focus is:
+        // left to the browser it would press whichever button was clicked last.
+        event.preventDefault();
+        if (event.repeat || useHudLayout.getState().before) return;
+        if (racePhase === "standby") startRace();
+        else if (racePhase !== "finished") toggleRacePause();
+        return;
+      }
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
       event.preventDefault();
       const step = event.key === "ArrowRight" ? 1 : -1;
       setSelectedDriver((current) =>
@@ -227,9 +266,18 @@ export default function RaceApp() {
       );
       setCameraFollow(true);
     }
+    // A focused button would also take the space on its keyup and click itself.
+    function onKeyUp(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      if (event.code === "Space" && target?.tagName === "BUTTON") event.preventDefault();
+    }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [exitRace, order.length]);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, [exitRace, order.length, racePhase, startRace, toggleRacePause]);
 
   const handleBackToGlobe = useCallback(() => {
     window.location.href = window.location.pathname || "/";
@@ -243,9 +291,9 @@ export default function RaceApp() {
       {/* The bar is 3.5rem of content plus whatever the status bar takes —
           the page reaches under it now, and a header that ignored that would
           hand the notch its first row of buttons. */}
-      <header className="flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur md:px-4">
+      <header className="relative flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center justify-between gap-2 border-b border-border bg-background/80 px-3 pt-[env(safe-area-inset-top)] backdrop-blur md:px-4">
         <div className="flex min-w-0 flex-1 items-center gap-2 md:gap-3">
-          <BrandMark className="h-6 w-auto shrink-0" title={t.appName} />
+          <BrandMark className="h-7 w-7 shrink-0 rounded-[7px] outline outline-1 -outline-offset-1 outline-border" />
           <div className="hidden leading-none sm:block">
             <div className="text-sm font-bold tracking-tight">
               {t.raceModeTitle}
@@ -270,6 +318,7 @@ export default function RaceApp() {
           className="shrink-0 sm:hidden"
           onBackToGlobe={handleBackToGlobe}
           onExit={exitRace}
+          onEditHud={editHud}
           environmentAvailable={!!environmentAvailable}
           environmentEnabled={environmentEnabled}
           setEnvironmentEnabled={setUrlEnvironmentEnabled}
@@ -298,6 +347,15 @@ export default function RaceApp() {
           <Button
             variant="outline"
             size="sm"
+            onClick={editHud}
+            title={t.hudEdit}
+            aria-label={t.hudEdit}
+          >
+            <LayoutDashboard className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             className="gap-2"
             onClick={handleBackToGlobe}
           >
@@ -310,6 +368,8 @@ export default function RaceApp() {
           </Button>
           <SettingsMenu />
         </div>
+
+        {hudEditing && <HudEditToolbar allowVisual={!isMobile} />}
       </header>
 
       <main className="relative min-h-0 flex-1 bg-background">
@@ -351,72 +411,134 @@ export default function RaceApp() {
           </div>
         )}
 
+        {/* The scene dims while the HUD is edited, and stops taking the
+            pointer, so a drag that misses a piece does not swing the camera. */}
+        {hudEditing && (
+          <div className="pointer-events-auto absolute inset-0 bg-black/35 animate-in fade-in duration-200" />
+        )}
+
         {/* Absolutely positioned children resolve against this box's padding
-            edge, so the insets belong here once rather than on each of them.
-            The scene underneath keeps the whole screen; only the overlay
-            steps back from the cutouts. */}
+            edge, so the pieces live in a stage that fills its content box and
+            the insets stay here once. The scene underneath keeps the whole
+            screen; only the overlay steps back from the cutouts. */}
         <div
           data-tower-space
-          className="pointer-events-none absolute inset-0 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]"
+          className={cn(
+            "pointer-events-none absolute inset-0",
+            isMobile
+              ? "p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pl-[calc(0.5rem+env(safe-area-inset-left))] pr-[calc(0.5rem+env(safe-area-inset-right))]"
+              : "p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[calc(1rem+env(safe-area-inset-left))] pr-[calc(1rem+env(safe-area-inset-right))]",
+          )}
         >
-          {/* One tower, sized by the viewport rather than two towers hidden
-              from each other by a media query: the second copy still mounts,
-              still re-renders five times a second and still measures its rows
-              for the slide animation, and it pays that out of the frame budget
-              the race is drawn with. */}
-          {/* The tower scales itself about its own centre, so its placement
-              lives out here: an absolutely positioned child resolves against
-              the padding box, which is why the overlay's padding is repeated
-              as an inset. */}
-          <div
-            className={cn(
-              isMobile
-                ? "absolute left-2 top-2"
-                : "absolute left-4 top-1/2 -translate-y-1/2",
+          <div ref={hudStage} className="relative h-full w-full">
+            {/* One tower, sized by the viewport rather than two towers hidden
+                from each other by a media query: the second copy still mounts,
+                still re-renders five times a second and still measures its rows
+                for the slide animation, and it pays that out of the frame budget
+                the race is drawn with. */}
+            <HudSlot
+              item="tower"
+              form={hudForm}
+              placement={hudPlacement.tower}
+              stage={hudStage}
+              editing={hudEditing}
+              draggable={hudVisual}
+              hidden={hud.hidden.tower}
+              partsClickable={hudVisual}
               // A phone has no room for both; the classification is what the race was building toward.
-              isMobile && showResults && "hidden",
+              className={cn(isMobile && showResults && "hidden")}
+            >
+              <TimingTower
+                compact={isMobile}
+                order={order}
+                standings={race.standings}
+                selectedIndex={selectedDriver}
+                onSelect={selectDriver}
+                onShuffle={() => setGridNonce((nonce) => nonce + 1)}
+                fastestLapIndex={race.fastestLap?.index ?? null}
+                tyres={tyres}
+                lap={leaderLap}
+                totalLaps={totalLaps}
+                started={gapsLive}
+                editing={hudVisual}
+                hiddenParts={hud.towerHidden}
+                onTogglePart={toggleTowerPart}
+                userScale={hud.towerScale}
+                origin={anchorOrigin(hudPlacement.tower.anchor)}
+              />
+            </HudSlot>
+
+            <HudSlot
+              item="status"
+              form={hudForm}
+              placement={hudPlacement.status}
+              stage={hudStage}
+              editing={hudEditing}
+              draggable={hudVisual}
+              hidden={hud.hidden.status}
+            >
+              <RaceStatusBar lit={race.lit} phase={race.phase} />
+            </HudSlot>
+
+            {/* Under the lights by default, where the eye already is when
+                something has just happened on track. While the HUD is edited it
+                stays up with a sample, so there is something to place. */}
+            <HudSlot
+              item="fastestLap"
+              form={hudForm}
+              placement={hudPlacement.fastestLap}
+              stage={hudStage}
+              editing={hudEditing}
+              draggable={hudVisual}
+              hidden={hud.hidden.fastestLap}
+              className={cn(showResults && !hudEditing && "hidden")}
+            >
+              <RaceFastestLapPopup
+                persistent={hudEditing}
+                fastestLap={
+                  race.fastestLap
+                    ? {
+                        code: order[race.fastestLap.index]?.code ?? "",
+                        time: race.fastestLap.time,
+                      }
+                    : hudEditing
+                      ? { code: order[0]?.code ?? "VER", time: 83.456 }
+                      : null
+                }
+              />
+            </HudSlot>
+
+            <HudSlot
+              item="controls"
+              form={hudForm}
+              placement={hudPlacement.controls}
+              stage={hudStage}
+              editing={hudEditing}
+              draggable={hudVisual}
+              hidden={false}
+            >
+              <RaceControls
+                className="w-max"
+                started={race.phase !== "standby"}
+                paused={race.paused}
+                speed={race.speed}
+                onStart={race.start}
+                onTogglePause={race.togglePause}
+                onReset={race.reset}
+                onSpeed={race.setSpeed}
+                canFinish={race.racing}
+                onFinish={race.finish}
+                cameraFollow={cameraFollow}
+                onToggleCamera={() => setCameraFollow((value) => !value)}
+              />
+            </HudSlot>
+
+            {hudVisual && (
+              <HudEditOverlay stage={hudStage} towerAnchor={hudPlacement.tower.anchor} />
             )}
-          >
-          <TimingTower
-            compact={isMobile}
-            order={order}
-            standings={race.standings}
-            selectedIndex={selectedDriver}
-            onSelect={selectDriver}
-            onShuffle={() => setGridNonce((nonce) => nonce + 1)}
-            fastestLapIndex={race.fastestLap?.index ?? null}
-            tyres={tyres}
-            lap={leaderLap}
-            totalLaps={totalLaps}
-            started={gapsLive}
-          />
           </div>
 
-          <RaceStatusBar
-            className="absolute right-2 top-2 sm:left-1/2 sm:right-auto sm:top-4 sm:-translate-x-1/2"
-            lit={race.lit}
-            phase={race.phase}
-          />
-
-          {/* Under the lights, where the eye already is when something has
-              just happened on track — which is the right edge on a phone and
-              the centre on a desktop, because that is where the lights are. */}
-          <RaceFastestLapPopup
-            className={cn(
-              "absolute right-2 top-14 sm:left-1/2 sm:right-auto sm:top-20 sm:-translate-x-1/2",
-              showResults && "hidden",
-            )}
-            fastestLap={
-              race.fastestLap
-                ? {
-                    code: order[race.fastestLap.index]?.code ?? "",
-                    time: race.fastestLap.time,
-                  }
-                : null
-            }
-          />
-
-          {showResults && (
+          {showResults && !hudEditing && (
             <button
               type="button"
               aria-label={t.raceClose}
@@ -425,7 +547,7 @@ export default function RaceApp() {
             />
           )}
 
-          {showResults && (
+          {showResults && !hudEditing && (
             <RaceResults
               className="absolute left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2"
               order={order}
@@ -435,23 +557,10 @@ export default function RaceApp() {
             />
           )}
 
-          <RaceControls
-            className="absolute bottom-4 left-1/2 w-max max-w-full -translate-x-1/2 sm:bottom-6"
-            started={race.phase !== "standby"}
-            paused={race.paused}
-            speed={race.speed}
-            onStart={race.start}
-            onTogglePause={race.togglePause}
-            onReset={race.reset}
-            onSpeed={race.setSpeed}
-            canFinish={race.racing}
-            onFinish={race.finish}
-            cameraFollow={cameraFollow}
-            onToggleCamera={() => setCameraFollow((value) => !value)}
-          />
+          {hudEditing && hudView === "list" && <HudListPanel form={hudForm} />}
 
           {/* One column for the development panels, so the editor's Save is never under the look lab. */}
-          {process.env.NODE_ENV === "development" && (
+          {process.env.NODE_ENV === "development" && !hudEditing && (
             <div className="absolute bottom-24 right-4 top-16 hidden w-72 flex-col gap-2 sm:flex">
               <LookLabPanel className="min-h-0 w-full shrink overflow-y-auto" />
               {editing && <TrackEditorPanel className="min-h-0 w-full shrink-0 overflow-y-auto" />}

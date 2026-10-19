@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Titillium_Web } from "next/font/google";
+import { Inter, Saira } from "next/font/google";
 import "./globals.css";
 
-/** The timing overlay's typeface, and only its typeface — the rest of the app keeps the system stack. */
-const timingFont = Titillium_Web({
+/** The timing overlay's typeface: wide and square like the broadcast's own, which is not licensed out. */
+const timingFont = Saira({
   subsets: ["latin", "latin-ext"],
-  weight: ["400", "600", "700", "900"],
+  weight: ["400", "500", "600", "700", "800", "900"],
   variable: "--font-timing",
   display: "swap",
 });
@@ -14,22 +14,33 @@ const interFont = Inter({ subsets: ["latin", "latin-ext", "cyrillic"], variable:
 import { Toaster } from "@/components/ui/toaster";
 import { AppPrefProvider } from "@/components/app-pref-provider";
 
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-const faviconUrl = `${basePath}/favicon.svg`;
-const faviconLightUrl = `${basePath}/favicon-light.svg`;
+const faviconUrl = "/favicon.svg";
+const faviconLightUrl = "/favicon-light.svg";
+
+const DESCRIPTION =
+  "Every Formula 1 circuit in 3D in the browser: real terrain, the city around the track, and a race on top. Unofficial, non-commercial.";
 
 export const metadata: Metadata = {
+  // Link previews (Telegram, Discord, X) need absolute URLs; src/app/opengraph-image.png is the picture.
+  metadataBase: new URL("https://boxlane.pages.dev"),
   title: "Boxlane — every F1 circuit in 3D",
-  description:
-    "Interactive 3D viewer for Formula 1 circuit configurations, built with Next.js + Three.js. Unofficial, non-commercial.",
-  keywords: ["F1", "Formula 1", "Three.js", "3D", "circuits", "tracks"],
+  description: DESCRIPTION,
+  openGraph: {
+    type: "website",
+    siteName: "Boxlane",
+    title: "Boxlane — every F1 circuit in 3D",
+    description: DESCRIPTION,
+    url: "/",
+  },
+  twitter: { card: "summary_large_image" },
+  keywords: ["Boxlane", "F1", "Formula 1", "Three.js", "3D", "circuits", "tracks"],
   authors: [{ name: "Makakashan" }],
   icons: {
     icon: [
       { url: faviconLightUrl, type: "image/svg+xml", media: "(prefers-color-scheme: light)" },
       { url: faviconUrl, type: "image/svg+xml", media: "(prefers-color-scheme: dark)" },
     ],
-    apple: `${basePath}/apple-touch-icon.png`,
+    apple: "/apple-touch-icon.png",
   },
 };
 

@@ -1,9 +1,6 @@
 /**
- * OSM ways that say what the ground does to a road: tunnel, bridge, layer.
- *
- * docs/city-generation.md §1.4. The old generator drops these tags, so nothing
- * downstream can know that the run from the Fairmont hairpin to Portier passes
- * *under* the hill rather than through it.
+ * OSM ways that say what the ground does to a road: tunnel, bridge, layer. Without
+ * them nothing downstream knows the tunnel run goes under the hill.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -14,22 +11,12 @@ import type { RasterBBox } from "./raster";
 const ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
-  // Last, and only useful for a Swiss circuit: this one serves a Switzerland
-  // extract, not the planet. Asked for Monaco it answers 200 with nothing —
-  // measured, zero buildings in the Casino block where the global mirrors
-  // report 33 ways and 8 relations. `run` treats an empty answer as a failed
-  // one and moves on, and no fetch caches an empty result, so it costs a retry
-  // rather than an empty city; it is here for the day the other two are down
-  // and the circuit happens to be in Switzerland.
+  // Last, and Swiss only: this mirror serves a Switzerland extract and answers empty
+  // for anywhere else. An empty answer counts as a failure and moves on.
   "https://overpass.osm.ch/api/interpreter",
 ];
 const USER_AGENT = "F1TrackViewer/0.1 (https://github.com/Makakashan/F1TrackViewer)";
-/**
- * How long one endpoint may keep a query. The longest server-side limit asked
- * for is 180 s; past that and a margin the endpoint is not coming back. Without
- * it a mirror that accepts the connection and never answers held a bake forever,
- * before the retry schedule ever started.
- */
+/** How long one endpoint may hold a query; a silent mirror once held a bake forever. */
 const REQUEST_TIMEOUT_MS = 210_000;
 
 const REPO_ROOT = new URL("../..", import.meta.url).pathname;
@@ -57,13 +44,7 @@ export interface BuildingWay {
   };
 }
 
-/**
- * Somewhere green, or something growing.
- *
- * Three shapes arrive under one query because they answer the same question in
- * three resolutions: a surveyed tree is a position, a tree row is a line to
- * step along, and a park is an area to scatter over.
- */
+/** Somewhere green: a tree is a point, a tree row a line, a park an area. */
 export interface GreenWay {
   id: string;
   kind: "tree" | "tree_row" | "wood" | "scrub" | "park" | "grass" | "pool" | "pitch" | "fountain";
@@ -72,12 +53,8 @@ export interface GreenWay {
 }
 
 /**
- * A surveyed line the ground is allowed to break along.
- *
- * The height field is a raster and it smears a wall over two or three cells,
- * so a filter that averages across one turns a 6 m quay into a ramp. These are
- * the lines it may not average across. Quays, breakwaters and the coastline
- * arrive as `ShoreWay` already and are folded in by the caller.
+ * A surveyed line the ground may break along. The raster smears walls, so the filter
+ * must not average across these.
  */
 export interface BreaklineWay {
   id: string;
@@ -99,13 +76,7 @@ export interface StructureWay {
   name?: string;
 }
 
-/**
- * A road, path or square: the ground a town's level is actually set by.
- *
- * The DTM reads a street correctly — it is bare ground — and everything between
- * the streets is buildings, whose bare earth nobody ever sees. So the streets
- * are the anchors the city's ground is built from, and these are them.
- */
+/** A road, path or square. The DTM reads streets right, so they anchor the town's ground level. */
 export interface StreetWay {
   id: string;
   points: [number, number][];
@@ -227,37 +198,18 @@ export async function fetchStreetWays(
 }
 
 /**
- * One pass over the endpoints is not a retry policy.
- *
- * Overpass hands out query slots per address and refuses everything while they
- * are taken, so a bake that asks for thirty-one circuits in a row spends part of
- * its time locked out — and one pass over three endpoints, five seconds apart,
- * gives up fifteen seconds into a wait that is measured in minutes. The passes
- * back off, and the last one waits a minute between endpoints.
+ * Overpass refuses while its per-address slots are taken, so the passes back off,
+ * the last one by a minute.
  */
 const RETRY_BACKOFF_MS = [5_000, 20_000, 60_000];
 
 /**
- * Set once a query has spent every pass without an answer.
- *
- * The backoff is sized for one busy endpoint, not for three down at once: a
- * layer asked as eleven separate queries pays four minutes of waiting each,
- * and a bake that would have taken five minutes takes fifty to arrive at the
- * same nothing. The first exhausted query is enough evidence that Overpass is
- * not answering right now, so the rest of the run asks once and moves on.
+ * Set once a query exhausts every pass. After that the run asks each layer once,
+ * instead of waiting minutes per layer for nothing.
  */
 let overpassRefusing = false;
 
-/**
- * `OVERPASS_OFFLINE=1` skips the API entirely and bakes from the cache alone.
- *
- * When all three endpoints are down, every uncached layer still costs its full
- * retry schedule before arriving at nothing — minutes per bake, repeated on
- * every iteration. This says so once, explicitly, rather than pretending the
- * cache is complete: cached layers load as normal and uncached ones come back
- * empty, which is exactly what the empty-answer path already handles. It is a
- * switch a person throws, so nothing is ever recorded as absent by accident.
- */
+/** `OVERPASS_OFFLINE=1` bakes from cache only; uncached layers come back empty. */
 const OFFLINE = process.env.OVERPASS_OFFLINE === "1";
 
 async function run(body: string): Promise<OverpassResponse | null> {
@@ -269,13 +221,8 @@ async function run(body: string): Promise<OverpassResponse | null> {
     if (answer) return answer;
     empty ??= lastEmpty;
   }
-  // Every pass came back with nothing. That is usually a refusal wearing a 200 —
-  // one of the three endpoints answers busy queries with an empty body — but it
-  // is also what a genuinely empty layer looks like, and an inland circuit with
-  // no quay, pier or coastline has one. Returning the empty answer lets that
-  // circuit bake; not caching it (every caller's job) means a refusal is asked
-  // again next time. The two cannot be told apart at this level, so neither is
-  // allowed to be fatal and neither is allowed to be permanent.
+  // Every pass came back empty: a refusal or a genuinely empty layer. Return it so
+  // inland circuits bake, but never cache it.
   overpassRefusing = true;
   return empty;
 }
@@ -298,14 +245,8 @@ async function runOnce(body: string, waitMs: number): Promise<OverpassResponse |
         continue;
       }
       const json = (await res.json()) as OverpassResponse;
-      // A rate-limited or timed-out query comes back as HTTP 200 with an empty
-      // result and a remark. Taking that as an answer caches an empty city.
-      //
-      // And sometimes without a remark, which is worse, because it looks like an
-      // answer: measured, two circuits came out of P4.4's sweep with zero green
-      // ways cached — the Red Bull Ring, which stands in a forest, and Albert
-      // Park, which is a park. An empty result is therefore worth another
-      // endpoint before it is believed.
+      // Rate limits come back as HTTP 200 with an empty result, sometimes without a remark,
+      // so an empty answer is worth another endpoint before it is believed.
       if (!json.elements?.length) {
         lastEmpty = json;
         await new Promise((resolve) => setTimeout(resolve, waitMs));
@@ -321,14 +262,8 @@ async function runOnce(body: string, waitMs: number): Promise<OverpassResponse |
 
 function buildingQuery(bbox: RasterBBox): string {
   const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
-  // Ways and relations. A multipolygon building carries `building` on the
-  // relation and usually not on its rings, so a ways-only query loses it
-  // entirely — 34 of them over Monaco, and eight of those are the Casino block,
-  // which is the part of the model somebody notices missing first.
-  // `out geom`, not `out geom tags`: with the `tags` modifier Overpass returns
-  // a relation as an id, a bounding box and its tags, and drops the members —
-  // measured, eight relations came back with zero members each. Ways survive it
-  // either way, which is why it went unnoticed until relations were asked for.
+  // Ways and relations: multipolygon buildings (the Casino block) carry the tag on the
+  // relation. `out geom`, since the `tags` modifier drops relation members.
   return `[out:json][timeout:180];
 (
   way["building"](${box});
@@ -338,13 +273,8 @@ out geom;`;
 }
 
 /**
- * The outer ring of a multipolygon, stitched from its outer members.
- *
- * Overpass hands back each member's geometry separately and in no particular
- * order or direction, so the ring is walked: start with one part, then keep
- * taking whichever unused part begins or ends where the ring currently does.
- * Only the outer ring is kept — a courtyard is a hole, and the silhouette is
- * what the bake extrudes.
+ * The outer ring of a multipolygon, stitched end to end from members in any order.
+ * Courtyards are dropped; the bake extrudes the silhouette.
  */
 function outerRing(element: OverpassWay): [number, number][] | null {
   const parts = (element.members ?? [])
@@ -545,18 +475,8 @@ export async function fetchBreaklineWays(
 
 /** Ways in the bbox that are tunnelled, bridged or covered, with their tags. */
 /**
- * One query per tag, not one query for everything.
- *
- * This started as a single query and the public endpoints answered **504**.
- * Split in two it worked for Monaco and Silverstone and then failed again for
- * every larger bbox in P4.4's sweep — Baku, Melbourne, the Red Bull Ring — and
- * the cost was not the refusal but the backoff behind it: **170 seconds of
- * waiting per circuit** to arrive at no trees.
- *
- * It is the weight of the query, not the rate limit. `node["natural"="tree"]`
- * over a circuit's whole bbox is a large scan and a regex over `landuse` is a
- * larger one; asked one plain equality at a time they each come back in
- * seconds. Eleven cheap requests beat one that times out.
+ * One query per tag: the combined query timed out on big circuits, and plain
+ * equality queries come back in seconds.
  */
 /** What the cached greenery was asked for, so a longer list invalidates it. */
 interface GreenCache {
@@ -586,12 +506,8 @@ function greenTags(): string[] {
 
 function greenQueries(bbox: RasterBBox): string[] {
   const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
-  // One tag per query: asked together these answer 504, asked apart they answer
-  // in seconds. A tree is a node and everything else is a way.
-  //
-  // The last three are not greenery but the same shape of answer: a surveyed
-  // area that is neither a building nor bare ground. Monaco's pool quay reads
-  // as empty concrete without them.
+  // One tag per query. Pools, pitches and plazas are not green but are the same
+  // shape of answer: surveyed area that is neither building nor bare ground.
   return greenTags().map((tag) => {
     const [key, value] = tag.split("=");
     const type = tag === "natural=tree" ? "node" : "way";
@@ -619,11 +535,7 @@ export async function fetchGreenWays(
   refresh = false,
 ): Promise<GreenWay[]> {
   const cachePath = join(CACHE_DIR, `${circuitId}-green.json`);
-  // The cache remembers which questions produced it. Pools and pitches were
-  // added to the query list months after Monaco's cache was written, and
-  // because a cache that exists is never asked again the bake reported zero
-  // pools on a circuit whose pool is a corner name. A cache answering an older
-  // list is a stale cache, and the tags are what the list is.
+  // The cache remembers which tags produced it, so adding a tag invalidates it.
   const asked = greenTags().join(",");
   if (!refresh) {
     try {
@@ -634,20 +546,14 @@ export async function fetchGreenWays(
     }
   }
 
-  // Greenery is the one layer a circuit can be baked without. Terrain and
-  // buildings are the scene; trees are dressing, and refusing to bake Austria
-  // because Overpass was busy would be the wrong way round. An unanswered query
-  // is warned about and left uncached, so the next run asks again.
+  // Greenery is optional: an unanswered query warns, stays uncached and is asked again next run.
   const elements: OverpassWay[] = [];
   const queries = greenQueries(bbox);
   let unanswered = 0;
   for (const [index, query] of queries.entries()) {
     const response = await run(query);
     if (!response) {
-      // The rest are not asked. Every query goes to the same three endpoints,
-      // so if one has exhausted its retries the others will too — and eleven
-      // queries times three backoff passes is half an hour of a bake spent
-      // waiting to be told the same thing.
+      // Skip the rest: they hit the same endpoints and would wait out the same failure.
       unanswered = queries.length - index;
       break;
     }
@@ -675,10 +581,7 @@ export async function fetchGreenWays(
     });
   }
 
-  // Nothing is never written down, and neither is a partial answer. Somewhere
-  // with no park, no verge and no street tree does not exist, so an empty
-  // result is a failed query wearing a successful one's clothes — cache it and
-  // no later run ever corrects the treeless circuit it makes.
+  // Never cache an empty or partial answer: nowhere has no greenery at all.
   if (!ways.length) {
     console.warn(`  overpass: no greenery came back for ${circuitId} — not cached`);
   }

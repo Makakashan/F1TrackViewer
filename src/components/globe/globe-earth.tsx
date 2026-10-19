@@ -57,9 +57,8 @@ const EARTH_RADIUS = 2;
 const MARKER_SURFACE_OFFSET = 0.002;
 const BORDER_SURFACE_OFFSET = 0.0015;
 const GLOBE_ROTATION_Y = -0.35;
-const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-const EARTH_DAY_TEXTURE = `${PUBLIC_BASE_PATH}/textures/earth/earth-day.jpg`;
-const EARTH_CLOUDS_TEXTURE = `${PUBLIC_BASE_PATH}/textures/earth/earth-clouds.png`;
+const EARTH_DAY_TEXTURE = "/textures/earth/earth-day.jpg";
+const EARTH_CLOUDS_TEXTURE = "/textures/earth/earth-clouds.png";
 const CLOSE_MARKER_THRESHOLD_RADIANS = 0.018;
 const SUN_DIRECTION = new THREE.Vector3(0.55, 0.32, 0.78).normalize();
 
@@ -580,7 +579,7 @@ function GlobeGrid({
   );
 }
 
-const COUNTRY_BORDERS_URL = `${PUBLIC_BASE_PATH}/data/country-borders.json`;
+const COUNTRY_BORDERS_URL = "/data/country-borders.json";
 
 /** [lon, lat] point */
 type BorderPoint = [number, number];

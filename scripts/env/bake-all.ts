@@ -1,14 +1,6 @@
 /**
- * Bakes every circuit the app lists (docs/city-generation.md P4.4).
- *
- * The migration is thirty-one circuits and the failures are the point. A bake
- * touches two networks and a dozen assumptions that Monaco happened to satisfy,
- * so this runs them all, keeps going past a failure, and prints one table at the
- * end saying what came out and what did not. A run that stops at the first
- * broken circuit tells you about one circuit; this tells you about the pipeline.
- *
- * Results are written as they are produced, so an interrupted run is resumable:
- * `--only` takes ids, `--skip-baked` leaves alone anything already on disk.
+ * Bakes every circuit, keeps going past failures and prints one table at the end.
+ * `--only` takes ids, `--skip-baked` skips what is already on disk.
  */
 
 import { readFile } from "node:fs/promises";
@@ -47,13 +39,8 @@ async function alreadyBaked(id: string): Promise<boolean> {
 }
 
 /**
- * Did this circuit ever get a complete answer about its greenery?
- *
- * The cache is only written when every query came back (see `fetchGreenWays`),
- * so its absence is exactly the question "was the greenery missed". Overpass
- * hands out query slots per address and a sweep of thirty-one circuits spends
- * part of its time locked out, so a first pass can bake a correct circuit with
- * no greenery on it and nothing else records that.
+ * Did the circuit ever get a full greenery answer? The cache is only written when
+ * every query came back.
  */
 async function hasGreenery(id: string): Promise<boolean> {
   try {

@@ -4,9 +4,8 @@ import { X } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useAppPref } from "@/components/app-pref-provider";
 
-const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 /** Bumped with each release the panel describes, so a returning visitor sees the next one once. */
-const RELEASE = "2026-10-boxlane";
+const RELEASE = "2026-10-race-screen";
 const SEEN_KEY = "f1tv-whats-new";
 
 const noSubscription = () => () => {};
@@ -43,6 +42,23 @@ type Release = {
 
 /** Newest first; the panel opens on the first and keeps the rest under "Earlier". */
 const releases = (t: Strings): Release[] => [
+  {
+    id: "race",
+    title: t.whatsNewRaceTitle,
+    lead: t.whatsNewRaceLead,
+    views: [
+      { key: "tower", label: t.whatsNewViewTower },
+      { key: "editor", label: t.whatsNewViewEditor },
+    ],
+    changes: [
+      [t.whatsNewTowerTitle, t.whatsNewTowerText],
+      [t.whatsNewEditorTitle, t.whatsNewEditorText],
+      [t.whatsNewMovesTitle, t.whatsNewMovesText],
+      [t.whatsNewSpaceTitle, t.whatsNewSpaceText],
+      [t.whatsNewTunnelTitle, t.whatsNewTunnelText],
+      [t.whatsNewAddressTitle, t.whatsNewAddressText],
+    ],
+  },
   {
     id: "boxlane",
     title: t.whatsNewBoxlaneTitle,
@@ -168,7 +184,7 @@ function ReleaseBlock({ release, headingId }: { release: Release; headingId?: st
         {shots.map((shot) => (
           <figure key={shot.label} className="relative overflow-hidden rounded-[10px] border border-border">
             <img
-              src={`${PUBLIC_BASE_PATH}/whats-new/${release.id}-${view}-${shot.after ? "after" : "before"}.webp`}
+              src={`/whats-new/${release.id}-${view}-${shot.after ? "after" : "before"}.webp`}
               alt={`${release.title} — ${shot.label}`}
               className="aspect-[16/10] w-full object-cover"
             />

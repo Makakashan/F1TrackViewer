@@ -1,7 +1,4 @@
-/**
- * The grid surface, and the one thing it decides: how many normals a corner is
- * allowed to have.
- */
+/** The grid surface and how many normals a corner may have. */
 
 import { describe, expect, test } from "bun:test";
 import { GridMesh } from "./mesh";

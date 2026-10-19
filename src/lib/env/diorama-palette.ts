@@ -61,16 +61,8 @@ export type BakedMeshKind =
   | "park";
 
 /**
- * What each baked mesh is painted, per theme.
- *
- * The bake writes the light set into the GLB's base-colour factors, so a light
- * scene needs no work at load; the dark set is applied over the loaded
- * materials by `city-layer.tsx`. Both live here so the two cannot drift, and so
- * the answer to "why is the city white in the dark theme" is one file.
- *
- * `model` is white in the light set on purpose — a merged kit house carries its
- * colour per vertex, and the material multiplies over it. Its dark value is a
- * tint over that vertex colour rather than a colour of its own.
+ * Baked mesh colours per theme. The light set is in the GLB, the dark set is applied
+ * by `city-layer.tsx`. `model` is white because kit houses carry vertex colour.
  */
 export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, string>> = {
   light: {
@@ -88,10 +80,7 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     model: "#FFFFFF",
     pool: DIORAMA_COLORS.waterTop,
     pitch: DIORAMA_COLORS.landuseGrass,
-    // Barely green: the planting is the trees standing on it, and a park read
-    // as a green shape on grey was the same paint the ground tint was. A
-    // quarter of the way from the ground to the wood's green is enough to say
-    // "this is not pavement" and little enough not to be a patch.
+    // Barely green: a quarter of the way from ground to wood, enough to say "not pavement".
     park: "#CEDBD2",
     plinth: DIORAMA_COLORS.plinth,
     // The road going in, which is what says the hole leads somewhere.
@@ -100,12 +89,8 @@ export const BAKED_MESH_COLORS: Record<"light" | "dark", Record<BakedMeshKind, s
     propDark: DIORAMA_COLORS.buildingSide,
   },
   dark: {
-    // The light set at 32 % of its linear luminance, with a slight cool tilt on
-    // the greys. Measured, not eyeballed: keeping the light palette's own spread
-    // between kinds is what keeps the form readable. A hand-picked dark set of
-    // the same mean came out flat — over the default view, mean 42 with sd 19
-    // against 54 with sd 31 here — because terrain and buildings had drifted to
-    // nearly the same value. The light set reads 108 with sd 47.
+    // The light set at 32% luminance with a cool tilt, keeping its spread between kinds
+    // so the form stays readable.
     terrain: "#8B8E95",
     pier: "#8B8E95",
     building: "#909399",

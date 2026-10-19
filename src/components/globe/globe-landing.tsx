@@ -5,7 +5,7 @@ import { List } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import GlobeEarth from "./globe-earth";
 import GlobeInfoCard from "./globe-info-card";
-import RaceModeBanner from "./race-mode-banner";
+import RaceModeButton from "./race-mode-button";
 import { CircuitPicker } from "./circuit-picker";
 import { GlobeStage, StartScreen, useStarted } from "./start-screen";
 import { WhatsNew, useWhatsNew } from "./whats-new";
@@ -21,8 +21,6 @@ interface CircuitsIndex {
 	schemaVersion: number;
 	circuits: GlobeCircuit[];
 }
-
-const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 function openCircuitSearch(circuit: GlobeCircuit) {
 	const params = new URLSearchParams();
@@ -58,7 +56,7 @@ export default function GlobeLanding() {
 
 	useEffect(() => {
 		let cancelled = false;
-		fetch(`${PUBLIC_BASE_PATH}/circuits-index.json`)
+		fetch("/circuits-index.json")
 			.then((response) => {
 				if (!response.ok) {
 					throw new Error(`Failed to load circuit index: ${response.status}`);
@@ -121,6 +119,7 @@ export default function GlobeLanding() {
 					<button onClick={() => setMobileMenuOpen(true)} className={`${buttons.secondary} md:hidden`}>
 						<List className="h-3.5 w-3.5" /> {t.circuits}
 					</button>
+					<RaceModeButton circuits={circuits} />
 				</SiteHeader>
 			</div>
 
@@ -167,14 +166,6 @@ export default function GlobeLanding() {
 					onSelect={handleSelectCircuit}
 					onHover={setHoveredCircuit}
 				/>
-
-				{!mobileMenuOpen && (
-					<RaceModeBanner
-						circuits={circuits}
-						// On a phone the circuit card owns the bottom of the screen.
-						stacked={selectedCircuit != null}
-					/>
-				)}
 
 				{mobileMenuOpen && (
 					<CircuitPicker

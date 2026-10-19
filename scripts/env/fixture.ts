@@ -1,15 +1,6 @@
 /**
- * A committed slice of a real circuit — layer B of `docs/scene-goals.md` §3.
- *
- * Synthetic ground catches the arithmetic; it cannot catch what only real data
- * says. Monaco's harbour holds a quay, a cliff, a tunnel mouth, water inside
- * the frame and buildings on ground that falls 60 m across two streets, and a
- * belt boundary runs through the middle of it. A window of it is small enough
- * to commit and to bake in seconds, and it goes through `bakeFrom` — the same
- * pipeline the circuit does, not a copy of it.
- *
- * The fixture is cut from the caches by `bun run env:fixture`; the test reads
- * it back with `loadFixture` and never touches the network.
+ * A committed slice of a real circuit, cut by `bun run env:fixture` and baked
+ * through the same `bakeFrom` the circuit uses. No network.
  */
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -51,12 +42,7 @@ const lonOf = (header: RasterHeader, col: number) =>
 const latOf = (header: RasterHeader, row: number) =>
   header.bbox.maxLat - ((header.bbox.maxLat - header.bbox.minLat) * row) / (header.height - 1);
 
-/**
- * The nodes of `raster` inside `window`, as a raster of its own.
- *
- * The crop lands on the source's own nodes and takes the bbox from them, so a
- * height is the height that was fetched rather than a resample of it.
- */
+/** Crop on the source's own nodes, so heights are what was fetched. */
 export function cropRaster(raster: Raster, window: RasterBBox): Raster {
   const { header, data } = raster;
   const colAt = (lon: number) =>
@@ -179,9 +165,7 @@ export async function writeFixture(spec: FixtureSpec): Promise<{ dir: string; wi
 }
 
 /**
- * The fixture as bake inputs. No network, no cache, no asset pack: the kit is
- * empty on purpose, because a checkout without `bun run assets:fetch` has to
- * get the same answer as one with it.
+ * The fixture as bake inputs. The kit is empty so a checkout without assets gets the same answer.
  */
 export async function loadFixture(name: string): Promise<BakeInputs> {
   const dir = join(FIXTURE_ROOT, name);

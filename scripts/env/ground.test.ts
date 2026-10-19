@@ -1,11 +1,6 @@
 /**
- * Layer A of `scene-goals.md` §3: the ground's invariants on ground we wrote
- * ourselves. A plane, a 30° slope, a vertical cut, a terrace, a ravine — no
- * network, no cache, milliseconds.
- *
- * The numbers here are arithmetic, not a previous run's output: a box filter of
- * a linear ramp is the ramp, a window that stops at a wall keeps the whole
- * step, and a query has to answer about the triangle the mesher draws.
+ * Ground invariants on synthetic ground: a plane, a slope, a cut, a terrace, a ravine.
+ * Expected values are arithmetic, not a previous run's output.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -57,7 +52,7 @@ function meshOf(ground: Ground, belt: Belt): SurfaceMesh {
   return { positions, indices: new Uint32Array(indices) };
 }
 
-/** RMS of `2h − h₋ − h₊` along the rows — I7's kink, in metres. */
+/** RMS of `2h − h₋ − h₊` along the rows — the kink, in metres. */
 function kinkOf(grid: BeltGrid, heightAt: (row: number, col: number) => number): number {
   let sum = 0;
   let count = 0;
@@ -158,7 +153,7 @@ describe("a vertical cut", () => {
     expect(stepOf(smoothed) / 10).toBeLessThan(0.9);
   });
 
-  test("a window that stops at the surveyed line keeps the step (I7)", () => {
+  test("a window that stops at the surveyed line keeps the step", () => {
     expect(stepOf(kept) / 10).toBeGreaterThanOrEqual(0.95);
   });
 
@@ -247,7 +242,7 @@ describe("a ravine", () => {
 
 describe("ripple", () => {
   // ±1 m of deterministic noise on the 30° slope: what the DTM's own
-  // high-frequency content does to a belt coarser than it (I7).
+  // high-frequency content does to a belt coarser than it.
   const cellM = 4;
   const slope = Math.tan((30 * Math.PI) / 180);
   // A hash, not Math.random: the same grid every run, and — unlike a sine
@@ -307,7 +302,7 @@ describe("water", () => {
   });
 });
 
-describe("one surface (I1)", () => {
+describe("one surface", () => {
   const cellM = 4;
   // Non-separable on purpose: a surface of f(col) + g(row) has no twist in a
   // cell, and there the two triangles and the bilinear patch are one plane.

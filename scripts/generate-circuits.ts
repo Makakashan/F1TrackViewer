@@ -1,15 +1,4 @@
-/**
- * Copies the circuit geometry into `public/` so the app never fetches it.
- *
- * The viewer used to read every circuit straight from raw.githubusercontent.com
- * on load. That makes a page view depend on a third party's rate limit — and
- * GitHub answers 429 once a machine has pulled enough for a day, which shows up
- * as an empty circuit list nobody can do anything about. The dataset is 31 small
- * files that change about once a season, so it belongs in the build.
- *
- * Source is the bacinger/f1-circuits GeoJSON, cached under `.cache/` by whatever
- * pulled it first; anything missing is fetched once and cached.
- */
+/** Copies the circuit GeoJSON into `public/` so a page view never hits GitHub's rate limit. */
 
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";

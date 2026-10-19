@@ -1,19 +1,6 @@
 /**
- * Kit buildings: where a modelled building beats an extruded footprint (P4.5).
- *
- * Everything else the bake draws is derived from a measurement, and a footprint
- * extruded to its measured height is an honest answer. It is a dull one: a 9 m
- * box on a 14 m plot is a box, and Monaco is four thousand of them. A model has
- * a roof, eaves, windows and balconies, and where one fits the plot it is worth
- * more than the box it stands in for.
- *
- * The rule is that the model fits the survey rather than replaces it. A
- * footprint qualifies if it is simple and close to rectangular and long enough
- * to be a building, and the model chosen is one whose own proportion matches
- * the height that was measured — a house on a house plot, a tower on a tower's.
- * Where nothing matches, or the road reaches into the plot, or the triangles
- * have run out, the footprint is extruded as before. The survey decides; the
- * kit only supplies a silhouette.
+ * Kit buildings: a model in place of an extruded footprint where one fits the plot.
+ * The survey decides size and height; the kit only supplies a silhouette.
  */
 
 import { readdir } from "node:fs/promises";
@@ -26,18 +13,7 @@ import type { Mesh } from "./mesh";
 import type { ScenePlane } from "./plane";
 import { triangleCount } from "./mesh";
 
-/**
- * Too short for a building.
- *
- * The only bound left on the plot. There used to be a ceiling too — 400 m² and
- * 12 m — because the library was one suburban pack and a block of flats wearing
- * a bungalow is worse than a box; with the commercial pack loaded the library
- * runs from a two-storey house to a skyscraper, so what decides the fit is the
- * proportion match below rather than a size the kit no longer has trouble with.
- * The floor stays: nothing kept sheds and garages out, and 31 of the 75 plots
- * that took a model were under this — the shortest 3.6 m, which is a house
- * shrunk to the size of a car.
- */
+/** Too short for a building; under this a house shrinks to the size of a car. */
 const MIN_FOOTPRINT_LENGTH_M = 8;
 /** A kit house has four walls and maybe a wing. More corners is a building. */
 const MIN_CORNERS = 4;
@@ -49,33 +25,13 @@ const TRACK_CLEARANCE_M = 8;
 /** Above this a model is the detailed tier: eaves, awnings, balconies. */
 const LOW_DETAIL_MAX_TRIS = 500;
 /**
- * How far a model may be bent to fit the plot it stands on.
- *
- * The measure is anisotropy — the largest of the three fitted scales over the
- * smallest — so growing a model as a whole is free and reshaping it is what is
- * bounded. Placed by its own proportion instead, a model came out 10 % off the
- * surveyed height at the median and covered between half and three times the
- * plot's width; stretched, it is exactly the footprint that was surveyed and
- * exactly the height that was measured, at the price of a window that is not
- * square.
- *
- * Tighter by the track than behind it, because what the price buys is a door
- * you can see: at 1.7 a doorway is half again as wide as it was drawn, and on
- * the front row that is the first thing the eye finds. In the core belt the
- * cap is 1.2, where the distortion is at the edge of noticing; in the city belt
- * 1.5, where a door is a few pixels. Coverage is what pays for it — measured
- * on Monaco at a single cap: 1.7 gives 266 modelled buildings, 1.4 gives 231,
- * 1.3 gives 173, 1.2 gives 131.
+ * How far a model may be reshaped (largest fitted scale over smallest). Tighter by
+ * the track, where a stretched doorway is the first thing you see.
  */
 const MAX_STRETCH: Record<"core" | "city", number> = { core: 1.2, city: 1.5 };
 /**
- * What models may take of the city belt's triangle budget.
- *
- * Down from a half once the extrusions started carrying bands of their own:
- * a shop front on every one of the 4,572 buildings and a lift head on every flat
- * roof cost the city belt 32,394 triangles between them, and they are worth
- * more than the models that money would have bought: a band is on every
- * building, a model is on one.
+ * Models' share of the city belt's triangles. Shop fronts and lift heads on every
+ * building are worth more than a few more models.
  */
 const BUDGET_SHARE = 0.42;
 
@@ -88,11 +44,8 @@ export interface KitModel {
 }
 
 /**
- * The model files of a pack, by name prefix.
- *
- * Returns nothing when the pack is not downloaded, which is the normal state of
- * a fresh checkout: `assets/models/` is fetched, not committed, and a bake
- * without it builds the same city out of extrusions.
+ * A pack's model files by name prefix. Empty when the pack is not downloaded,
+ * which is normal: `assets/models/` is fetched, not committed.
  */
 export async function loadKitPaths(
   repoRoot: string,
@@ -117,14 +70,8 @@ export interface KitSource {
 }
 
 /**
- * Every modelled building in the packs.
- *
- * The prefixes are per pack because the packs do not agree with each other. In
- * the city kits `building-` is a house or a block and `low-detail-building-`
- * the same idea at a tenth of the triangles — a tower with windows and nothing
- * else, which is what a block two streets back is worth. In Modular Buildings
- * `building-` is a wall, a corner or a door, and only `building-sample-` is a
- * building somebody already assembled.
+ * Every modelled building in the packs. Prefixes are per pack because packs name
+ * things differently.
  */
 export async function loadKitHouses(repoRoot: string, sources: KitSource[]): Promise<KitModel[]> {
   const models: KitModel[] = [];
@@ -148,29 +95,13 @@ export async function loadKitHouses(repoRoot: string, sources: KitSource[]): Pro
   return models;
 }
 
-// ─── paint ─────────────────────────────────────────────────────────────────
-
-/**
- * The two ends of the kit's own range, in this diorama's paint: a wall in
- * daylight and the darkest thing on a house.
- */
+// paint
+/** The kit's tone range in this diorama's paint: a wall in daylight to the darkest part. */
 const KIT_WALL = DIORAMA_COLORS.building;
 const KIT_DARK = "#8A9099";
-/**
- * The cool tilt the rest of the scene's greys carry, so a repainted house sits
- * in the same light as the block beside it.
- */
+/** The cool tilt the scene's greys carry, so a repainted house matches its neighbours. */
 const KIT_TINT: [number, number, number] = [0.97, 0.99, 1.04];
-/**
- * Where a model's own average lands in the range, and how hard the rest of it
- * leans that way.
- *
- * High, because the occlusion pass multiplies over this: a tower of balconies
- * carries a lot of baked shadow, and at an average halfway up the range it came
- * out a grey block among white ones. Measured against the flat-white control —
- * the same bake with every model vertex on the wall tone — this is where the
- * two stop being told apart at the wide shot.
- */
+/** Where a model's average lands in the range. High, because baked AO darkens it further. */
 const KIT_MEAN_AT = 0.65;
 const KIT_LIFT = 0.8;
 
@@ -184,15 +115,8 @@ function linearOf(hex: string): number {
 }
 
 /**
- * Brings a kit house into the diorama's palette.
- *
- * Kenney's houses are painted for their own scene — green roofs, brown doors,
- * one of them charcoal all over — and in a city of white extrusions they read
- * as coloured patches rather than as houses. What carries the shape is not the
- * hue but the order of the tones: roof darker than wall, window darker than
- * both. So the hue goes and the order stays: each vertex keeps its own place
- * between the darkest tone on a house and the colour every other building here
- * is painted.
+ * Bring a kit house into the palette: drop the hue, keep the order of tones
+ * (roof darker than wall, window darker than both).
  */
 export function repaintKitHouse(mesh: Mesh): void {
   const albedo = mesh.albedo;
@@ -200,10 +124,7 @@ export function repaintKitHouse(mesh: Mesh): void {
   const dark = linearOf(KIT_DARK);
   const wall = linearOf(KIT_WALL);
 
-  // Each model against its own average rather than against an absolute scale.
-  // The commercial pack has blocks that are dark all over — one is nine parts
-  // glazing — and on the absolute scale they came out as black towers in a
-  // white city, which is the patch this exists to remove, one tone down.
+  // Each model against its own average, or a glazed tower comes out black.
   const luminance = new Float64Array(albedo.length / 3);
   let mean = 0;
   for (let i = 0; i < luminance.length; i++) {
@@ -224,8 +145,7 @@ export function repaintKitHouse(mesh: Mesh): void {
   }
 }
 
-// ─── footprint shape ───────────────────────────────────────────────────────
-
+// footprint shape
 export interface Footprint {
   id: string;
   ring: { x: number; z: number }[];
@@ -256,12 +176,7 @@ function ringArea(ring: { x: number; z: number }[]): number {
   return Math.abs(sum) / 2;
 }
 
-/**
- * The smallest rectangle that holds the ring, by rotating calipers.
- *
- * One side of the minimum rectangle lies along one of the ring's own edges, so
- * with six corners at most this is six trials rather than a search.
- */
+/** Smallest rectangle around the ring by rotating calipers: one side lies on a ring edge. */
 function minimumRectangle(ring: { x: number; z: number }[]): Rectangle {
   let best: Rectangle | null = null;
   for (let i = 0; i < ring.length; i++) {
@@ -312,13 +227,7 @@ function minimumRectangle(ring: { x: number; z: number }[]): Rectangle {
   );
 }
 
-/**
- * The four corners of a fitted rectangle.
- *
- * The model covers this, not the surveyed ring — the rectangle is the smallest
- * one that holds the ring, so it reaches past it — and what a house stands on
- * has to be at least as wide as the house.
- */
+/** Corners of the fitted rectangle. The model covers this, not the surveyed ring. */
 function rectangleRing(rectangle: Rectangle): { x: number; z: number }[] {
   const ux = Math.sin(rectangle.headingRad);
   const uz = Math.cos(rectangle.headingRad);
@@ -335,10 +244,7 @@ function rectangleRing(rectangle: Rectangle): { x: number; z: number }[] {
   }));
 }
 
-/**
- * How much this model has to be reshaped to fill this plot: the largest of the
- * three fitted scales over the smallest.
- */
+/** How much the model is reshaped to fill the plot: largest fitted scale over smallest. */
 function stretchOf(model: KitModel, shape: { rectangle: Rectangle; footprint: Footprint }): number {
   const along = shape.rectangle.lengthM / model.size.lengthM;
   const across = shape.rectangle.widthM / model.size.widthM;
@@ -354,8 +260,7 @@ function hashed(x: number, z: number): number {
   return value - Math.floor(value);
 }
 
-// ─── selection ─────────────────────────────────────────────────────────────
-
+// selection
 /** The terrace a modelled house stands on, in scene metres. */
 export interface KitPlinth {
   /** The fitted rectangle, which is what the model covers. */
@@ -388,13 +293,7 @@ export function chooseKitHouses(
   plane: ScenePlane,
   /** Which belt a distance falls in, or null where models are not drawn. */
   beltOf: (distanceM: number) => "core" | "city" | null,
-  /**
-   * Triangles the models may spend between them.
-   *
-   * One number, not one per belt: every model ships in the city belt's mesh
-   * whichever belt's distance it stands at, so a per-belt allowance was two
-   * budgets spending one belt's triangles and the city belt went over.
-   */
+  /** One triangle budget for all models: they all ship in the city belt's mesh. */
   budget: number,
 ): KitResult {
   const result: KitResult = {
@@ -427,11 +326,6 @@ export function chooseKitHouses(
     return { footprint, rectangle, fits };
   });
   result.stats.eligible = shapes.filter((shape) => shape.fits).length;
-
-  // The district rule is gone with the ceilings that made it necessary. It
-  // existed because one toy house in a row of grey blocks reads as a mistake;
-  // now the blocks are modelled too, and what a plot gets is decided by the
-  // plot rather than by its neighbours.
 
   // Nearest the circuit first: the budget is a belt's, and what the camera
   // passes gets the model before what sits behind it.

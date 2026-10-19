@@ -5,14 +5,12 @@ import { useEffect, useState } from "react";
 import { useAppPref } from "@/components/app-pref-provider";
 import type { GlobeCircuit } from "./globe-marker";
 
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
 const outlineCache = new Map<string, Promise<string | null>>();
 
 function loadOutline(id: string): Promise<string | null> {
   let pending = outlineCache.get(id);
   if (!pending) {
-    pending = fetch(`${BASE_PATH}/circuits/${id}.geojson`)
+    pending = fetch(`/circuits/${id}.geojson`)
       .then((res) => res.json())
       .then((geojson) => {
         const coords: [number, number][] = geojson.features?.[0]?.geometry?.coordinates ?? [];
@@ -104,14 +102,13 @@ export function CircuitPicker({
           placeholder={t.searchPlaceholder}
           className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
-        <span className="font-mono text-xs text-muted-foreground">{circuits.length}</span>
         {onClose && (
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground" aria-label={t.close}>
             <X className="h-4 w-4" />
           </button>
         )}
       </div>
-      <div className="f1tv-scroll min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* Each cell draws its right and bottom hairline; the panel clips the outer ones. */}
         <div className="-mb-px -mr-px grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))]">
           {circuits.map((circuit) => {

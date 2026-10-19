@@ -1,17 +1,12 @@
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants";
 
-const isGithubPages = process.env.GITHUB_PAGES === "true";
-const repoName = "F1TrackViewer";
+// Cloudflare Pages serves the static export; `next start` serves the standalone build.
+const isStaticExport = process.env.STATIC_EXPORT === "true";
 
 export default function config(phase: string): NextConfig {
   return {
-    output: isGithubPages ? "export" : "standalone",
-    basePath: isGithubPages ? `/${repoName}` : "",
-    assetPrefix: isGithubPages ? `/${repoName}/` : undefined,
-    env: {
-      NEXT_PUBLIC_BASE_PATH: isGithubPages ? `/${repoName}` : "",
-    },
+    output: isStaticExport ? "export" : "standalone",
     images: { unoptimized: true },
     typescript: { ignoreBuildErrors: true },
     reactStrictMode: false,

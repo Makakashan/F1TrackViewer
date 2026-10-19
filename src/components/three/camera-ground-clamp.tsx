@@ -1,18 +1,8 @@
 "use client";
 
 /**
- * Keeps the camera out of the hill.
- *
- * Terrain is a surface with its back faces culled, so a camera inside it sees
- * the city from underneath: the road through the rock, the sea through the
- * ground. `maxPolarAngle` stops that happening by going under the model; this
- * stops it happening by flying into it.
- *
- * The ground is read once off the loaded belts into a coarse max-height grid —
- * the meshes are on the GPU either way, and a raycast against 400k triangles on
- * every camera move is not a trade this scene makes. Each triangle writes its
- * highest corner into every cell its footprint covers, so the grid is never
- * lower than the ground it stands for and the clamp errs upwards.
+ * Keeps the camera out of the hill. Ground is read once into a coarse max-height grid
+ * instead of raycasting 400k triangles per move, so it errs upwards.
  */
 
 import { useEffect, useRef } from "react";
@@ -27,6 +17,8 @@ const CELL_M = 8;
 const SEA_Y = 0;
 /** The names the bake gives the ground. Buildings are not in it: they are scenery. */
 const GROUND_MESHES = new Set(["terrain", "pier"]);
+/** The tunnel's own body: under its roof the road runs below the hill, and the camera follows it in. */
+const TUNNEL_MESHES = new Set(["tunnel", "portal"]);
 
 interface GroundGrid {
   minX: number;
@@ -35,15 +27,19 @@ interface GroundGrid {
   rows: number;
   /** Highest ground in each cell, or `-Infinity` where the belts have none. */
   height: Float32Array;
+  /** Highest tunnel in each cell, or `-Infinity` where there is no tunnel. */
+  tunnelTop: Float32Array;
 }
 
 function sampleGround(scene: THREE.Object3D): GroundGrid | null {
-  const meshes: THREE.Mesh[] = [];
+  const meshes: { mesh: THREE.Mesh; tunnel: boolean }[] = [];
   const box = new THREE.Box3();
   scene.traverse((node) => {
     if (!(node instanceof THREE.Mesh)) return;
-    if (!GROUND_MESHES.has(node.name)) return;
-    meshes.push(node);
+    const kind = node.name.replace(/_\d+$/, "");
+    const tunnel = TUNNEL_MESHES.has(kind);
+    if (!tunnel && !GROUND_MESHES.has(node.name)) return;
+    meshes.push({ mesh: node, tunnel });
     box.expandByObject(node);
   });
   if (!meshes.length || box.isEmpty()) return null;
@@ -51,9 +47,11 @@ function sampleGround(scene: THREE.Object3D): GroundGrid | null {
   const cols = Math.max(1, Math.ceil((box.max.x - box.min.x) / CELL_M));
   const rows = Math.max(1, Math.ceil((box.max.z - box.min.z) / CELL_M));
   const height = new Float32Array(cols * rows).fill(-Infinity);
+  const tunnelTop = new Float32Array(cols * rows).fill(-Infinity);
 
   const corner = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
-  for (const mesh of meshes) {
+  for (const { mesh, tunnel } of meshes) {
+    const into = tunnel ? tunnelTop : height;
     const position = mesh.geometry.getAttribute("position") as THREE.BufferAttribute | undefined;
     if (!position) continue;
     mesh.updateWorldMatrix(true, false);
@@ -81,23 +79,25 @@ function sampleGround(scene: THREE.Object3D): GroundGrid | null {
       for (let row = rowFrom; row <= rowTo; row++) {
         for (let col = colFrom; col <= colTo; col++) {
           const at = row * cols + col;
-          if (top > height[at]) height[at] = top;
+          if (top > into[at]) into[at] = top;
         }
       }
     }
   }
 
-  return { minX: box.min.x, minZ: box.min.z, cols, rows, height };
+  return { minX: box.min.x, minZ: box.min.z, cols, rows, height, tunnelTop };
 }
 
 /**
  * The ground under a point: the cell it stands in, which already holds the
  * highest corner of every triangle that touches the cell.
  */
-function groundAt(grid: GroundGrid, x: number, z: number): number {
+function groundAt(grid: GroundGrid, x: number, y: number, z: number): number {
   const col = Math.floor((x - grid.minX) / CELL_M);
   const row = Math.floor((z - grid.minZ) / CELL_M);
   if (col < 0 || row < 0 || col >= grid.cols || row >= grid.rows) return -Infinity;
+  // Under a tunnel's roof the hill above is not the floor: the road inside is.
+  if (y <= grid.tunnelTop[row * grid.cols + col] + CLEARANCE_M) return -Infinity;
   // Off the land is the sea, and the sea is one quad at the datum: from below it
   // is culled and the whole diorama shows through it.
   return Math.max(grid.height[row * grid.cols + col], SEA_Y);
@@ -127,13 +127,13 @@ export default function CameraGroundClamp({ version }: CameraGroundClampProps) {
     const { camera, controls } = state;
     const target = (controls as { target?: THREE.Vector3 } | null)?.target;
 
-    const floor = groundAt(grid, camera.position.x, camera.position.z);
+    const floor = groundAt(grid, camera.position.x, camera.position.y, camera.position.z);
     if (Number.isFinite(floor) && camera.position.y < floor + CLEARANCE_M) {
       camera.position.y = floor + CLEARANCE_M;
     }
     // A target inside the hill drags the camera back in on the next orbit.
     if (target) {
-      const under = groundAt(grid, target.x, target.z);
+      const under = groundAt(grid, target.x, target.y, target.z);
       if (Number.isFinite(under) && target.y < under) target.y = under;
     }
   });
