@@ -5,12 +5,11 @@
 <h1>Boxlane</h1>
 
 <p align="center">
-  <a href="https://makakashan.github.io/F1TrackViewer/">Live demo</a>
+  <a href="https://boxlane.pages.dev">Live demo</a>
   ·
   <a href="./docs/architecture.md">Architecture</a>
 </p>
 
-[![Deploy](https://img.shields.io/github/actions/workflow/status/Makakashan/F1TrackViewer/deploy.yml?branch=main&style=flat-square&label=deploy)](https://github.com/Makakashan/F1TrackViewer/actions/workflows/deploy.yml)
 [![License](https://img.shields.io/github/license/Makakashan/F1TrackViewer?style=flat-square&label=license)](./LICENSE)
 \
 ![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)
@@ -97,7 +96,7 @@ fleet.
 |---|---|
 | `bun run dev` | Dev server on port 4000 |
 | `bun run build` | Production build |
-| `bun run build:pages` | Static export for GitHub Pages |
+| `bun run build:static` | Static export for Cloudflare Pages |
 | `bun run typecheck` | TypeScript, no emit |
 | `bun run lint` | ESLint |
 | `bun run test` | Invariant tests on synthetic ground — no network, milliseconds |

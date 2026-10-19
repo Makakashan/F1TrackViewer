@@ -1,6 +1,6 @@
 /** Helpers for the bacinger/f1-circuits GeoJSON, copied into `public/circuits/` at build time. */
 
-const BASE = `${process.env.NEXT_PUBLIC_BASE_PATH ?? ""}/circuits`;
+const BASE = "/circuits";
 const LOCATIONS_URL = `${BASE}/index.json`;
 
 export interface CircuitLocation {

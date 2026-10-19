@@ -14,16 +14,15 @@ const interFont = Inter({ subsets: ["latin", "latin-ext", "cyrillic"], variable:
 import { Toaster } from "@/components/ui/toaster";
 import { AppPrefProvider } from "@/components/app-pref-provider";
 
-const basePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-const faviconUrl = `${basePath}/favicon.svg`;
-const faviconLightUrl = `${basePath}/favicon-light.svg`;
+const faviconUrl = "/favicon.svg";
+const faviconLightUrl = "/favicon-light.svg";
 
 const DESCRIPTION =
   "Every Formula 1 circuit in 3D in the browser: real terrain, the city around the track, and a race on top. Unofficial, non-commercial.";
 
 export const metadata: Metadata = {
   // Link previews (Telegram, Discord, X) need absolute URLs; src/app/opengraph-image.png is the picture.
-  metadataBase: new URL("https://makakashan.github.io"),
+  metadataBase: new URL("https://boxlane.pages.dev"),
   title: "Boxlane — every F1 circuit in 3D",
   description: DESCRIPTION,
   openGraph: {
@@ -31,7 +30,7 @@ export const metadata: Metadata = {
     siteName: "Boxlane",
     title: "Boxlane — every F1 circuit in 3D",
     description: DESCRIPTION,
-    url: `${basePath}/`,
+    url: "/",
   },
   twitter: { card: "summary_large_image" },
   keywords: ["Boxlane", "F1", "Formula 1", "Three.js", "3D", "circuits", "tracks"],
@@ -41,7 +40,7 @@ export const metadata: Metadata = {
       { url: faviconLightUrl, type: "image/svg+xml", media: "(prefers-color-scheme: light)" },
       { url: faviconUrl, type: "image/svg+xml", media: "(prefers-color-scheme: dark)" },
     ],
-    apple: `${basePath}/apple-touch-icon.png`,
+    apple: "/apple-touch-icon.png",
   },
 };
 

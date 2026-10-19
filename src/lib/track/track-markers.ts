@@ -1,7 +1,5 @@
 /** Track markers — sector split positions derived from FastF1 telemetry or entered manually. */
 
-const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
 export interface SectorDefinition {
   id: number;
   fromDistance: number;
@@ -54,7 +52,7 @@ export async function fetchTrackMarkers(
 ): Promise<TrackMarkers | null> {
   try {
     const res = await fetch(
-      `${PUBLIC_BASE_PATH}/track-markers/${encodeURIComponent(circuitId)}.json`,
+      `/track-markers/${encodeURIComponent(circuitId)}.json`,
       { cache: "no-cache" },
     );
     if (!res.ok) return null;

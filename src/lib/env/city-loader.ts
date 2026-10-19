@@ -35,10 +35,8 @@ export interface CityManifest {
   generatedAt: string;
 }
 
-const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
 function cityBaseUrl(circuitId: string): string {
-  return `${PUBLIC_BASE_PATH}/environments/${encodeURIComponent(circuitId)}`;
+  return `/environments/${encodeURIComponent(circuitId)}`;
 }
 
 export function cityBeltUrl(circuitId: string, belt: CityBelt): string {

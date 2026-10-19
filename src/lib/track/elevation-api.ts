@@ -6,7 +6,6 @@ import {
 
 const ELEVATION_CACHE_VERSION = 2;
 const ELEVATION_CACHE_PREFIX = `f1tv:elevations:v${ELEVATION_CACHE_VERSION}:`;
-const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 function elevationCacheKey(coords: [number, number][]): string {
   let hash = 5381;
@@ -65,7 +64,7 @@ async function fetchStaticElevationProfile(
 ): Promise<number[] | null> {
   try {
     const res = await fetch(
-      `${PUBLIC_BASE_PATH}/elevations/${encodeURIComponent(circuitId)}.json?v=${ELEVATION_CACHE_VERSION}`,
+      `/elevations/${encodeURIComponent(circuitId)}.json?v=${ELEVATION_CACHE_VERSION}`,
       { cache: "no-cache" },
     );
     if (!res.ok) return null;

@@ -12,8 +12,6 @@ import type {
   WaterFile,
 } from "@/lib/env/environment-types";
 
-const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
 /** Fallback for older builds without public/environments/index.json. */
 export const FALLBACK_ENVIRONMENT_CIRCUIT_IDS = new Set(["mc-1929"]);
 
@@ -22,7 +20,7 @@ let environmentIndexPromise: Promise<Set<string>> | null = null;
 async function fetchEnvironmentCircuitIds(): Promise<Set<string>> {
   if (!environmentIndexPromise) {
     environmentIndexPromise = fetchJson<EnvironmentIndex>(
-      `${PUBLIC_BASE_PATH}/environments/index.json`,
+      "/environments/index.json",
     ).then((index) => {
       if (!index?.circuitIds?.length) {
         return FALLBACK_ENVIRONMENT_CIRCUIT_IDS;
@@ -34,7 +32,7 @@ async function fetchEnvironmentCircuitIds(): Promise<Set<string>> {
 }
 
 function environmentBaseUrl(circuitId: string): string {
-  return `${PUBLIC_BASE_PATH}/environments/${encodeURIComponent(circuitId)}`;
+  return `/environments/${encodeURIComponent(circuitId)}`;
 }
 
 async function fetchJson<T>(url: string): Promise<T | null> {

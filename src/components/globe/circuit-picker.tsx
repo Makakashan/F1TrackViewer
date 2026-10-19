@@ -5,14 +5,12 @@ import { useEffect, useState } from "react";
 import { useAppPref } from "@/components/app-pref-provider";
 import type { GlobeCircuit } from "./globe-marker";
 
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
 const outlineCache = new Map<string, Promise<string | null>>();
 
 function loadOutline(id: string): Promise<string | null> {
   let pending = outlineCache.get(id);
   if (!pending) {
-    pending = fetch(`${BASE_PATH}/circuits/${id}.geojson`)
+    pending = fetch(`/circuits/${id}.geojson`)
       .then((res) => res.json())
       .then((geojson) => {
         const coords: [number, number][] = geojson.features?.[0]?.geometry?.coordinates ?? [];
