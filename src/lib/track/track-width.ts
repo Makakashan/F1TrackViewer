@@ -1,7 +1,5 @@
 /** Real track-width profiles derived from the TUMFTM racetrack-database. */
 
-const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
 export interface TrackWidthProfile {
   version: number;
   source: string;
@@ -50,7 +48,7 @@ export async function fetchTrackWidthProfile(
   if (!TRACK_WIDTH_CIRCUIT_IDS.has(circuitId)) return null;
   try {
     const res = await fetch(
-      `${PUBLIC_BASE_PATH}/track-widths/${encodeURIComponent(circuitId)}.json`,
+      `/track-widths/${encodeURIComponent(circuitId)}.json`,
       { cache: "no-cache" },
     );
     if (!res.ok) return null;

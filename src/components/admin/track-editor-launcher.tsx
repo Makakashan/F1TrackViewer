@@ -6,8 +6,6 @@ import { TRACK_OVERRIDES } from "@/data/track-overrides";
 import { fetchCircuitIndex, type CircuitLocation } from "@/lib/f1-circuits";
 import { cn } from "@/lib/utils";
 
-const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
 const editsOf = (id: string) => TRACK_OVERRIDES[id]?.points.length ?? 0;
 
 /** Opens a circuit in race view with the track editor on. Local only: the tab exists under `next dev`. */
@@ -126,7 +124,7 @@ function Cross({ className }: { className: string }) {
 function CircuitCell({ circuit, edits }: { circuit: CircuitLocation; edits: number }) {
   return (
     <a
-      href={`${BASE_PATH}/?track=${encodeURIComponent(circuit.id)}&race=1&edit=1`}
+      href={`/?track=${encodeURIComponent(circuit.id)}&race=1&edit=1`}
       className="group relative flex flex-col border-b border-r border-border px-4 pb-3.5 pt-4 transition-colors hover:bg-muted/50"
     >
       {edits > 0 && <span className="absolute inset-x-0 top-0 h-0.5 bg-red-600" />}
@@ -151,7 +149,7 @@ function TrackOutline({ id }: { id: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${BASE_PATH}/circuits/${id}.geojson`)
+    fetch(`/circuits/${id}.geojson`)
       .then((res) => res.json())
       .then((geojson) => {
         const coords: [number, number][] = geojson.features?.[0]?.geometry?.coordinates ?? [];

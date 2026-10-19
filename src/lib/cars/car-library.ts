@@ -1,8 +1,6 @@
 /** Index of car models published under public/cars/. */
 
-const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
-
-export const CAR_LIBRARY_URL = `${PUBLIC_BASE_PATH}/cars/index.json`;
+export const CAR_LIBRARY_URL = "/cars/index.json";
 
 export interface CarModelEntry {
   id: string;
@@ -21,7 +19,7 @@ export interface CarLibrary {
 }
 
 export function carModelUrl(entry: CarModelEntry): string {
-  return `${PUBLIC_BASE_PATH}/cars/${entry.file}`;
+  return `/cars/${entry.file}`;
 }
 
 /** Returns an empty library rather than throwing when no manifest is published. */
