@@ -8,6 +8,8 @@ import { useAppPref } from "@/components/app-pref-provider";
 export interface RaceFastestLapPopupProps {
   /** The current fastest lap. A new one pops the card; null clears it. */
   fastestLap?: { code: string; time: number } | null;
+  /** Stays up instead of retiring, for the HUD editor to show where it will appear. */
+  persistent?: boolean;
   className?: string;
 }
 
@@ -24,6 +26,7 @@ function formatLapTime(seconds: number): string {
 /** The fastest lap, announced under the lights and then gone. */
 export default function RaceFastestLapPopup({
   fastestLap,
+  persistent = false,
   className,
 }: RaceFastestLapPopupProps) {
   const { t } = useAppPref();
@@ -38,7 +41,7 @@ export default function RaceFastestLapPopup({
     return () => window.clearTimeout(timer);
   }, [key]);
 
-  const shown = key != null && retired !== key ? fastestLap : null;
+  const shown = key != null && (persistent || retired !== key) ? fastestLap : null;
 
   if (!shown) return null;
 

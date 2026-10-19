@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Globe2, LogOut, MoreHorizontal } from "lucide-react";
+import { Globe2, LayoutDashboard, LogOut, MoreHorizontal } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -19,6 +19,7 @@ import {
 export interface RaceHeaderMenuProps extends RaceSceneSettingsProps {
   onBackToGlobe: () => void;
   onExit: () => void;
+  onEditHud: () => void;
   className?: string;
 }
 
@@ -26,6 +27,7 @@ export interface RaceHeaderMenuProps extends RaceSceneSettingsProps {
 export default function RaceHeaderMenu({
   onBackToGlobe,
   onExit,
+  onEditHud,
   className,
   ...scene
 }: RaceHeaderMenuProps) {
@@ -75,6 +77,18 @@ export default function RaceHeaderMenu({
           >
             <LogOut className="h-4 w-4" />
             {t.raceExit}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="justify-start gap-2"
+            onClick={() => {
+              setOpen(false);
+              onEditHud();
+            }}
+          >
+            <LayoutDashboard className="h-4 w-4" />
+            {t.hudEdit}
           </Button>
         </div>
 

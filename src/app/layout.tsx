@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Titillium_Web } from "next/font/google";
+import { Inter, Saira } from "next/font/google";
 import "./globals.css";
 
-/** The timing overlay's typeface, and only its typeface — the rest of the app keeps the system stack. */
-const timingFont = Titillium_Web({
+/** The timing overlay's typeface: wide and square like the broadcast's own, which is not licensed out. */
+const timingFont = Saira({
   subsets: ["latin", "latin-ext"],
-  weight: ["400", "600", "700", "900"],
+  weight: ["400", "500", "600", "700", "800", "900"],
   variable: "--font-timing",
   display: "swap",
 });
