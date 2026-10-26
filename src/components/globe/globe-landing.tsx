@@ -16,6 +16,8 @@ import { SiteHeader, buttons } from "@/components/site-header";
 import { continentCentroid, type Continent } from "@/lib/circuit-meta";
 
 const DEFAULT_CAMERA_CONTINENT: Continent = "europe";
+/** The light theme's backdrop: a pale sky that brightens behind the globe. */
+const LIGHT_SKY = "radial-gradient(ellipse at 50% 45%, #ffffff 0%, #eef3f8 45%, #dde6ef 100%)";
 
 interface CircuitsIndex {
 	schemaVersion: number;
@@ -126,7 +128,9 @@ export default function GlobeLanding() {
 			<Canvas
 				camera={{ position: [0, 0.8, 6.5], fov: 42 }}
 				dpr={[1, 2]}
-				gl={{ antialias: true, alpha: false }}
+				frameloop="demand"
+				gl={{ antialias: true, alpha: true }}
+				style={resolvedTheme === "light" ? { background: LIGHT_SKY } : undefined}
 				onPointerMissed={() => {
 					setSelectedCircuit(null);
 					setHoveredCircuit(null);
