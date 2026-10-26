@@ -40,6 +40,21 @@ const en = {
   whatsNewButton: "What's new",
   whatsNewKicker: "What's new",
   whatsNewEarlier: "Earlier",
+  whatsNewGlobeTitle: "A globe with relief",
+  whatsNewGlobeLead:
+    "The Earth on the start page is a relief map now: mountains stand above the sea, and the globe only draws when something moves.",
+  whatsNewViewDark: "Dark theme",
+  whatsNewViewLight: "Light theme",
+  whatsNewReliefTitle: "Mountains you can see",
+  whatsNewReliefText:
+    "Land rises over the sea and the ranges stand up even on the globe's edge, from NASA's elevation data.",
+  whatsNewAirTitle: "Air at the edge",
+  whatsNewAirText:
+    "A thin atmosphere wraps the planet; on the light theme a soft haze and a shadow below hold it on the page.",
+  whatsNewCountryTitle: "The country in focus",
+  whatsNewCountryText: "The grid and the borders are gone; the circuit you point at outlines its own country.",
+  whatsNewQuietTitle: "Easier on the GPU",
+  whatsNewQuietText: "The globe draws only while something moves, and all the markers are one draw instead of five each.",
   whatsNewRaceTitle: "A race screen like the broadcast",
   whatsNewRaceLead:
     "The timing tower now looks the way it does on television, and the whole race screen is yours to arrange.",
@@ -259,6 +274,21 @@ const ru: Dict = {
   whatsNewButton: "Что нового",
   whatsNewKicker: "Что нового",
   whatsNewEarlier: "Раньше",
+  whatsNewGlobeTitle: "Глобус с рельефом",
+  whatsNewGlobeLead:
+    "Земля на стартовой теперь рельефная карта: горы поднимаются над морем, а глобус рисуется, только когда что-то движется.",
+  whatsNewViewDark: "Тёмная тема",
+  whatsNewViewLight: "Светлая тема",
+  whatsNewReliefTitle: "Горы видно",
+  whatsNewReliefText:
+    "Суша поднята над морем, а хребты торчат даже на краю глобуса — по данным высот NASA.",
+  whatsNewAirTitle: "Воздух по краю",
+  whatsNewAirText:
+    "Планету окутывает тонкая атмосфера, а на светлой теме её держат на странице мягкая дымка и тень снизу.",
+  whatsNewCountryTitle: "Страна в фокусе",
+  whatsNewCountryText: "Сетки и границ больше нет: трасса под курсором обводит свою страну.",
+  whatsNewQuietTitle: "Легче для видеокарты",
+  whatsNewQuietText: "Глобус рисуется, только пока что-то движется, а все маркеры — один вызов отрисовки вместо пяти на каждый.",
   whatsNewRaceTitle: "Экран гонки как на трансляции",
   whatsNewRaceLead:
     "Таблица хронометража теперь выглядит как по телевизору, а весь экран гонки можно расставить по-своему.",

@@ -53,7 +53,7 @@ Pick a circuit on the globe and look around it on its real ground — all in the
 
 ## Features
 
-- **31 circuits** on a textured globe, with a searchable grid of outlines and a preview card — no runtime map APIs
+- **31 circuits** on a relief globe, with a searchable grid of outlines and a preview card — no runtime map APIs
 - **Real elevation**, sector splits from session telemetry, and real per-point width where it is measured
 - **A baked city** around Monaco: terrain, buildings at their surveyed heights, water, quays and parks
 - **Race mode** (beta): kerbs, painted grid, start lights and twenty cars on a deterministic simulation
@@ -102,6 +102,7 @@ fleet.
 | `bun run test` | Invariant tests on synthetic ground — no network, milliseconds |
 | `bun run circuits:generate` | Globe marker index |
 | `bun run elevations:generate` | Static elevation profiles |
+| `bun run globe:generate` | Globe Earth maps from NASA sources |
 | `bun run widths:generate` | TUMFTM real-width profiles |
 | `bun run environment:generate` | Diorama bundles (terrain, buildings, water, roads) |
 | `bun run env:bake <circuitId>` | Bake a circuit's city into `far`, `city` and `core` GLBs |
@@ -171,6 +172,7 @@ the audits before it lands. Issues and pull requests should be written by a pers
 | [OpenTopoData](https://opentopodata.org/) | Elevation fallback | CC-BY 4.0 |
 | [TUMFTM/racetrack-database](https://github.com/TUMFTM/racetrack-database) | Real per-point track width | LGPL-3.0 |
 | [OpenStreetMap](https://www.openstreetmap.org/copyright) | Buildings, coast, roads and landuse | ODbL |
+| [NASA Visible Earth](https://visibleearth.nasa.gov/collection/1484/blue) | Globe colour (Blue Marble), elevation and land mask (GEBCO) | Public domain |
 | [Jolpica](https://github.com/jolpica/jolpica-f1) | Driver and team data | AGPL-3.0 |
 
 ## License

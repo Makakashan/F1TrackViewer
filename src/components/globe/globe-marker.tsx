@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useCursor } from "@react-three/drei";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useFrame, useThree, type ThreeEvent } from "@react-three/fiber";
 import * as THREE from "three";
+import { latLonToVector3 } from "./globe-surface";
 
 export interface GlobeCircuit {
   id: string;
@@ -17,35 +18,15 @@ export interface GlobeCircuit {
   hasTerrain: boolean;
 }
 
-interface GlobeMarkerProps {
-  circuit: GlobeCircuit;
-  radius: number;
-  visualOffset?: {
-    angle: number;
-    magnitude: number;
-  };
-  selected: boolean;
-  hovered: boolean;
-  onHover: (circuit: GlobeCircuit) => void;
-  onSelect: (circuit: GlobeCircuit) => void;
-  onBlur: () => void;
-}
-
-export function latLonToVector3(lat: number, lon: number, radius: number) {
-  const phi = (90 - lat) * (Math.PI / 180);
-  const theta = (lon + 180) * (Math.PI / 180);
-
-  const x = -radius * Math.sin(phi) * Math.cos(theta);
-  const z = radius * Math.sin(phi) * Math.sin(theta);
-  const y = radius * Math.cos(phi);
-
-  return new THREE.Vector3(x, y, z);
+export interface MarkerOffset {
+  angle: number;
+  magnitude: number;
 }
 
 export function markerPositionForCircuit(
   circuit: Pick<GlobeCircuit, "lat" | "lon">,
   radius: number,
-  visualOffset?: { angle: number; magnitude: number },
+  visualOffset?: MarkerOffset,
 ) {
   const basePosition = latLonToVector3(circuit.lat, circuit.lon, radius);
   if (!visualOffset || visualOffset.magnitude <= 0) return basePosition;
@@ -66,238 +47,200 @@ export function markerPositionForCircuit(
   return basePosition.add(tangentOffset).normalize().multiplyScalar(radius);
 }
 
-const HIT_RADIUS = 0.12;
-const COLOR_RED = 0xe10600;
-const COLOR_WHITE = 0xffffff;
+/** Half the side of a marker's quad: room for the widest pulse ring. */
+const QUAD_HALF = 0.09;
+/** Within this of the quad's centre a pointer counts as on the marker. */
+const HIT_RADIUS = 0.06;
+const STATE_IDLE = 0;
+const STATE_HOVERED = 1;
+const STATE_SELECTED = 2;
 
-// One shared radial-gradient texture → smooth single falloff, no "double halo".
-let glowTextureCache: THREE.Texture | null = null;
-function getGlowTexture(): THREE.Texture {
-  if (glowTextureCache) return glowTextureCache;
-  const size = 128;
-  const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext("2d");
-  if (ctx) {
-    const g = ctx.createRadialGradient(
-      size / 2, size / 2, 0,
-      size / 2, size / 2, size / 2,
-    );
-    // Dim center (hidden behind the dot) → peak just outside the dot edge → smooth fade to transparent.
-    g.addColorStop(0.0, "rgba(255,255,255,0.06)");
-    g.addColorStop(0.28, "rgba(255,255,255,0.1)");
-    g.addColorStop(0.42, "rgba(255,255,255,0.42)");
-    g.addColorStop(0.6, "rgba(255,255,255,0.16)");
-    g.addColorStop(0.85, "rgba(255,255,255,0.03)");
-    g.addColorStop(1.0, "rgba(255,255,255,0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, size, size);
-  }
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  glowTextureCache = tex;
-  return tex;
+const markerMaterial = () =>
+  new THREE.ShaderMaterial({
+    uniforms: { time: { value: 0 } },
+    defines: { QUAD_HALF: QUAD_HALF.toFixed(4) },
+    transparent: true,
+    depthWrite: false,
+    // The relief stands taller than a marker's quad in the mountains; the horizon fade hides the far side instead.
+    depthTest: false,
+    vertexShader: /* glsl */ `
+      attribute float state;
+      uniform float time;
+      varying vec2 vPoint;
+      varying float vFade;
+      varying float vState;
+
+      void main() {
+        vec4 centre = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        float facing = dot(normalize(centre.xyz), normalize(cameraPosition));
+        float fade = smoothstep(-0.08, 0.25, facing);
+        vFade = state > 0.5 ? clamp(fade, 0.35, 1.0) : fade;
+        vState = state;
+        float scale = state > 1.5 ? 1.55 * (1.0 + sin(time * 2.4) * 0.1) : state > 0.5 ? 1.45 : 1.0;
+        vPoint = position.xy * scale;
+        gl_Position = projectionMatrix * viewMatrix * modelMatrix * instanceMatrix * vec4(position * scale, 1.0);
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float time;
+      varying vec2 vPoint;
+      varying float vFade;
+      varying float vState;
+
+      const vec3 RED = vec3(0.882, 0.024, 0.0);
+
+      float band(float d, float inner, float outer, float aa) {
+        return smoothstep(inner - aa, inner, d) * (1.0 - smoothstep(outer, outer + aa, d));
+      }
+
+      void main() {
+        float scale = vState > 1.5 ? 1.55 * (1.0 + sin(time * 2.4) * 0.1) : vState > 0.5 ? 1.45 : 1.0;
+        float d = length(vPoint) / scale;
+        float aa = fwidth(d);
+        float isActive = step(0.5, vState);
+
+        // A soft red halo peaking just outside the dot.
+        float g = d / 0.04;
+        float glow = g < 0.42 ? mix(0.06, 0.42, smoothstep(0.0, 0.42, g)) : 0.42 * (1.0 - smoothstep(0.42, 1.0, g));
+        glow *= mix(0.7, 1.5, isActive);
+
+        float core = 1.0 - smoothstep(0.015 - aa, 0.015, d);
+        float rim = band(d, 0.015, 0.0185, aa);
+
+        float cycle = fract(time * 1.3);
+        float pulseScale = 1.0 + cycle * 2.2;
+        float pulse = isActive * band(d, 0.022 * pulseScale, 0.026 * pulseScale, aa) * (1.0 - cycle) * (1.0 - cycle) * 0.6;
+
+        vec3 color = RED;
+        float alpha = glow;
+        color = mix(color, vec3(1.0), max(rim, pulse));
+        alpha = max(alpha, max(rim * mix(0.9, 1.0, isActive), pulse));
+        color = mix(color, RED, core);
+        alpha = max(alpha, core);
+
+        gl_FragColor = vec4(color, alpha * vFade);
+        #include <colorspace_fragment>
+      }
+    `,
+  });
+
+/** Only markers on the near side, and only within the dot's reach, take the pointer. */
+function nearSideRaycast(camera: THREE.Camera) {
+  const centre = new THREE.Vector3();
+  const matrix = new THREE.Matrix4();
+  return function (this: THREE.InstancedMesh, raycaster: THREE.Raycaster, hits: THREE.Intersection[]) {
+    const found: THREE.Intersection[] = [];
+    THREE.InstancedMesh.prototype.raycast.call(this, raycaster, found);
+    for (const hit of found) {
+      if (hit.instanceId === undefined) continue;
+      this.getMatrixAt(hit.instanceId, matrix);
+      centre.setFromMatrixPosition(matrix.premultiply(this.matrixWorld));
+      if (hit.point.distanceTo(centre) > HIT_RADIUS) continue;
+      if (centre.normalize().dot(camera.position) < -0.02 * camera.position.length()) continue;
+      hits.push(hit);
+    }
+  };
 }
 
-export default function GlobeMarker({
-  circuit,
-  radius,
-  visualOffset,
-  selected,
-  hovered,
+interface GlobeMarkersProps {
+  circuits: GlobeCircuit[];
+  /** Where each marker stands, in globe space. */
+  positions: THREE.Vector3[];
+  selectedId: string | null;
+  hoveredId: string | null;
+  onHover: (circuit: GlobeCircuit) => void;
+  onSelect: (circuit: GlobeCircuit) => void;
+  onBlur: () => void;
+}
+
+/** Every circuit marker in one instanced draw; the dot, rim, glow and pulse are drawn by the fragment shader. */
+export default function GlobeMarkers({
+  circuits,
+  positions,
+  selectedId,
+  hoveredId,
   onHover,
   onSelect,
   onBlur,
-}: GlobeMarkerProps) {
-  const active = selected || hovered;
-  const groupRef = useRef<THREE.Group>(null);
-  const glowMatRef = useRef<THREE.MeshBasicMaterial>(null);
-  const outlineMatRef = useRef<THREE.MeshBasicMaterial>(null);
-  const coreMatRef = useRef<THREE.MeshBasicMaterial>(null);
-  const pulseRef = useRef<THREE.Mesh>(null);
-  const pulseMatRef = useRef<THREE.MeshBasicMaterial>(null);
-  const hitRef = useRef<THREE.Mesh>(null);
-  const worldPosRef = useRef(new THREE.Vector3());
-  const camDirRef = useRef(new THREE.Vector3());
-  const { camera } = useThree();
+}: GlobeMarkersProps) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const { camera, invalidate } = useThree();
+  const geometry = useMemo(() => {
+    const quad = new THREE.PlaneGeometry(QUAD_HALF * 2, QUAD_HALF * 2);
+    quad.setAttribute(
+      "state",
+      new THREE.InstancedBufferAttribute(new Float32Array(circuits.length), 1),
+    );
+    return quad;
+  }, [circuits.length]);
+  const material = useMemo(() => markerMaterial(), []);
+  const active = selectedId !== null || hoveredId !== null;
+  useCursor(hoveredId !== null);
 
-  const glowTexture = useMemo(() => getGlowTexture(), []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  useEffect(() => () => material.dispose(), [material]);
 
-  const position = useMemo(
-    () => markerPositionForCircuit(circuit, radius, visualOffset),
-    [circuit, radius, visualOffset],
-  );
+  useEffect(() => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const matrix = new THREE.Matrix4();
+    const rotation = new THREE.Quaternion();
+    const forward = new THREE.Vector3(0, 0, 1);
+    const unit = new THREE.Vector3(1, 1, 1);
+    positions.forEach((position, index) => {
+      rotation.setFromUnitVectors(forward, position.clone().normalize());
+      mesh.setMatrixAt(index, matrix.compose(position, rotation, unit));
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.computeBoundingSphere();
+    invalidate();
+  }, [positions, invalidate]);
 
-  const normal = useMemo(() => position.clone().normalize(), [position]);
-
-  const orientation = useMemo(() => {
-    const q = new THREE.Quaternion();
-    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
-    return q;
-  }, [normal]);
-
-  useCursor(active);
+  useEffect(() => {
+    const state = geometry.getAttribute("state") as THREE.InstancedBufferAttribute;
+    circuits.forEach((circuit, index) => {
+      state.setX(
+        index,
+        circuit.id === selectedId ? STATE_SELECTED : circuit.id === hoveredId ? STATE_HOVERED : STATE_IDLE,
+      );
+    });
+    state.needsUpdate = true;
+    invalidate();
+  }, [circuits, geometry, selectedId, hoveredId, invalidate]);
 
   useFrame(({ clock }) => {
-    if (
-      !groupRef.current ||
-      !glowMatRef.current ||
-      !outlineMatRef.current ||
-      !coreMatRef.current ||
-      !pulseRef.current ||
-      !pulseMatRef.current ||
-      !hitRef.current
-    )
-      return;
-
-    const surfNormal = groupRef.current
-      .getWorldPosition(worldPosRef.current)
-      .normalize();
-    const camDir = camDirRef.current.copy(camera.position).normalize();
-    const facing = surfNormal.dot(camDir);
-    const horizonFade = THREE.MathUtils.smoothstep(facing, -0.08, 0.25);
-    const opacity = active
-      ? THREE.MathUtils.clamp(horizonFade, 0.35, 1)
-      : horizonFade;
-
-    groupRef.current.visible = opacity > 0.03;
-    hitRef.current.visible = facing > -0.02;
-
-    const t = clock.elapsedTime;
-
-    // Pulse ring — expanding radar wave, only for active markers
-    if (active) {
-      const cycle = (t * 1.3) % 1;
-      const pulseScale = 1 + cycle * 2.2;
-      const pulseOpacity = (1 - cycle) * (1 - cycle) * 0.6 * opacity;
-      pulseRef.current.scale.setScalar(pulseScale);
-      pulseMatRef.current.opacity = pulseOpacity;
-      pulseRef.current.visible = pulseOpacity > 0.01;
-    } else {
-      pulseRef.current.visible = false;
-    }
-
-    if (selected) {
-      const breathe = 1 + Math.sin(t * 2.4) * 0.1;
-      groupRef.current.scale.setScalar(1.55 * breathe);
-
-      // Red core + white outline — always. Active = much bigger + strong glow + pulse.
-      coreMatRef.current.opacity = opacity;
-      coreMatRef.current.color.setHex(COLOR_RED);
-
-      outlineMatRef.current.opacity = opacity;
-      outlineMatRef.current.color.setHex(COLOR_WHITE);
-
-      glowMatRef.current.opacity = opacity * 1.6;
-      glowMatRef.current.color.setHex(COLOR_RED);
-
-      pulseMatRef.current.color.setHex(COLOR_WHITE);
-    } else if (hovered) {
-      groupRef.current.scale.setScalar(1.45);
-
-      coreMatRef.current.opacity = opacity;
-      coreMatRef.current.color.setHex(COLOR_RED);
-
-      outlineMatRef.current.opacity = opacity;
-      outlineMatRef.current.color.setHex(COLOR_WHITE);
-
-      glowMatRef.current.opacity = opacity * 1.4;
-      glowMatRef.current.color.setHex(COLOR_RED);
-
-      pulseMatRef.current.color.setHex(COLOR_WHITE);
-    } else {
-      groupRef.current.scale.setScalar(1);
-
-      // Default: red dot + white outline + soft red glow
-      coreMatRef.current.opacity = opacity;
-      coreMatRef.current.color.setHex(COLOR_RED);
-
-      outlineMatRef.current.opacity = opacity * 0.9;
-      outlineMatRef.current.color.setHex(COLOR_WHITE);
-
-      glowMatRef.current.opacity = opacity * 0.7;
-      glowMatRef.current.color.setHex(COLOR_RED);
-
-      pulseMatRef.current.color.setHex(COLOR_WHITE);
-    }
+    if (!active || !meshRef.current) return;
+    (meshRef.current.material as THREE.ShaderMaterial).uniforms.time.value = clock.elapsedTime;
+    // The pulse is the only thing on the globe that moves on its own.
+    invalidate();
   });
 
+  const raycast = useMemo(() => nearSideRaycast(camera), [camera]);
+
+  const circuitOf = (event: ThreeEvent<PointerEvent | MouseEvent>) =>
+    event.instanceId === undefined ? undefined : circuits[event.instanceId];
+
   return (
-    <group position={position} quaternion={orientation}>
-      {/* Invisible hit sphere for raycasting / interaction. Kept in its own
-          unscaled group — sibling to the animated visuals below, not a child
-          of them — so a selected/hovered marker's bigger glow doesn't also
-          bulge its hit-test sphere toward the camera and steal raycasts from
-          a close neighboring marker (this was preventing selection of
-          adjacent circuits). */}
-      <mesh
-        ref={hitRef}
-        onPointerOver={(e) => {
-          e.stopPropagation();
-          onHover(circuit);
-        }}
-        onPointerOut={(e) => {
-          e.stopPropagation();
-          onBlur();
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          onSelect(circuit);
-        }}
-      >
-        <sphereGeometry args={[HIT_RADIUS, 10, 10]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
-
-      <group ref={groupRef}>
-        {/* Single soft glow — radial-gradient texture, smooth falloff.
-            Tiny z-offset keeps it glued to the surface (no floating at oblique angles). */}
-        <mesh position={[0, 0, 0.0008]}>
-          <planeGeometry args={[0.08, 0.08]} />
-          <meshBasicMaterial
-            ref={glowMatRef}
-            map={glowTexture}
-            transparent
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-          />
-        </mesh>
-
-        {/* White outline — thin ring just outside the dot edge for contrast
-            against any terrain color. Sits below the dot so only the rim shows. */}
-        <mesh position={[0, 0, 0.0014]}>
-          <ringGeometry args={[0.015, 0.0185, 32]} />
-          <meshBasicMaterial
-            ref={outlineMatRef}
-            transparent
-            depthWrite={false}
-          />
-        </mesh>
-
-        {/* Core dot — the precise location point */}
-        <mesh position={[0, 0, 0.0018]}>
-          <circleGeometry args={[0.015, 32]} />
-          <meshBasicMaterial
-            ref={coreMatRef}
-            transparent
-            depthWrite={false}
-          />
-        </mesh>
-
-        {/* Pulse ring — animated expanding wave (active only) */}
-        <mesh ref={pulseRef} position={[0, 0, 0.0012]}>
-          <ringGeometry args={[0.022, 0.026, 48]} />
-          <meshBasicMaterial
-            ref={pulseMatRef}
-            color={COLOR_WHITE}
-            transparent
-            opacity={0}
-            depthWrite={false}
-            blending={THREE.AdditiveBlending}
-          />
-        </mesh>
-      </group>
-    </group>
+    <instancedMesh
+      ref={meshRef}
+      args={[geometry, material, circuits.length]}
+      raycast={raycast}
+      frustumCulled={false}
+      renderOrder={2}
+      onPointerMove={(event) => {
+        event.stopPropagation();
+        const circuit = circuitOf(event);
+        if (circuit && circuit.id !== hoveredId) onHover(circuit);
+      }}
+      onPointerOut={(event) => {
+        event.stopPropagation();
+        onBlur();
+      }}
+      onClick={(event) => {
+        event.stopPropagation();
+        const circuit = circuitOf(event);
+        if (circuit) onSelect(circuit);
+      }}
+    />
   );
 }
