@@ -11,6 +11,7 @@
     "circuits:generate": "bun scripts/generate-circuits.ts",
     "dev": "next dev -p 4000",
     "elevations:generate": "bun scripts/generate-elevations.ts",
+    "globe:generate": "bun scripts/generate-globe.ts",
     "env:audit": "bun scripts/audit-environment.ts",
     "env:audit:all": "bun scripts/audit-environment.ts --all",
     "assets:fetch": "bun scripts/fetch-assets.ts",

@@ -64,9 +64,11 @@ export function GlobeStage({ started }: { started: boolean | null }) {
     return unlisten;
   }, [started]);
 
-  useFrame(({ camera: shared, controls, size }, delta) => {
+  useFrame(({ camera: shared, controls, size, invalidate }, delta) => {
     if (started === null) return;
     const orbit = controls as OrbitControlsImpl | null;
+    // The canvas draws on demand; the idle drift and the settle are the frames nobody asked for.
+    if (idle.current || away.current !== (started ? 0 : 1)) invalidate();
     if (orbit) {
       orbit.autoRotate = idle.current;
       orbit.autoRotateSpeed = IDLE_SPIN;

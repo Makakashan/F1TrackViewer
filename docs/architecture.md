@@ -211,11 +211,27 @@ In terrain mode the curve's Y comes from the terrain sampler instead, smoothed o
 2. localStorage, versioned (`f1tv:elevations:v2:`)
 3. Open-Meteo / OpenTopoData at runtime, as a fallback only
 
-## Globe textures
+## Globe
 
-`GlobeLanding` reads Earth maps from `public/textures/earth/` — `earth-day.jpg`,
-optionally `earth-clouds.png`, and `earth-night.jpg` for future night-side work.
-Equirectangular projection; 2048 or 4096 px wide is the target. A 16k texture slows
-the first paint and eats GPU memory for detail nobody sees at globe distance. Never
-load them from an external URL at runtime: the assets are local, like everything else
-under `public/`.
+`bun run globe:generate` builds the Earth maps in `public/textures/earth/` from NASA
+public-domain sources: `earth-day.jpg` is Blue Marble Next Generation (July 2004), and
+`earth-relief.png` carries GEBCO land elevation in red and a land mask, cut from the
+GEBCO bathymetry, in green. Both are 4096 px equirectangular; downloads cache in
+`.cache/globe/`.
+
+The Earth is one sphere — 768 segments around on a desktop, 384 on a phone — whose
+vertex shader lifts land by a coastal step plus exaggerated elevation, read from a mip
+of the relief so a vertex sees the average around it. The fragment shader shades the
+slopes from the full-resolution relief, so hills too small for a vertex still catch
+the light. Light comes from the camera's upper left, so the face in view is always lit.
+Toward the limb the colour thickens into atmosphere; the sea has no highlight. `GlobeHalo`, one quad behind
+the globe, adds the outer haze — narrow against space, wide on the light page — and on
+the light page a soft shadow below, so the globe does not sit flat on white.
+
+`ReliefSampler` reads the same mip on the CPU and repeats the shader's height formula:
+markers and the country outline stand on the surface the GPU draws. Change one, change
+both.
+
+Markers are one instanced quad drawn by a fragment shader; the country outline of the
+circuit in focus loads `data/country-borders.json` on first hover. The canvas draws on
+demand: idle drift, camera moves and the active marker's pulse are the only frames.
